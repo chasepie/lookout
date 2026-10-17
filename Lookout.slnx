@@ -1,5 +1,5 @@
 <Solution>
-  <Folder Name="/src/">
     <Project Path="src/Backend/Backend.csproj" />
-  </Folder>
+    <Project Path="src/Database/Database.csproj" />
+    <Project Path="src/Model/Model.csproj" />
 </Solution>

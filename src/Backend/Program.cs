@@ -1,6 +1,6 @@
 using Scalar.AspNetCore;
 
-namespace Backend;
+namespace ChasePie.Lookout.Backend;
 
 public class Program
 {
