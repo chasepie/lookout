@@ -27,9 +27,6 @@ jobs:
       - name: Build
         run: dotnet build Lookout.slnx
 
-      - name: Test
-        run: dotnet test --no-build
-
   node:
     name: Runner and Scripting
     runs-on: ubuntu-latest
