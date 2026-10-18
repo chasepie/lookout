@@ -1,0 +1,5 @@
+<Solution>
+    <Project Path="src/Backend/Backend.csproj" />
+    <Project Path="src/Database/Database.csproj" />
+    <Project Path="src/Model/Model.csproj" />
+</Solution>

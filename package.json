@@ -1,0 +1,29 @@
+{
+  "name": "@chasepie/lookout",
+  "version": "1.0.0",
+  "description": "",
+  "homepage": "https://github.com/chasepie/lookout#readme",
+  "bugs": {
+    "url": "https://github.com/chasepie/lookout/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chasepie/lookout.git"
+  },
+  "type": "module",
+  "main": "index.js",
+  "workspaces": [
+    "examples",
+    "src/runner",
+    "src/scripting"
+  ],
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "tsx": "^4.23.15",
+    "typescript": "^6.0.3"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "fsevents@2.3.3": true
+  }
+}
