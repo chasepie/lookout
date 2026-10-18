@@ -42,9 +42,7 @@ test.each([
 ])('rejects a script with %s', { timeout: 30_000 }, async (_, fixture) => {
   const result = runScript(fixture);
 
-  await expect(result).rejects.toMatchObject({
-    stdout: '',
-    stderr: expect.stringContaining(
-      'Script must default-export a LookoutScript object or a class implementing it'),
-  });
+  await expect(result).rejects.toThrow(
+    'Script must default-export a LookoutScript object or a class implementing it');
+  await expect(result).rejects.toMatchObject({ stdout: '' });
 });

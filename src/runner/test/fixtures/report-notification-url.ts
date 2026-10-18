@@ -1,9 +1,10 @@
 import type { LookoutScript } from '@chasepie/lookout-scripting';
 
+const escapeHtml = (text: string) => text.replaceAll('&', '&amp;').replaceAll('<', '&lt;');
+
 export default {
   async run(page, context) {
-    await page.setContent('<h1></h1>');
-    await page.locator('h1').evaluate((h1, url) => { h1.textContent = url; }, context.notificationUrl);
+    await page.setContent(`<h1>${escapeHtml(context.notificationUrl)}</h1>`);
     return { success: true, content: await page.locator('h1').innerText() };
   },
 } satisfies LookoutScript;

@@ -1,3 +1,3 @@
 export default class {
-  check() {}
+  name = 'has no run method';
 }

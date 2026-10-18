@@ -34,7 +34,7 @@ const isLookoutScript = (value: unknown): value is LookoutScript =>
 
 /** Loads a script file, whose default export is a LookoutScript object or a class implementing one */
 async function loadScript(scriptPath: string): Promise<LookoutScript> {
-  const scriptModule: { default?: unknown } = await import(pathToFileURL(resolve(scriptPath)).href);
+  const scriptModule = await import(pathToFileURL(resolve(scriptPath)).href) as { default?: unknown };
   const exported = scriptModule.default;
   const script = isClass(exported) ? new exported() : exported;
 

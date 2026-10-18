@@ -16,4 +16,4 @@ Single-context: one `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/ag
 
 ## Conventions
 
-Write TypeScript (`.ts`) for all Node code: packages, tests, test fixtures and examples. The one exception is a `.js` Script fixture whose purpose is testing that the runner accepts JavaScript Scripts.
+Write TypeScript (`.ts`) for all Node code: packages, tests, test fixtures and examples. Two exceptions: a `.js` Script fixture whose purpose is testing that the runner accepts JavaScript Scripts, and a tool's config file (such as `eslint.config.mjs`) where loading it as TypeScript would need an extra dependency.
