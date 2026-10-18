@@ -29,8 +29,9 @@ public class Program
         services.AddHealthChecks()
             .AddDbContextCheck<LookoutDbContext>(customTestQuery: async (db, cancellationToken) =>
             {
-                // CanConnect only checks that the SQLite file exists; reading the schema checks it's a usable database.
-                await db.Database.ExecuteSqlRawAsync("SELECT COUNT(*) FROM sqlite_schema", cancellationToken);
+                // CanConnect only checks that the SQLite file exists, and SQLite recreates a missing file empty;
+                // reading the migrations history checks it's the database startup migrated.
+                await db.Database.ExecuteSqlRawAsync("SELECT COUNT(*) FROM __EFMigrationsHistory", cancellationToken);
                 return true;
             });
     }

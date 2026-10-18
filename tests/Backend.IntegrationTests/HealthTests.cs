@@ -33,6 +33,19 @@ public sealed class HealthTests(TestContext testContext)
         Assert.AreEqual("Unhealthy", await response.Content.ReadAsStringAsync(testContext.CancellationToken));
     }
 
+    [TestMethod]
+    public async Task ReportsUnhealthyWhenTheDatabaseIsMissing()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        using var client = factory.CreateClient();
+        File.Delete(DatabasePath(factory));
+
+        var response = await client.GetAsync(new Uri("/health", UriKind.Relative), testContext.CancellationToken);
+
+        Assert.AreEqual(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.AreEqual("Unhealthy", await response.Content.ReadAsStringAsync(testContext.CancellationToken));
+    }
+
     private static string DatabasePath(LookoutWebApplicationFactory factory)
     {
         using var scope = factory.Services.CreateScope();
