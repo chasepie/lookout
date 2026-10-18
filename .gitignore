@@ -429,3 +429,8 @@ FodyWeavers.xsd
 
 # Playwright files
 .playwright-mcp/
+
+# SQLite databases
+*.db
+*.db-shm
+*.db-wal

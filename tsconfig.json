@@ -35,6 +35,8 @@
     "strict": true,
     "jsx": "react-jsx",
     "verbatimModuleSyntax": true,
+    // Node runs the runner and Scripts with type stripping, which only supports erasable syntax
+    "erasableSyntaxOnly": true,
     "isolatedModules": true,
     "noUncheckedSideEffectImports": true,
     "moduleDetection": "force",

@@ -1,5 +1,10 @@
 <Solution>
-    <Project Path="src/Backend/Backend.csproj" />
-    <Project Path="src/Database/Database.csproj" />
-    <Project Path="src/Model/Model.csproj" />
+    <Folder Name="/src/">
+        <Project Path="src/Backend/Backend.csproj" />
+        <Project Path="src/Database/Database.csproj" />
+        <Project Path="src/Model/Model.csproj" />
+    </Folder>
+    <Folder Name="/tests/">
+        <Project Path="tests/Backend.IntegrationTests/Backend.IntegrationTests.csproj" />
+    </Folder>
 </Solution>
