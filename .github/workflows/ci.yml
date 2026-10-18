@@ -12,6 +12,7 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Job names are required checks in the "Merge Gate" ruleset; rename a job there too.
 jobs:
   backend:
     name: Backend
