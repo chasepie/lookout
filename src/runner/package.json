@@ -3,16 +3,15 @@
   "version": "1.0.0",
   "description": "",
   "type": "module",
-  "main": "index.ts",
   "scripts": {
     "start": "node index.ts",
     "test": "vitest run"
   },
   "dependencies": {
-    "@chasepie/lookout-scripting": "file:../scripting",
     "playwright": "^1.64.1"
   },
   "devDependencies": {
+    "@chasepie/lookout-scripting": "file:../scripting",
     "vitest": "5.0.5"
   }
 }
