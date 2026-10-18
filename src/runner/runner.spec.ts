@@ -9,16 +9,42 @@ const runnerPath = fileURLToPath(new URL('./index.ts', import.meta.url));
 const fixturePath = (name: string) =>
   fileURLToPath(new URL(`./test/fixtures/${name}`, import.meta.url));
 
-test('runs a script and reports its outcome', { timeout: 30_000 }, async () => {
-  const { stdout } = await execFileAsync(process.execPath, [
+const runScript = (fixture: string) =>
+  execFileAsync(process.execPath, [
     runnerPath,
-    '--scriptPath', fixturePath('report-notification-url.js'),
-    '--notificationUrl', 'https://example.com/product',
+    '--scriptPath', fixturePath(fixture),
+    '--notificationUrl', 'https://example.com/product?a=1&copy=2',
     '--headless',
   ]);
 
+test('runs a script and reports its outcome', { timeout: 30_000 }, async () => {
+  const { stdout } = await runScript('report-notification-url.js');
+
   expect(JSON.parse(stdout)).toEqual({
     success: true,
-    content: 'https://example.com/product',
+    content: 'https://example.com/product?a=1&copy=2',
+  });
+});
+
+test('runs a script that default-exports a class', { timeout: 30_000 }, async () => {
+  const { stdout } = await runScript('class-export.js');
+
+  expect(JSON.parse(stdout)).toEqual({
+    success: true,
+    content: 'class ran for https://example.com/product?a=1&copy=2',
+  });
+});
+
+test.each([
+  ['a plain function', 'function-export.js'],
+  ['a class without run', 'class-without-run.js'],
+  ['no default export', 'named-export.js'],
+])('rejects a script with %s', { timeout: 30_000 }, async (_, fixture) => {
+  const result = runScript(fixture);
+
+  await expect(result).rejects.toMatchObject({
+    stdout: '',
+    stderr: expect.stringContaining(
+      'Script must default-export a LookoutScript object or a class implementing it'),
   });
 });

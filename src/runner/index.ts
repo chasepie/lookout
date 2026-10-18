@@ -1,4 +1,4 @@
-import type { LookoutScript, LookoutScriptExport } from '@chasepie/lookout-scripting';
+import type { LookoutScript } from '@chasepie/lookout-scripting';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -26,18 +26,22 @@ function parseCliArgs() {
   };
 }
 
+const isClass = (value: unknown): value is new () => unknown =>
+  typeof value === 'function' && /^class\b/.test(Function.prototype.toString.call(value));
+
+const isLookoutScript = (value: unknown): value is LookoutScript =>
+  typeof value === 'object' && value !== null && 'run' in value && typeof value.run === 'function';
+
 /** Loads a script file, whose default export is a LookoutScript object or a class implementing one */
 async function loadScript(scriptPath: string): Promise<LookoutScript> {
-  const scriptModule: { default?: LookoutScriptExport } = await import(pathToFileURL(resolve(scriptPath)).href);
-  const script = scriptModule.default;
+  const scriptModule: { default?: unknown } = await import(pathToFileURL(resolve(scriptPath)).href);
+  const exported = scriptModule.default;
+  const script = isClass(exported) ? new exported() : exported;
 
-  if (typeof script === 'function') {
-    return new script();
+  if (!isLookoutScript(script)) {
+    throw new Error('Script must default-export a LookoutScript object or a class implementing it');
   }
-  if (typeof script?.run === 'function') {
-    return script;
-  }
-  throw new Error('Script must default-export a LookoutScript object or a class implementing it');
+  return script;
 }
 
 async function main() {
