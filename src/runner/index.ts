@@ -1,4 +1,4 @@
-import type { LookoutScript } from '@chasepie/lookout-scripting';
+import type { LookoutScript, LookoutScriptExport } from '@chasepie/lookout-scripting';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -26,7 +26,11 @@ function parseCliArgs() {
   };
 }
 
-const isClass = (value: unknown): value is new () => unknown =>
+/** The class form of a script's default export, as the scripting contract defines it */
+type ScriptClass = Exclude<LookoutScriptExport, LookoutScript>;
+
+/** Whether a default export is a class; what it constructs is checked separately */
+const isScriptClass = (value: unknown): value is ScriptClass =>
   typeof value === 'function' && /^class\b/.test(Function.prototype.toString.call(value));
 
 const isLookoutScript = (value: unknown): value is LookoutScript =>
@@ -36,7 +40,7 @@ const isLookoutScript = (value: unknown): value is LookoutScript =>
 async function loadScript(scriptPath: string): Promise<LookoutScript> {
   const scriptModule = await import(pathToFileURL(resolve(scriptPath)).href) as { default?: unknown };
   const exported = scriptModule.default;
-  const script = isClass(exported) ? new exported() : exported;
+  const script: unknown = isScriptClass(exported) ? new exported() : exported;
 
   if (!isLookoutScript(script)) {
     throw new Error('Script must default-export a LookoutScript object or a class implementing it');
