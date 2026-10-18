@@ -4,23 +4,33 @@ using Microsoft.AspNetCore.Mvc.Testing;
 namespace ChasePie.Lookout.Backend.IntegrationTests;
 
 /// <summary>
-/// Boots the backend in-process against its own temporary SQLite database,
-/// which is deleted when the factory is disposed.
+/// Boots the backend in-process against a temporary SQLite database.
+/// Every host it builds, including those from <c>WithWebHostBuilder</c>, gets its own database,
+/// and all of them are deleted when the factory is disposed.
 /// </summary>
 public sealed class LookoutWebApplicationFactory : WebApplicationFactory<Program>
 {
-    private readonly string _databasePath = Path.Combine(Path.GetTempPath(), $"lookout-test-{Guid.NewGuid():N}.db");
+    private readonly List<string> _databasePaths = [];
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"lookout-test-{Guid.NewGuid():N}.db");
+        _databasePaths.Add(databasePath);
+
         builder.UseEnvironment("Testing");
-        builder.UseSetting("ConnectionStrings:Lookout", $"Data Source={_databasePath};Pooling=False");
+        builder.UseSetting("ConnectionStrings:Lookout", $"Data Source={databasePath};Pooling=False");
     }
 
     public override async ValueTask DisposeAsync()
     {
-        await base.DisposeAsync();
-        File.Delete(_databasePath);
-        GC.SuppressFinalize(this);
+        try
+        {
+            await base.DisposeAsync();
+        }
+        finally
+        {
+            _databasePaths.ForEach(File.Delete);
+            GC.SuppressFinalize(this);
+        }
     }
 }

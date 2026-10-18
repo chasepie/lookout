@@ -23,10 +23,16 @@ public class Program
         services.AddControllers();
         services.AddOpenApi();
 
-        services.AddDbContext<LookoutDbContext>(options =>
-            options.UseSqlite(configuration.GetConnectionString("Lookout")));
+        var connectionString = configuration.GetConnectionString("Lookout")
+            ?? throw new InvalidOperationException("ConnectionStrings:Lookout is not configured");
+        services.AddDbContext<LookoutDbContext>(options => options.UseSqlite(connectionString));
         services.AddHealthChecks()
-            .AddDbContextCheck<LookoutDbContext>();
+            .AddDbContextCheck<LookoutDbContext>(customTestQuery: async (db, cancellationToken) =>
+            {
+                // CanConnect only checks that the SQLite file exists; reading the schema checks it's a usable database.
+                await db.Database.ExecuteSqlRawAsync("SELECT COUNT(*) FROM sqlite_schema", cancellationToken);
+                return true;
+            });
     }
 
     private static void MigrateDatabase(WebApplication app)
