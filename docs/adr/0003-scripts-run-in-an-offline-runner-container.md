@@ -11,3 +11,5 @@ Scripts run in a long-lived `runner` container that is connected only to an inte
 
 - Scripts can only import Node built-ins and `playwright`, the only package installed in the runner.
 - Scripts that need data from an API must get it through the browser (e.g. `page.request` or by navigating to it), not through Node.
+
+Sources: [docs/research/script-execution-and-vpn.md](../research/script-execution-and-vpn.md)

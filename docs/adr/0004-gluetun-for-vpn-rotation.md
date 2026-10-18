@@ -12,3 +12,5 @@ VPN Runs go through gluetun's HTTP proxy, set on each Playwright browser context
 
 - Swapping PIA for another VPN provider is a gluetun configuration change, not a Lookout code change.
 - Lookout talks to the VPN through a small rotator interface, so gluetun itself can also be replaced.
+
+Sources: [docs/research/script-execution-and-vpn.md](../research/script-execution-and-vpn.md)
