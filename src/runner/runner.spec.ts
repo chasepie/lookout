@@ -18,7 +18,7 @@ const runScript = (fixture: string) =>
   ]);
 
 test('runs a script and reports its outcome', { timeout: 30_000 }, async () => {
-  const { stdout } = await runScript('report-notification-url.js');
+  const { stdout } = await runScript('report-notification-url.ts');
 
   expect(JSON.parse(stdout)).toEqual({
     success: true,
@@ -27,7 +27,7 @@ test('runs a script and reports its outcome', { timeout: 30_000 }, async () => {
 });
 
 test('runs a script that default-exports a class', { timeout: 30_000 }, async () => {
-  const { stdout } = await runScript('class-export.js');
+  const { stdout } = await runScript('class-export.ts');
 
   expect(JSON.parse(stdout)).toEqual({
     success: true,
@@ -36,9 +36,9 @@ test('runs a script that default-exports a class', { timeout: 30_000 }, async ()
 });
 
 test.each([
-  ['a plain function', 'function-export.js'],
-  ['a class without run', 'class-without-run.js'],
-  ['no default export', 'named-export.js'],
+  ['a plain function', 'function-export.ts'],
+  ['a class without run', 'class-without-run.ts'],
+  ['no default export', 'named-export.ts'],
 ])('rejects a script with %s', { timeout: 30_000 }, async (_, fixture) => {
   const result = runScript(fixture);
 

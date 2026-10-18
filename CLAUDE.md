@@ -13,3 +13,7 @@ Uses the five default triage labels: `needs-triage`, `needs-info`, `ready-for-ag
 ### Domain docs
 
 Single-context: one `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+## Conventions
+
+Write TypeScript (`.ts`) for all Node code: packages, tests, test fixtures and examples. The one exception is a `.js` Script fixture whose purpose is testing that the runner accepts JavaScript Scripts.
