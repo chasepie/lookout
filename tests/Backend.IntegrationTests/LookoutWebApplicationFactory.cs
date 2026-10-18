@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 
-namespace ChasePie.Lookout.Backend.Tests;
+namespace ChasePie.Lookout.Backend.IntegrationTests;
 
 /// <summary>
 /// Boots the backend in-process against its own temporary SQLite database,

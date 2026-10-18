@@ -1,4 +1,4 @@
-namespace ChasePie.Lookout.Backend.Tests;
+namespace ChasePie.Lookout.Backend.IntegrationTests;
 
 public sealed class HealthTests
 {
