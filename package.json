@@ -10,14 +10,13 @@
     "type": "git",
     "url": "git+https://github.com/chasepie/lookout.git"
   },
-  "type": "commonjs",
+  "type": "module",
   "main": "index.js",
   "workspaces": [
-    "src/browser"
+    "examples",
+    "src/runner",
+    "src/scripting"
   ],
-  "scripts": {
-    "start:browser": "npm run start --workspace=@chasepie/lookout-browser"
-  },
   "devDependencies": {
     "@types/node": "^24.19.2",
     "tsx": "^4.23.15",

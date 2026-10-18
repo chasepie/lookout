@@ -8,7 +8,13 @@
       "name": "C#: Debug Backend",
       "type": "dotnet",
       "request": "launch",
-      "projectPath": "${workspaceFolder}/src/Backend/Backend.csproj"
+      "projectPath": "${workspaceFolder}/src/Backend/Backend.csproj",
+      "serverReadyAction": {
+        "action": "debugWithChrome",
+        "killOnServerStop": true,
+        "pattern": "Now listening on: https://localhost:([0-9]+)",
+        "uriFormat": "https://localhost:%s/scalar"
+      }
     }
   ]
 }

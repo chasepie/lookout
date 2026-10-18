@@ -1,0 +1,17 @@
+{
+  "name": "@chasepie/lookout-examples",
+  "version": "1.0.0",
+  "description": "",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@chasepie/lookout-scripting": "file:../src/scripting",
+    "playwright": "1.64.1"
+  },
+  "devDependencies": {
+    "vitest": "5.0.5"
+  }
+}
