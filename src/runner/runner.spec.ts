@@ -272,6 +272,14 @@ test("a Script's console output is in the response, and does not affect its outc
   expect(consoleOutput).toContain('more noise\n');
 });
 
+test('a Script that fails straight after logging a lot still has the end of its output', { timeout: 30_000 }, async () => {
+  const { consoleOutput, result } = await executeTimed('logs-then-fails-to-load.ts');
+
+  expect(result).toEqual({ outcome: 'errored', errorMessage: 'Failed to load' });
+  expect(consoleOutput.startsWith('[Earlier output was cut]\n')).toBe(true);
+  expect(consoleOutput.endsWith('LAST-LINE\n')).toBe(true);
+});
+
 test("a Script that writes nothing has empty console output, with nothing from Node's own warnings", { timeout: 30_000 }, async () => {
   const { consoleOutput } = await executeTimed('read-price.ts');
 
@@ -441,6 +449,23 @@ test('a Script that allocates without limit is Errored at its memory limit, and 
   expect(result).toEqual({ outcome: 'errored', errorMessage: 'Script exceeded its memory limit of 512 MB' });
   expect(consoleOutput).toContain('JavaScript heap out of memory');
   expect(await execute('read-price.ts')).toMatchObject({ outcome: 'succeeded' });
+});
+
+test('a Script whose subprocess holds its output open still ends at its timeout', { timeout: 30_000 }, async () => {
+  const { durationMs, result } = await executeTimed('spawns-inheriting-subprocess.ts', { timeoutMs: 1_500 });
+
+  expect(result).toEqual({ outcome: 'errored', errorMessage: 'Script timed out after 1500 ms' });
+  // The timeout, the grace period for a screenshot and a little more, but nowhere near the subprocess's 25 s
+  expect(durationMs).toBeLessThan(10_000);
+});
+
+test("a Script that only writes V8's out-of-memory message isn't taken to have run out of memory", { timeout: 30_000 }, async () => {
+  const result = await execute('logs-out-of-memory-then-exits.ts');
+
+  expect(result).toEqual({
+    outcome: 'errored',
+    errorMessage: 'Script process exited with code 3 before reporting an outcome',
+  });
 });
 
 test('a Script that runs past its timeout is Errored', { timeout: 30_000 }, async () => {

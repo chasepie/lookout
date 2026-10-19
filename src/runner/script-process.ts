@@ -4,6 +4,7 @@
  */
 import type { LookoutScript, LookoutScriptExport, ScriptOutcome } from '@chasepie/lookout-scripting';
 import { isBuiltin, registerHooks } from 'node:module';
+import { setTimeout as delay } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
 import { chromium, type Page } from 'playwright';
 import { isObject, isOptionalString } from './guards.ts';
@@ -137,14 +138,26 @@ function toResult(outcome: unknown): ScriptResult {
   };
 }
 
+/** Long enough to write out all the console output the runner keeps; a bound in case the Script broke the streams */
+const flushTimeoutMs = 2_000;
+
+/** Resolves once everything written to `stream` so far has been handed on */
+const flushed = (stream: NodeJS.WriteStream) =>
+  new Promise<void>((resolve) => {
+    stream.write('', () => resolve());
+  });
+
 let hasReported = false;
 
 /** Reports a result, only once, then exits, so a timer or socket the Script left open can't keep the process alive */
-function report(token: string, result: ScriptResult) {
+async function report(token: string, result: ScriptResult) {
   if (hasReported) {
     return;
   }
   hasReported = true;
+  // Writes to a pipe are asynchronous, so exiting straight away could lose the end of the Script's output. This
+  // comes before the report, since the runner kills a process that reports after its timeout.
+  await Promise.race([Promise.all([flushed(process.stdout), flushed(process.stderr)]), delay(flushTimeoutMs)]);
   const message: ScriptReport = { token, result };
   sendReport?.(message, () => process.exit());
 }

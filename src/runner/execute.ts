@@ -44,8 +44,11 @@ const scriptProcessPath = fileURLToPath(new URL('./script-process.ts', import.me
 /** The heap each Script's process gets; one that needs more is Errored rather than taking memory from the others */
 const memoryLimitMb = 512;
 
-/** What V8 writes to stderr as it aborts a process that has reached its heap limit */
+/** What V8 writes to stderr as it aborts a process, with SIGABRT, once it has reached its heap limit */
 const outOfMemoryMessage = 'JavaScript heap out of memory';
+
+/** How much of a Script's stderr to search for that message, which V8 follows with a native stack trace */
+const stderrTailLength = 16 * 1024;
 
 /** The runner's own code, which the Script's process runs */
 const runnerDirectory = fileURLToPath(new URL('.', import.meta.url));
@@ -97,24 +100,42 @@ const maxConsoleOutputLength = 256 * 1024;
 const cutOutputMarker = '[Earlier output was cut]\n';
 
 /**
+ * How long to wait for the end of a process's stdout and stderr once it has exited. A subprocess the Script started
+ * can hold them open long after, and mustn't hold up the response.
+ */
+const outputDrainMs = 1_000;
+
+/** Keeps the end of the text appended to it once there's more than `maxLength` characters, marking the cut */
+function textTail(maxLength: number) {
+  let text = '';
+  let cut = false;
+  return {
+    append: (chunk: string) => {
+      text += chunk;
+      if (text.length > maxLength) {
+        text = text.slice(-maxLength);
+        cut = true;
+      }
+    },
+    text: () => (cut ? cutOutputMarker : '') + text,
+  };
+}
+
+/**
  * Collects a process's stdout and stderr as they arrive, keeping only the end once there's too much. The end is
- * what explains a failure, including V8's message when the process runs out of memory.
+ * what explains a failure. The end of stderr is kept apart as well, since only there can V8 say the process ran
+ * out of memory.
  */
 function collectConsoleOutput(child: ChildProcess) {
-  let output = '';
-  let cut = false;
-  const collect = (chunk: string) => {
-    output += chunk;
-    if (output.length > maxConsoleOutputLength) {
-      output = output.slice(-maxConsoleOutputLength);
-      cut = true;
-    }
-  };
-  for (const stream of [child.stdout, child.stderr]) {
-    // Decoding as a stream, so a character split across chunks survives
-    stream?.setEncoding('utf8').on('data', collect);
-  }
-  return () => (cut ? cutOutputMarker : '') + output;
+  const output = textTail(maxConsoleOutputLength);
+  const stderr = textTail(stderrTailLength);
+  // Decoding as a stream, so a character split across chunks survives
+  child.stdout?.setEncoding('utf8').on('data', output.append);
+  child.stderr?.setEncoding('utf8').on('data', (chunk: string) => {
+    output.append(chunk);
+    stderr.append(chunk);
+  });
+  return { consoleOutput: output.text, stderr: stderr.text };
 }
 
 /**
@@ -132,12 +153,13 @@ const runScriptProcess = (job: ScriptJob, timeoutMs: number, tempDirectory: stri
       signal,
       killSignal: 'SIGKILL',
     });
-    const consoleOutput = collectConsoleOutput(child);
+    const { consoleOutput, stderr } = collectConsoleOutput(child);
     let reported: ScriptResult | undefined;
     let failure: Error | undefined;
     let timedOut = false;
     let timedOutScreenshot: Pick<ScriptResult, 'screenshot'> = {};
     let killTimer: NodeJS.Timeout | undefined;
+    let drainTimer: NodeJS.Timeout | undefined;
     const timer = setTimeout(() => {
       timedOut = true;
       if (child.connected) {
@@ -165,11 +187,11 @@ const runScriptProcess = (job: ScriptJob, timeoutMs: number, tempDirectory: stri
       child.kill('SIGKILL');
     });
     /** Why a process that ended without reporting in time did so */
-    const unreportedResult = (code: number | null, exitSignal: NodeJS.Signals | null, output: string) => {
+    const unreportedResult = (code: number | null, exitSignal: NodeJS.Signals | null) => {
       if (timedOut) {
         return { ...erroredResult(`Script timed out after ${timeoutMs} ms`), ...timedOutScreenshot };
       }
-      if (output.includes(outOfMemoryMessage)) {
+      if (exitSignal === 'SIGABRT' && stderr().includes(outOfMemoryMessage)) {
         return erroredResult(`Script exceeded its memory limit of ${memoryLimitMb} MB`);
       }
       if (failure) {
@@ -178,12 +200,20 @@ const runScriptProcess = (job: ScriptJob, timeoutMs: number, tempDirectory: stri
       const ending = exitSignal ? `was killed by ${exitSignal}` : `exited with code ${code}`;
       return erroredResult(`Script process ${ending} before reporting an outcome`);
     };
-    // 'close' follows the end of stdout and stderr, so the console output is complete
+    child.once('exit', () => {
+      clearTimeout(timer);
+      clearTimeout(killTimer);
+      drainTimer = setTimeout(() => {
+        child.stdout?.destroy();
+        child.stderr?.destroy();
+      }, outputDrainMs);
+    });
+    // 'close' follows the end of stdout and stderr, so the console output is as complete as it will get
     child.once('close', (code, exitSignal) => {
       clearTimeout(timer);
       clearTimeout(killTimer);
-      const output = consoleOutput();
-      resolve({ ...(reported ?? unreportedResult(code, exitSignal, output)), consoleOutput: output });
+      clearTimeout(drainTimer);
+      resolve({ ...(reported ?? unreportedResult(code, exitSignal)), consoleOutput: consoleOutput() });
     });
     child.send(job);
   });
