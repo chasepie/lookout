@@ -78,16 +78,22 @@ function findBrowsersDirectory() {
 const browsersDirectory = findBrowsersDirectory();
 
 /**
+ * System files Playwright reads on Linux: the OS's name, to tell which build of Chromium the host needs, and the
+ * signs of running under WSL. They're granted even where they don't exist, since under the permission model even
+ * checking whether a file exists throws for a path that isn't granted.
+ */
+const playwrightSystemFiles = ['/etc/os-release', '/proc/version', '/proc/sys/fs/binfmt_misc/WSLInterop', '/run/WSL'];
+
+/**
  * Node's permission model for a Script's process. It may read only its own directory, the runner's code and
- * packages, the browsers and the OS's name, and write only to its temp directory. Starting processes is allowed only because
+ * packages, the browsers and the system files Playwright needs, and write only to its temp directory. Starting processes is allowed only because
  * Playwright starts Chromium as one. Node doesn't treat its permission model as a security boundary, and that
  * allowance in particular lets a Script get around the file limits; the runner's container is what contains a
  * Script (ADR-0003).
  */
 const permissionArgs = (scriptDirectory: string, tempDirectory: string) => [
   '--permission',
-  // On Linux, Playwright reads /etc/os-release to tell which build of Chromium the host needs
-  ...[scriptDirectory, runnerDirectory, packagesDirectory, browsersDirectory, '/etc/os-release']
+  ...[scriptDirectory, runnerDirectory, packagesDirectory, browsersDirectory, ...playwrightSystemFiles]
     .map((path) => `--allow-fs-read=${path}`),
   `--allow-fs-write=${tempDirectory}`,
   '--allow-child-process',

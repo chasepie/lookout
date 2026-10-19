@@ -86,7 +86,7 @@ A Script's file may import only `playwright` and Node built-ins. Importing anyth
 |-------|--------------|
 | `timeoutMs` | Errored with `Script timed out after <timeoutMs> ms`. |
 | 512 MB V8 heap (`--max-old-space-size`) | Errored with `Script exceeded its memory limit of 512 MB`. This limits only what V8 manages: memory outside it, such as `Buffer`s, is limited only by the runner's container. |
-| File reads | Through Node's `--permission`, a Script may read only its own temp directory, the runner's code and `node_modules`, Playwright's browsers and `/etc/os-release`, which Playwright reads on Linux. It may write only to its temp directory. Anything else is Errored with Node's `ERR_ACCESS_DENIED` message. |
+| File reads | Through Node's `--permission`, a Script may read only its own temp directory, the runner's code and `node_modules`, Playwright's browsers, and the system files Playwright reads on Linux: `/etc/os-release`, to pick a Chromium build, and `/proc/version`, `/proc/sys/fs/binfmt_misc/WSLInterop` and `/run/WSL`, to tell whether it's under WSL. Those are granted even where they don't exist, since under `--permission` even checking whether a file exists throws for a path that isn't granted. It may write only to its temp directory. Anything else is Errored with Node's `ERR_ACCESS_DENIED` message. |
 
 ## How an execution works
 

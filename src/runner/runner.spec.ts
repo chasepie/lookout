@@ -7,7 +7,7 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import { afterAll, beforeAll, describe, expect, onTestFinished, test } from 'vitest';
 import type { FileKind } from './execute.ts';
 import type { ProxySettings } from './protocol.ts';
 
@@ -435,6 +435,10 @@ test('a Script whose caller disconnects is stopped, with the subprocesses it sta
 test("a Script's process exits when the runner dies, with the subprocesses it started", { timeout: 30_000 }, async () => {
   const { marker, notificationUrl } = subprocessScript('hang');
   const { runner: doomedRunner, url } = await startRunner({ HEADLESS: 'true' });
+  // Even if the test fails before killing it, since a runner left behind keeps the test run from ending
+  onTestFinished(() => {
+    doomedRunner.kill('SIGKILL');
+  });
   const response = fetch(`${url}/execute`, {
     method: 'POST',
     body: JSON.stringify({
@@ -469,6 +473,10 @@ test("a runner whose own NODE_OPTIONS preload a file, as a debugger's do, still 
 
 test.each(['SIGINT', 'SIGTERM'] as const)('a runner stopped by %s takes a Script that blocks its process with it', { timeout: 30_000 }, async (signal) => {
   const { runner: stoppedRunner, url } = await startRunner({ HEADLESS: 'true' });
+  // Even if the test fails before stopping it, since a runner left behind keeps the test run from ending
+  onTestFinished(() => {
+    stoppedRunner.kill('SIGKILL');
+  });
   const response = fetch(`${url}/execute`, {
     method: 'POST',
     body: JSON.stringify({
