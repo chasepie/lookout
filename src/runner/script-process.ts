@@ -15,8 +15,9 @@ import { erroredResult, timedOutMessage, type ScriptJob, type ScriptReport, type
 // mistake, they don't contain one, and needn't, since a Script decides its own outcome anyway.
 const sendReport = process.send?.bind(process);
 
-// A Script that outlives the runner, such as one that never finishes, would otherwise run forever
-process.on('disconnect', () => process.exit());
+// A Script that outlives the runner, such as one that never finishes, would otherwise run forever. This process
+// leads a process group, so this takes anything the Script started with it.
+process.on('disconnect', () => process.kill(-process.pid, 'SIGKILL'));
 
 /**
  * An error the Script raised outside `run`'s own promise chain, from a timer, an event listener, or a promise it

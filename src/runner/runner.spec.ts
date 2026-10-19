@@ -1,4 +1,5 @@
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
@@ -33,6 +34,25 @@ const childPids = (pid: number) =>
   });
 
 const hasChildProcesses = async (pid: number) => (await childPids(pid)).length > 0;
+
+/** The processes with `marker` in their command line, such as a subprocess the `starts-subprocess.ts` fixture started */
+const markedPids = (marker: string) =>
+  new Promise<number[]>((resolve) => {
+    execFile('pgrep', ['-f', marker], (_, stdout) => resolve(stdout.split('\n').filter(Boolean).map(Number)));
+  });
+
+const hasMarkedProcesses = async (marker: string) => (await markedPids(marker)).length > 0;
+
+/** A Notification URL for `starts-subprocess.ts`, with a fresh marker for the subprocess it starts */
+function subprocessScript(...flags: ('inherit' | 'hang')[]) {
+  const marker = `lookout-test-subprocess-${randomUUID()}`;
+  const url = new URL('https://example.com/');
+  url.searchParams.set('marker', marker);
+  for (const flag of flags) {
+    url.searchParams.set(flag, '');
+  }
+  return { marker, notificationUrl: url.href };
+}
 
 const isAlive = (pid: number) => {
   try {
@@ -370,44 +390,46 @@ test('a Script whose process is killed by a signal is Errored, naming the signal
   });
 });
 
-test('a Script whose caller disconnects is stopped', { timeout: 30_000 }, async () => {
+test('a Script whose caller disconnects is stopped, with the subprocesses it started', { timeout: 30_000 }, async () => {
+  const { marker, notificationUrl } = subprocessScript('hang');
   const caller = new AbortController();
   const response = fetch(`${runnerUrl}/execute`, {
     method: 'POST',
     body: JSON.stringify({
-      source: await fixtureSource('hangs-on-page.ts'),
+      source: await fixtureSource('starts-subprocess.ts'),
       fileKind: 'ts',
-      context: { notificationUrl: `${pagesUrl}/in-stock` },
+      context: { notificationUrl },
       timeoutMs: 60_000,
     }),
     signal: caller.signal,
   });
-  await eventually(() => hasChildProcesses(runner.pid!));
+  await eventually(() => hasMarkedProcesses(marker));
 
   caller.abort();
 
   await expect(response).rejects.toThrow();
-  await eventually(async () => !await hasChildProcesses(runner.pid!));
+  await eventually(async () => !await hasChildProcesses(runner.pid!) && !await hasMarkedProcesses(marker));
 });
 
-test("a Script's process exits when the runner dies", { timeout: 30_000 }, async () => {
+test("a Script's process exits when the runner dies, with the subprocesses it started", { timeout: 30_000 }, async () => {
+  const { marker, notificationUrl } = subprocessScript('hang');
   const { runner: doomedRunner, url } = await startRunner({ HEADLESS: 'true' });
   const response = fetch(`${url}/execute`, {
     method: 'POST',
     body: JSON.stringify({
-      source: await fixtureSource('hangs-on-page.ts'),
+      source: await fixtureSource('starts-subprocess.ts'),
       fileKind: 'ts',
-      context: { notificationUrl: `${pagesUrl}/in-stock` },
+      context: { notificationUrl },
       timeoutMs: 60_000,
     }),
   });
-  await eventually(() => hasChildProcesses(doomedRunner.pid!));
+  await eventually(() => hasMarkedProcesses(marker));
   const scriptPids = await childPids(doomedRunner.pid!);
 
   doomedRunner.kill('SIGKILL');
 
   await expect(response).rejects.toThrow();
-  await eventually(() => scriptPids.every((pid) => !isAlive(pid)));
+  await eventually(async () => scriptPids.every((pid) => !isAlive(pid)) && !await hasMarkedProcesses(marker));
 });
 
 test('a Script that exits its process is Errored', { timeout: 30_000 }, async () => {
@@ -451,12 +473,24 @@ test('a Script that allocates without limit is Errored at its memory limit, and 
   expect(await execute('read-price.ts')).toMatchObject({ outcome: 'succeeded' });
 });
 
-test('a Script whose subprocess holds its output open still ends at its timeout', { timeout: 30_000 }, async () => {
-  const { durationMs, result } = await executeTimed('spawns-inheriting-subprocess.ts', { timeoutMs: 1_500 });
+test('a Script whose subprocess shares its output still ends at its timeout, and the subprocess with it', { timeout: 30_000 }, async () => {
+  const { marker, notificationUrl } = subprocessScript('inherit', 'hang');
+
+  const { durationMs, result } = await executeTimed('starts-subprocess.ts', { notificationUrl, timeoutMs: 1_500 });
 
   expect(result).toEqual({ outcome: 'errored', errorMessage: 'Script timed out after 1500 ms' });
   // The timeout, the grace period for a screenshot and a little more, but nowhere near the subprocess's 25 s
   expect(durationMs).toBeLessThan(10_000);
+  await eventually(async () => !await hasMarkedProcesses(marker));
+});
+
+test('a subprocess a Script leaves running is killed when its Run ends', { timeout: 30_000 }, async () => {
+  const { notificationUrl } = subprocessScript();
+
+  const result = await execute('starts-subprocess.ts', { notificationUrl });
+
+  expect(result).toMatchObject({ outcome: 'succeeded', content: expect.stringMatching(/^\d+$/) as unknown });
+  await eventually(() => !isAlive(Number(result['content'])));
 });
 
 test("a Script that only writes V8's out-of-memory message isn't taken to have run out of memory", { timeout: 30_000 }, async () => {

@@ -139,10 +139,26 @@ function collectConsoleOutput(child: ChildProcess) {
 }
 
 /**
+ * Kills a Script's process and every process it started, such as Chromium or a subprocess of its own. They share
+ * the process group the Script's process leads, unless one has left it on purpose.
+ */
+function killProcessGroup(child: ChildProcess) {
+  if (child.pid === undefined) {
+    return;
+  }
+  try {
+    process.kill(-child.pid, 'SIGKILL');
+  } catch {
+    // Everything in the group has already gone
+  }
+}
+
+/**
  * Runs a Script's child process to completion, killing it when `signal` aborts or, after a grace period for a
  * screenshot, at the timeout. The process reports its result over IPC, so the Script's console output can't be
- * mistaken for it, and exits after reporting even if the Script left a handle open. Its temp files go in
- * `tempDirectory`, since a killed process can't clean up after itself.
+ * mistaken for it, and exits after reporting even if the Script left a handle open. Whichever way it ends,
+ * anything it started goes with it. Its temp files go in `tempDirectory`, since a killed process can't clean up
+ * after itself.
  */
 const runScriptProcess = (job: ScriptJob, timeoutMs: number, tempDirectory: string, signal: AbortSignal) =>
   new Promise<ScriptResult & { consoleOutput: string }>((resolve) => {
@@ -150,9 +166,15 @@ const runScriptProcess = (job: ScriptJob, timeoutMs: number, tempDirectory: stri
       execArgv: [`--max-old-space-size=${memoryLimitMb}`, ...permissionArgs(dirname(job.scriptPath), tempDirectory)],
       env: { ...process.env, TMPDIR: tempDirectory },
       stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
-      signal,
-      killSignal: 'SIGKILL',
+      // In a process group of its own, which everything it starts joins, so they can all be killed together
+      detached: true,
     });
+    const stop = () => killProcessGroup(child);
+    signal.addEventListener('abort', stop);
+    // A caller that went away before the process started won't abort again
+    if (signal.aborted) {
+      stop();
+    }
     const { consoleOutput, stderr } = collectConsoleOutput(child);
     let reported: ScriptResult | undefined;
     let failure: Error | undefined;
@@ -165,7 +187,7 @@ const runScriptProcess = (job: ScriptJob, timeoutMs: number, tempDirectory: stri
       if (child.connected) {
         child.send(timedOutMessage);
       }
-      killTimer = setTimeout(() => child.kill('SIGKILL'), timeoutGraceMs);
+      killTimer = setTimeout(stop, timeoutGraceMs);
     }, timeoutMs);
 
     child.on('message', (message) => {
@@ -178,13 +200,13 @@ const runScriptProcess = (job: ScriptJob, timeoutMs: number, tempDirectory: stri
         // Whatever the Script was doing, it ran past its timeout, so only the screenshot of where it got to counts
         const { screenshot } = message.result;
         timedOutScreenshot = screenshot === undefined ? {} : { screenshot };
-        child.kill('SIGKILL');
+        stop();
       }
     });
-    // Failing to spawn, to send the job, or being aborted: 'close' still follows, once the process is gone
+    // Failing to spawn or to send the job: 'close' still follows, once the process is gone
     child.on('error', (error) => {
       failure ??= error;
-      child.kill('SIGKILL');
+      stop();
     });
     /** Why a process that ended without reporting in time did so */
     const unreportedResult = (code: number | null, exitSignal: NodeJS.Signals | null) => {
@@ -201,6 +223,8 @@ const runScriptProcess = (job: ScriptJob, timeoutMs: number, tempDirectory: stri
       return erroredResult(`Script process ${ending} before reporting an outcome`);
     };
     child.once('exit', () => {
+      // Anything the Script left running, now that its Run is over
+      stop();
       clearTimeout(timer);
       clearTimeout(killTimer);
       drainTimer = setTimeout(() => {
@@ -213,6 +237,7 @@ const runScriptProcess = (job: ScriptJob, timeoutMs: number, tempDirectory: stri
       clearTimeout(timer);
       clearTimeout(killTimer);
       clearTimeout(drainTimer);
+      signal.removeEventListener('abort', stop);
       resolve({ ...(reported ?? unreportedResult(code, exitSignal)), consoleOutput: consoleOutput() });
     });
     child.send(job);
