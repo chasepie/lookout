@@ -14,8 +14,8 @@ Answers to the three questions in issue #2, from running code. The prototype and
 | 1. Does headless Browserless pass bot detection with `--disable-blink-features=AutomationControlled`? | **No.** browserscan says "Robot" because the user agent says `HeadlessChrome`. The flag itself works (`navigator.webdriver` is false). | Stay headless and override `userAgent` on each context, replacing `HeadlessChrome` with `Chrome`. That passes, and so does the Xvfb fallback. |
 | 2. Does the proxy fail closed when the VPN is down? | **Yes, for HTTP(S).** Every proxied request failed while the VPN was stopped, reconnecting or its container was down, and none went out over the home IP. **But WebRTC leaks the home IP** around the proxy. | Launch Browserless with `--webrtc-ip-handling-policy=disable_non_proxied_udp`. Set `HTTPPROXY_STEALTH=on`. |
 | 3a. Does the flag still hold in proxied contexts? | **Yes.** Same verdicts and fingerprints as direct. | Nothing. |
-| 3b. Does `PUT /v1/vpn/status` `stopped` then `running` change the exit IP? | **Yes.** 30 of 30 Rotations got a new IP, spread across 8–9 US cities. | Nothing. |
-| 3c. How long does a Rotation take? | **About 3.5–4.3 s** to a usable proxy when gluetun picks a live server. But **7 of the 37 server picks were dead**, and gluetun never leaves a dead server on its own. | Treat a Rotation as done only when `GET /v1/publicip/ip` returns an IP, and rotate again if it hasn't within about 15 s. Refresh gluetun's server list regularly. |
+| 3b. Does `PUT /v1/vpn/status` `stopped` then `running` change the exit IP? | **Yes.** 30 of 30 Rotations got a new IP, spread across 8–9 US cities. gluetun doesn't exclude the previous server, though, so a repeat is possible. | Complete a Rotation only on an IP different from the one before it. |
+| 3c. How long does a Rotation take? | **About 3.5–4.3 s** to a usable proxy when gluetun picks a live server. But **7 of the 37 server picks were dead**, and gluetun never leaves a dead server on its own. | Treat a Rotation as done only when `GET /v1/publicip/ip` returns a changed IP, and rotate again if it hasn't within about 15 s. Refresh gluetun's server list regularly. |
 
 ## 1. Bot detection
 
@@ -95,9 +95,11 @@ Evidence: [`q2-fail-closed.log`](https://github.com/chasepie/lookout/blob/protot
 - When gluetun picks a dead server, OpenVPN retries that same IP every ~85 s for as long as you let it. gluetun's "restart VPN on healthcheck failure" never fires, because the tunnel never came up. The same happens at container start ([`q3-gluetun-stuck-at-startup.log`](https://github.com/chasepie/lookout/blob/prototype/browser-and-vpn/prototype/browser-and-vpn/results/q3-gluetun-stuck-at-startup.log)).
 - Throughout, `GET /v1/vpn/status` says `running`. Only `GET /v1/publicip/ip` tells the truth: it returns `""` until the tunnel is up.
 - So the rotator must:
-  - wait for a non-empty public IP;
-  - rotate again if none arrives within about 15 s;
-  - do the same at startup.
+  - note the exit IP before stopping the VPN;
+  - wait for a public IP different from it;
+  - rotate again, with VPN Runs still paused, if the IP comes back unchanged or none arrives within about 15 s;
+  - at startup, where there is no previous IP, treat any IP as ready.
+- None of the 30 Rotations repeated an IP, but gluetun picks the next server at random from every matching server without excluding the current one (`internal/provider/utils/pick.go`), so a repeat is possible.
 - That also requires `GET /v1/publicip/ip` in the control-server role. A role scoped to the three routes worked: other routes, and a wrong key, both got 401.
 
 **Measurement artefact worth knowing about.** A first attempt probed from one long-lived page and measured 13–53 s Rotations ([`q3-rotation-shared-page.log`](https://github.com/chasepie/lookout/blob/prototype/browser-and-vpn/prototype/browser-and-vpn/results/q3-rotation-shared-page.log)). That page's requests queued behind CONNECTs it had abandoned while the tunnel was down, even after gluetun was serving. A browser context opened before a Rotation can stall like this afterwards. Lookout already waits for in-progress VPN Runs before rotating, and each Run gets a new browser, so it shouldn't hit this.
