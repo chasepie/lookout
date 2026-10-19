@@ -11,7 +11,9 @@ import {
   erroredResult,
   isReportFor,
   timedOutMessage,
+  timeoutGraceMs,
   type ProxySettings,
+  type Screenshot,
   type ScriptJob,
   type ScriptResult,
 } from './protocol.ts';
@@ -36,8 +38,11 @@ export interface ExecuteRequest {
   proxy?: ProxySettings;
 }
 
-/** The outcome, with what it took and what the Script wrote to stdout and stderr, for debugging */
-export type ExecuteResponse = ScriptResult & { durationMs: number; consoleOutput: string };
+/** What a Script's process left to debug it by: what it wrote to stdout and stderr and, unless it Succeeded, a screenshot */
+type DebugOutput = Screenshot & { consoleOutput: string };
+
+/** The outcome, with how long the execution took and what to debug it by */
+export type ExecuteResponse = ScriptResult & DebugOutput & { durationMs: number };
 
 const scriptProcessPath = fileURLToPath(new URL('./script-process.ts', import.meta.url));
 
@@ -74,25 +79,21 @@ const browsersDirectory = findBrowsersDirectory();
 
 /**
  * Node's permission model for a Script's process. It may read only its own directory, the runner's code and
- * packages, and the browsers, and write only to its temp directory. Starting processes is allowed only because
+ * packages, the browsers and the OS's name, and write only to its temp directory. Starting processes is allowed only because
  * Playwright starts Chromium as one. Node doesn't treat its permission model as a security boundary, and that
  * allowance in particular lets a Script get around the file limits; the runner's container is what contains a
  * Script (ADR-0003).
  */
 const permissionArgs = (scriptDirectory: string, tempDirectory: string) => [
   '--permission',
-  ...[scriptDirectory, runnerDirectory, packagesDirectory, browsersDirectory].map((path) => `--allow-fs-read=${path}`),
+  // On Linux, Playwright reads /etc/os-release to tell which build of Chromium the host needs
+  ...[scriptDirectory, runnerDirectory, packagesDirectory, browsersDirectory, '/etc/os-release']
+    .map((path) => `--allow-fs-read=${path}`),
   `--allow-fs-write=${tempDirectory}`,
   '--allow-child-process',
   // Node warns about that allowance on every start, which would end up in every Script's console output
   '--disable-warning=PERM0002',
 ];
-
-/**
- * How long a Script's process has, once it has run past its timeout, to report a screenshot of its page before it
- * is killed. A process whose Script blocks it can't, and is killed when this runs out.
- */
-const timeoutGraceMs = 5_000;
 
 /** How many characters of a Script's console output the runner keeps, so a Script that logs without end can't exhaust it */
 const maxConsoleOutputLength = 256 * 1024;
@@ -112,12 +113,20 @@ function textTail(maxLength: number) {
   return {
     append: (chunk: string) => {
       text += chunk;
-      if (text.length > maxLength) {
+      // Trimming only once there's twice too much, so heavy output isn't copied on every chunk
+      if (text.length > 2 * maxLength) {
         text = text.slice(-maxLength);
         cut = true;
       }
     },
-    text: () => (cut ? cutOutputMarker : '') + text,
+    text: () => {
+      if (!cut && text.length <= maxLength) {
+        return text;
+      }
+      const kept = text.slice(-maxLength);
+      // Without the second half of a character the cut went through, which on its own isn't valid text
+      return cutOutputMarker + (/^[\uDC00-\uDFFF]/.test(kept) ? kept.slice(1) : kept);
+    },
   };
 }
 
@@ -139,17 +148,35 @@ function collectConsoleOutput(child: ChildProcess) {
 }
 
 /**
- * Kills a Script's process and every process it started, such as Chromium or a subprocess of its own. They share
- * the process group the Script's process leads, unless one has left it on purpose.
+ * The runner's environment for a Script's process, with its temp files in `tempDirectory`. NODE_OPTIONS is left
+ * out: what it preloads, such as a debugger's bootloader, is the runner's, and the Script's process may not read it.
  */
-function killProcessGroup(child: ChildProcess) {
-  if (child.pid === undefined) {
-    return;
+function scriptEnvironment(tempDirectory: string) {
+  const environment: NodeJS.ProcessEnv = { ...process.env, TMPDIR: tempDirectory };
+  delete environment['NODE_OPTIONS'];
+  return environment;
+}
+
+/** How to stop each Script that is running */
+const runningScripts = new Set<() => void>();
+
+/**
+ * Stops every running Script, with everything it started. For the runner to call as it stops itself: the Scripts'
+ * processes lead process groups of their own, which a signal to the runner's group doesn't reach, and one whose
+ * Script blocks it can't notice the runner going.
+ */
+export function stopAllScripts() {
+  for (const stop of runningScripts) {
+    stop();
   }
+}
+
+/** Kills the process group `pid` leads, if it's still there */
+function killProcessGroup(pid: number) {
   try {
-    process.kill(-child.pid, 'SIGKILL');
+    process.kill(-pid, 'SIGKILL');
   } catch {
-    // Everything in the group has already gone
+    // Everything in the group has already gone, or, on Windows, there are no process groups
   }
 }
 
@@ -161,46 +188,65 @@ function killProcessGroup(child: ChildProcess) {
  * after itself.
  */
 const runScriptProcess = (job: ScriptJob, timeoutMs: number, tempDirectory: string, signal: AbortSignal) =>
-  new Promise<ScriptResult & { consoleOutput: string }>((resolve) => {
+  new Promise<ScriptResult & DebugOutput>((resolve) => {
     const child = fork(scriptProcessPath, {
       execArgv: [`--max-old-space-size=${memoryLimitMb}`, ...permissionArgs(dirname(job.scriptPath), tempDirectory)],
-      env: { ...process.env, TMPDIR: tempDirectory },
+      env: scriptEnvironment(tempDirectory),
       stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
       // In a process group of its own, which everything it starts joins, so they can all be killed together
       detached: true,
     });
-    const stop = () => killProcessGroup(child);
+    let browserPid: number | undefined;
+    /**
+     * Kills the Script's process and everything it started. Its subprocesses join the group it leads, unless one
+     * leaves on purpose, and Chromium leads a group of its own.
+     */
+    const stop = () => {
+      for (const pid of [child.pid, browserPid]) {
+        if (pid !== undefined) {
+          killProcessGroup(pid);
+        }
+      }
+      // Windows has no process groups, so there this at least kills the Script's own process
+      child.kill('SIGKILL');
+    };
+    runningScripts.add(stop);
     signal.addEventListener('abort', stop);
     // A caller that went away before the process started won't abort again
     if (signal.aborted) {
       stop();
     }
     const { consoleOutput, stderr } = collectConsoleOutput(child);
-    let reported: ScriptResult | undefined;
+    let outcome: ScriptResult | undefined;
+    let screenshot: Screenshot = {};
     let failure: Error | undefined;
     let timedOut = false;
-    let timedOutScreenshot: Pick<ScriptResult, 'screenshot'> = {};
     let killTimer: NodeJS.Timeout | undefined;
     let drainTimer: NodeJS.Timeout | undefined;
     const timer = setTimeout(() => {
-      timedOut = true;
-      if (child.connected) {
-        child.send(timedOutMessage);
+      // A Script with an outcome is only finishing up, and that outcome stands
+      if (!outcome) {
+        timedOut = true;
+        if (child.connected) {
+          child.send(timedOutMessage);
+        }
       }
       killTimer = setTimeout(stop, timeoutGraceMs);
     }, timeoutMs);
 
     child.on('message', (message) => {
-      if (reported || !isReportFor(job.token, message)) {
+      if (!isReportFor(job.token, message)) {
         return;
       }
-      if (!timedOut) {
-        reported = message.result;
-      } else {
-        // Whatever the Script was doing, it ran past its timeout, so only the screenshot of where it got to counts
-        const { screenshot } = message.result;
-        timedOutScreenshot = screenshot === undefined ? {} : { screenshot };
-        stop();
+      if (message.type === 'browser') {
+        browserPid = message.pid;
+      } else if (message.type === 'outcome') {
+        // One that comes after the timeout is too late, whatever it is
+        if (!timedOut) {
+          outcome ??= message.result;
+        }
+      } else if (message.screenshot !== undefined) {
+        screenshot = { screenshot: message.screenshot };
       }
     });
     // Failing to spawn or to send the job: 'close' still follows, once the process is gone
@@ -211,7 +257,7 @@ const runScriptProcess = (job: ScriptJob, timeoutMs: number, tempDirectory: stri
     /** Why a process that ended without reporting in time did so */
     const unreportedResult = (code: number | null, exitSignal: NodeJS.Signals | null) => {
       if (timedOut) {
-        return { ...erroredResult(`Script timed out after ${timeoutMs} ms`), ...timedOutScreenshot };
+        return erroredResult(`Script timed out after ${timeoutMs} ms`);
       }
       if (exitSignal === 'SIGABRT' && stderr().includes(outOfMemoryMessage)) {
         return erroredResult(`Script exceeded its memory limit of ${memoryLimitMb} MB`);
@@ -225,6 +271,9 @@ const runScriptProcess = (job: ScriptJob, timeoutMs: number, tempDirectory: stri
     child.once('exit', () => {
       // Anything the Script left running, now that its Run is over
       stop();
+      // Nothing is left to stop, and the process group's ID may soon be another's
+      signal.removeEventListener('abort', stop);
+      runningScripts.delete(stop);
       clearTimeout(timer);
       clearTimeout(killTimer);
       drainTimer = setTimeout(() => {
@@ -237,8 +286,8 @@ const runScriptProcess = (job: ScriptJob, timeoutMs: number, tempDirectory: stri
       clearTimeout(timer);
       clearTimeout(killTimer);
       clearTimeout(drainTimer);
-      signal.removeEventListener('abort', stop);
-      resolve({ ...(reported ?? unreportedResult(code, exitSignal)), consoleOutput: consoleOutput() });
+      const result = outcome ?? unreportedResult(code, exitSignal);
+      resolve({ ...result, ...(result.outcome !== 'succeeded' && screenshot), consoleOutput: consoleOutput() });
     });
     child.send(job);
   });

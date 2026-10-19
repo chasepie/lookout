@@ -8,16 +8,31 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
 import { chromium, type Page } from 'playwright';
 import { isObject, isOptionalString } from './guards.ts';
-import { erroredResult, timedOutMessage, type ScriptJob, type ScriptReport, type ScriptResult } from './protocol.ts';
+import {
+  erroredResult,
+  timedOutMessage,
+  type Screenshot,
+  type ScriptJob,
+  type ScriptReport,
+  type ScriptResult,
+} from './protocol.ts';
 
 // Held before the Script loads, so a Script that replaces process.send doesn't rewrite the report by accident.
 // Code in this process can still reach the channel some other way: these keep a Script from interfering by
 // mistake, they don't contain one, and needn't, since a Script decides its own outcome anyway.
 const sendReport = process.send?.bind(process);
 
+/** Chromium's process, once launched, which leads a process group of its own */
+let browserPid: number | undefined;
+
 // A Script that outlives the runner, such as one that never finishes, would otherwise run forever. This process
-// leads a process group, so this takes anything the Script started with it.
-process.on('disconnect', () => process.kill(-process.pid, 'SIGKILL'));
+// leads a process group, so killing it takes anything the Script started with it, and Chromium's goes first.
+process.on('disconnect', () => {
+  if (browserPid !== undefined) {
+    process.kill(-browserPid, 'SIGKILL');
+  }
+  process.kill(-process.pid, 'SIGKILL');
+});
 
 /**
  * An error the Script raised outside `run`'s own promise chain, from a timer, an event listener, or a promise it
@@ -82,14 +97,14 @@ async function loadScript(scriptPath: string): Promise<LookoutScript> {
 
 const errored = (error: unknown) => erroredResult(error instanceof Error ? error.message : String(error));
 
-/** Short enough to leave time to report within the runner's grace period, long beyond what a screenshot needs */
-const screenshotTimeoutMs = 3_000;
+/** Long beyond what a screenshot needs. With `flushTimeoutMs`, it fits well within the runner's `timeoutGraceMs`. */
+const screenshotTimeoutMs = 2_000;
 
 /**
  * A screenshot of the Script's page, to tell an "Access Denied" page from a changed selector. There's none if the
  * page can't take one, such as when the Script has closed it.
  */
-async function screenshotOf(page: Page): Promise<Pick<ScriptResult, 'screenshot'>> {
+async function screenshotOf(page: Page): Promise<Screenshot> {
   try {
     return { screenshot: (await page.screenshot({ timeout: screenshotTimeoutMs })).toString('base64') };
   } catch {
@@ -100,23 +115,43 @@ async function screenshotOf(page: Page): Promise<Pick<ScriptResult, 'screenshot'
 /** The Script's page, once it has one, so there's something to screenshot if it runs past its timeout */
 let scriptPage: Page | undefined;
 
-async function runJob(job: ScriptJob): Promise<ScriptResult> {
+let hasReportedOutcome = false;
+
+/** Reports the Script's outcome, only once, as soon as it has one */
+function reportOutcome(token: string, result: ScriptResult) {
+  if (!hasReportedOutcome) {
+    hasReportedOutcome = true;
+    sendReport?.({ token, type: 'outcome', result } satisfies ScriptReport);
+  }
+}
+
+/** Runs the job's Script, reporting its outcome, and resolves to a screenshot if the Run didn't Succeed */
+async function runJob(job: ScriptJob): Promise<Screenshot> {
   const script = await Promise.race([loadScript(job.scriptPath), backgroundError]);
-  const browser = await chromium.launch({
+  // Launched as a server, since only that tells which process is Chromium, for the runner to kill if need be
+  const browserServer = await chromium.launchServer({
     headless: job.headless,
     args: ['--disable-blink-features=AutomationControlled'],
   });
+  const { pid } = browserServer.process();
+  if (pid !== undefined) {
+    browserPid = pid;
+    sendReport?.({ token: job.token, type: 'browser', pid } satisfies ScriptReport);
+  }
   try {
+    const browser = await chromium.connect(browserServer.wsEndpoint());
     const browserContext = await browser.newContext(job.proxy && { proxy: job.proxy });
     const page = await browserContext.newPage();
     scriptPage = page;
     // Promise.try, so that a run that throws rather than rejecting is Errored with a screenshot too
     const running = Promise.try(() => script.run(page, job.context));
     const result = await Promise.race([running, backgroundError]).then(toResult).catch(errored);
-    return result.outcome === 'succeeded' ? result : { ...result, ...await screenshotOf(page) };
+    reportOutcome(job.token, result);
+    return result.outcome === 'succeeded' ? {} : await screenshotOf(page);
   } finally {
-    // Closing the browser closes its contexts. A failure to clean up must not replace the Script's own result
-    await browser.close().catch(() => undefined);
+    // Closing the server closes Chromium, and with it its contexts. A failure to clean up must not replace the
+    // Script's own result.
+    await browserServer.close().catch(() => undefined);
   }
 }
 
@@ -140,7 +175,7 @@ function toResult(outcome: unknown): ScriptResult {
 }
 
 /** Long enough to write out all the console output the runner keeps; a bound in case the Script broke the streams */
-const flushTimeoutMs = 2_000;
+const flushTimeoutMs = 1_000;
 
 /** Resolves once everything written to `stream` so far has been handed on */
 const flushed = (stream: NodeJS.WriteStream) =>
@@ -148,19 +183,21 @@ const flushed = (stream: NodeJS.WriteStream) =>
     stream.write('', () => resolve());
   });
 
-let hasReported = false;
+let hasFinished = false;
 
-/** Reports a result, only once, then exits, so a timer or socket the Script left open can't keep the process alive */
-async function report(token: string, result: ScriptResult) {
-  if (hasReported) {
+/**
+ * Sends the last report, only once, with the screenshot if there is one, then exits, so a timer or socket the
+ * Script left open can't keep the process alive
+ */
+async function finish(token: string, screenshot: Screenshot) {
+  if (hasFinished) {
     return;
   }
-  hasReported = true;
+  hasFinished = true;
   // Writes to a pipe are asynchronous, so exiting straight away could lose the end of the Script's output. This
-  // comes before the report, since the runner kills a process that reports after its timeout.
+  // comes before the report, since the runner may kill the process once it has it.
   await Promise.race([Promise.all([flushed(process.stdout), flushed(process.stderr)]), delay(flushTimeoutMs)]);
-  const message: ScriptReport = { token, result };
-  sendReport?.(message, () => process.exit());
+  sendReport?.({ token, type: 'finished', ...screenshot } satisfies ScriptReport, () => process.exit());
 }
 
 let jobToken: string | undefined;
@@ -171,11 +208,16 @@ process.on('message', (message: unknown) => {
   if (jobToken === undefined) {
     const job = message as ScriptJob;
     jobToken = job.token;
-    void runJob(job).catch(errored).then((result) => report(job.token, result));
+    void runJob(job)
+      .catch((error: unknown) => {
+        // Failing before the Script has a page, as when it can't be loaded, leaves nothing to screenshot
+        reportOutcome(job.token, errored(error));
+        return {};
+      })
+      .then((screenshot) => finish(job.token, screenshot));
   } else if (message === timedOutMessage) {
     // The runner words the timeout itself; all it needs from here is the screenshot
     const token = jobToken;
-    void (scriptPage ? screenshotOf(scriptPage) : Promise.resolve({}))
-      .then((screenshot) => report(token, { outcome: 'errored', ...screenshot }));
+    void (scriptPage ? screenshotOf(scriptPage) : Promise.resolve({})).then((screenshot) => finish(token, screenshot));
   }
 });

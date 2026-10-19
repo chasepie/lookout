@@ -74,6 +74,17 @@ async function eventually(check: () => boolean | Promise<boolean>, timeoutMs = 5
   }
 }
 
+/** The processes a Script's process started, such as Chromium, once it has started any */
+async function scriptSubprocesses(runnerPid: number) {
+  let found: number[] = [];
+  await eventually(async () => {
+    const [scriptPid] = await childPids(runnerPid);
+    found = scriptPid === undefined ? [] : await childPids(scriptPid);
+    return found.length > 0;
+  });
+  return found;
+}
+
 /** Starts a real runner process and resolves with its base URL once it is listening */
 async function startRunner(env: Record<string, string>) {
   const runner = spawn(process.execPath, [runnerPath], {
@@ -189,7 +200,7 @@ test('a Script that reports an anticipated failure is a Known failure with its d
 
 test.each([
   ['throws', 'throws.ts'],
-  ['throws and then breaks cleanup', 'breaks-cleanup-then-throws.ts'],
+  ['closes its browser and then throws', 'closes-browser-then-throws.ts'],
 ])('a Script that %s is Errored with its error message', { timeout: 30_000 }, async (_, fixture) => {
   const result = await execute(fixture);
 
@@ -290,6 +301,13 @@ test("a Script's console output is in the response, and does not affect its outc
   // stdout and stderr arrive separately, so their lines needn't be in the order the Script wrote them
   expect(consoleOutput).toContain('{"outcome":"errored","errorMessage":"not from the runner"}\n');
   expect(consoleOutput).toContain('more noise\n');
+});
+
+test("a Script's console output cut in the middle of a character doesn't keep half of it", { timeout: 30_000 }, async () => {
+  const { consoleOutput } = await executeTimed('logs-emoji.ts');
+
+  expect(consoleOutput.startsWith('[Earlier output was cut]\n😀')).toBe(true);
+  expect(consoleOutput.isWellFormed()).toBe(true);
 });
 
 test('a Script that fails straight after logging a lot still has the end of its output', { timeout: 30_000 }, async () => {
@@ -424,12 +442,52 @@ test("a Script's process exits when the runner dies, with the subprocesses it st
     }),
   });
   await eventually(() => hasMarkedProcesses(marker));
-  const scriptPids = await childPids(doomedRunner.pid!);
+  const scriptPids = [...await childPids(doomedRunner.pid!), ...await scriptSubprocesses(doomedRunner.pid!)];
 
   doomedRunner.kill('SIGKILL');
 
   await expect(response).rejects.toThrow();
   await eventually(async () => scriptPids.every((pid) => !isAlive(pid)) && !await hasMarkedProcesses(marker));
+});
+
+test("a runner whose own NODE_OPTIONS preload a file, as a debugger's do, still runs Scripts", { timeout: 30_000 }, async () => {
+  // Outside everything a Script's process may read
+  const directory = await mkdtemp(join(tmpdir(), 'lookout-preload-'));
+  const preloadPath = join(directory, 'preload.cjs');
+  await writeFile(preloadPath, '');
+  const { runner: debuggedRunner, url } = await startRunner({ HEADLESS: 'true', NODE_OPTIONS: `--require=${preloadPath}` });
+  try {
+    expect(await execute('read-price.ts', {}, url)).toEqual({ outcome: 'succeeded', content: '£20.00' });
+  } finally {
+    debuggedRunner.kill();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test.each(['SIGINT', 'SIGTERM'] as const)('a runner stopped by %s takes a Script that blocks its process with it', { timeout: 30_000 }, async (signal) => {
+  const { runner: stoppedRunner, url } = await startRunner({ HEADLESS: 'true' });
+  const response = fetch(`${url}/execute`, {
+    method: 'POST',
+    body: JSON.stringify({
+      source: await fixtureSource('blocks-event-loop.ts'),
+      fileKind: 'ts',
+      context: { notificationUrl: 'https://example.com/' },
+      timeoutMs: 60_000,
+    }),
+  });
+  const browserPids = await scriptSubprocesses(stoppedRunner.pid!);
+  const scriptPids = [...await childPids(stoppedRunner.pid!), ...browserPids];
+  try {
+    stoppedRunner.kill(signal);
+
+    await expect(response).rejects.toThrow();
+    await eventually(() => scriptPids.every((pid) => !isAlive(pid)));
+  } finally {
+    // A Script left spinning would otherwise do so forever
+    for (const pid of scriptPids.filter(isAlive)) {
+      process.kill(pid, 'SIGKILL');
+    }
+  }
 });
 
 test('a Script that exits its process is Errored', { timeout: 30_000 }, async () => {
@@ -448,6 +506,12 @@ test("a Script killed at its timeout leaves none of its browser's files behind",
   expect(await readdir(runnerTmpdir)).toEqual([]);
 });
 
+test('an outcome the Script reached before its timeout stands, even when screenshotting it runs past', { timeout: 30_000 }, async () => {
+  const result = await execute('hangs-renderer-then-fails.ts', { timeoutMs: 1_500 });
+
+  expect(result).toEqual({ outcome: 'knownFailure', details: 'Access Denied' });
+});
+
 test('a Script that runs past its timeout on a page comes with a screenshot of it', { timeout: 30_000 }, async () => {
   const { result, screenshot } = await executeTimed('hangs-on-page.ts', { timeoutMs: 2_000 });
 
@@ -455,10 +519,14 @@ test('a Script that runs past its timeout on a page comes with a screenshot of i
   expect(isPng(screenshot)).toBe(true);
 });
 
-test('a Script that blocks its process is killed at its timeout, and the runner carries on', { timeout: 30_000 }, async () => {
-  const { result, screenshot } = await executeTimed('blocks-event-loop.ts', { timeoutMs: 2_000 });
+test('a Script that blocks its process is killed at its timeout with its browser, and the runner carries on', { timeout: 30_000 }, async () => {
+  const response = executeTimed('blocks-event-loop.ts', { timeoutMs: 2_000 });
+  const browserPids = await scriptSubprocesses(runner.pid!);
+
+  const { result, screenshot } = await response;
 
   expect(result).toEqual({ outcome: 'errored', errorMessage: 'Script timed out after 2000 ms' });
+  expect(browserPids.filter(isAlive)).toEqual([]);
   // It can't take a screenshot when nothing else in its process can run
   expect(screenshot).toBeUndefined();
   expect(await hasChildProcesses(runner.pid!)).toBe(false);
