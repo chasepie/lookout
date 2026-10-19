@@ -2,6 +2,6 @@
 # Scoped to exactly the routes a VPN rotator needs; everything else should be 401.
 [[roles]]
 name = "lookout-rotator"
-routes = ["GET /v1/vpn/status", "PUT /v1/vpn/status", "GET /v1/publicip/ip"]
+routes = ["GET /v1/vpn/status", "PUT /v1/vpn/status", "GET /v1/publicip/ip", "GET /v1/updater/status", "PUT /v1/updater/status"]
 auth = "apikey"
 apikey = "prototype-only-not-a-secret"

@@ -24,9 +24,12 @@ services:
     environment:
       VPN_SERVICE_PROVIDER: private internet access
       SERVER_REGIONS: ${SERVER_REGIONS:-US East,US New York,US Florida,US California,US Chicago,US Texas,US Washington DC,US Atlanta}
-      # The server list bundled in v3.41.3 is from 2026-04-22 and many of its IPs are dead; refresh it daily
-      UPDATER_PERIOD: 24h
+      # The server list bundled in v3.41.3 is from 2026-04-22 and many of its IPs are dead. The wiki asks for
+      # no less than 360h, so PIA doesn't block the updater; refresh on demand via PUT /v1/updater/status too
+      UPDATER_PERIOD: ${UPDATER_PERIOD:-360h}
       OPENVPN_PROTOCOL: ${OPENVPN_PROTOCOL:-tcp}
+      # e.g. "--connect-retry-max 1 --connect-timeout 10" so OpenVPN exits on a dead TCP server and gluetun re-picks
+      OPENVPN_FLAGS: ${OPENVPN_FLAGS:-}
       HTTPPROXY: "on"
       HTTPPROXY_STEALTH: ${HTTPPROXY_STEALTH:-off}
       TZ: America/New_York

@@ -1,0 +1,24 @@
+# gluetun v3.41.3, OPENVPN_PROTOCOL=tcp, OPENVPN_FLAGS=--connect-retry-max 1 --connect-timeout 10, SERVER_REGIONS=US Texas, bundled server list (2026-04-22), 2026-10-18
+gluetun-1  | |       └── Flags: [--connect-retry-max 1 --connect-timeout 10]
+21:51:22-04:00 INFO [openvpn] Attempting to establish TCP connection with [AF_INET]156.146.39.20:8443
+21:51:32-04:00 INFO [openvpn] TCP: connect to [AF_INET]156.146.39.20:8443 failed: Operation timed out
+21:51:32-04:00 INFO [openvpn] SIGUSR1[connection failed(soft),connection-failed] received, process restarting
+21:51:42-04:00 INFO [openvpn] All connections have been connect-retry-max (1) times unsuccessful, exiting
+21:51:42-04:00 INFO [openvpn] Exiting due to fatal error
+21:51:42-04:00 ERROR [vpn] exit status 1
+21:51:42-04:00 INFO [vpn] retrying in 15s
+21:51:57-04:00 INFO [openvpn] Attempting to establish TCP connection with [AF_INET]156.146.39.91:8443
+21:52:07-04:00 INFO [openvpn] TCP: connect to [AF_INET]156.146.39.91:8443 failed: Operation timed out
+21:52:07-04:00 INFO [openvpn] SIGUSR1[connection failed(soft),connection-failed] received, process restarting
+21:52:17-04:00 INFO [openvpn] All connections have been connect-retry-max (1) times unsuccessful, exiting
+21:52:17-04:00 INFO [openvpn] Exiting due to fatal error
+21:52:17-04:00 ERROR [vpn] exit status 1
+21:52:17-04:00 INFO [vpn] retrying in 15s
+21:52:32-04:00 INFO [openvpn] Attempting to establish TCP connection with [AF_INET]156.146.39.162:8443
+21:52:42-04:00 INFO [openvpn] TCP: connect to [AF_INET]156.146.39.162:8443 failed: Operation timed out
+21:52:42-04:00 INFO [openvpn] SIGUSR1[connection failed(soft),connection-failed] received, process restarting
+21:52:52-04:00 INFO [openvpn] All connections have been connect-retry-max (1) times unsuccessful, exiting
+21:52:52-04:00 INFO [openvpn] Exiting due to fatal error
+21:52:52-04:00 ERROR [vpn] exit status 1
+21:52:52-04:00 INFO [vpn] retrying in 15s
+21:53:07-04:00 INFO [openvpn] Attempting to establish TCP connection with [AF_INET]156.146.39.95:8443

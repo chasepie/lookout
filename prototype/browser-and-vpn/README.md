@@ -15,7 +15,8 @@ Then, from this directory:
 
 ```sh
 docker compose up -d                                   # Browserless v2.57.1 + gluetun v3.41.3
-docker compose run --rm --no-deps gluetun update -enduser -providers "private internet access"   # refresh the server list
+# refresh the server list through the VPN once it is up (the `update` CLI instead runs outside the VPN)
+curl -X PUT -H 'X-API-Key: prototype-only-not-a-secret' -d '{"status":"running"}' 127.0.0.1:8000/v1/updater/status
 node prototype.ts bot                                  # Q1: every browser mode, direct
 node prototype.ts bot browserless-headless-ua          # Q1: one mode
 node prototype.ts load                                 # Q1: time to the load event per mode, and memory
@@ -27,9 +28,9 @@ node prototype.ts rotate 20                            # Q3: 20 Rotations, timed
 docker compose down -v
 ```
 
-gluetun can start on a dead server and never leave it. If `curl -H 'X-API-Key: prototype-only-not-a-secret' 127.0.0.1:8000/v1/publicip/ip` stays empty, `PUT /v1/vpn/status` `stopped` then `running` to re-roll.
+With its default TCP settings, gluetun can start on a dead server and never leave it; set `OPENVPN_FLAGS="--connect-retry-max 1 --connect-timeout 10"` (or use UDP) and it re-picks by itself. If `curl -H 'X-API-Key: prototype-only-not-a-secret' 127.0.0.1:8000/v1/publicip/ip` stays empty, `PUT /v1/vpn/status` `stopped` then `running` to re-roll.
 
-Override the compose defaults with `OPENVPN_PROTOCOL=udp`, `HTTPPROXY_STEALTH=on` or `SERVER_REGIONS=…` in the environment.
+Override the compose defaults with `OPENVPN_PROTOCOL=udp`, `OPENVPN_FLAGS=…`, `HTTPPROXY_STEALTH=on`, `UPDATER_PERIOD=…` or `SERVER_REGIONS=…` in the environment.
 
 ## Reading the results
 
@@ -37,3 +38,4 @@ Override the compose defaults with `OPENVPN_PROTOCOL=udp`, `HTTPPROXY_STEALTH=on
 - Direct pages can show the home location (Target's "Ship to <ZIP>"). Direct-mode retailer pages are therefore not screenshotted, and the committed logs had the ZIP, store and time zone replaced with `<home-zip>`, `<home-store>` and `<home-timezone>`.
 - `q3-rotation-shared-page.log` is a discarded measurement. It probed from one long-lived page, which queued behind CONNECTs it had abandoned while the tunnel was down, so its times are inflated. `q3-rotation.log` uses a fresh context per probe.
 - Screenshots were converted to 800 px wide JPEGs to keep the branch small.
+- `q3-dead-server-udp.log`, `q3-dead-server-tcp-flags.log`, `q3-updater-api.log` and `q3-rotation-tcp-flags.log` come from a second round, run after checking the findings against gluetun's wiki and v3.41.3 source.

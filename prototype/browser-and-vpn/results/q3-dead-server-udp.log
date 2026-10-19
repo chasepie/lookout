@@ -1,0 +1,10 @@
+# gluetun v3.41.3, OPENVPN_PROTOCOL=udp, SERVER_REGIONS=US Texas, bundled server list (2026-04-22), 2026-10-18
+21:48:38-04:00 INFO [openvpn] UDPv4 link remote: [AF_INET]156.146.39.3:8080
+21:49:38-04:00 WARN [openvpn] TLS Error: TLS key negotiation failed to occur within 60 seconds (check your network connectivity)
+21:49:38-04:00 INFO [openvpn] TLS Error: TLS handshake failed
+21:49:38-04:00 INFO [vpn] retrying in 15s
+21:49:53-04:00 INFO [openvpn] UDPv4 link remote: [AF_INET]181.215.182.27:8080
+21:50:53-04:00 WARN [openvpn] TLS Error: TLS key negotiation failed to occur within 60 seconds (check your network connectivity)
+21:50:53-04:00 INFO [openvpn] TLS Error: TLS handshake failed
+21:50:53-04:00 INFO [vpn] retrying in 15s
+21:51:09-04:00 INFO [openvpn] UDPv4 link remote: [AF_INET]156.146.39.167:8080

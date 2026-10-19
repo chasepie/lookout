@@ -1,0 +1,24 @@
+# gluetun v3.41.3, OPENVPN_PROTOCOL=tcp, OPENVPN_FLAGS=--connect-retry-max 1 --connect-timeout 10, default US SERVER_REGIONS, fresh volume (bundled list), 2026-10-18
+## Startup: no rotator involved
+21:54:05-04:00 INFO [openvpn] Attempting to establish TCP connection with [AF_INET]212.32.49.154:8443
+21:54:15-04:00 INFO [openvpn] TCP: connect to [AF_INET]212.32.49.154:8443 failed: Operation timed out
+21:54:25-04:00 INFO [vpn] retrying in 15s
+21:54:40-04:00 INFO [openvpn] Attempting to establish TCP connection with [AF_INET]181.214.165.172:8443
+21:54:50-04:00 INFO [openvpn] TCP: connect to [AF_INET]181.214.165.172:8443 failed: Operation timed out
+21:55:00-04:00 INFO [vpn] retrying in 15s
+21:55:15-04:00 INFO [openvpn] Attempting to establish TCP connection with [AF_INET]212.56.53.31:8443
+21:55:16-04:00 INFO [openvpn] Initialization Sequence Completed
+21:55:18-04:00 INFO [ip getter] Public IP address is 212.56.53.31 (United States, California, Los Angeles - source: ipinfo+ifconfig.co+ip2location+cloudflare)
+
+## On-demand updater through the control API
+GET /v1/updater/status -> {"status":"stopped"}
+PUT /v1/updater/status {"status":"running"} -> {"outcome":"running"}
+GET /v1/updater/status after ~62 s -> {"status":"completed"}
+/gluetun/servers.json PIA timestamp before: 2026-04-22T12:27:30Z (bundled); after: 2026-10-19T01:56:20Z, 504 servers
+
+## Did gluetun pick from the refreshed list without a restart?
+Of the 16 distinct server IPs gluetun attempted in this container (startup, then 10 Rotations in q3-rotation-tcp-flags.log):
+- 3 exist only in the bundled list: the three startup picks, made before the update;
+- 11 exist only in the refreshed list: every pick after the update;
+- 2 are in both.
+So the update applied to the next pick, with no restart.
