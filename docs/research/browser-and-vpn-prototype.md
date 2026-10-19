@@ -11,11 +11,11 @@ Answers to the three questions in issue #2, from running code. The prototype and
 
 | Question | Answer | What Lookout should do |
 |---|---|---|
-| 1. Does headless Browserless pass bot detection with `--disable-blink-features=AutomationControlled`? | **No.** browserscan says "Robot" because the user agent says `HeadlessChrome`. The flag itself works (`navigator.webdriver` is false). | Stay headless and override `userAgent` on each context, replacing `HeadlessChrome` with `Chrome`. That passes, and so does the Xvfb fallback. |
-| 2. Does the proxy fail closed when the VPN is down? | **Yes, for HTTP(S).** Every proxied request failed while the VPN was stopped, reconnecting or its container was down, and none went out over the home IP. **But WebRTC leaks the home IP** around the proxy. | Launch Browserless with `--webrtc-ip-handling-policy=disable_non_proxied_udp`. Set `HTTPPROXY_STEALTH=on`. |
+| 1. Does headless Browserless pass bot detection with `--disable-blink-features=AutomationControlled`? | **No.** browserscan says "Robot" because the user agent says `HeadlessChrome`. The flag itself works (`navigator.webdriver` is false). | Stay headless and override `userAgent` on each context, replacing `HeadlessChrome` with `Chrome`. That passes browserscan, and so does the Xvfb fallback. |
+| 2. Does the proxy fail closed when the VPN is down? | **Yes, for HTTP(S).** Every proxied request failed while the VPN was stopped, reconnecting or its container was down, and none went out over the home IP. **But WebRTC leaks the home IP** around the proxy. | Have the runner pass `--webrtc-ip-handling-policy=disable_non_proxied_udp` in every connection's launch options. Set `HTTPPROXY_STEALTH=on`. |
 | 3a. Does the flag still hold in proxied contexts? | **Yes.** Same verdicts and fingerprints as direct. | Nothing. |
-| 3b. Does `PUT /v1/vpn/status` `stopped` then `running` change the exit IP? | **Yes.** 30 of 30 Rotations got a new IP, spread across 8–9 US cities. gluetun doesn't exclude the previous server, though, so a repeat is possible. | Complete a Rotation only on an IP different from the one before it. |
-| 3c. How long does a Rotation take? | **About 3.5–4.3 s** to a usable proxy when gluetun picks a live server. But **7 of the 37 server picks were dead**, and gluetun never leaves a dead server on its own. | Treat a Rotation as done only when `GET /v1/publicip/ip` returns a changed IP, and rotate again if it hasn't within about 15 s. Refresh gluetun's server list regularly. |
+| 3b. Does `PUT /v1/vpn/status` `stopped` then `running` change the exit IP? | **Yes.** 30 of 30 Rotations got a new IP, spread across 8–9 US cities. gluetun doesn't exclude the previous server, though, so a repeat is possible. | Complete a Rotation only on an IP different from the one noted before its first attempt. |
+| 3c. How long does a Rotation take? | **Under about 4 s** to a usable proxy when gluetun picks a live server (0.2–4.3 s measured, in 3 s probe steps). But **7 of the 37 server picks were dead**, and gluetun never leaves a dead server on its own. | Treat a Rotation as done only when the exit IP has changed, and make another attempt if it hasn't within about 15 s. Refresh gluetun's server list at install and regularly. |
 
 ## 1. Bot detection
 
@@ -33,6 +33,7 @@ Each Browserless mode was tested against [browserscan.net/bot-detection](https:/
 - **Retailers:** none of the 50 homepage loads was blocked, in any mode, direct or proxied, even without the flag. Blocked means status ≥ 400 or a block page ("Access Denied", "Robot or human?", a CAPTCHA). Homepages are a weak test, though. Product pages, and repeated visits on a schedule, were not tried.
 - **Best Buy tarpits `HeadlessChrome`.** Its page took 48.7 s to fire `load` in plain headless, but 1.6 s with the user-agent override and 1.7 s headful. `load` is what `page.goto` waits for by default, so a Script would have hit timeouts in plain headless. The other four sites took 0.3–2.8 s in every mode. Evidence: [`q1-load.log`](https://github.com/chasepie/lookout/blob/prototype/browser-and-vpn/prototype/browser-and-vpn/results/q1-load.log).
 - **Memory** was about the same headless and headful: 0.8–1.7 GiB for the Browserless container, measured after each page load with one page open at a time (same log). It doesn't decide between them.
+- **Untested reach:** only the page's `navigator.userAgent` was checked. A per-context override may not reach service or shared workers, where `HeadlessChrome` could still show. A browser-wide `--user-agent` launch argument, passed like the WebRTC flag, would cover them too.
 - **The user-agent override must track the browser.** Build it from `browser.version()`'s major version, or the user agent and the client hints (`Chromium 156`) will disagree after a Browserless upgrade.
 - **Fingerprint gaps browserscan did not flag:** every Browserless mode reports `Linux x86_64`, a SwiftShader WebGL renderer, and time zone `America/Los_Angeles` whatever the exit IP. gluetun's `GET /v1/publicip/ip` returns the exit's `timezone`, so a VPN Run could set the context's `timezoneId` to match. This was not tested.
 
@@ -51,7 +52,7 @@ Evidence: [`q2-fail-closed.log`](https://github.com/chasepie/lookout/blob/protot
 - **Why it fails closed:** gluetun's firewall keeps `OUTPUT DROP` and allows only the chosen VPN server on `eth0` while the tunnel is down. Requests therefore hang until they time out, rather than erroring fast.
 - A Run during an outage would hit its timeout and record as Errored. The ticket's fallback, refusing to start VPN Runs unless the rotator reports the VPN connected, is still worth having, but for availability rather than safety.
 
-**WebRTC leaks the home IP around the HTTP proxy.** STUN runs over UDP, which an HTTP proxy doesn't carry, so the browser's own address shows up as a server-reflexive candidate. Evidence: [`q2-webrtc.log`](https://github.com/chasepie/lookout/blob/prototype/browser-and-vpn/prototype/browser-and-vpn/results/q2-webrtc.log) and [`q2-webrtc-repeat.log`](https://github.com/chasepie/lookout/blob/prototype/browser-and-vpn/prototype/browser-and-vpn/results/q2-webrtc-repeat.log) (four runs in all), plus browserscan's WebRTC leak test in [`q2-webrtc-*.jpg`](https://github.com/chasepie/lookout/tree/prototype/browser-and-vpn/prototype/browser-and-vpn/results).
+**WebRTC leaks the home IP around the HTTP proxy.** STUN runs over UDP, which an HTTP proxy doesn't carry, so the browser's own address shows up as a server-reflexive candidate. Evidence: [`q2-webrtc.log`](https://github.com/chasepie/lookout/blob/prototype/browser-and-vpn/prototype/browser-and-vpn/results/q2-webrtc.log) [`q2-webrtc-repeat.log`](https://github.com/chasepie/lookout/blob/prototype/browser-and-vpn/prototype/browser-and-vpn/results/q2-webrtc-repeat.log) and the end of [`q2-fail-closed.log`](https://github.com/chasepie/lookout/blob/prototype/browser-and-vpn/prototype/browser-and-vpn/results/q2-fail-closed.log) (four runs in all), plus browserscan's WebRTC leak test in [`q2-webrtc-*.jpg`](https://github.com/chasepie/lookout/tree/prototype/browser-and-vpn/prototype/browser-and-vpn/results).
 
 | Variant | Home IP exposed via STUN |
 |---|---|
@@ -74,7 +75,7 @@ Evidence: [`q2-fail-closed.log`](https://github.com/chasepie/lookout/blob/protot
 
 **A Canadian exit changed what retailers served.** Through Montréal, Best Buy showed its country picker and Nike served Nike CA. Mixing countries in `SERVER_REGIONS` would therefore make a Watch's content change on Rotation, which Lookout would report as a false Change. The regions are now kept to the US (decided 2026-10-18).
 
-**Rotations, with US regions** (East, New York, Florida, California, Chicago, Texas, Washington DC and Atlanta). Each Rotation was `PUT stopped` then `PUT running`. "Usable" means a request through the proxy succeeded from a fresh browser context. Evidence: [`q3-rotation.log`](https://github.com/chasepie/lookout/blob/prototype/browser-and-vpn/prototype/browser-and-vpn/results/q3-rotation.log) and [`q3-rotation-udp.log`](https://github.com/chasepie/lookout/blob/prototype/browser-and-vpn/prototype/browser-and-vpn/results/q3-rotation-udp.log).
+**Rotations, with US regions** (East, New York, Florida, California, Chicago, Texas, Washington DC and Atlanta). Each attempt was `PUT stopped` then `PUT running`, and a Rotation took as many attempts as it needed to reach a live server. "Usable" means a request through the proxy succeeded from a fresh browser context. Evidence: [`q3-rotation.log`](https://github.com/chasepie/lookout/blob/prototype/browser-and-vpn/prototype/browser-and-vpn/results/q3-rotation.log) and [`q3-rotation-udp.log`](https://github.com/chasepie/lookout/blob/prototype/browser-and-vpn/prototype/browser-and-vpn/results/q3-rotation-udp.log).
 
 | | OpenVPN TCP | OpenVPN UDP |
 |---|---|---|
@@ -82,8 +83,8 @@ Evidence: [`q2-fail-closed.log`](https://github.com/chasepie/lookout/blob/protot
 | New exit IP each time | 20 / 20 | 10 / 10 |
 | Distinct cities | 8 | 8 |
 | Usable, median | 3.7 s | 3.5 s |
-| Usable, max | 33 s (two retries) | 17 s (one retry) |
-| Needed another Rotation (dead server) | 5 | 1 |
+| Usable, max | 33 s (three attempts) | 17 s (two attempts) |
+| Needed more than one attempt (dead server) | 5 | 1 |
 
 - **Timing:** the probe times out after 3 s, so most medians are "the second attempt worked", and the real time is somewhat shorter. In gluetun's live log (not committed), the tunnel was up about 1 s after `running`, and its own public-IP lookup finished 1–3 s after that.
 - **Sameness:** IPs were never repeated, but cities were. gluetun picks a random server from all those matching `SERVER_REGIONS`, so regions with more servers come up more often.
@@ -91,18 +92,19 @@ Evidence: [`q2-fail-closed.log`](https://github.com/chasepie/lookout/blob/protot
 
 **Dead servers are the real problem.**
 - gluetun v3.41.3 bundles PIA server data dated 2026-04-22. From the home network, 437 of its 757 US OpenVPN-TCP IPs refused connections, including every IP for US Texas, Atlanta, Silicon Valley and West ([`q3-server-list-probe.txt`](https://github.com/chasepie/lookout/blob/prototype/browser-and-vpn/prototype/browser-and-vpn/results/q3-server-list-probe.txt)).
-- Refreshing the list (`gluetun update -enduser -providers "private internet access"`) still left 216 of 694 IPs (31%) dead. Every region had live servers, though. Only this manual refresh was tested. gluetun's periodic refresh (`UPDATER_PERIOD`) was configured, but no run lasted long enough to trigger it.
+- Refreshing the list (`gluetun update -enduser -providers "private internet access"`) still left 216 of 694 IPs (31%) dead. Every region had live servers, though. Only this manual refresh was tested. gluetun's periodic refresh (`UPDATER_PERIOD`) was configured, but no run lasted long enough to trigger it. It first runs only after a full period, so a fresh install picks from the bundled list until then unless the list is refreshed at install.
 - When gluetun picks a dead server, OpenVPN retries that same IP every ~85 s for as long as you let it. gluetun's "restart VPN on healthcheck failure" never fires, because the tunnel never came up. The same happens at container start ([`q3-gluetun-stuck-at-startup.log`](https://github.com/chasepie/lookout/blob/prototype/browser-and-vpn/prototype/browser-and-vpn/results/q3-gluetun-stuck-at-startup.log)).
 - Throughout, `GET /v1/vpn/status` says `running`. Only `GET /v1/publicip/ip` tells the truth: it returns `""` until the tunnel is up.
-- So the rotator must:
-  - note the exit IP before stopping the VPN;
-  - wait for a public IP different from it;
-  - rotate again, with VPN Runs still paused, if the IP comes back unchanged or none arrives within about 15 s;
-  - at startup, where there is no previous IP, treat any IP as ready.
+- So a Rotation is one or more attempts, and the rotator must:
+  - note the exit IP before the first attempt, and keep it for every attempt in that Rotation. Re-noting it per attempt would record `""` after a dead server and let the original exit back in;
+  - wait for an exit IP different from it;
+  - make another attempt, with VPN Runs still paused, if the IP comes back unchanged or none arrives within about 15 s;
+  - at startup, where there is no noted IP, treat any IP as ready, but still make an attempt if none arrives within about 15 s of gluetun starting.
+- `/v1/publicip/ip` depends on gluetun's own lookup through third-party services (ipinfo, ifconfig.co and others). If that lookup fails while the tunnel works, the rotator would keep making attempts, so an IP fetched through the proxy should count too.
 - None of the 30 Rotations repeated an IP, but gluetun picks the next server at random from every matching server without excluding the current one (`internal/provider/utils/pick.go`), so a repeat is possible.
 - That also requires `GET /v1/publicip/ip` in the control-server role. A role scoped to the three routes worked: other routes, and a wrong key, both got 401.
 
-**Measurement artefact worth knowing about.** A first attempt probed from one long-lived page and measured 13–53 s Rotations ([`q3-rotation-shared-page.log`](https://github.com/chasepie/lookout/blob/prototype/browser-and-vpn/prototype/browser-and-vpn/results/q3-rotation-shared-page.log)). That page's requests queued behind CONNECTs it had abandoned while the tunnel was down, even after gluetun was serving. A browser context opened before a Rotation can stall like this afterwards. Lookout already waits for in-progress VPN Runs before rotating, and each Run gets a new browser, so it shouldn't hit this.
+**Measurement artefact worth knowing about.** A first attempt probed from one long-lived page and measured 13–53 s Rotations ([`q3-rotation-shared-page.log`](https://github.com/chasepie/lookout/blob/prototype/browser-and-vpn/prototype/browser-and-vpn/results/q3-rotation-shared-page.log)). That page's requests queued behind CONNECTs it had abandoned while the tunnel was down, even after gluetun was serving. A browser context opened before a Rotation can stall like this afterwards. Lookout already waits for in-progress VPN Runs before rotating, and each Run gets a new browser, so Runs shouldn't hit this. Test runs aren't drained, though, so a VPN Test run that spans a Rotation could.
 
 ## Other observations
 

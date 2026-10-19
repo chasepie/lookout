@@ -12,10 +12,16 @@ VPN Runs go through gluetun's HTTP proxy, set on each Playwright browser context
 
 - Swapping PIA for another VPN provider is a gluetun configuration change, not a Lookout code change.
 - Lookout talks to the VPN through a small rotator interface, so gluetun itself can also be replaced.
-- An HTTP proxy carries only HTTP, and WebRTC's STUN goes around it and reveals the home IP. Browserless therefore launches every browser with `--webrtc-ip-handling-policy=disable_non_proxied_udp`, including for direct Runs. The similarly named `--force-webrtc-ip-handling-policy` does not work.
+- An HTTP proxy carries only HTTP, and WebRTC's STUN goes around it and reveals the home IP. The runner therefore passes `--webrtc-ip-handling-policy=disable_non_proxied_udp` in the launch options of every Browserless connection, including direct Runs and Test runs. The similarly named `--force-webrtc-ip-handling-policy` does not work.
 - gluetun runs its proxy with `HTTPPROXY_STEALTH=on`. Otherwise it forwards the Browserless container's address on plain-HTTP requests.
 - Regions are kept to the US. A non-US exit changes what retailers serve (a country picker, another storefront), which would show up as false Changes.
-- gluetun reports `running` even while it is stuck retrying a dead server, and it never moves off a dead server by itself. The rotator notes the current exit IP before stopping the VPN. A Rotation is complete only when `GET /v1/publicip/ip` returns an IP different from that one. gluetun picks servers at random without excluding the last one, so the same exit can come back. If the IP is unchanged, or none has arrived within about 15 s, the rotator rotates again, and VPN Runs stay paused meanwhile. At startup there is no previous IP, so any IP means the VPN is ready.
-- gluetun's bundled PIA server list goes stale, so gluetun refreshes it periodically (`UPDATER_PERIOD`) into a persistent `/gluetun` volume.
+- gluetun reports `running` even while it is stuck retrying a dead server, and it never moves off a dead server by itself. So a Rotation is one or more attempts, each a `stopped` then `running`:
+  - Before the first attempt, the rotator notes the current exit IP and keeps it for the whole Rotation.
+  - The Rotation is complete only when the exit IP differs from that noted IP. gluetun picks servers at random without excluding the last one, so the same exit can come back.
+  - The exit IP is what `GET /v1/publicip/ip` returns. If gluetun's own lookup fails, an IP fetched through the proxy counts too.
+  - If the IP is unchanged, or none arrives within about 15 s, the rotator makes another attempt while VPN Runs stay paused. Attempts don't count against the early-Rotation limit.
+  - At startup there is no noted IP, so any exit IP means the VPN is ready. If none arrives within about 15 s of gluetun starting, the rotator makes an attempt there too.
+  - The control-server role covers `GET /v1/vpn/status`, `PUT /v1/vpn/status` and `GET /v1/publicip/ip`.
+- gluetun's bundled PIA server list goes stale. It is refreshed once at install (`gluetun update`), because the periodic refresh (`UPDATER_PERIOD`) first runs only after a full period. After that it refreshes periodically into a persistent `/gluetun` volume.
 
 Sources: [docs/research/script-execution-and-vpn.md](../research/script-execution-and-vpn.md), [docs/research/browser-and-vpn-prototype.md](../research/browser-and-vpn-prototype.md)
