@@ -4,17 +4,20 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { ProxySettings, ScriptJob, ScriptResult } from './script-process.ts';
+import { isScriptResult, type ProxySettings, type ScriptJob, type ScriptResult } from './protocol.ts';
 
 export interface RunnerConfig {
   /** Whether the launched Chromium is headless; non-headless is for local debugging */
   headless: boolean;
 }
 
+/** The language a Script is written in */
+export type FileKind = 'ts' | 'js';
+
 /** A request to execute one Script */
 export interface ExecuteRequest {
   source: string;
-  fileKind: 'ts' | 'js';
+  fileKind: FileKind;
   context: ScriptContext;
   timeoutMs: number;
   /** The proxy a VPN Run's browser goes through; direct Runs have none */
@@ -40,8 +43,10 @@ const runScriptProcess = (job: ScriptJob, timeoutMs: number) =>
       child.kill('SIGKILL');
     }, timeoutMs);
 
-    child.once('message', (message) => {
-      reported = message as ScriptResult;
+    child.on('message', (message) => {
+      if (!reported && isScriptResult(message)) {
+        reported = message;
+      }
     });
     child.once('error', (error) => {
       clearTimeout(timer);
@@ -54,7 +59,10 @@ const runScriptProcess = (job: ScriptJob, timeoutMs: number) =>
       } else if (timedOut) {
         resolve({ outcome: 'errored', errorMessage: `Script timed out after ${timeoutMs} ms` });
       } else {
-        resolve({ outcome: 'errored', errorMessage: `Script process exited with code ${code} before reporting an outcome` });
+        resolve({
+          outcome: 'errored',
+          errorMessage: `Script process exited with code ${code} before reporting an outcome`,
+        });
       }
     });
     child.send(job);

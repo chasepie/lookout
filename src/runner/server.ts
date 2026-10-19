@@ -26,9 +26,9 @@ function requireString(value: unknown, name: string): string {
   return value;
 }
 
-/** Copies an optional string field across only when it's present, as `exactOptionalPropertyTypes` requires */
-const optionalString = (body: Record<string, unknown>, key: string, prefix: string) =>
-  body[key] === undefined ? {} : { [key]: requireString(body[key], `${prefix}.${key}`) };
+/** Copies an optional proxy field across only when it's present, as `exactOptionalPropertyTypes` requires */
+const optionalProxyField = (proxy: Record<string, unknown>, key: 'username' | 'password' | 'bypass') =>
+  proxy[key] === undefined ? {} : { [key]: requireString(proxy[key], `proxy.${key}`) };
 
 function parseExecuteRequest(body: unknown): ExecuteRequest {
   if (!isObject(body)) {
@@ -47,14 +47,16 @@ function parseExecuteRequest(body: unknown): ExecuteRequest {
   return {
     source: requireString(source, 'source'),
     fileKind,
-    context: { notificationUrl: requireString(isObject(context) ? context['notificationUrl'] : undefined, 'context.notificationUrl') },
+    context: {
+      notificationUrl: requireString(isObject(context) ? context['notificationUrl'] : undefined, 'context.notificationUrl'),
+    },
     timeoutMs,
     ...(proxy && {
       proxy: {
         server: requireString(proxy['server'], 'proxy.server'),
-        ...optionalString(proxy, 'username', 'proxy'),
-        ...optionalString(proxy, 'password', 'proxy'),
-        ...optionalString(proxy, 'bypass', 'proxy'),
+        ...optionalProxyField(proxy, 'username'),
+        ...optionalProxyField(proxy, 'password'),
+        ...optionalProxyField(proxy, 'bypass'),
       },
     }),
   };

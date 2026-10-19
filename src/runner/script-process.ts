@@ -2,27 +2,12 @@
  * The child process that runs one Script. The runner sends it a job over IPC,
  * and it reports the Script's result back over IPC rather than stdout, which the Script shares.
  */
-import type { LookoutScript, LookoutScriptExport, ScriptContext, ScriptOutcome } from '@chasepie/lookout-scripting';
+import type { LookoutScript, LookoutScriptExport, ScriptOutcome } from '@chasepie/lookout-scripting';
 import { once } from 'node:events';
 import { registerHooks } from 'node:module';
 import { pathToFileURL } from 'node:url';
-import { chromium, type BrowserContextOptions } from 'playwright';
-
-export type ProxySettings = NonNullable<BrowserContextOptions['proxy']>;
-
-export interface ScriptJob {
-  scriptPath: string;
-  context: ScriptContext;
-  headless: boolean;
-  proxy?: ProxySettings;
-}
-
-export interface ScriptResult {
-  outcome: 'succeeded' | 'knownFailure' | 'errored';
-  content?: string;
-  details?: string;
-  errorMessage?: string;
-}
+import { chromium } from 'playwright';
+import { isOptionalString, type ScriptJob, type ScriptResult } from './protocol.ts';
 
 // The Script's source sits in a temp directory with no node_modules, so resolve playwright from the runner's
 registerHooks({
@@ -80,8 +65,6 @@ async function runJob(job: ScriptJob): Promise<ScriptResult> {
     await browser.close().catch(() => undefined);
   }
 }
-
-const isOptionalString = (value: unknown) => value === undefined || typeof value === 'string';
 
 const isScriptOutcome = (value: unknown): value is ScriptOutcome =>
   typeof value === 'object' && value !== null

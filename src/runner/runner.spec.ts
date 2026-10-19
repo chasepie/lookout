@@ -5,6 +5,8 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import type { FileKind } from './execute.ts';
+import type { ProxySettings } from './protocol.ts';
 
 const runnerPath = fileURLToPath(new URL('./index.ts', import.meta.url));
 const fixtureSource = (name: string) =>
@@ -81,10 +83,10 @@ afterAll(() => {
 });
 
 interface ExecuteOptions {
-  fileKind?: 'ts' | 'js';
+  fileKind?: FileKind;
   notificationUrl?: string;
   timeoutMs?: number;
-  proxy?: { server: string; username?: string; password?: string };
+  proxy?: ProxySettings;
 }
 
 /** Executes a fixture Script through the runner's HTTP API, separating its duration from the rest of the response */
@@ -203,6 +205,12 @@ test("a Script's console output does not affect its outcome", { timeout: 30_000 
   expect(result).toMatchObject({ outcome: 'succeeded', content: 'done' });
 });
 
+test("a malformed result the Script sends on the runner's channel is ignored", { timeout: 30_000 }, async () => {
+  const result = await execute('sends-malformed-result.ts');
+
+  expect(result).toEqual({ outcome: 'succeeded', content: 'done' });
+});
+
 test('a Script that exits its process is Errored', { timeout: 30_000 }, async () => {
   const result = await execute('exits-process.ts');
 
@@ -227,7 +235,7 @@ test("a Script's browser goes through the proxy settings it's given", { timeout:
   expect(result).toMatchObject({ outcome: 'succeeded', content: 'http://shop.lookout.test/widget' });
 });
 
-test("the response reports how long the Script took", { timeout: 30_000 }, async () => {
+test('the response reports how long the Script took', { timeout: 30_000 }, async () => {
   const { durationMs, result } = await executeTimed('waits.ts');
 
   expect(result).toEqual({ outcome: 'succeeded' });
