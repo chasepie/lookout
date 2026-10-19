@@ -1,0 +1,110 @@
+/**
+ * The child process that runs one Script. The runner sends it a job over IPC,
+ * and it reports the Script's result back over IPC rather than stdout, which the Script shares.
+ */
+import type { LookoutScript, LookoutScriptExport, ScriptOutcome } from '@chasepie/lookout-scripting';
+import { once } from 'node:events';
+import { registerHooks } from 'node:module';
+import { pathToFileURL } from 'node:url';
+import { chromium } from 'playwright';
+import { isObject, isOptionalString } from './guards.ts';
+import { erroredResult, type ScriptJob, type ScriptReport, type ScriptResult } from './protocol.ts';
+
+// Held before the Script loads, so a Script that replaces process.send doesn't rewrite the report by accident.
+// Code in this process can still reach the channel some other way: these keep a Script from interfering by
+// mistake, they don't contain one, and needn't, since a Script decides its own outcome anyway.
+const sendReport = process.send?.bind(process);
+
+// A Script that outlives the runner, such as one that never finishes, would otherwise run forever
+process.on('disconnect', () => process.exit());
+
+/**
+ * An error the Script raised outside `run`'s own promise chain, from a timer, an event listener, or a promise it
+ * left unhandled. Racing `run` against this makes such an error the Script's outcome, rather than a crash that
+ * loses its message. Once `run` has settled, the race is over and later errors, such as a wait the Script left
+ * pending failing as the browser closes, are ignored.
+ */
+const backgroundError = new Promise<never>((_, reject) => {
+  process.on('uncaughtException', reject);
+  process.on('unhandledRejection', reject);
+});
+
+const isPackage = (specifier: string, name: string) => specifier === name || specifier.startsWith(`${name}/`);
+
+// The Script's source sits in a temp directory with no node_modules, so resolve playwright from the runner's.
+// The scripting package has only types, so an import from it that survives type stripping, such as
+// `import { type LookoutScript } from …`, gets an empty module.
+registerHooks({
+  resolve: (specifier, context, nextResolve) => {
+    if (isPackage(specifier, '@chasepie/lookout-scripting')) {
+      return { url: 'data:text/javascript,', shortCircuit: true };
+    }
+    return isPackage(specifier, 'playwright')
+      ? nextResolve(specifier, { ...context, parentURL: import.meta.url })
+      : nextResolve(specifier, context);
+  },
+});
+
+/** The class form of a script's default export, as the scripting contract defines it */
+type ScriptClass = Exclude<LookoutScriptExport, LookoutScript>;
+
+/** Whether a default export is a class; what it constructs is checked separately */
+const isScriptClass = (value: unknown): value is ScriptClass =>
+  typeof value === 'function' && /^class\b/.test(Function.prototype.toString.call(value));
+
+const isLookoutScript = (value: unknown): value is LookoutScript =>
+  isObject(value) && typeof value['run'] === 'function';
+
+/** Loads a script file, whose default export is a LookoutScript object or a class implementing one */
+async function loadScript(scriptPath: string): Promise<LookoutScript> {
+  const scriptModule = await import(pathToFileURL(scriptPath).href) as { default?: unknown };
+  const exported = scriptModule.default;
+  const script: unknown = isScriptClass(exported) ? new exported() : exported;
+
+  if (!isLookoutScript(script)) {
+    throw new Error('Script must default-export a LookoutScript object or a class implementing it');
+  }
+  return script;
+}
+
+const errored = (error: unknown) => erroredResult(error instanceof Error ? error.message : String(error));
+
+async function runJob(job: ScriptJob): Promise<ScriptResult> {
+  const script = await Promise.race([loadScript(job.scriptPath), backgroundError]);
+  const browser = await chromium.launch({
+    headless: job.headless,
+    args: ['--disable-blink-features=AutomationControlled'],
+  });
+  try {
+    const browserContext = await browser.newContext(job.proxy && { proxy: job.proxy });
+    return toResult(await Promise.race([script.run(await browserContext.newPage(), job.context), backgroundError]));
+  } finally {
+    // Closing the browser closes its contexts. A failure to clean up must not replace the Script's own result
+    await browser.close().catch(() => undefined);
+  }
+}
+
+const isScriptOutcome = (value: unknown): value is ScriptOutcome =>
+  isObject(value)
+  && typeof value['success'] === 'boolean'
+  && isOptionalString(value['content'])
+  && isOptionalString(value['details']);
+
+/** Maps what a Script's `run` resolved to onto a Run outcome */
+function toResult(outcome: unknown): ScriptResult {
+  if (!isScriptOutcome(outcome)) {
+    throw new Error('Script must resolve to a ScriptOutcome: { success: boolean, content?: string, details?: string }');
+  }
+  const { success, content, details } = outcome;
+  return {
+    outcome: success ? 'succeeded' : 'knownFailure',
+    ...(content !== undefined && { content }),
+    ...(details !== undefined && { details }),
+  };
+}
+
+const [job] = await once(process, 'message') as [ScriptJob];
+const result = await runJob(job).catch(errored);
+// Exit once the result is sent, so a timer or socket the Script left open can't keep the process alive
+const report: ScriptReport = { token: job.token, result };
+sendReport?.(report, () => process.exit());
