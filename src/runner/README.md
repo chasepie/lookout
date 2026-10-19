@@ -42,7 +42,7 @@ Runs one Script and responds once it has finished.
 | `timeoutMs` | 1 to 2147483647. The Script's process is killed at this point. |
 | `proxy` | Optional. The proxy for the Script's browser context, as Playwright's `proxy` option: `server`, and optionally `username`, `password` and `bypass`. VPN Runs set this, and direct Runs leave it out. |
 
-A malformed request gets a `400` with `{ "error": "<what is wrong>" }`.
+A malformed request gets a `400` with `{ "error": "<what is wrong>" }`. A failure inside the runner itself gets a `500` with `{ "error": "Internal runner error" }`, and any other route a `404`.
 
 Otherwise the response is a `200`, whatever the Script did:
 
@@ -84,7 +84,7 @@ execute.ts          write the source to a fresh temp directory
   script-process.ts   import the Script and check its default export
                       launch Chromium (--disable-blink-features=AutomationControlled)
                       run(page, context) in a new browser context, with the request's proxy
-                      check the outcome, close the context and browser
+                      check the outcome, close the browser (and with it the context)
                       report the result over IPC, then exit
 execute.ts          delete the temp directory → respond
 ```
@@ -107,5 +107,6 @@ npm test -w src/runner
 
 `runner.spec.ts` is Seam 2. It starts a real runner process with `HEADLESS=true`, serves its own pages and proxy from local servers, and posts the Scripts in `test/fixtures/` to `/execute`. No internet is needed.
 
-- **Visible-browser test:** this one starts a second runner without `HEADLESS`. It is skipped on Linux when there's no `DISPLAY`.
+- **Temp files:** the runner gets its own `TMPDIR`, so a test can check that nothing is left behind after an execution, even one killed at its timeout.
+- **Visible-browser test:** this one starts a second runner with `HEADLESS=false`. It is skipped on Linux when there's no `DISPLAY`.
 - **Fixtures:** the Scripts are TypeScript, except `read-price.js`, which checks that JavaScript Scripts work.
