@@ -6,6 +6,8 @@ export type ProxySettings = NonNullable<BrowserContextOptions['proxy']>;
 
 /** What the runner sends a child process: the Script to run and how to run it */
 export interface ScriptJob {
+  /** A secret for this execution, which the child's report must carry; see {@link ScriptReport} */
+  token: string;
   scriptPath: string;
   context: ScriptContext;
   headless: boolean;
@@ -20,17 +22,28 @@ export interface ScriptResult {
   errorMessage?: string;
 }
 
+/**
+ * What a child process sends when its Script has finished. The Script shares the process's IPC channel,
+ * so the runner accepts only a report carrying the job's token, which the Script never sees.
+ */
+export interface ScriptReport {
+  token: string;
+  result: ScriptResult;
+}
+
 const outcomes: readonly unknown[] = ['succeeded', 'knownFailure', 'errored'] satisfies ScriptResult['outcome'][];
 
 export const isOptionalString = (value: unknown) => value === undefined || typeof value === 'string';
 
-/**
- * Whether an IPC message is a well-formed result. The Script shares its process's IPC channel,
- * so the runner checks what arrives rather than trusting it.
- */
-export const isScriptResult = (message: unknown): message is ScriptResult =>
+const isScriptResult = (value: unknown): value is ScriptResult =>
+  typeof value === 'object' && value !== null
+  && 'outcome' in value && outcomes.includes(value.outcome)
+  && isOptionalString('content' in value ? value.content : undefined)
+  && isOptionalString('details' in value ? value.details : undefined)
+  && isOptionalString('errorMessage' in value ? value.errorMessage : undefined);
+
+/** Whether an IPC message is the report of the job with this token, rather than something the Script sent */
+export const isReportFor = (token: string, message: unknown): message is ScriptReport =>
   typeof message === 'object' && message !== null
-  && 'outcome' in message && outcomes.includes(message.outcome)
-  && isOptionalString('content' in message ? message.content : undefined)
-  && isOptionalString('details' in message ? message.details : undefined)
-  && isOptionalString('errorMessage' in message ? message.errorMessage : undefined);
+  && 'token' in message && message.token === token
+  && 'result' in message && isScriptResult(message.result);

@@ -30,6 +30,9 @@ function requireString(value: unknown, name: string): string {
 const optionalProxyField = (proxy: Record<string, unknown>, key: 'username' | 'password' | 'bypass') =>
   proxy[key] === undefined ? {} : { [key]: requireString(proxy[key], `proxy.${key}`) };
 
+/** The longest delay `setTimeout` honours; it fires longer ones after 1 ms */
+const maxTimeoutMs = 2_147_483_647;
+
 function parseExecuteRequest(body: unknown): ExecuteRequest {
   if (!isObject(body)) {
     throw new InvalidRequestError('Request body must be a JSON object');
@@ -38,8 +41,8 @@ function parseExecuteRequest(body: unknown): ExecuteRequest {
   if (fileKind !== 'ts' && fileKind !== 'js') {
     throw new InvalidRequestError("fileKind must be 'ts' or 'js'");
   }
-  if (typeof timeoutMs !== 'number' || !Number.isInteger(timeoutMs) || timeoutMs <= 0) {
-    throw new InvalidRequestError('timeoutMs must be a positive integer');
+  if (typeof timeoutMs !== 'number' || !Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > maxTimeoutMs) {
+    throw new InvalidRequestError(`timeoutMs must be an integer from 1 to ${maxTimeoutMs}`);
   }
   if (proxy !== undefined && !isObject(proxy)) {
     throw new InvalidRequestError('proxy must be an object');

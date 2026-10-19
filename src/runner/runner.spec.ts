@@ -1,8 +1,10 @@
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
-import { readFile } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import type { FileKind } from './execute.ts';
@@ -53,6 +55,8 @@ let proxyServer: Server;
 let proxyUrl: string;
 let runner: ChildProcess;
 let runnerUrl: string;
+/** The runner's temp directory, where every execution's files must be gone once it responds */
+let runnerTmpdir: string;
 
 beforeAll(async () => {
   pageServer = createServer((request, response) => {
@@ -73,13 +77,15 @@ beforeAll(async () => {
     response.end(`<h1>Proxied</h1><p class="price">${request.url}</p>`);
   });
   proxyUrl = await listen(proxyServer);
-  ({ runner, url: runnerUrl } = await startRunner({ HEADLESS: 'true' }));
+  runnerTmpdir = await mkdtemp(join(tmpdir(), 'lookout-runner-test-'));
+  ({ runner, url: runnerUrl } = await startRunner({ HEADLESS: 'true', TMPDIR: runnerTmpdir }));
 });
 
-afterAll(() => {
+afterAll(async () => {
   runner.kill();
   pageServer.close();
   proxyServer.close();
+  await rm(runnerTmpdir, { recursive: true, force: true });
 });
 
 interface ExecuteOptions {
@@ -211,6 +217,18 @@ test("a malformed result the Script sends on the runner's channel is ignored", {
   expect(result).toEqual({ outcome: 'succeeded', content: 'done' });
 });
 
+test("a well-formed result the Script sends on the runner's channel doesn't replace its outcome", { timeout: 30_000 }, async () => {
+  const result = await execute('sends-fake-result.ts', { notificationUrl: 'https://example.com/' });
+
+  expect(result).toEqual({ outcome: 'knownFailure', details: 'Access Denied' });
+});
+
+test("a well-formed result the Script sends on the runner's channel doesn't replace a timeout", { timeout: 30_000 }, async () => {
+  const result = await execute('sends-fake-result.ts', { notificationUrl: 'https://example.com/?hang', timeoutMs: 2_000 });
+
+  expect(result).toEqual({ outcome: 'errored', errorMessage: 'Script timed out after 2000 ms' });
+});
+
 test('a Script that exits its process is Errored', { timeout: 30_000 }, async () => {
   const result = await execute('exits-process.ts');
 
@@ -218,6 +236,13 @@ test('a Script that exits its process is Errored', { timeout: 30_000 }, async ()
     outcome: 'errored',
     errorMessage: 'Script process exited with code 3 before reporting an outcome',
   });
+});
+
+test("a Script killed at its timeout leaves none of its browser's files behind", { timeout: 30_000 }, async () => {
+  const result = await execute('hangs-on-page.ts', { timeoutMs: 2_000 });
+
+  expect(result).toEqual({ outcome: 'errored', errorMessage: 'Script timed out after 2000 ms' });
+  expect(await readdir(runnerTmpdir)).toEqual([]);
 });
 
 test('a Script that runs past its timeout is Errored', { timeout: 30_000 }, async () => {
@@ -282,7 +307,9 @@ test.each([
   ['a missing source', { ...validRequest, source: undefined }, 'source must be a string'],
   ['an unknown file kind', { ...validRequest, fileKind: 'py' }, "fileKind must be 'ts' or 'js'"],
   ['a missing Notification URL', { ...validRequest, context: {} }, 'context.notificationUrl must be a string'],
-  ['a non-positive timeout', { ...validRequest, timeoutMs: 0 }, 'timeoutMs must be a positive integer'],
+  ['a non-positive timeout', { ...validRequest, timeoutMs: 0 }, 'timeoutMs must be an integer from 1 to 2147483647'],
+  ['a timeout too long for a timer', { ...validRequest, timeoutMs: 2_147_483_648 },
+    'timeoutMs must be an integer from 1 to 2147483647'],
   ['a proxy without a server', { ...validRequest, proxy: { username: 'lookout' } }, 'proxy.server must be a string'],
   ['a non-string proxy password', { ...validRequest, proxy: { server: 'http://gluetun:8888', password: 1 } },
     'proxy.password must be a string'],

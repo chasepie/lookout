@@ -1,13 +1,14 @@
 /**
  * The child process that runs one Script. The runner sends it a job over IPC,
  * and it reports the Script's result back over IPC rather than stdout, which the Script shares.
+ * The job stays in this module's scope, so the Script can't read its token to forge a report.
  */
 import type { LookoutScript, LookoutScriptExport, ScriptOutcome } from '@chasepie/lookout-scripting';
 import { once } from 'node:events';
 import { registerHooks } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
-import { isOptionalString, type ScriptJob, type ScriptResult } from './protocol.ts';
+import { isOptionalString, type ScriptJob, type ScriptReport, type ScriptResult } from './protocol.ts';
 
 // The Script's source sits in a temp directory with no node_modules, so resolve playwright from the runner's
 registerHooks({
@@ -88,4 +89,5 @@ function toResult(outcome: unknown): ScriptResult {
 const [job] = await once(process, 'message') as [ScriptJob];
 const result = await runJob(job).catch(errored);
 // Exit once the result is sent, so a timer or socket the Script left open can't keep the process alive
-process.send?.(result, () => process.exit());
+const report: ScriptReport = { token: job.token, result };
+process.send?.(report, () => process.exit());
