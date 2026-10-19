@@ -15,12 +15,20 @@ export interface ScriptJob {
   proxy?: ProxySettings;
 }
 
+/**
+ * What the runner sends a child process whose Script has run past its timeout. The child reports at once with a
+ * screenshot of the page the Script is stuck on, if it can, before the runner kills it.
+ */
+export const timedOutMessage = 'timedOut';
+
 /** What a child process reports back: the Run outcome and what goes with it */
 export interface ScriptResult {
   outcome: 'succeeded' | 'knownFailure' | 'errored';
   content?: string;
   details?: string;
   errorMessage?: string;
+  /** A base64 PNG of the Script's page, for a Run that didn't Succeed */
+  screenshot?: string;
 }
 
 /**
@@ -41,7 +49,8 @@ const isScriptResult = (value: unknown): value is ScriptResult =>
   && outcomes.includes(value['outcome'])
   && isOptionalString(value['content'])
   && isOptionalString(value['details'])
-  && isOptionalString(value['errorMessage']);
+  && isOptionalString(value['errorMessage'])
+  && isOptionalString(value['screenshot']);
 
 /** Whether an IPC message is the report of the job with this token, rather than something the Script sent */
 export const isReportFor = (token: string, message: unknown): message is ScriptReport =>

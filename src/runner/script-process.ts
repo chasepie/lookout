@@ -3,12 +3,11 @@
  * and it reports the Script's result back over IPC rather than stdout, which the Script shares.
  */
 import type { LookoutScript, LookoutScriptExport, ScriptOutcome } from '@chasepie/lookout-scripting';
-import { once } from 'node:events';
-import { registerHooks } from 'node:module';
+import { isBuiltin, registerHooks } from 'node:module';
 import { pathToFileURL } from 'node:url';
-import { chromium } from 'playwright';
+import { chromium, type Page } from 'playwright';
 import { isObject, isOptionalString } from './guards.ts';
-import { erroredResult, type ScriptJob, type ScriptReport, type ScriptResult } from './protocol.ts';
+import { erroredResult, timedOutMessage, type ScriptJob, type ScriptReport, type ScriptResult } from './protocol.ts';
 
 // Held before the Script loads, so a Script that replaces process.send doesn't rewrite the report by accident.
 // Code in this process can still reach the channel some other way: these keep a Script from interfering by
@@ -31,19 +30,29 @@ const backgroundError = new Promise<never>((_, reject) => {
 
 const isPackage = (specifier: string, name: string) => specifier === name || specifier.startsWith(`${name}/`);
 
-// The Script's source sits in a temp directory with no node_modules, so resolve playwright from the runner's.
-// The scripting package has only types, so an import from it that survives type stripping, such as
-// `import { type LookoutScript } from …`, gets an empty module.
-registerHooks({
-  resolve: (specifier, context, nextResolve) => {
-    if (isPackage(specifier, '@chasepie/lookout-scripting')) {
-      return { url: 'data:text/javascript,', shortCircuit: true };
-    }
-    return isPackage(specifier, 'playwright')
-      ? nextResolve(specifier, { ...context, parentURL: import.meta.url })
-      : nextResolve(specifier, context);
-  },
-});
+/**
+ * Limits what the Script at `scriptUrl` may import to Node built-ins and playwright, the only package the runner
+ * provides (ADR-0003). The Script's file sits in a temp directory with no node_modules, so its playwright imports
+ * resolve from the runner's. The scripting package has only types, so an import from it that survives type
+ * stripping, such as `import { type LookoutScript } from …`, gets an empty module. Imports by anything else, such
+ * as playwright's own, resolve as usual.
+ */
+function restrictImports(scriptUrl: string) {
+  registerHooks({
+    resolve: (specifier, context, nextResolve) => {
+      if (context.parentURL !== scriptUrl || isBuiltin(specifier)) {
+        return nextResolve(specifier, context);
+      }
+      if (isPackage(specifier, '@chasepie/lookout-scripting')) {
+        return { url: 'data:text/javascript,', shortCircuit: true };
+      }
+      if (isPackage(specifier, 'playwright')) {
+        return nextResolve(specifier, { ...context, parentURL: import.meta.url });
+      }
+      throw new Error(`Scripts can only import Node built-ins and playwright, not '${specifier}'`);
+    },
+  });
+}
 
 /** The class form of a script's default export, as the scripting contract defines it */
 type ScriptClass = Exclude<LookoutScriptExport, LookoutScript>;
@@ -57,7 +66,9 @@ const isLookoutScript = (value: unknown): value is LookoutScript =>
 
 /** Loads a script file, whose default export is a LookoutScript object or a class implementing one */
 async function loadScript(scriptPath: string): Promise<LookoutScript> {
-  const scriptModule = await import(pathToFileURL(scriptPath).href) as { default?: unknown };
+  const scriptUrl = pathToFileURL(scriptPath).href;
+  restrictImports(scriptUrl);
+  const scriptModule = await import(scriptUrl) as { default?: unknown };
   const exported = scriptModule.default;
   const script: unknown = isScriptClass(exported) ? new exported() : exported;
 
@@ -69,6 +80,24 @@ async function loadScript(scriptPath: string): Promise<LookoutScript> {
 
 const errored = (error: unknown) => erroredResult(error instanceof Error ? error.message : String(error));
 
+/** Short enough to leave time to report within the runner's grace period, long beyond what a screenshot needs */
+const screenshotTimeoutMs = 3_000;
+
+/**
+ * A screenshot of the Script's page, to tell an "Access Denied" page from a changed selector. There's none if the
+ * page can't take one, such as when the Script has closed it.
+ */
+async function screenshotOf(page: Page): Promise<Pick<ScriptResult, 'screenshot'>> {
+  try {
+    return { screenshot: (await page.screenshot({ timeout: screenshotTimeoutMs })).toString('base64') };
+  } catch {
+    return {};
+  }
+}
+
+/** The Script's page, once it has one, so there's something to screenshot if it runs past its timeout */
+let scriptPage: Page | undefined;
+
 async function runJob(job: ScriptJob): Promise<ScriptResult> {
   const script = await Promise.race([loadScript(job.scriptPath), backgroundError]);
   const browser = await chromium.launch({
@@ -77,7 +106,12 @@ async function runJob(job: ScriptJob): Promise<ScriptResult> {
   });
   try {
     const browserContext = await browser.newContext(job.proxy && { proxy: job.proxy });
-    return toResult(await Promise.race([script.run(await browserContext.newPage(), job.context), backgroundError]));
+    const page = await browserContext.newPage();
+    scriptPage = page;
+    // Promise.try, so that a run that throws rather than rejecting is Errored with a screenshot too
+    const running = Promise.try(() => script.run(page, job.context));
+    const result = await Promise.race([running, backgroundError]).then(toResult).catch(errored);
+    return result.outcome === 'succeeded' ? result : { ...result, ...await screenshotOf(page) };
   } finally {
     // Closing the browser closes its contexts. A failure to clean up must not replace the Script's own result
     await browser.close().catch(() => undefined);
@@ -103,8 +137,31 @@ function toResult(outcome: unknown): ScriptResult {
   };
 }
 
-const [job] = await once(process, 'message') as [ScriptJob];
-const result = await runJob(job).catch(errored);
-// Exit once the result is sent, so a timer or socket the Script left open can't keep the process alive
-const report: ScriptReport = { token: job.token, result };
-sendReport?.(report, () => process.exit());
+let hasReported = false;
+
+/** Reports a result, only once, then exits, so a timer or socket the Script left open can't keep the process alive */
+function report(token: string, result: ScriptResult) {
+  if (hasReported) {
+    return;
+  }
+  hasReported = true;
+  const message: ScriptReport = { token, result };
+  sendReport?.(message, () => process.exit());
+}
+
+let jobToken: string | undefined;
+
+// The runner's first message is the job, and a second, if there is one, says the Script has run past its timeout.
+// Both can arrive in one read from the channel, so a listener added once the job has arrived could miss the second.
+process.on('message', (message: unknown) => {
+  if (jobToken === undefined) {
+    const job = message as ScriptJob;
+    jobToken = job.token;
+    void runJob(job).catch(errored).then((result) => report(job.token, result));
+  } else if (message === timedOutMessage) {
+    // The runner words the timeout itself; all it needs from here is the screenshot
+    const token = jobToken;
+    void (scriptPage ? screenshotOf(scriptPage) : Promise.resolve({}))
+      .then((screenshot) => report(token, { outcome: 'errored', ...screenshot }));
+  }
+});

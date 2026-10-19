@@ -1,6 +1,6 @@
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -118,7 +118,10 @@ interface ExecuteOptions {
   proxy?: ProxySettings;
 }
 
-/** Executes a fixture Script through the runner's HTTP API, separating its duration from the rest of the response */
+/**
+ * Executes a fixture Script through the runner's HTTP API, separating what every response has (its duration and
+ * console output) and its debugging screenshot from the rest of the response
+ */
 async function executeTimed(fixture: string, options: ExecuteOptions = {}, url = runnerUrl) {
   const response = await fetch(`${url}/execute`, {
     method: 'POST',
@@ -132,13 +135,19 @@ async function executeTimed(fixture: string, options: ExecuteOptions = {}, url =
     }),
   });
   expect(response.status).toBe(200);
-  const { durationMs, ...result } = await response.json() as Record<string, unknown>;
+  const { durationMs, consoleOutput, screenshot, ...result } = await response.json() as Record<string, unknown>;
   expect(durationMs).toBeTypeOf('number');
-  return { durationMs: durationMs as number, result };
+  expect(consoleOutput).toBeTypeOf('string');
+  return { durationMs: durationMs as number, consoleOutput: consoleOutput as string, screenshot, result };
 }
 
 const execute = async (fixture: string, options: ExecuteOptions = {}, url = runnerUrl) =>
   (await executeTimed(fixture, options, url)).result;
+
+const pngSignature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+const isPng = (screenshot: unknown) =>
+  typeof screenshot === 'string' && Buffer.from(screenshot, 'base64').subarray(0, pngSignature.length).equals(pngSignature);
 
 test('a Script that finds its content Succeeds with that content', { timeout: 30_000 }, async () => {
   const result = await execute('read-price.ts');
@@ -187,6 +196,32 @@ test.each([
   });
 });
 
+test.each([
+  ['is a Known failure', 'read-price.ts', '/blocked'],
+  ['throws', 'throws.ts', '/in-stock'],
+  ['throws from a timer', 'throws-from-timer.ts', '/in-stock'],
+  ['resolves to something other than a ScriptOutcome', 'returns-invalid-outcome.ts', '/in-stock'],
+])('a Script that %s comes with a screenshot of its page', { timeout: 30_000 }, async (_, fixture, path) => {
+  const { result, screenshot } = await executeTimed(fixture, { notificationUrl: `${pagesUrl}${path}` });
+
+  expect(result['outcome']).not.toBe('succeeded');
+  expect(isPng(screenshot)).toBe(true);
+});
+
+test('a Script that Succeeds comes without a screenshot', { timeout: 30_000 }, async () => {
+  const { result, screenshot } = await executeTimed('read-price.ts');
+
+  expect(result).toMatchObject({ outcome: 'succeeded' });
+  expect(screenshot).toBeUndefined();
+});
+
+test('a Script that fails before it has a page comes without a screenshot', { timeout: 30_000 }, async () => {
+  const { result, screenshot } = await executeTimed('named-export.ts');
+
+  expect(result).toMatchObject({ outcome: 'errored' });
+  expect(screenshot).toBeUndefined();
+});
+
 test('a Script that default-exports a class runs it', { timeout: 30_000 }, async () => {
   const result = await execute('class-export.ts');
 
@@ -228,10 +263,37 @@ test('a Script that leaves a timer running finishes without waiting for its time
   expect(await hasChildProcesses(runner.pid!)).toBe(false);
 });
 
-test("a Script's console output does not affect its outcome", { timeout: 30_000 }, async () => {
-  const result = await execute('logs-fake-outcome.ts');
+test("a Script's console output is in the response, and does not affect its outcome", { timeout: 30_000 }, async () => {
+  const { consoleOutput, result } = await executeTimed('logs-fake-outcome.ts');
 
-  expect(result).toMatchObject({ outcome: 'succeeded', content: 'done' });
+  expect(result).toEqual({ outcome: 'succeeded', content: 'done' });
+  // stdout and stderr arrive separately, so their lines needn't be in the order the Script wrote them
+  expect(consoleOutput).toContain('{"outcome":"errored","errorMessage":"not from the runner"}\n');
+  expect(consoleOutput).toContain('more noise\n');
+});
+
+test("a Script that writes nothing has empty console output, with nothing from Node's own warnings", { timeout: 30_000 }, async () => {
+  const { consoleOutput } = await executeTimed('read-price.ts');
+
+  expect(consoleOutput).toBe('');
+});
+
+test("a Script's console output is cut down to its last 262,144 characters", { timeout: 30_000 }, async () => {
+  const { consoleOutput, result } = await executeTimed('logs-lots.ts');
+
+  expect(result).toEqual({ outcome: 'succeeded' });
+  const marker = '[Earlier output was cut]\n';
+  expect(consoleOutput.startsWith(marker)).toBe(true);
+  expect(consoleOutput.length).toBe(marker.length + 256 * 1024);
+  expect(consoleOutput.endsWith(`line 20000 ${'x'.repeat(50)}\n`)).toBe(true);
+});
+
+test('an Errored Script has what it logged in the response, with a screenshot of its page', { timeout: 30_000 }, async () => {
+  const { consoleOutput, screenshot, result } = await executeTimed('logs-then-throws.ts');
+
+  expect(result).toEqual({ outcome: 'errored', errorMessage: 'The price element has moved' });
+  expect(consoleOutput).toBe('Looking for the price\n');
+  expect(isPng(screenshot)).toBe(true);
 });
 
 test("a malformed result the Script sends on the runner's channel is ignored", { timeout: 30_000 }, async () => {
@@ -271,6 +333,18 @@ test.each([
   const result = await execute(fixture);
 
   expect(result).toEqual({ outcome: 'errored', errorMessage });
+});
+
+test.each([
+  ['another package', 'imports-other-package.ts', 'https://example.com/', 'vitest'],
+  ['a file of its own, once running', 'imports-at-runtime.ts', 'https://example.com/?specifier=./helpers.ts', './helpers.ts'],
+])('a Script that imports %s is Errored, saying what it may import', { timeout: 30_000 }, async (_, fixture, notificationUrl, specifier) => {
+  const result = await execute(fixture, { notificationUrl });
+
+  expect(result).toEqual({
+    outcome: 'errored',
+    errorMessage: `Scripts can only import Node built-ins and playwright, not '${specifier}'`,
+  });
 });
 
 test('a Script can import its types inline from the scripting package', { timeout: 30_000 }, async () => {
@@ -344,10 +418,60 @@ test("a Script killed at its timeout leaves none of its browser's files behind",
   expect(await readdir(runnerTmpdir)).toEqual([]);
 });
 
+test('a Script that runs past its timeout on a page comes with a screenshot of it', { timeout: 30_000 }, async () => {
+  const { result, screenshot } = await executeTimed('hangs-on-page.ts', { timeoutMs: 2_000 });
+
+  expect(result).toEqual({ outcome: 'errored', errorMessage: 'Script timed out after 2000 ms' });
+  expect(isPng(screenshot)).toBe(true);
+});
+
+test('a Script that blocks its process is killed at its timeout, and the runner carries on', { timeout: 30_000 }, async () => {
+  const { result, screenshot } = await executeTimed('blocks-event-loop.ts', { timeoutMs: 2_000 });
+
+  expect(result).toEqual({ outcome: 'errored', errorMessage: 'Script timed out after 2000 ms' });
+  // It can't take a screenshot when nothing else in its process can run
+  expect(screenshot).toBeUndefined();
+  expect(await hasChildProcesses(runner.pid!)).toBe(false);
+  expect(await execute('read-price.ts')).toMatchObject({ outcome: 'succeeded' });
+});
+
+test('a Script that allocates without limit is Errored at its memory limit, and the runner carries on', { timeout: 30_000 }, async () => {
+  const { consoleOutput, result } = await executeTimed('allocates-forever.ts');
+
+  expect(result).toEqual({ outcome: 'errored', errorMessage: 'Script exceeded its memory limit of 512 MB' });
+  expect(consoleOutput).toContain('JavaScript heap out of memory');
+  expect(await execute('read-price.ts')).toMatchObject({ outcome: 'succeeded' });
+});
+
 test('a Script that runs past its timeout is Errored', { timeout: 30_000 }, async () => {
   const result = await execute('leaves-interval-running.ts', { timeoutMs: 1 });
 
   expect(result).toMatchObject({ outcome: 'errored', errorMessage: 'Script timed out after 1 ms' });
+});
+
+test('a Script can read its own file', { timeout: 30_000 }, async () => {
+  const result = await execute('reads-file.ts', { notificationUrl: 'https://example.com/' });
+
+  expect(result).toEqual({ outcome: 'succeeded', content: await fixtureSource('reads-file.ts') });
+});
+
+test("a Script reading a file outside its own directory and the runner's packages is Errored", { timeout: 30_000 }, async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'lookout-secret-'));
+  try {
+    const secretPath = join(directory, 'secret.txt');
+    await writeFile(secretPath, 'hunter2');
+
+    const result = await execute('reads-file.ts', {
+      notificationUrl: `https://example.com/?path=${encodeURIComponent(secretPath)}`,
+    });
+
+    expect(result).toEqual({
+      outcome: 'errored',
+      errorMessage: expect.stringContaining('Access to this API has been restricted') as unknown,
+    });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("a Script's browser goes through the proxy settings it's given", { timeout: 30_000 }, async () => {
