@@ -1,0 +1,17 @@
+gluetun-1  | |   |       ├── VPN type: openvpn
+gluetun-1  | 2026-10-18T20:29:16-04:00 INFO [openvpn] OpenVPN 2.6.20 aarch64-alpine-linux-musl [SSL (OpenSSL)] [LZO] [LZ4] [EPOLL] [MH/PKTINFO] [AEAD]
+gluetun-1  | 2026-10-18T20:29:16-04:00 INFO [openvpn] library versions: OpenSSL 3.5.7 9 Jun 2026, LZO 2.10
+gluetun-1  | 2026-10-18T20:29:16-04:00 INFO [openvpn] TCP/UDP: Preserving recently used remote address: [AF_INET]193.56.117.84:8443
+gluetun-1  | 2026-10-18T20:29:16-04:00 INFO [openvpn] Attempting to establish TCP connection with [AF_INET]193.56.117.84:8443
+gluetun-1  | 2026-10-18T20:30:31-04:00 INFO [openvpn] TCP: connect to [AF_INET]193.56.117.84:8443 failed: Connection refused
+gluetun-1  | 2026-10-18T20:30:31-04:00 INFO [openvpn] SIGUSR1[connection failed(soft),connection-failed] received, process restarting
+gluetun-1  | 2026-10-18T20:30:41-04:00 INFO [openvpn] TCP/UDP: Preserving recently used remote address: [AF_INET]193.56.117.84:8443
+gluetun-1  | 2026-10-18T20:30:41-04:00 INFO [openvpn] Attempting to establish TCP connection with [AF_INET]193.56.117.84:8443
+gluetun-1  | 2026-10-18T20:31:56-04:00 INFO [openvpn] TCP: connect to [AF_INET]193.56.117.84:8443 failed: Connection refused
+gluetun-1  | 2026-10-18T20:31:56-04:00 INFO [openvpn] SIGUSR1[connection failed(soft),connection-failed] received, process restarting
+gluetun-1  | 2026-10-18T20:32:06-04:00 INFO [openvpn] TCP/UDP: Preserving recently used remote address: [AF_INET]193.56.117.84:8443
+gluetun-1  | 2026-10-18T20:32:06-04:00 INFO [openvpn] Attempting to establish TCP connection with [AF_INET]193.56.117.84:8443
+gluetun-1  | 2026-10-18T20:33:21-04:00 INFO [openvpn] TCP: connect to [AF_INET]193.56.117.84:8443 failed: Connection refused
+gluetun-1  | 2026-10-18T20:33:21-04:00 INFO [openvpn] SIGUSR1[connection failed(soft),connection-failed] received, process restarting
+gluetun-1  | 2026-10-18T20:33:31-04:00 INFO [openvpn] TCP/UDP: Preserving recently used remote address: [AF_INET]193.56.117.84:8443
+gluetun-1  | 2026-10-18T20:33:31-04:00 INFO [openvpn] Attempting to establish TCP connection with [AF_INET]193.56.117.84:8443

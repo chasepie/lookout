@@ -1,0 +1,3 @@
+{"t":"0.17","event":"start","command":"probe","homeIpKnown":true}
+{"t":"0.17","event":"vpn-ready","waitedMs":5,"public_ip":"45.88.217.157","region":"District of Columbia","country":"United States","city":"Washington","location":"38.9029,-77.0361","organization":"AS206092 F.N.S. HOLDINGS LIMITED","postal_code":"20527","timezone":"America/New_York"}
+{"t":"0.95","event":"probe","label":"proxied","https":{"ok":true,"status":200,"ip":"45.88.217.157","leak":false},"http":{"ok":true,"status":200,"ip":"45.88.217.157","leak":false},"ipLiteral":{"ok":true,"status":200,"ip":"45.88.217.157","leak":false}}

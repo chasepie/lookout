@@ -1,0 +1,7 @@
+# PROTOTYPE for issue #2. The key is throwaway and the port is bound to 127.0.0.1.
+# Scoped to exactly the routes a VPN rotator needs; everything else should be 401.
+[[roles]]
+name = "lookout-rotator"
+routes = ["GET /v1/vpn/status", "PUT /v1/vpn/status", "GET /v1/publicip/ip"]
+auth = "apikey"
+apikey = "prototype-only-not-a-secret"

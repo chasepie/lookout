@@ -1,0 +1,25 @@
+# TCP connect to :8443 (3 s timeout) from the home network, for every OpenVPN-TCP IP gluetun would pick from, 2026-10-18
+
+## gluetun v3.41.3 bundled list (PIA data timestamp 2026-04-22)
+US Atlanta         ips   73 reachable    0
+US California      ips   63 reachable   63
+US Chicago         ips   83 reachable    3
+US East            ips   74 reachable   74
+US Florida         ips   75 reachable   75
+US New York        ips   86 reachable   86
+US Silicon Valley  ips   80 reachable    0
+US Texas           ips   77 reachable    0
+US Washington DC   ips   86 reachable   19
+US West            ips   60 reachable    0
+total              ips  757 reachable  320
+
+## After 'gluetun update -enduser -providers "private internet access"' (PIA data timestamp 2026-10-19T00:28Z)
+US Atlanta         ips   87 reachable   30
+US California      ips   94 reachable   94
+US Chicago         ips   66 reachable   22
+US East            ips   98 reachable   98
+US Florida         ips   68 reachable   68
+US New York        ips  108 reachable  107
+US Texas           ips  109 reachable   37
+US Washington DC   ips   64 reachable   22
+total              ips  694 reachable  478

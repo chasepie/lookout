@@ -1,0 +1,41 @@
+# PROTOTYPE for issue #2. Throwaway: lives only on the prototype/browser-and-vpn branch.
+name: lookout-prototype
+
+services:
+  browserless:
+    image: ghcr.io/browserless/chromium:v2.57.1
+    environment:
+      CONCURRENT: "4"
+      TIMEOUT: "1800000"
+    ports:
+      - "127.0.0.1:3000:3000"
+    shm_size: 2g
+
+  gluetun:
+    image: qmcgaw/gluetun:v3.41.3
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    env_file:
+      # OPENVPN_USER and OPENVPN_PASSWORD; gitignored by *.env
+      - path: ../../pia.env
+        required: false
+    environment:
+      VPN_SERVICE_PROVIDER: private internet access
+      SERVER_REGIONS: ${SERVER_REGIONS:-US East,US New York,US Florida,US California,US Chicago,US Texas,US Washington DC,US Atlanta}
+      # The server list bundled in v3.41.3 is from 2026-04-22 and many of its IPs are dead; refresh it daily
+      UPDATER_PERIOD: 24h
+      OPENVPN_PROTOCOL: ${OPENVPN_PROTOCOL:-tcp}
+      HTTPPROXY: "on"
+      HTTPPROXY_STEALTH: ${HTTPPROXY_STEALTH:-off}
+      TZ: America/New_York
+    volumes:
+      - gluetun-data:/gluetun
+      - ./gluetun-auth.toml:/gluetun/auth/config.toml:ro
+    ports:
+      # Control server only; the proxy (8888) is reached by Browserless over the compose network
+      - "127.0.0.1:8000:8000"
+
+volumes:
+  gluetun-data:

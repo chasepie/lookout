@@ -1,0 +1,27 @@
+{"t":"0.13","event":"start","command":"fail-closed","homeIpKnown":true}
+{"t":"0.14","event":"vpn-ready","waitedMs":4,"public_ip":"45.88.217.37","region":"District of Columbia","country":"United States","city":"Washington","location":"38.9029,-77.0361","organization":"AS206092 F.N.S. HOLDINGS LIMITED","postal_code":"20527","timezone":"America/New_York"}
+{"t":"0.56","event":"probe","label":"direct, VPN up","https":{"ok":true,"status":200,"ip":"<home-ip>","leak":true},"http":{"ok":true,"status":200,"ip":"<home-ip>","leak":true},"ipLiteral":{"ok":true,"status":200,"ip":"<home-ip>","leak":true}}
+{"t":"1.25","event":"probe","label":"proxied, VPN up","https":{"ok":true,"status":200,"ip":"45.88.217.37","leak":false},"http":{"ok":true,"status":200,"ip":"172.21.0.3","leak":false},"ipLiteral":{"ok":true,"status":200,"ip":"45.88.217.37","leak":false}}
+{"t":"1.27","event":"put","status":200,"body":"{\"outcome\":\"stopped\"}"}
+{"t":"1.27","event":"vpn-status","status":"stopped","publicIp":{"public_ip":""}}
+{"t":"16.33","event":"probe","label":"proxied (existing context), VPN stopped","https":{"ok":false,"error":"page.goto: Timeout 5000ms exceeded."},"http":{"ok":false,"error":"page.goto: Timeout 5000ms exceeded."},"ipLiteral":{"ok":false,"error":"page.goto: Timeout 5000ms exceeded."}}
+{"t":"31.41","event":"probe","label":"proxied (new context), VPN stopped","https":{"ok":false,"error":"page.goto: Timeout 5000ms exceeded."},"http":{"ok":false,"error":"page.goto: Timeout 5000ms exceeded."},"ipLiteral":{"ok":false,"error":"page.goto: Timeout 5000ms exceeded."}}
+{"t":"76.47","event":"probe","label":"proxied, VPN stopped for 30 s","https":{"ok":false,"error":"page.goto: Timeout 5000ms exceeded."},"http":{"ok":false,"error":"page.goto: Timeout 5000ms exceeded."},"ipLiteral":{"ok":false,"error":"page.goto: Timeout 5000ms exceeded."}}
+{"t":"76.61","event":"put","status":200,"body":"{\"outcome\":\"running\"}"}
+{"t":"80.17","event":"proxy-up","label":"VPN restarting via control API","ms":3557,"attempts":2,"leaks":0,"rerolls":0,"ip":"191.96.227.28","errors":{"page.goto: Timeout 3000ms exceeded.":1}}
+{"t":"81.17","event":"probe","label":"proxied, VPN back up","https":{"ok":true,"status":200,"ip":"191.96.227.28","leak":false},"http":{"ok":true,"status":200,"ip":"172.21.0.3","leak":false},"ipLiteral":{"ok":true,"status":200,"ip":"191.96.227.28","leak":false}}
+ Container lookout-prototype-gluetun-1 Stopping 
+ Container lookout-prototype-gluetun-1 Stopped 
+{"t":"81.79","event":"compose","out":""}
+{"t":"96.86","event":"probe","label":"proxied, gluetun container stopped","https":{"ok":false,"error":"page.goto: Timeout 5000ms exceeded."},"http":{"ok":false,"error":"page.goto: Timeout 5000ms exceeded."},"ipLiteral":{"ok":false,"error":"page.goto: Timeout 5000ms exceeded."}}
+ Container lookout-prototype-gluetun-1 Starting 
+ Container lookout-prototype-gluetun-1 Started 
+{"t":"97.02","event":"compose","out":""}
+{"t":"101.22","event":"proxy-up","label":"gluetun container starting","ms":4201,"attempts":3,"leaks":0,"rerolls":0,"ip":"84.17.45.17","errors":{"page.goto: net::ERR_PROXY_CONNECTION_FAILED":1,"page.goto: Timeout 3000ms exceeded.":1}}
+{"t":"102.51","event":"probe","label":"proxied, gluetun container back up","https":{"ok":true,"status":200,"ip":"84.17.45.17","leak":false},"http":{"ok":true,"status":200,"ip":"172.21.0.3","leak":false},"ipLiteral":{"ok":true,"status":200,"ip":"84.17.45.17","leak":false}}
+{"t":"103.29","event":"webrtc","label":"context proxy","args":["--disable-blink-features=AutomationControlled"],"exitIp":"84.17.45.17","srflxIps":["<home-ip>"],"leaksHomeIp":true}
+{"t":"104.11","event":"webrtc","label":"context proxy + force-webrtc-ip-handling-policy","args":["--disable-blink-features=AutomationControlled","--force-webrtc-ip-handling-policy=disable_non_proxied_udp"],"exitIp":"84.17.45.17","srflxIps":["<home-ip>"],"leaksHomeIp":true}
+{"t":"104.91","event":"webrtc","label":"context proxy + webrtc-ip-handling-policy","args":["--disable-blink-features=AutomationControlled","--webrtc-ip-handling-policy=disable_non_proxied_udp"],"exitIp":"84.17.45.17","srflxIps":[],"leaksHomeIp":false}
+{"t":"105.71","event":"webrtc","label":"launch proxy","args":["--disable-blink-features=AutomationControlled"],"launchProxy":true,"exitIp":"84.17.45.17","srflxIps":["<home-ip>"],"leaksHomeIp":true}
+{"t":"106.57","event":"webrtc","label":"launch proxy + force-webrtc-ip-handling-policy","args":["--disable-blink-features=AutomationControlled","--force-webrtc-ip-handling-policy=disable_non_proxied_udp"],"launchProxy":true,"exitIp":"84.17.45.17","srflxIps":["<home-ip>"],"leaksHomeIp":true}
+{"t":"107.27","event":"webrtc","label":"context proxy + WebRTC removed by init script","args":["--disable-blink-features=AutomationControlled"],"removeWebRtc":true,"exitIp":"84.17.45.17","srflxIps":"page.evaluate: ReferenceError: RTCPeerConnection is not defined","leaksHomeIp":false}

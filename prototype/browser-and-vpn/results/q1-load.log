@@ -1,0 +1,17 @@
+{"t":"0.14","event":"start","command":"load","homeIpKnown":true}
+{"t":"1.31","event":"memory","idle":"316.9MiB / 15.6GiB"}
+{"t":"51.30","event":"load","mode":"browserless-headless","site":"www.bestbuy.com","ms":48739,"memory":"857.4MiB / 15.6GiB"}
+{"t":"53.46","event":"load","mode":"browserless-headless","site":"www.walmart.com","ms":1043,"memory":"767.4MiB / 15.6GiB"}
+{"t":"57.34","event":"load","mode":"browserless-headless","site":"www.target.com","ms":2800,"memory":"1.352GiB / 15.6GiB"}
+{"t":"59.34","event":"load","mode":"browserless-headless","site":"www.amazon.com","ms":452,"memory":"1.626GiB / 15.6GiB"}
+{"t":"62.36","event":"load","mode":"browserless-headless","site":"www.nike.com","ms":1027,"memory":"1.741GiB / 15.6GiB"}
+{"t":"65.17","event":"load","mode":"browserless-headless-ua","site":"www.bestbuy.com","ms":1645,"memory":"962.6MiB / 15.6GiB"}
+{"t":"67.23","event":"load","mode":"browserless-headless-ua","site":"www.walmart.com","ms":954,"memory":"844.8MiB / 15.6GiB"}
+{"t":"71.29","event":"load","mode":"browserless-headless-ua","site":"www.target.com","ms":2463,"memory":"1.18GiB / 15.6GiB"}
+{"t":"73.29","event":"load","mode":"browserless-headless-ua","site":"www.amazon.com","ms":328,"memory":"1.482GiB / 15.6GiB"}
+{"t":"75.30","event":"load","mode":"browserless-headless-ua","site":"www.nike.com","ms":754,"memory":"1.572GiB / 15.6GiB"}
+{"t":"78.22","event":"load","mode":"browserless-headful","site":"www.bestbuy.com","ms":1700,"memory":"988.3MiB / 15.6GiB"}
+{"t":"81.29","event":"load","mode":"browserless-headful","site":"www.walmart.com","ms":985,"memory":"888.8MiB / 15.6GiB"}
+{"t":"84.72","event":"load","mode":"browserless-headful","site":"www.target.com","ms":2356,"memory":"1.199GiB / 15.6GiB"}
+{"t":"86.72","event":"load","mode":"browserless-headful","site":"www.amazon.com","ms":329,"memory":"1.481GiB / 15.6GiB"}
+{"t":"90.14","event":"load","mode":"browserless-headful","site":"www.nike.com","ms":2352,"memory":"1.617GiB / 15.6GiB"}

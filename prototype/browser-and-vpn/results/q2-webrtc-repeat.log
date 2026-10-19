@@ -1,0 +1,12 @@
+"label":"context proxy","srflxIps":["<home-ip>"],"leaksHomeIp":true
+"label":"context proxy + force-webrtc-ip-handling-policy","srflxIps":["<home-ip>"],"leaksHomeIp":true
+"label":"context proxy + webrtc-ip-handling-policy","srflxIps":[],"leaksHomeIp":false
+"label":"launch proxy","launchProxy":true,"srflxIps":["<home-ip>"],"leaksHomeIp":true
+"label":"launch proxy + force-webrtc-ip-handling-policy","launchProxy":true,"srflxIps":["<home-ip>"],"leaksHomeIp":true
+"label":"context proxy + WebRTC removed by init script","removeWebRtc":true,"srflxIps":"page.evaluate: ReferenceError: RTCPeerConnection is not defined","leaksHomeIp":false
+"label":"context proxy","srflxIps":["<home-ip>"],"leaksHomeIp":true
+"label":"context proxy + force-webrtc-ip-handling-policy","srflxIps":["<home-ip>"],"leaksHomeIp":true
+"label":"context proxy + webrtc-ip-handling-policy","srflxIps":[],"leaksHomeIp":false
+"label":"launch proxy","launchProxy":true,"srflxIps":["<home-ip>"],"leaksHomeIp":true
+"label":"launch proxy + force-webrtc-ip-handling-policy","launchProxy":true,"srflxIps":["<home-ip>"],"leaksHomeIp":true
+"label":"context proxy + WebRTC removed by init script","removeWebRtc":true,"srflxIps":"page.evaluate: ReferenceError: RTCPeerConnection is not defined","leaksHomeIp":false

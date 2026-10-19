@@ -1,0 +1,7 @@
+{"t":"0.13","event":"start","command":"webrtc --screenshots","homeIpKnown":true}
+{"t":"0.92","event":"webrtc","label":"context proxy","args":["--disable-blink-features=AutomationControlled"],"exitIp":"140.228.24.145","srflxIps":["<home-ip>"],"leaksHomeIp":true}
+{"t":"12.83","event":"webrtc","label":"context proxy + force-webrtc-ip-handling-policy","args":["--disable-blink-features=AutomationControlled","--force-webrtc-ip-handling-policy=disable_non_proxied_udp"],"exitIp":"140.228.24.145","srflxIps":["<home-ip>"],"leaksHomeIp":true}
+{"t":"24.56","event":"webrtc","label":"context proxy + webrtc-ip-handling-policy","args":["--disable-blink-features=AutomationControlled","--webrtc-ip-handling-policy=disable_non_proxied_udp"],"exitIp":"140.228.24.145","srflxIps":[],"leaksHomeIp":false}
+{"t":"37.70","event":"webrtc","label":"launch proxy","args":["--disable-blink-features=AutomationControlled"],"launchProxy":true,"exitIp":"140.228.24.145","srflxIps":["<home-ip>"],"leaksHomeIp":true}
+{"t":"49.59","event":"webrtc","label":"launch proxy + force-webrtc-ip-handling-policy","args":["--disable-blink-features=AutomationControlled","--force-webrtc-ip-handling-policy=disable_non_proxied_udp"],"launchProxy":true,"exitIp":"140.228.24.145","srflxIps":["<home-ip>"],"leaksHomeIp":true}
+{"t":"61.83","event":"webrtc","label":"context proxy + WebRTC removed by init script","args":["--disable-blink-features=AutomationControlled"],"removeWebRtc":true,"exitIp":"140.228.24.145","srflxIps":"page.evaluate: ReferenceError: RTCPeerConnection is not defined","leaksHomeIp":false}
