@@ -13,12 +13,16 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "typecheck": "tsc --noEmit",
-    "test": "npm test -w src/runner",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p src/frontend/e2e/tsconfig.json",
+    "build:frontend": "npm run build -w src/frontend",
+    "test": "npm run test:runner && dotnet test --solution Lookout.slnx && npm run test:e2e",
+    "test:runner": "npm test -w src/runner",
+    "test:e2e": "npm run build:frontend && npm run e2e -w src/frontend",
     "lint": "eslint ."
   },
   "workspaces": [
     "examples",
+    "src/frontend",
     "src/runner",
     "src/scripting"
   ],

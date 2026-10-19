@@ -431,6 +431,8 @@ FodyWeavers.xsd
 .playwright-mcp/
 
 # SQLite databases
+src/Backend/wwwroot/
+playwright-report/
 *.db
 *.db-shm
 *.db-wal

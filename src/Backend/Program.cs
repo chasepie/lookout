@@ -1,4 +1,8 @@
 using ChasePie.Lookout.Database;
+using ChasePie.Lookout.Model;
+using ChasePie.Lookout.Backend.Runner;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
 
@@ -18,9 +22,18 @@ public class Program
         app.Run();
     }
 
-    private static void ConfigureServices(IServiceCollection services, IConfiguration configuration)
+    private static void ConfigureServices(IServiceCollection services, ConfigurationManager configuration)
     {
-        services.AddControllers();
+        services.AddControllers().AddJsonOptions(options =>
+            options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter<RunOutcome>(JsonNamingPolicy.CamelCase, false)));
+        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<RunningWatches>();
+        services.AddHttpClient<IRunnerClient, HttpRunnerClient>(client =>
+        {
+            client.BaseAddress = new Uri(configuration["Runner:BaseUrl"] ?? "http://localhost:3000");
+            // The runner allows five seconds to capture a timeout screenshot, plus transport overhead.
+            client.Timeout = TimeSpan.FromSeconds(135);
+        });
         services.AddOpenApi();
 
         var connectionString = configuration.GetConnectionString("Lookout")
@@ -51,10 +64,13 @@ public class Program
             app.MapScalarApiReference();
         }
 
-        app.UseHttpsRedirection();
         app.UseAuthorization();
+
+        app.UseDefaultFiles();
+        app.UseStaticFiles();
 
         app.MapControllers();
         app.MapHealthChecks("/health");
+        app.MapFallbackToFile("index.html");
     }
 }
