@@ -1,6 +1,6 @@
 # gluetun for VPN rotation
 
-VPN Runs go through gluetun's HTTP proxy, set on each Playwright browser context, using PIA over OpenVPN with several regions listed in `SERVER_REGIONS`. Lookout rotates the exit IP every 10–15 minutes, or early after a Known failure, by reconnecting gluetun through its authenticated control API (`PUT /v1/vpn/status`). This needs no Docker socket and leaves Browserless untouched. Direct Runs share the same Browserless instance without a proxy.
+VPN Runs go through gluetun's HTTP proxy, set on each Playwright browser context, using PIA over OpenVPN with several US regions listed in `SERVER_REGIONS`. Lookout rotates the exit IP every 10–15 minutes, or early after a Known failure, by reconnecting gluetun through its authenticated control API (`PUT /v1/vpn/status` `stopped`, then `running`). This needs no Docker socket and leaves Browserless untouched. Direct Runs share the same Browserless instance without a proxy.
 
 ## Considered Options
 
@@ -12,5 +12,10 @@ VPN Runs go through gluetun's HTTP proxy, set on each Playwright browser context
 
 - Swapping PIA for another VPN provider is a gluetun configuration change, not a Lookout code change.
 - Lookout talks to the VPN through a small rotator interface, so gluetun itself can also be replaced.
+- An HTTP proxy carries only HTTP, and WebRTC's STUN goes around it and reveals the home IP. Browserless therefore launches every browser with `--webrtc-ip-handling-policy=disable_non_proxied_udp`, including for direct Runs. The similarly named `--force-webrtc-ip-handling-policy` does not work.
+- gluetun runs its proxy with `HTTPPROXY_STEALTH=on`. Otherwise it forwards the Browserless container's address on plain-HTTP requests.
+- Regions are kept to the US. A non-US exit changes what retailers serve (a country picker, another storefront), which would show up as false Changes.
+- gluetun reports `running` even while it is stuck retrying a dead server, and it never moves off a dead server by itself. A Rotation is complete only when `GET /v1/publicip/ip` returns an IP. If that hasn't happened within about 15 s, the rotator rotates again. The same applies at startup, and VPN Runs wait until there is an IP. In the prototype, about a quarter of Rotations needed a second attempt, and a good server was usable within 1–4 s.
+- gluetun's bundled PIA server list goes stale: v3.41.3's list was six months old, and whole regions in it were dead. gluetun refreshes the list daily (`UPDATER_PERIOD=24h`) into a persistent `/gluetun` volume.
 
-Sources: [docs/research/script-execution-and-vpn.md](../research/script-execution-and-vpn.md)
+Sources: [docs/research/script-execution-and-vpn.md](../research/script-execution-and-vpn.md), [docs/research/browser-and-vpn-prototype.md](../research/browser-and-vpn-prototype.md)
