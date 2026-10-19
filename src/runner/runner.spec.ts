@@ -229,6 +229,12 @@ test("a well-formed result the Script sends on the runner's channel doesn't repl
   expect(result).toEqual({ outcome: 'errored', errorMessage: 'Script timed out after 2000 ms' });
 });
 
+test("a Script that wraps the runner's channel can't rewrite its outcome", { timeout: 30_000 }, async () => {
+  const result = await execute('wraps-process-send.ts');
+
+  expect(result).toEqual({ outcome: 'knownFailure', details: 'Access Denied' });
+});
+
 test('a Script that exits its process is Errored', { timeout: 30_000 }, async () => {
   const result = await execute('exits-process.ts');
 

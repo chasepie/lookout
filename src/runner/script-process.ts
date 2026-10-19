@@ -8,7 +8,11 @@ import { once } from 'node:events';
 import { registerHooks } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
-import { isOptionalString, type ScriptJob, type ScriptReport, type ScriptResult } from './protocol.ts';
+import { isObject, isOptionalString } from './guards.ts';
+import { erroredResult, type ScriptJob, type ScriptReport, type ScriptResult } from './protocol.ts';
+
+// Held before the Script loads, so a Script that replaces process.send can't rewrite the report
+const sendReport = process.send?.bind(process);
 
 // The Script's source sits in a temp directory with no node_modules, so resolve playwright from the runner's
 registerHooks({
@@ -40,10 +44,7 @@ async function loadScript(scriptPath: string): Promise<LookoutScript> {
   return script;
 }
 
-const errored = (error: unknown): ScriptResult => ({
-  outcome: 'errored',
-  errorMessage: error instanceof Error ? error.message : String(error),
-});
+const errored = (error: unknown) => erroredResult(error instanceof Error ? error.message : String(error));
 
 async function runJob(job: ScriptJob): Promise<ScriptResult> {
   const script = await loadScript(job.scriptPath);
@@ -53,25 +54,18 @@ async function runJob(job: ScriptJob): Promise<ScriptResult> {
   });
   try {
     const browserContext = await browser.newContext(job.proxy && { proxy: job.proxy });
-    try {
-      const page = await browserContext.newPage();
-      return toResult(await script.run(page, job.context));
-    } catch (error) {
-      return errored(error);
-    } finally {
-      // A failure to clean up must not replace the Script's own result
-      await browserContext.close().catch(() => undefined);
-    }
+    return toResult(await script.run(await browserContext.newPage(), job.context));
   } finally {
+    // Closing the browser closes its contexts. A failure to clean up must not replace the Script's own result
     await browser.close().catch(() => undefined);
   }
 }
 
 const isScriptOutcome = (value: unknown): value is ScriptOutcome =>
-  typeof value === 'object' && value !== null
-  && 'success' in value && typeof value.success === 'boolean'
-  && isOptionalString('content' in value ? value.content : undefined)
-  && isOptionalString('details' in value ? value.details : undefined);
+  isObject(value)
+  && typeof value['success'] === 'boolean'
+  && isOptionalString(value['content'])
+  && isOptionalString(value['details']);
 
 /** Maps what a Script's `run` resolved to onto a Run outcome */
 function toResult(outcome: unknown): ScriptResult {
@@ -90,4 +84,4 @@ const [job] = await once(process, 'message') as [ScriptJob];
 const result = await runJob(job).catch(errored);
 // Exit once the result is sent, so a timer or socket the Script left open can't keep the process alive
 const report: ScriptReport = { token: job.token, result };
-process.send?.(report, () => process.exit());
+sendReport?.(report, () => process.exit());

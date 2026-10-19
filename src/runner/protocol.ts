@@ -1,6 +1,7 @@
 /** The messages the runner and a Script's child process exchange over IPC */
 import type { ScriptContext } from '@chasepie/lookout-scripting';
 import type { BrowserContextOptions } from 'playwright';
+import { isObject, isOptionalString } from './guards.ts';
 
 export type ProxySettings = NonNullable<BrowserContextOptions['proxy']>;
 
@@ -33,17 +34,15 @@ export interface ScriptReport {
 
 const outcomes: readonly unknown[] = ['succeeded', 'knownFailure', 'errored'] satisfies ScriptResult['outcome'][];
 
-export const isOptionalString = (value: unknown) => value === undefined || typeof value === 'string';
+export const erroredResult = (errorMessage: string): ScriptResult => ({ outcome: 'errored', errorMessage });
 
 const isScriptResult = (value: unknown): value is ScriptResult =>
-  typeof value === 'object' && value !== null
-  && 'outcome' in value && outcomes.includes(value.outcome)
-  && isOptionalString('content' in value ? value.content : undefined)
-  && isOptionalString('details' in value ? value.details : undefined)
-  && isOptionalString('errorMessage' in value ? value.errorMessage : undefined);
+  isObject(value)
+  && outcomes.includes(value['outcome'])
+  && isOptionalString(value['content'])
+  && isOptionalString(value['details'])
+  && isOptionalString(value['errorMessage']);
 
 /** Whether an IPC message is the report of the job with this token, rather than something the Script sent */
 export const isReportFor = (token: string, message: unknown): message is ScriptReport =>
-  typeof message === 'object' && message !== null
-  && 'token' in message && message.token === token
-  && 'result' in message && isScriptResult(message.result);
+  isObject(message) && message['token'] === token && isScriptResult(message['result']);

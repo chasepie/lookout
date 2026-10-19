@@ -90,7 +90,7 @@ execute.ts          delete the temp directory → respond
 ```
 
 - **One child process per execution**, so a Script can't affect another or the runner itself. The child exits as soon as it has reported, even if the Script left a timer or socket open.
-- **Results travel over IPC, not stdout,** so a Script's `console.log` can't be mistaken for its result. The Script shares that IPC channel, so each execution gets a random token that the child's report must carry back. The token stays private to `script-process.ts`, so the Script can't forge a report. The message types are in `protocol.ts`.
+- **Results travel over IPC, not stdout,** so a Script's `console.log` can't be mistaken for its result. The Script shares that IPC channel, so each execution gets a random token that the child's report must carry back. The token stays private to `script-process.ts`, which also keeps its own reference to `process.send` from before the Script loads, so the Script can neither forge a report nor rewrite the real one. The message types are in `protocol.ts`.
 - **The temp directory holds everything an execution writes.** That includes the Script file and, through the child's `TMPDIR`, Chromium's profile and Playwright's artifacts. A process killed at its timeout can't clean up after itself, so the runner deletes the whole directory.
 - **`playwright` imports resolve from the runner.** The Script's file sits in a temp directory with no `node_modules`, so a resolve hook in `script-process.ts` points `playwright` imports at the runner's own copy.
 

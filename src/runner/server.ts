@@ -1,23 +1,17 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { execute, type ExecuteRequest, type RunnerConfig } from './execute.ts';
+import { json } from 'node:stream/consumers';
+import { execute, fileKinds, type ExecuteRequest, type FileKind, type RunnerConfig } from './execute.ts';
+import { isObject } from './guards.ts';
 
 /** A request the runner can't execute, reported to the caller as a 400 */
 class InvalidRequestError extends Error {}
 
-async function readJson(request: IncomingMessage): Promise<unknown> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of request) {
-    chunks.push(chunk as Buffer);
-  }
-  try {
-    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
-  } catch {
+const readJson = (request: IncomingMessage) =>
+  json(request).catch(() => {
     throw new InvalidRequestError('Request body must be JSON');
-  }
-}
+  });
 
-const isObject = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
+const isFileKind = (value: unknown): value is FileKind => (fileKinds as readonly unknown[]).includes(value);
 
 function requireString(value: unknown, name: string): string {
   if (typeof value !== 'string') {
@@ -38,8 +32,8 @@ function parseExecuteRequest(body: unknown): ExecuteRequest {
     throw new InvalidRequestError('Request body must be a JSON object');
   }
   const { source, fileKind, context, timeoutMs, proxy } = body;
-  if (fileKind !== 'ts' && fileKind !== 'js') {
-    throw new InvalidRequestError("fileKind must be 'ts' or 'js'");
+  if (!isFileKind(fileKind)) {
+    throw new InvalidRequestError(`fileKind must be ${fileKinds.map((kind) => `'${kind}'`).join(' or ')}`);
   }
   if (typeof timeoutMs !== 'number' || !Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > maxTimeoutMs) {
     throw new InvalidRequestError(`timeoutMs must be an integer from 1 to ${maxTimeoutMs}`);
@@ -71,16 +65,7 @@ const sendJson = (response: ServerResponse, status: number, body: unknown) => {
 };
 
 async function handleExecute(request: IncomingMessage, response: ServerResponse, config: RunnerConfig) {
-  let executeRequest: ExecuteRequest;
-  try {
-    executeRequest = parseExecuteRequest(await readJson(request));
-  } catch (error) {
-    if (error instanceof InvalidRequestError) {
-      sendJson(response, 400, { error: error.message });
-      return;
-    }
-    throw error;
-  }
+  const executeRequest = parseExecuteRequest(await readJson(request));
   sendJson(response, 200, await execute(executeRequest, config));
 }
 
@@ -92,6 +77,10 @@ export const createRunnerServer = (config: RunnerConfig) =>
       return;
     }
     handleExecute(request, response, config).catch((error: unknown) => {
+      if (error instanceof InvalidRequestError) {
+        sendJson(response, 400, { error: error.message });
+        return;
+      }
       console.error('Executing a Script failed', error);
       if (!response.headersSent) {
         sendJson(response, 500, { error: 'Internal runner error' });

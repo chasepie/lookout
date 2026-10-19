@@ -5,15 +5,17 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { isReportFor, type ProxySettings, type ScriptJob, type ScriptResult } from './protocol.ts';
+import { erroredResult, isReportFor, type ProxySettings, type ScriptJob, type ScriptResult } from './protocol.ts';
 
 export interface RunnerConfig {
   /** Whether the launched Chromium is headless; non-headless is for local debugging */
   headless: boolean;
 }
 
-/** The language a Script is written in */
-export type FileKind = 'ts' | 'js';
+/** The languages a Script may be written in */
+export const fileKinds = ['ts', 'js'] as const;
+
+export type FileKind = typeof fileKinds[number];
 
 /** A request to execute one Script */
 export interface ExecuteRequest {
@@ -55,19 +57,16 @@ const runScriptProcess = (job: ScriptJob, timeoutMs: number, tempDirectory: stri
     });
     child.once('error', (error) => {
       clearTimeout(timer);
-      resolve({ outcome: 'errored', errorMessage: `Script process failed: ${error.message}` });
+      resolve(erroredResult(`Script process failed: ${error.message}`));
     });
     child.once('close', (code) => {
       clearTimeout(timer);
       if (reported) {
         resolve(reported);
       } else if (timedOut) {
-        resolve({ outcome: 'errored', errorMessage: `Script timed out after ${timeoutMs} ms` });
+        resolve(erroredResult(`Script timed out after ${timeoutMs} ms`));
       } else {
-        resolve({
-          outcome: 'errored',
-          errorMessage: `Script process exited with code ${code} before reporting an outcome`,
-        });
+        resolve(erroredResult(`Script process exited with code ${code} before reporting an outcome`));
       }
     });
     child.send(job);
