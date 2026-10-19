@@ -39,7 +39,7 @@ Runs one Script and responds once it has finished. If the caller disconnects fir
 | `source` | The Script file's contents. |
 | `fileKind` | `ts` or `js`. TypeScript runs through Node's type stripping, so it may only use erasable syntax (no `enum`, `namespace` or parameter properties). |
 | `context` | Passed to the Script's `run` as its second argument. |
-| `timeoutMs` | 1 to 2147483647. The Script's process is killed at this point. It covers the whole execution, including starting the process and launching the browser, not just `run`. |
+| `timeoutMs` | 1 to 2147483647. It covers the whole execution, including starting the process and launching the browser, not just `run`. An outcome the Script reached before it stands. Past it, a Script without one is Errored, and its process gets up to 5 seconds to send a screenshot before it's killed. |
 | `proxy` | Optional. The proxy for the Script's browser context, as Playwright's `proxy` option: `server`, and optionally `username`, `password` and `bypass`. VPN Runs set this. Direct Runs leave it out or send `null`. |
 
 A malformed request gets a `400` with `{ "error": "<what is wrong>" }`, and a body over 1 MiB a `413`. A failure inside the runner itself gets a `500` with `{ "error": "Internal runner error" }`, and any other route a `404`.
@@ -47,16 +47,21 @@ A malformed request gets a `400` with `{ "error": "<what is wrong>" }`, and a bo
 Otherwise the response is a `200`, whatever the Script did:
 
 ```json
-{ "outcome": "succeeded", "content": "£20.00", "durationMs": 1432 }
+{ "outcome": "succeeded", "content": "£20.00", "durationMs": 1432, "consoleOutput": "" }
 ```
 
 | `outcome` | When | Also has |
 |-----------|------|----------|
 | `succeeded` | `run` resolved to `{ success: true }` | `content`, `details` if the Script gave them |
 | `knownFailure` | `run` resolved to `{ success: false }` | `content`, `details` if the Script gave them |
-| `errored` | The Script threw, resolved to something that isn't a `ScriptOutcome`, or didn't default-export a `LookoutScript`. Also when, while `run` was in progress, it threw from a timer or event listener or left a promise rejection unhandled. Also when its process exited or was killed, or it ran past its timeout. | `errorMessage` |
+| `errored` | The Script threw, resolved to something that isn't a `ScriptOutcome`, or didn't default-export a `LookoutScript`. Also when, while `run` was in progress, it threw from a timer or event listener or left a promise rejection unhandled. Also when it imported something it may not, read a file it may not, exceeded its memory limit, ran past its timeout, or its process exited or was killed. | `errorMessage` |
 
-`durationMs` is always present, and like `timeoutMs` it covers the whole execution.
+Every response also has:
+
+- **`durationMs`:** like `timeoutMs`, it covers the whole execution. For a Script that ran past its timeout, that includes the time taken to screenshot it.
+- **`consoleOutput`:** what the Script's process wrote to stdout and stderr, which may be empty. The two are interleaved in the order they reached the runner, which needn't be the order they were written in. Past 262,144 characters (256 Ki) only the end is kept, after the line `[Earlier output was cut]`.
+
+A `knownFailure` or `errored` response also has a `screenshot` of the Script's page, as a base64 PNG of its viewport, if the Script got as far as having a page and its process could still take one. A Script whose default export is wrong, or one that ran out of memory or blocked its process until its timeout, has none.
 
 ## Writing a Script
 
@@ -73,31 +78,46 @@ export default {
 } satisfies LookoutScript;
 ```
 
-A Script may import `playwright` and Node built-ins. `@chasepie/lookout-scripting` only holds types, and either form of type import from it works: `import type { … }`, or `import { type … }`. [`examples/`](../../examples) has a Script with its own test.
+A Script's file may import only `playwright` and Node built-ins. Importing anything else, including a file of its own, is Errored with `Scripts can only import Node built-ins and playwright, not '<specifier>'`. `@chasepie/lookout-scripting` only holds types, and either form of type import from it works: `import type { … }`, or `import { type … }`. [`examples/`](../../examples) has a Script with its own test.
+
+### Limits
+
+| Limit | What happens |
+|-------|--------------|
+| `timeoutMs` | Errored with `Script timed out after <timeoutMs> ms`. |
+| 512 MB V8 heap (`--max-old-space-size`) | Errored with `Script exceeded its memory limit of 512 MB`. This limits only what V8 manages: memory outside it, such as `Buffer`s, is limited only by the runner's container. |
+| File reads | Through Node's `--permission`, a Script may read only its own temp directory, the runner's code and `node_modules`, Playwright's browsers, and the system files Playwright reads on Linux: `/etc/os-release`, to pick a Chromium build, and `/proc/version`, `/proc/sys/fs/binfmt_misc/WSLInterop` and `/run/WSL`, to tell whether it's under WSL. Those are granted even where they don't exist, since under `--permission` even checking whether a file exists throws for a path that isn't granted. It may write only to its temp directory. Anything else is Errored with Node's `ERR_ACCESS_DENIED` message. |
 
 ## How an execution works
 
 ```text
 server.ts           POST /execute → validate the request
 execute.ts          write the source to a fresh temp directory
-                    fork script-process.ts, kill it at timeoutMs
-  script-process.ts   import the Script and check its default export
-                      launch Chromium (--disable-blink-features=AutomationControlled)
+                    fork script-process.ts with a memory limit and --permission, collecting its stdout and stderr
+                    at timeoutMs without an outcome, ask it for a screenshot, then kill it
+  script-process.ts   import the Script, limiting its imports, and check its default export
+                      launch Chromium (--disable-blink-features=AutomationControlled) → report its pid
                       run(page, context) in a new browser context, with the request's proxy
-                      check the outcome, close the browser (and with it the context)
-                      report the result over IPC, then exit
-execute.ts          delete the temp directory → respond
+                      check the outcome → report it
+                      screenshot the page unless it Succeeded, close Chromium
+                      write out its console output → report it's finished, with the screenshot, then exit
+execute.ts          kill what the Script left running, delete the temp directory → respond
 ```
 
 - **One child process per execution**, so a Script can't affect another or the runner itself. The child exits as soon as it has reported, even if the Script left a timer or socket open. It also exits if the runner goes away, so a Script that never finishes can't outlive it.
+- **Nothing a Script starts outlives its execution.** The child leads a process group of its own, which any subprocess the Script starts joins. Playwright gives Chromium a group of its own, so the child launches it with `launchServer`, the one API that tells which process it is, and reports its pid. When the child exits, or is killed at its timeout or because the caller went away, the runner kills both groups. If the runner itself goes away, the child kills them. If the runner is stopped by `SIGINT` or `SIGTERM`, it kills them first, since a Script that blocks its process can't notice the runner going. A runner killed outright with `SIGKILL` can't, and a Script that blocks its process then keeps running. A subprocess that leaves the group on purpose, as `spawn` with `detached: true` does, escapes all this, like the other limits that aren't a security boundary. This relies on POSIX process groups. On Windows, which has none, only the Script's own process is killed.
 - **Errors outside `run`'s own promise** count as long as `run` is in progress. That covers a throw from a timer or event listener, or a rejection the Script left unhandled. The child races `run` against them, so the error becomes the Errored message rather than a crash that loses it. Once `run` has settled they're ignored, so a wait the Script left pending can't fail the Run when the browser closes.
-- **Results travel over IPC, not stdout,** so a Script's `console.log` can't be mistaken for its result. The Script shares that IPC channel. So each execution gets a random token that the child's report must carry back, and the child keeps its own reference to `process.send` from before the Script loads. That way a Script's own use of the channel, or of `process.send`, can't be taken for or rewrite the report. These keep a Script from interfering by mistake, not on purpose. Code in the same process can always reach the channel, but it needn't be stopped from forging its outcome, since a Script decides its own outcome anyway. The message types are in `protocol.ts`.
+- **Results travel over IPC, not stdout,** so a Script's `console.log` can't be mistaken for its result. The Script shares that IPC channel. So each execution gets a random token that the child's reports must carry back, and the child keeps its own reference to `process.send` from before the Script loads. That way a Script's own use of the channel, or of `process.send`, can't be taken for or rewrite the report. These keep a Script from interfering by mistake, not on purpose. Code in the same process can always reach the channel, but it needn't be stopped from forging its outcome, since a Script decides its own outcome anyway. The message types are in `protocol.ts`.
 - **The temp directory holds everything an execution writes.** That includes the Script file and, through the child's `TMPDIR`, Chromium's profile and Playwright's artifacts. A process killed at its timeout can't clean up after itself, so the runner deletes the whole directory.
-- **`playwright` imports resolve from the runner.** The Script's file sits in a temp directory with no `node_modules`, so a resolve hook in `script-process.ts` points `playwright` imports at the runner's own copy. Imports from `@chasepie/lookout-scripting` that survive type stripping get an empty module.
+- **`playwright` imports resolve from the runner.** The Script's file sits in a temp directory with no `node_modules`, so a resolve hook in `script-process.ts` points `playwright` imports at the runner's own copy, and refuses any import other than a Node built-in. It applies only to imports made by the Script's own file, not to those `playwright` makes. Imports from `@chasepie/lookout-scripting` that survive type stripping get an empty module.
+- **The outcome is reported as soon as there is one.** The screenshot and the console output follow in a last `finished` report. So the time they take can't push an outcome the Script reached in time past its timeout. Once the timeout passes, the child has 5 seconds to finish, whether or not it has an outcome. Its screenshot may take 2 of them and writing out its console output 1, then it's killed.
+- **A Script that runs past its timeout gets a screenshot.** The runner sends the child a `timedOut` message, and the child finishes at once with a screenshot of the Script's page. The runner words the timeout itself. A child that can't finish, as when the Script blocks its process, is killed when the 5 seconds run out.
+- **Running out of memory is told apart by how the process ends.** V8 aborts a process that reaches its heap limit with `SIGABRT`, writing `JavaScript heap out of memory` to stderr. A process that ends that way without reporting is Errored as having exceeded its memory limit, rather than as killed by `SIGABRT`. Both must hold, so a Script that only writes that message isn't taken to have run out of memory.
+- **Console output can't hold up the response.** The child waits, for up to 1 second, for its console writes to reach the runner before it finishes and exits, since writes to a pipe are asynchronous. Once it has exited, the runner waits at most 1 second more for the end of its output, so a subprocess the Script started, which may share its stdout and stderr, can't keep the execution going.
+- **The file limits are not a security boundary.** Node says its permission model isn't one. In particular, the child must be allowed to start processes, because Playwright starts Chromium as one, and a Script can use that to get around them. The runner's offline container is what contains a Script ([ADR-0003](../../docs/adr/0003-scripts-run-in-an-offline-runner-container.md)). Node checks paths as given, without resolving symlinks, so the runner gives the child its temp directory's real path, as the Script's module path is. The child doesn't get the runner's `NODE_OPTIONS`, since whatever it preloads, such as a debugger, is outside what the child may read.
 
 Still to come:
 
-- **#4:** a memory cap and `--permission` file-read limits on the child, a clear error for imports other than built-ins and `playwright`, and console output and screenshots in the response.
 - **#13:** connecting to Browserless in deployment, instead of launching a local Chromium.
 
 ## Tests

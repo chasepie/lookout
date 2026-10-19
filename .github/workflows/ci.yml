@@ -30,6 +30,8 @@ jobs:
   node:
     name: Runner and Scripting
     runs-on: ubuntu-latest
+    # The runner tests take under a minute; a hung run fails here rather than at GitHub's 6-hour limit
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
 
@@ -46,3 +48,11 @@ jobs:
 
       - name: Lint
         run: npm run lint
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      # The runner's tests only (Seam 2), which serve their own pages and need no internet. Not `--workspaces`:
+      # examples/ has a test against a real bot-detection site.
+      - name: Test
+        run: npm test
