@@ -37,6 +37,8 @@
     "verbatimModuleSyntax": true,
     // Node runs the runner and Scripts with type stripping, which only supports erasable syntax
     "erasableSyntaxOnly": true,
+    // ...and needs relative imports to name the .ts file
+    "rewriteRelativeImportExtensions": true,
     "isolatedModules": true,
     "noUncheckedSideEffectImports": true,
     "moduleDetection": "force",

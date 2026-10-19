@@ -13,7 +13,10 @@ export default defineConfig({
   ],
   languageOptions: {
     parserOptions: {
-      projectService: true
+      projectService: {
+        // The runner must accept JavaScript Scripts, which the TypeScript project doesn't include
+        allowDefaultProject: ['src/runner/test/fixtures/*.js']
+      }
     }
   }
 });
