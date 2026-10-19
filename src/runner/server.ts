@@ -1,15 +1,43 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { json } from 'node:stream/consumers';
 import { execute, fileKinds, type ExecuteRequest, type FileKind, type RunnerConfig } from './execute.ts';
 import { isObject } from './guards.ts';
 
-/** A request the runner can't execute, reported to the caller as a 400 */
-class InvalidRequestError extends Error {}
+/** A request the runner can't execute, reported to the caller with a 4xx status */
+class InvalidRequestError extends Error {
+  readonly status: number;
 
-const readJson = (request: IncomingMessage) =>
-  json(request).catch(() => {
+  constructor(message: string, status = 400) {
+    super(message);
+    this.status = status;
+  }
+}
+
+/** Far more than any Script's source needs; it bounds what one request can make the runner hold */
+const maxBodyBytes = 1024 * 1024;
+
+async function readJson(request: IncomingMessage): Promise<unknown> {
+  const tooLarge = new InvalidRequestError(`Request body must be at most ${maxBodyBytes} bytes`, 413);
+  if (Number(request.headers['content-length']) > maxBodyBytes) {
+    throw tooLarge;
+  }
+  // Without a declared length, read to the end but stop keeping the body once it's too large
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of request) {
+    size += (chunk as Buffer).length;
+    if (size <= maxBodyBytes) {
+      chunks.push(chunk as Buffer);
+    }
+  }
+  if (size > maxBodyBytes) {
+    throw tooLarge;
+  }
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  } catch {
     throw new InvalidRequestError('Request body must be JSON');
-  });
+  }
+}
 
 const isFileKind = (value: unknown): value is FileKind => (fileKinds as readonly unknown[]).includes(value);
 
@@ -38,7 +66,8 @@ function parseExecuteRequest(body: unknown): ExecuteRequest {
   if (typeof timeoutMs !== 'number' || !Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > maxTimeoutMs) {
     throw new InvalidRequestError(`timeoutMs must be an integer from 1 to ${maxTimeoutMs}`);
   }
-  if (proxy !== undefined && !isObject(proxy)) {
+  // A serializer may write a missing proxy as null
+  if (proxy !== undefined && proxy !== null && !isObject(proxy)) {
     throw new InvalidRequestError('proxy must be an object');
   }
   return {
@@ -48,7 +77,7 @@ function parseExecuteRequest(body: unknown): ExecuteRequest {
       notificationUrl: requireString(isObject(context) ? context['notificationUrl'] : undefined, 'context.notificationUrl'),
     },
     timeoutMs,
-    ...(proxy && {
+    ...(isObject(proxy) && {
       proxy: {
         server: requireString(proxy['server'], 'proxy.server'),
         ...optionalProxyField(proxy, 'username'),
@@ -66,7 +95,14 @@ const sendJson = (response: ServerResponse, status: number, body: unknown) => {
 
 async function handleExecute(request: IncomingMessage, response: ServerResponse, config: RunnerConfig) {
   const executeRequest = parseExecuteRequest(await readJson(request));
-  sendJson(response, 200, await execute(executeRequest, config));
+  // A caller that goes away won't read the outcome, so stop the Script rather than let it run to its timeout
+  const callerGone = new AbortController();
+  response.once('close', () => {
+    if (!response.writableFinished) {
+      callerGone.abort();
+    }
+  });
+  sendJson(response, 200, await execute(executeRequest, config, callerGone.signal));
 }
 
 /** The runner's HTTP API: `POST /execute` runs one Script and responds with its outcome */
@@ -78,7 +114,7 @@ export const createRunnerServer = (config: RunnerConfig) =>
     }
     handleExecute(request, response, config).catch((error: unknown) => {
       if (error instanceof InvalidRequestError) {
-        sendJson(response, 400, { error: error.message });
+        sendJson(response, error.status, { error: error.message });
         return;
       }
       console.error('Executing a Script failed', error);

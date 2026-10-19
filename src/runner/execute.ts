@@ -32,18 +32,22 @@ export type ExecuteResponse = ScriptResult & { durationMs: number };
 const scriptProcessPath = fileURLToPath(new URL('./script-process.ts', import.meta.url));
 
 /**
- * Runs a Script's child process to completion, killing it at the timeout. The process reports its result over IPC,
- * so the Script's console output can't be mistaken for it, and exits after reporting even if the Script left a
- * handle open. Its temp files go in `tempDirectory`, since a killed process can't clean up after itself.
+ * Runs a Script's child process to completion, killing it at the timeout or when `signal` aborts. The process
+ * reports its result over IPC, so the Script's console output can't be mistaken for it, and exits after reporting
+ * even if the Script left a handle open. Its temp files go in `tempDirectory`, since a killed process can't clean
+ * up after itself.
  */
-const runScriptProcess = (job: ScriptJob, timeoutMs: number, tempDirectory: string) =>
+const runScriptProcess = (job: ScriptJob, timeoutMs: number, tempDirectory: string, signal: AbortSignal) =>
   new Promise<ScriptResult>((resolve) => {
     const child = fork(scriptProcessPath, {
       execArgv: [],
       env: { ...process.env, TMPDIR: tempDirectory },
       stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
+      signal,
+      killSignal: 'SIGKILL',
     });
     let reported: ScriptResult | undefined;
+    let failure: Error | undefined;
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
@@ -55,25 +59,36 @@ const runScriptProcess = (job: ScriptJob, timeoutMs: number, tempDirectory: stri
         reported = message.result;
       }
     });
-    child.once('error', (error) => {
-      clearTimeout(timer);
-      resolve(erroredResult(`Script process failed: ${error.message}`));
+    // Failing to spawn, to send the job, or being aborted: 'close' still follows, once the process is gone
+    child.on('error', (error) => {
+      failure ??= error;
+      child.kill('SIGKILL');
     });
-    child.once('close', (code) => {
+    child.once('close', (code, exitSignal) => {
       clearTimeout(timer);
       if (reported) {
         resolve(reported);
       } else if (timedOut) {
         resolve(erroredResult(`Script timed out after ${timeoutMs} ms`));
+      } else if (failure) {
+        resolve(erroredResult(`Script process failed: ${failure.message}`));
       } else {
-        resolve(erroredResult(`Script process exited with code ${code} before reporting an outcome`));
+        const ending = exitSignal ? `was killed by ${exitSignal}` : `exited with code ${code}`;
+        resolve(erroredResult(`Script process ${ending} before reporting an outcome`));
       }
     });
     child.send(job);
   });
 
-/** Executes a Script in its own child Node process and reports its outcome */
-export async function execute(request: ExecuteRequest, config: RunnerConfig): Promise<ExecuteResponse> {
+/**
+ * Executes a Script in its own child Node process and reports its outcome. Aborting `signal`, as when the caller
+ * goes away, stops the Script.
+ */
+export async function execute(
+  request: ExecuteRequest,
+  config: RunnerConfig,
+  signal: AbortSignal,
+): Promise<ExecuteResponse> {
   const started = performance.now();
   const directory = await mkdtemp(join(tmpdir(), 'lookout-script-'));
   try {
@@ -90,10 +105,13 @@ export async function execute(request: ExecuteRequest, config: RunnerConfig): Pr
       headless: config.headless,
       ...(request.proxy && { proxy: request.proxy }),
     };
-    const result = await runScriptProcess(job, request.timeoutMs, tempDirectory);
+    const result = await runScriptProcess(job, request.timeoutMs, tempDirectory, signal);
     return { ...result, durationMs: Math.round(performance.now() - started) };
   } finally {
-    // A killed Script's browser may still be writing its profile as it exits, so retry while it's busy
-    await rm(directory, { recursive: true, force: true, maxRetries: 5 });
+    // A killed Script's browser may still be writing its profile as it exits, so retry while it's busy.
+    // Failing even so must not replace the Script's result.
+    await rm(directory, { recursive: true, force: true, maxRetries: 5 }).catch((error: unknown) => {
+      console.error(`Removing ${directory} failed`, error);
+    });
   }
 }

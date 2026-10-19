@@ -26,11 +26,33 @@ const listen = async (server: Server) => {
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 };
 
-/** Whether the runner has a Script process still running, which it would be its direct child */
-const hasChildProcesses = (pid: number) =>
-  new Promise<boolean>((resolve) => {
-    execFile('pgrep', ['-P', String(pid)], (error) => resolve(error === null));
+/** The runner's Script processes still running, which are its direct children */
+const childPids = (pid: number) =>
+  new Promise<number[]>((resolve) => {
+    execFile('pgrep', ['-P', String(pid)], (_, stdout) => resolve(stdout.split('\n').filter(Boolean).map(Number)));
   });
+
+const hasChildProcesses = async (pid: number) => (await childPids(pid)).length > 0;
+
+const isAlive = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/** Polls until `check` holds, failing once `timeoutMs` passes */
+async function eventually(check: () => boolean | Promise<boolean>, timeoutMs = 5_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!await check()) {
+    if (Date.now() > deadline) {
+      throw new Error(`Condition still false after ${timeoutMs} ms`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+}
 
 /** Starts a real runner process and resolves with its base URL once it is listening */
 async function startRunner(env: Record<string, string>) {
@@ -83,6 +105,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   runner.kill();
+  await once(runner, 'exit');
   pageServer.close();
   proxyServer.close();
   await rm(runnerTmpdir, { recursive: true, force: true });
@@ -235,6 +258,76 @@ test("a Script that wraps the runner's channel can't rewrite its outcome", { tim
   expect(result).toEqual({ outcome: 'knownFailure', details: 'Access Denied' });
 });
 
+test('a wait the Script left pending, which fails as the browser closes, does not affect its outcome', { timeout: 30_000 }, async () => {
+  const result = await execute('leaves-wait-unawaited.ts');
+
+  expect(result).toEqual({ outcome: 'succeeded', content: '£20.00' });
+});
+
+test.each([
+  ['throws from a timer', 'throws-from-timer.ts', 'Thrown from a timer'],
+  ['leaves a rejection unhandled', 'rejects-in-background.ts', 'Rejected in the background'],
+])('a Script that %s while running is Errored with that error', { timeout: 30_000 }, async (_, fixture, errorMessage) => {
+  const result = await execute(fixture);
+
+  expect(result).toEqual({ outcome: 'errored', errorMessage });
+});
+
+test('a Script can import its types inline from the scripting package', { timeout: 30_000 }, async () => {
+  const result = await execute('inline-type-import.ts');
+
+  expect(result).toEqual({ outcome: 'succeeded', content: 'imported' });
+});
+
+test('a Script whose process is killed by a signal is Errored, naming the signal', { timeout: 30_000 }, async () => {
+  const result = await execute('kills-itself.ts');
+
+  expect(result).toEqual({
+    outcome: 'errored',
+    errorMessage: 'Script process was killed by SIGKILL before reporting an outcome',
+  });
+});
+
+test('a Script whose caller disconnects is stopped', { timeout: 30_000 }, async () => {
+  const caller = new AbortController();
+  const response = fetch(`${runnerUrl}/execute`, {
+    method: 'POST',
+    body: JSON.stringify({
+      source: await fixtureSource('hangs-on-page.ts'),
+      fileKind: 'ts',
+      context: { notificationUrl: `${pagesUrl}/in-stock` },
+      timeoutMs: 60_000,
+    }),
+    signal: caller.signal,
+  });
+  await eventually(() => hasChildProcesses(runner.pid!));
+
+  caller.abort();
+
+  await expect(response).rejects.toThrow();
+  await eventually(async () => !await hasChildProcesses(runner.pid!));
+});
+
+test("a Script's process exits when the runner dies", { timeout: 30_000 }, async () => {
+  const { runner: doomedRunner, url } = await startRunner({ HEADLESS: 'true' });
+  const response = fetch(`${url}/execute`, {
+    method: 'POST',
+    body: JSON.stringify({
+      source: await fixtureSource('hangs-on-page.ts'),
+      fileKind: 'ts',
+      context: { notificationUrl: `${pagesUrl}/in-stock` },
+      timeoutMs: 60_000,
+    }),
+  });
+  await eventually(() => hasChildProcesses(doomedRunner.pid!));
+  const scriptPids = await childPids(doomedRunner.pid!);
+
+  doomedRunner.kill('SIGKILL');
+
+  await expect(response).rejects.toThrow();
+  await eventually(() => scriptPids.every((pid) => !isAlive(pid)));
+});
+
 test('a Script that exits its process is Errored', { timeout: 30_000 }, async () => {
   const result = await execute('exits-process.ts');
 
@@ -266,7 +359,7 @@ test("a Script's browser goes through the proxy settings it's given", { timeout:
   expect(result).toMatchObject({ outcome: 'succeeded', content: 'http://shop.lookout.test/widget' });
 });
 
-test('the response reports how long the Script took', { timeout: 30_000 }, async () => {
+test('the response reports how long the execution took', { timeout: 30_000 }, async () => {
   const { durationMs, result } = await executeTimed('waits.ts');
 
   expect(result).toEqual({ outcome: 'succeeded' });
@@ -299,6 +392,49 @@ describe.skipIf(process.platform === 'linux' && !process.env['DISPLAY'])('a non-
     expect(result).toMatchObject({ outcome: 'succeeded' });
     expect(result['content']).not.toContain('Headless');
   });
+});
+
+test('a request whose proxy is null runs without one', { timeout: 30_000 }, async () => {
+  const response = await fetch(`${runnerUrl}/execute`, {
+    method: 'POST',
+    body: JSON.stringify({ ...validRequest, proxy: null }),
+  });
+
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({ outcome: 'succeeded' });
+});
+
+test('a request body over 1 MiB is rejected as too large', { timeout: 30_000 }, async () => {
+  const response = await fetch(`${runnerUrl}/execute`, {
+    method: 'POST',
+    body: JSON.stringify({ ...validRequest, source: `// ${'x'.repeat(1024 * 1024)}` }),
+  });
+
+  expect(response.status).toBe(413);
+  expect(await response.json()).toEqual({ error: 'Request body must be at most 1048576 bytes' });
+  expect(await execute('read-price.ts')).toMatchObject({ outcome: 'succeeded' });
+});
+
+test.each([
+  ['empty', ''],
+  ['not a number', 'http'],
+  ['out of range', '70000'],
+])('a runner whose PORT is %s refuses to start', { timeout: 30_000 }, async (_, port) => {
+  const badRunner = spawn(process.execPath, [runnerPath], {
+    env: { ...process.env, PORT: port },
+    stdio: ['ignore', 'pipe', 'pipe'],
+    // A runner that starts anyway is killed, rather than left listening
+    timeout: 5_000,
+  });
+  let stderr = '';
+  badRunner.stderr.on('data', (chunk) => {
+    stderr += String(chunk);
+  });
+
+  const [code] = await once(badRunner, 'exit') as [number | null];
+
+  expect(code).toBe(1);
+  expect(stderr).toContain('PORT must be an integer from 0 to 65535');
 });
 
 const validRequest = {

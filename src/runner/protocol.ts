@@ -25,7 +25,7 @@ export interface ScriptResult {
 
 /**
  * What a child process sends when its Script has finished. The Script shares the process's IPC channel,
- * so the runner accepts only a report carrying the job's token, which the Script never sees.
+ * so the runner accepts only a report carrying the job's token, which the Script isn't given.
  */
 export interface ScriptReport {
   token: string;
