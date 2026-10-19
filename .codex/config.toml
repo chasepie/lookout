@@ -1,0 +1,8 @@
+[mcp_servers.angular-cli]
+enabled = true
+command = "npx"
+args = ["-y", "@angular/cli", "mcp"]
+
+[mcp_servers.playwright]
+command = "npx"
+args = ["@playwright/mcp@latest"]
