@@ -334,10 +334,13 @@ test("a Script's console output is cut down to its last 262,144 characters", { t
   expect(consoleOutput.endsWith(`line 20000 ${'x'.repeat(50)}\n`)).toBe(true);
 });
 
-test('an Errored Script has what it logged in the response, with a screenshot of its page', { timeout: 30_000 }, async () => {
-  const { consoleOutput, screenshot, result } = await executeTimed('logs-then-throws.ts');
+test.each([
+  ['a Known failure', 'logs-then-reports-failure.ts', { outcome: 'knownFailure', details: 'Access Denied' }],
+  ['an Errored', 'logs-then-throws.ts', { outcome: 'errored', errorMessage: 'The price element has moved' }],
+])('%s Script has what it logged in the response, with a screenshot of its page', { timeout: 30_000 }, async (_, fixture, expected) => {
+  const { consoleOutput, screenshot, result } = await executeTimed(fixture);
 
-  expect(result).toEqual({ outcome: 'errored', errorMessage: 'The price element has moved' });
+  expect(result).toEqual(expected);
   expect(consoleOutput).toBe('Looking for the price\n');
   expect(isPng(screenshot)).toBe(true);
 });
