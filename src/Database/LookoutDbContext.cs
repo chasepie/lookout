@@ -1,6 +1,7 @@
 using ChasePie.Lookout.Model;
 using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace ChasePie.Lookout.Database;
 
@@ -55,6 +56,26 @@ public class LookoutDbContext(DbContextOptions<LookoutDbContext> options) : DbCo
         modelBuilder.Entity<Run>()
             .Property(run => run.Outcome)
             .HasConversion<string>();
+
+        modelBuilder.Entity<Watch>()
+            .ComplexProperty(watch => watch.Schedule, schedule =>
+            {
+                schedule.Property(value => value.Kind).HasConversion<string>();
+                schedule.Property(value => value.Unit).HasConversion<string>();
+            });
+
+        modelBuilder.Entity<Watch>()
+            .Property(watch => watch.NextRunAt)
+            // SQLite can't compare DateTimeOffset text, and the scheduler queries by it; Lookout stores UTC throughout.
+            .HasConversion(new DateTimeOffsetToBinaryConverter());
+
+        modelBuilder.Entity<Watch>()
+            .Property(watch => watch.LastScheduledRunAt)
+            // Schedule changes compare it to detect a Run that started meanwhile.
+            .HasConversion(new DateTimeOffsetToBinaryConverter());
+
+        modelBuilder.Entity<Watch>()
+            .HasIndex(watch => watch.NextRunAt);
 
         modelBuilder.Entity<Run>()
             .HasIndex(run => new { run.WatchId, run.Id });

@@ -33,7 +33,10 @@ public sealed class RunnerFailureTests(TestContext testContext)
         {
             { new StringContent("Widget"), "name" },
             { new StringContent("https://example.com"), "notificationUrl" },
-            { new StringContent("export default {}"), "script", "price.ts" }
+            { new StringContent("export default {}"), "script", "price.ts" },
+            { new StringContent("interval"), "scheduleKind" },
+            { new StringContent("1"), "every" },
+            { new StringContent("hours"), "unit" }
         };
         var created = await client.PostAsync(new Uri("/api/watches", UriKind.Relative), form, testContext.CancellationToken);
         created.EnsureSuccessStatusCode();

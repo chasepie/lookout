@@ -1,0 +1,54 @@
+<fieldset>
+  <legend>When to run</legend>
+  <label [for]="id + '-kind'">Schedule</label>
+  <select [id]="id + '-kind'" [formField]="schedule().kind">
+    <option value="interval">Every few minutes, hours or days</option>
+    <option value="daily">Daily at a set time</option>
+    <option value="cron">Advanced (cron)</option>
+  </select>
+  @switch (schedule().kind().value()) {
+    @case ('interval') {
+      <div class="interval">
+        <div>
+          <label [for]="id + '-every'">Every</label>
+          <input [id]="id + '-every'" type="number" step="1" [formField]="schedule().every" />
+        </div>
+        <div>
+          <label [for]="id + '-unit'">Unit</label>
+          <select [id]="id + '-unit'" [formField]="schedule().unit">
+            <option value="minutes">minutes</option>
+            <option value="hours">hours</option>
+            <option value="days">days</option>
+          </select>
+        </div>
+      </div>
+      @if (schedule().every().touched()) {
+        @for (error of schedule().every().errors(); track error.kind) { <small class="error">{{ error.message }}</small> }
+      }
+    }
+    @case ('daily') {
+      <label [for]="id + '-time'">Time of day</label>
+      <input [id]="id + '-time'" type="time" [formField]="schedule().timeOfDay" [attr.aria-describedby]="id + '-zone-help'" />
+      <small [id]="id + '-zone-help'">In Lookout's time zone.</small>
+      @if (schedule().timeOfDay().touched()) {
+        @for (error of schedule().timeOfDay().errors(); track error.kind) { <small class="error">{{ error.message }}</small> }
+      }
+    }
+    @case ('cron') {
+      <label [for]="id + '-cron'">Cron expression</label>
+      <input [id]="id + '-cron'" [formField]="schedule().cron" placeholder="e.g. 30 9 * * 1-5" spellcheck="false"
+        [attr.aria-describedby]="id + '-cron-help'" />
+      <small [id]="id + '-cron-help'">Five fields: minute, hour, day of month, month and day of week, in Lookout's time zone.</small>
+      @if (schedule().cron().touched()) {
+        @for (error of schedule().cron().errors(); track error.kind) { <small class="error">{{ error.message }}</small> }
+      }
+    }
+  }
+  <label [for]="id + '-jitter'">Jitter (minutes)</label>
+  <input [id]="id + '-jitter'" type="number" step="1" [formField]="schedule().jitterMinutes"
+    [attr.aria-describedby]="id + '-jitter-help'" />
+  <small [id]="id + '-jitter-help'">Delays each Run by a random amount up to this, so Runs look less robotic.</small>
+  @if (schedule().jitterMinutes().touched()) {
+    @for (error of schedule().jitterMinutes().errors(); track error.kind) { <small class="error">{{ error.message }}</small> }
+  }
+</fieldset>

@@ -1,6 +1,7 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
 using ChasePie.Lookout.Database;
-using ChasePie.Lookout.Backend.Runner;
+using ChasePie.Lookout.Backend.Scheduling;
 using ChasePie.Lookout.Model;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -12,9 +13,10 @@ namespace ChasePie.Lookout.Backend.Controllers;
 [Route("api/watches")]
 public sealed class WatchesController(
     LookoutDbContext database,
-    IRunnerClient runner,
-    TimeProvider timeProvider,
+    RunExecutor runExecutor,
+    WatchSchedules schedules,
     RunningWatches runningWatches,
+    RunSlots runSlots,
     IHostApplicationLifetime applicationLifetime)
     : LookoutControllerBase
 {
@@ -50,6 +52,11 @@ public sealed class WatchesController(
             return Problem("Upload a .ts or .js Script between 1 byte and 64 KiB.", statusCode: HttpStatusCode.BadRequest);
         }
 
+        if (!TryBuildSchedule(request, out var schedule, out var scheduleProblem))
+        {
+            return scheduleProblem;
+        }
+
         using var reader = new StreamReader(request.Script.OpenReadStream());
         var source = await reader.ReadToEndAsync(cancellationToken);
         if (string.IsNullOrWhiteSpace(source))
@@ -60,7 +67,11 @@ public sealed class WatchesController(
         var watch = new Watch
         {
             Name = name,
-            NotificationUrl = notificationUrl
+            NotificationUrl = notificationUrl,
+            Schedule = schedule,
+            JitterMinutes = request.JitterMinutes,
+            NextRunAt = schedules.NextRunAt(schedule, request.JitterMinutes),
+            NextRunTimeZone = schedules.TimeZone.Id
         };
         var version = new ScriptVersion
         {
@@ -79,6 +90,46 @@ public sealed class WatchesController(
         await transaction.CommitAsync(cancellationToken);
 
         return StatusCode(StatusCodes.Status201Created, WatchSummary.From(watch));
+    }
+
+    [HttpPut("{id:guid}/schedule")]
+    public async Task<ActionResult<WatchSummary>> ChangeSchedule(Guid id, ScheduleRequest request, CancellationToken cancellationToken)
+    {
+        if (!TryBuildSchedule(request, out var schedule, out var scheduleProblem))
+        {
+            return scheduleProblem;
+        }
+
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            var current = await database.Watches
+                .Where(watch => watch.Id == id)
+                .Select(watch => new { watch.LastScheduledRunAt })
+                .SingleOrDefaultAsync(cancellationToken);
+            if (current is null)
+            {
+                return NotFound();
+            }
+
+            // A set-based update leaves Revision alone, so a Run finishing meanwhile is still recorded. It applies
+            // only if the scheduler started no Run since the read, as the next Run must stay clear of the last one.
+            var nextRunAt = schedules.NextRunAt(schedule, request.JitterMinutes, current.LastScheduledRunAt);
+            var updated = await database.Watches
+                .Where(watch => watch.Id == id && watch.LastScheduledRunAt == current.LastScheduledRunAt)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(watch => watch.Schedule, schedule)
+                    .SetProperty(watch => watch.JitterMinutes, request.JitterMinutes)
+                    .SetProperty(watch => watch.NextRunAt, nextRunAt)
+                    .SetProperty(watch => watch.NextRunTimeZone, schedules.TimeZone.Id), cancellationToken);
+            if (updated == 1)
+            {
+                return await database.Watches.AsNoTracking()
+                    .Where(watch => watch.Id == id)
+                    .Select(WatchSummary.Projection)
+                    .SingleAsync(cancellationToken);
+            }
+        }
+        return Problem("Runs of this Watch kept starting while its schedule was being saved. Please try again.", statusCode: HttpStatusCode.Conflict);
     }
 
     [HttpGet("{id:guid}/runs")]
@@ -108,12 +159,34 @@ public sealed class WatchesController(
     {
         if (!runningWatches.TryStart(id))
         {
-            return Problem("This Watch is already running.", statusCode: HttpStatusCode.Conflict);
+            var detail = runningWatches.IsWaitingForSlot(id)
+                ? "This Watch is waiting for a free slot to run."
+                : "This Watch is already running.";
+            return Problem(detail, statusCode: HttpStatusCode.Conflict);
         }
 
         try
         {
-            return await ExecuteRun(id, applicationLifetime.ApplicationStopping);
+            await runSlots.WaitAsync(applicationLifetime.ApplicationStopping);
+            runningWatches.MarkExecuting(id);
+
+            RunExecution execution;
+            try
+            {
+                execution = await runExecutor.ExecuteAsync(id, applicationLifetime.ApplicationStopping);
+            }
+            finally
+            {
+                runSlots.Release();
+            }
+
+            return execution.Status switch
+            {
+                RunExecutionStatus.Recorded => Ok(execution.Run),
+                RunExecutionStatus.WatchNotFound => NotFound(),
+                RunExecutionStatus.NoScriptVersion => Problem("This Watch has no current Script version.", statusCode: HttpStatusCode.Conflict),
+                _ => Problem("Another Run of this Watch finished first, so this Run was not recorded.", statusCode: HttpStatusCode.Conflict)
+            };
         }
         finally
         {
@@ -121,60 +194,42 @@ public sealed class WatchesController(
         }
     }
 
-    private async Task<ActionResult<Run>> ExecuteRun(Guid id, CancellationToken cancellationToken)
+    /// <summary>Builds the requested schedule, or explains why it can't be used.</summary>
+    private bool TryBuildSchedule(
+        ScheduleRequest request,
+        [NotNullWhen(true)] out Schedule? schedule,
+        [NotNullWhen(false)] out ObjectResult? problem)
     {
-        var watch = await database.Watches.Include(watch => watch.CurrentScriptVersion)
-            .SingleOrDefaultAsync(watch => watch.Id == id, cancellationToken);
-        if (watch is null)
+        schedule = request.ScheduleKind switch
         {
-            return NotFound();
-        }
-
-        var script = watch.CurrentScriptVersion;
-        if (script is null)
-        {
-            return Problem("This Watch has no current Script version.", statusCode: HttpStatusCode.Conflict);
-        }
-        var startedAt = timeProvider.GetUtcNow();
-        var runRequest = new RunnerRequest(
-            Source: script.Source,
-            FileKind: script.FileKind,
-            Context: new ScriptContext(watch.NotificationUrl));
-        var result = await runner.ExecuteAsync(runRequest, cancellationToken);
-
-        var evaluation = RunEvaluation.Evaluate(watch.Baseline, result.Outcome, result.Content, result.ErrorMessage);
-        var run = new Run
-        {
-            WatchId = id,
-            ScriptVersionId = script.Id,
-            Outcome = evaluation.Outcome,
-            Content = result.Content,
-            Details = result.Details,
-            ErrorMessage = evaluation.ErrorMessage,
-            DurationMs = result.DurationMs,
-            StartedAt = startedAt,
-            FinishedAt = timeProvider.GetUtcNow(),
-            IsChange = evaluation.IsChange
+            ScheduleKind.Interval => new Schedule { Kind = ScheduleKind.Interval, Every = request.Every, Unit = request.Unit },
+            ScheduleKind.Daily when request.TimeOfDay is { } timeOfDay => Schedule.DailyAt(timeOfDay),
+            ScheduleKind.Daily => new Schedule { Kind = ScheduleKind.Daily },
+            ScheduleKind.Cron => Schedule.FromCron(request.Cron ?? ""),
+            _ => null
         };
-        watch.Baseline = evaluation.Baseline;
-        watch.Revision++;
-        database.Runs.Add(run);
-        try
+        var message = schedule is null
+            ? "Choose an interval, daily or cron schedule."
+            : schedules.Validate(schedule);
+        if (message is null && request.JitterMinutes is < 0 or > WatchSchedules.MaximumJitterMinutes)
         {
-            // The Run has finished, so record it even if shutdown started while the runner was replying.
-            await database.SaveChangesAsync(CancellationToken.None);
+            message = $"Jitter must be between 0 and {WatchSchedules.MaximumJitterMinutes} minutes.";
         }
-        catch (DbUpdateConcurrencyException)
-        {
-            return Problem("Another Run of this Watch finished first, so this Run was not recorded.", statusCode: HttpStatusCode.Conflict);
-        }
-
-        return Ok(run);
+        problem = message is null ? null : Problem(message, statusCode: HttpStatusCode.BadRequest);
+        return problem is null;
     }
 }
 
-public sealed record WatchSummary(Guid Id, string Name, string NotificationUrl, Guid? CurrentScriptVersionId,
-    string? Baseline, Run? LastRun)
+public sealed record WatchSummary(
+    Guid Id,
+    string Name,
+    string NotificationUrl,
+    Guid? CurrentScriptVersionId,
+    string? Baseline,
+    Run? LastRun,
+    Schedule Schedule,
+    int JitterMinutes,
+    DateTimeOffset? NextRunAt)
 {
     /// <summary>Maps a Watch in a database query; <see cref="From"/> applies the same mapping in memory.</summary>
     public static readonly Expression<Func<Watch, WatchSummary>> Projection = watch => new WatchSummary(
@@ -183,16 +238,31 @@ public sealed record WatchSummary(Guid Id, string Name, string NotificationUrl, 
         watch.NotificationUrl,
         watch.CurrentScriptVersionId,
         watch.Baseline,
-        watch.Runs.OrderByDescending(run => run.Id).FirstOrDefault());
+        watch.Runs.OrderByDescending(run => run.Id).FirstOrDefault(),
+        watch.Schedule,
+        watch.JitterMinutes,
+        watch.NextRunAt);
 
     private static readonly Func<Watch, WatchSummary> CompiledProjection = Projection.Compile();
 
     public static WatchSummary From(Watch watch) => CompiledProjection(watch);
 }
 
-public sealed class CreateWatchRequest
+public sealed class CreateWatchRequest : ScheduleRequest
 {
     public required string Name { get; init; }
     public required string NotificationUrl { get; init; }
     public required IFormFile Script { get; init; }
+}
+
+public class ScheduleRequest
+{
+    public ScheduleKind? ScheduleKind { get; init; }
+    /// <summary>For an interval schedule, how many <see cref="Unit"/>s apart its Runs are.</summary>
+    public int? Every { get; init; }
+    public IntervalUnit? Unit { get; init; }
+    /// <summary>For a daily schedule, the time of day in the install's time zone.</summary>
+    public TimeOnly? TimeOfDay { get; init; }
+    public string? Cron { get; init; }
+    public int JitterMinutes { get; init; }
 }

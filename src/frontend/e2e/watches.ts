@@ -9,6 +9,7 @@ export async function createWatch(page: Page, name: string, notificationUrl = 'h
     multipart: {
       name, notificationUrl,
       script: { name: 'price.ts', mimeType: 'text/plain', buffer: Buffer.from('export default {}') },
+      scheduleKind: 'interval', every: '1', unit: 'hours',
     },
   });
   expect(created.status()).toBe(201);

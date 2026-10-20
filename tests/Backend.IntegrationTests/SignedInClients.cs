@@ -29,6 +29,25 @@ public static class SignedInClients
         }
     }
 
+    /// <summary>Creates a client logged in to the account an earlier host set up against the same database.</summary>
+    public static async Task<HttpClient> CreateLoggedInClientAsync(this WebApplicationFactory<Program> factory,
+        CancellationToken cancellationToken)
+    {
+        var client = await factory.CreateAppClientAsync(cancellationToken);
+        try
+        {
+            var login = await client.PostAsJsonAsync("/api/session", new { userName = UserName, password = Password }, cancellationToken);
+            login.EnsureSuccessStatusCode();
+            await client.RefreshRequestTokenAsync(cancellationToken);
+            return client;
+        }
+        catch
+        {
+            client.Dispose();
+            throw;
+        }
+    }
+
     /// <summary>Creates a client without a session that, like the Angular app, sends back Lookout's request token.</summary>
     public static async Task<HttpClient> CreateAppClientAsync(this WebApplicationFactory<Program> factory,
         CancellationToken cancellationToken)

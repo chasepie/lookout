@@ -1,0 +1,21 @@
+@use 'tokens';
+@use 'mixins';
+
+:host { display: block; border-top: 1px solid tokens.$border-divider; margin-top: 18px; max-width: 360px; }
+
+.actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
+
+button {
+  border: 1px solid tokens.$button-border;
+  background: tokens.$button;
+  color: tokens.$button-text;
+  padding: 9px 16px;
+  border-radius: tokens.$radius-control;
+  font-size: 13px;
+  font-weight: 650;
+
+  &:hover:not(:disabled) { background: tokens.$button-hover; }
+  &.primary { @include mixins.primary-button; margin-top: 0; padding: 9px 16px; }
+}
+
+.error { color: tokens.$error; font-size: 14px; overflow-wrap: anywhere; margin: 16px 0 0; }

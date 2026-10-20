@@ -176,7 +176,10 @@ public sealed class WatchesTests(TestContext testContext)
         {
             { new StringContent(name), "name" },
             { new StringContent(url), "notificationUrl" },
-            { new StringContent(source), "script", fileName }
+            { new StringContent(source), "script", fileName },
+            { new StringContent("interval"), "scheduleKind" },
+            { new StringContent("1"), "every" },
+            { new StringContent("hours"), "unit" }
         };
         var response = await client.PostAsync(new Uri("/api/watches", UriKind.Relative), form, testContext.CancellationToken);
         Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode);
@@ -434,7 +437,10 @@ public sealed class WatchesTests(TestContext testContext)
         {
             { new StringContent(name), "name" },
             { new StringContent(notificationUrl), "notificationUrl" },
-            { new StringContent("export default { async run() { return { success: true, content: '£20' }; } };"), "script", "price.ts" }
+            { new StringContent("export default { async run() { return { success: true, content: '£20' }; } };"), "script", "price.ts" },
+            { new StringContent("interval"), "scheduleKind" },
+            { new StringContent("1"), "every" },
+            { new StringContent("hours"), "unit" }
         };
     }
 }
