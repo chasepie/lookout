@@ -48,7 +48,7 @@ The initial API is:
 | Method | Path | Behavior |
 | --- | --- | --- |
 | POST | `/api/watches` | Create a Watch atomically with multipart fields `name`, `notificationUrl`, and file `script` |
-| GET | `/api/watches` | List Watches with their Baseline, latest successful content, and last Run |
+| GET | `/api/watches` | List Watches with their Baseline (the latest successful content) and last Run |
 | POST | `/api/watches/{id}/runs` | Execute and record a Run; respond when it completes |
 | GET | `/api/watches/{id}/runs` | Read Run history, newest first, including `isChange`; defaults to 50 Runs, with `limit=1..100` and `before=<Run ID>` for older pages |
 | GET | `/health` | Check the migrated database |

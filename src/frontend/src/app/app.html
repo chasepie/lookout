@@ -34,7 +34,7 @@
         </button>
       </form>
     </section>
-    <section class="watch-list" aria-label="Your Watches" aria-live="polite">
+    <section class="watch-list" aria-label="Your Watches">
       @if (watches.list.error()) {
         <div class="empty-state" role="alert">
           <h2>Could not load your Watches</h2>
@@ -50,7 +50,7 @@
               }
             </div>
             <p class="eyebrow content-label">LATEST CONTENT</p>
-            <p class="content">{{ watch.latestContent === null ? 'No content yet' : watch.latestContent === '' ? '(Empty content)' : watch.latestContent }}</p>
+            <p class="content">{{ watch.baseline === null ? 'No content yet' : watch.baseline === '' ? '(Empty content)' : watch.baseline }}</p>
             @if (watch.lastRun; as run) {
               @if (run.isChange) { <p class="change">Change recorded</p> }
               @if (run.details) { <p class="details">{{ run.details }}</p> }
@@ -62,7 +62,7 @@
               } @else {
                 <small>No Runs yet</small>
               }
-              <button type="button" (click)="runNow(watch.id)" [disabled]="running().has(watch.id)">{{ running().has(watch.id) ? 'Running…' : 'Run now' }}</button>
+              <button type="button" (click)="runNow(watch)" [disabled]="running().has(watch.id)">{{ running().has(watch.id) ? 'Running…' : 'Run now' }}</button>
             </div>
           </article>
         } @empty {

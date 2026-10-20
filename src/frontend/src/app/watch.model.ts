@@ -15,6 +15,6 @@ export interface Watch {
   id: string;
   name: string;
   notificationUrl: string;
-  latestContent: string | null;
+  baseline: string | null;
   lastRun: Run | null;
 }

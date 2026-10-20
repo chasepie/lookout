@@ -32,7 +32,13 @@ public class LookoutDbContext(DbContextOptions<LookoutDbContext> options) : DbCo
             .HasOne<ScriptVersion>()
             .WithMany()
             .HasForeignKey(run => run.ScriptVersionId)
-            .OnDelete(DeleteBehavior.Restrict);
+            // Deleting a Watch cascades to its Script versions and Runs in an order SQLite chooses;
+            // NO ACTION is checked once the whole delete finishes, whereas RESTRICT fails mid-cascade.
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<Watch>()
+            .Property(watch => watch.Revision)
+            .IsConcurrencyToken();
 
         modelBuilder.Entity<Run>()
             .Property(run => run.Outcome)

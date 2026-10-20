@@ -20,7 +20,7 @@
     "test": "npm run test:runner && dotnet test --solution Lookout.slnx && npm run test:e2e",
     "test:runner": "npm test -w src/runner",
     "test:e2e": "npm run build:frontend && dotnet build tests/Frontend.TestHost && npm run e2e -w src/frontend",
-    "lint": "eslint . && npm run lint -w ./src/frontend"
+    "lint": "eslint ."
   },
   "workspaces": [
     "examples",

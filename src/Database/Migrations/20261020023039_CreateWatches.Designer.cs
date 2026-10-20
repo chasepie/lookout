@@ -11,7 +11,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ChasePie.Lookout.Database.Migrations
 {
     [DbContext(typeof(LookoutDbContext))]
-    [Migration("20261019232100_CreateWatches")]
+    [Migration("20261020023039_CreateWatches")]
     partial class CreateWatches
     {
         /// <inheritdoc />
@@ -110,6 +110,10 @@ namespace ChasePie.Lookout.Database.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<long>("Revision")
+                        .IsConcurrencyToken()
+                        .HasColumnType("INTEGER");
+
                     b.HasKey("Id");
 
                     b.HasIndex("CurrentScriptVersionId");
@@ -122,7 +126,7 @@ namespace ChasePie.Lookout.Database.Migrations
                     b.HasOne("ChasePie.Lookout.Model.ScriptVersion", null)
                         .WithMany()
                         .HasForeignKey("ScriptVersionId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
 
                     b.HasOne("ChasePie.Lookout.Model.Watch", null)

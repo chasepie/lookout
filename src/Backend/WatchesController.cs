@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using ChasePie.Lookout.Database;
 using ChasePie.Lookout.Backend.Runner;
 using ChasePie.Lookout.Model;
@@ -19,15 +20,9 @@ public sealed class WatchesController(
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<WatchSummary>>> List(CancellationToken cancellationToken)
     {
-        return await database.Watches.AsNoTracking().OrderBy(watch => watch.Name)
-            .Select(watch => new WatchSummary(
-                Id: watch.Id,
-                Name: watch.Name,
-                NotificationUrl: watch.NotificationUrl,
-                CurrentScriptVersionId: watch.CurrentScriptVersionId,
-                Baseline: watch.Baseline,
-                LatestContent: watch.Baseline,
-                LastRun: watch.Runs.OrderByDescending(run => run.Id).FirstOrDefault()))
+        return await database.Watches.AsNoTracking()
+            .OrderBy(watch => EF.Functions.Collate(watch.Name, "NOCASE"))
+            .Select(WatchSummary.Projection)
             .ToListAsync(cancellationToken);
     }
 
@@ -35,13 +30,15 @@ public sealed class WatchesController(
     [RequestSizeLimit(128 * 1024)]
     public async Task<ActionResult<WatchSummary>> Create([FromForm] CreateWatchRequest request, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(request.Name) || request.Name.Length > 200)
+        var name = request.Name.Trim();
+        if (name.Length is < 1 or > 200)
         {
             return Problem("Name must contain between 1 and 200 characters.", statusCode: 400);
         }
 
-        if (!Uri.TryCreate(request.NotificationUrl, UriKind.Absolute, out var notificationUrl)
-            || notificationUrl.Scheme is not ("http" or "https") || request.NotificationUrl.Length > 2048)
+        var notificationUrl = request.NotificationUrl.Trim();
+        if (!Uri.TryCreate(notificationUrl, UriKind.Absolute, out var parsedUrl)
+            || parsedUrl.Scheme is not ("http" or "https") || notificationUrl.Length > 2048)
         {
             return Problem("Notification URL must be an HTTP or HTTPS URL.", statusCode: 400);
         }
@@ -61,8 +58,8 @@ public sealed class WatchesController(
 
         var watch = new Watch
         {
-            Name = request.Name.Trim(),
-            NotificationUrl = request.NotificationUrl.Trim()
+            Name = name,
+            NotificationUrl = notificationUrl
         };
         var version = new ScriptVersion
         {
@@ -80,15 +77,7 @@ public sealed class WatchesController(
         await database.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
-        var summary = new WatchSummary(
-            Id: watch.Id,
-            Name: watch.Name,
-            NotificationUrl: watch.NotificationUrl,
-            CurrentScriptVersionId: version.Id,
-            Baseline: null,
-            LatestContent: null,
-            LastRun: null);
-        return StatusCode(StatusCodes.Status201Created, summary);
+        return StatusCode(StatusCodes.Status201Created, WatchSummary.From(watch));
     }
 
     [HttpGet("{id:guid}/runs")]
@@ -167,15 +156,38 @@ public sealed class WatchesController(
             IsChange = evaluation.IsChange
         };
         watch.Baseline = evaluation.Baseline;
+        watch.Revision++;
         database.Runs.Add(run);
-        await database.SaveChangesAsync(cancellationToken);
+        try
+        {
+            // The Run has finished, so record it even if shutdown started while the runner was replying.
+            await database.SaveChangesAsync(CancellationToken.None);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Problem("Another Run of this Watch finished first, so this Run was not recorded.", statusCode: 409);
+        }
 
         return Ok(run);
     }
 }
 
 public sealed record WatchSummary(Guid Id, string Name, string NotificationUrl, Guid? CurrentScriptVersionId,
-    string? Baseline, string? LatestContent, Run? LastRun);
+    string? Baseline, Run? LastRun)
+{
+    /// <summary>Maps a Watch in a database query; <see cref="From"/> applies the same mapping in memory.</summary>
+    public static readonly Expression<Func<Watch, WatchSummary>> Projection = watch => new WatchSummary(
+        watch.Id,
+        watch.Name,
+        watch.NotificationUrl,
+        watch.CurrentScriptVersionId,
+        watch.Baseline,
+        watch.Runs.OrderByDescending(run => run.Id).FirstOrDefault());
+
+    private static readonly Func<Watch, WatchSummary> CompiledProjection = Projection.Compile();
+
+    public static WatchSummary From(Watch watch) => CompiledProjection(watch);
+}
 
 public sealed class CreateWatchRequest
 {

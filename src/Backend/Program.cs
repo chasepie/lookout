@@ -24,12 +24,17 @@ public class Program
         services.AddControllers();
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<RunningWatches>();
+        var runnerUrl = configuration["Runner:BaseUrl"] ?? "http://localhost:3000";
+        if (!Uri.TryCreate(runnerUrl.TrimEnd('/') + "/", UriKind.Absolute, out var runnerBaseAddress)
+            || runnerBaseAddress.Scheme is not ("http" or "https"))
+        {
+            throw new InvalidOperationException($"Runner:BaseUrl must be an absolute HTTP or HTTPS URL, not '{runnerUrl}'");
+        }
         services.AddHttpClient<IRunnerClient, HttpRunnerClient>(client =>
         {
-            var baseUrl = configuration["Runner:BaseUrl"] ?? "http://localhost:3000";
-            client.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/");
-            // The runner allows five seconds to capture a timeout screenshot, plus transport overhead.
-            client.Timeout = TimeSpan.FromSeconds(135);
+            client.BaseAddress = runnerBaseAddress;
+            // HttpRunnerClient sets each request's deadline from its Script timeout.
+            client.Timeout = Timeout.InfiniteTimeSpan;
         });
         services.AddOpenApi();
 

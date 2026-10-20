@@ -5,7 +5,9 @@ using ChasePie.Lookout.Backend.Runner;
 using ChasePie.Lookout.Model;
 using ChasePie.Lookout.Database;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace ChasePie.Lookout.Backend.IntegrationTests;
 
@@ -120,7 +122,6 @@ public sealed class WatchesTests(TestContext testContext)
         Assert.IsFalse(failure["isChange"]!.GetValue<bool>());
         var watches = await client.GetFromJsonAsync<JsonArray>("/api/watches", testContext.CancellationToken);
         Assert.AreEqual(hasBaseline ? "£20" : null, watches![0]!["baseline"]?.GetValue<string>());
-        Assert.AreEqual(hasBaseline ? "£20" : null, watches[0]!["latestContent"]?.GetValue<string>());
         var history = await client.GetFromJsonAsync<JsonArray>($"/api/watches/{id}/runs", testContext.CancellationToken);
         Assert.IsNotNull(history);
         Assert.HasCount(hasBaseline ? 2 : 1, history);
@@ -308,9 +309,112 @@ public sealed class WatchesTests(TestContext testContext)
         Assert.AreEqual(HttpStatusCode.BadRequest, invalid.StatusCode);
     }
 
-    private async Task<JsonObject> CreateWatch(HttpClient client, string notificationUrl = "https://example.com/widget")
+    [TestMethod]
+    public async Task DeletingAWatchDeletesItsScriptVersionsAndRuns()
     {
-        using var form = WatchForm(notificationUrl);
+        await using var factory = new LookoutWebApplicationFactory();
+        factory.Runner.DefaultResult = new RunnerResult { Outcome = RunOutcome.Succeeded, Content = "£20", DurationMs = 1 };
+        using var client = factory.CreateClient();
+        var watch = await CreateWatch(client);
+        var id = watch["id"]!.GetValue<Guid>();
+        await RunNow(client, id.ToString());
+        await using var scope = factory.Services.CreateAsyncScope();
+        var database = scope.ServiceProvider.GetRequiredService<LookoutDbContext>();
+
+        // A set-based delete leaves the cascades to SQLite, which picks the order it removes dependents in.
+        await database.Watches.Where(item => item.Id == id).ExecuteDeleteAsync(testContext.CancellationToken);
+
+        Assert.IsFalse(await database.ScriptVersions.AnyAsync(testContext.CancellationToken));
+        Assert.IsFalse(await database.Runs.AnyAsync(testContext.CancellationToken));
+    }
+
+    [TestMethod]
+    public async Task RejectsARunEvaluatedAgainstABaselineAnotherRunAdvanced()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        using var client = factory.CreateClient();
+        var watch = await CreateWatch(client);
+        var id = watch["id"]!.GetValue<Guid>();
+        factory.Runner.OnExecute = async (_, cancellationToken) =>
+        {
+            // Another process records a Run of this Watch while this one is still executing.
+            await using var scope = factory.Services.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<LookoutDbContext>().Watches.Where(item => item.Id == id)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(item => item.Baseline, "£19")
+                    .SetProperty(item => item.Revision, item => item.Revision + 1), cancellationToken);
+            return new RunnerResult { Outcome = RunOutcome.Succeeded, Content = "£20", DurationMs = 1 };
+        };
+
+        var response = await client.PostAsync(new Uri($"/api/watches/{id}/runs", UriKind.Relative), null, testContext.CancellationToken);
+
+        Assert.AreEqual(HttpStatusCode.Conflict, response.StatusCode);
+        var history = await client.GetFromJsonAsync<JsonArray>($"/api/watches/{id}/runs", testContext.CancellationToken);
+        Assert.IsEmpty(history!);
+        var watches = await client.GetFromJsonAsync<JsonArray>("/api/watches", testContext.CancellationToken);
+        Assert.AreEqual("£19", watches![0]!["baseline"]!.GetValue<string>());
+    }
+
+    [TestMethod]
+    public async Task RecordsAFinishedRunWhenShutdownStartsBeforeItIsSaved()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        factory.Runner.OnExecute = (_, _) =>
+        {
+            factory.Services.GetRequiredService<IHostApplicationLifetime>().StopApplication();
+            return Task.FromResult(new RunnerResult { Outcome = RunOutcome.Succeeded, Content = "£20", DurationMs = 1 });
+        };
+        using var client = factory.CreateClient();
+        var watch = await CreateWatch(client);
+        var id = watch["id"]!.GetValue<Guid>();
+        // The test host disposes its services as it stops, so read the database file directly afterwards.
+        var connectionString = factory.Services.GetRequiredService<IConfiguration>().GetConnectionString("Lookout");
+
+        try
+        {
+            await client.PostAsync(new Uri($"/api/watches/{id}/runs", UriKind.Relative), null, testContext.CancellationToken);
+        }
+        catch (ObjectDisposedException)
+        {
+            // Unlike Kestrel, the test host can be disposed before it writes the response.
+        }
+
+        await using var database = new LookoutDbContext(new DbContextOptionsBuilder<LookoutDbContext>().UseSqlite(connectionString).Options);
+        Assert.AreEqual(1, await database.Runs.CountAsync(run => run.WatchId == id, testContext.CancellationToken));
+        Assert.AreEqual("£20", (await database.Watches.SingleAsync(testContext.CancellationToken)).Baseline);
+    }
+
+    [TestMethod]
+    public async Task ValidatesTheNameAfterTrimmingIt()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        using var client = factory.CreateClient();
+        var name = new string('a', 195);
+
+        var created = await CreateWatch(client, name: $"  {name}          ");
+
+        Assert.AreEqual(name, created["name"]!.GetValue<string>());
+    }
+
+    [TestMethod]
+    public async Task ListsWatchesAlphabeticallyIgnoringCase()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        using var client = factory.CreateClient();
+        foreach (var name in (string[])["Zebra", "apple", "Banana"])
+        {
+            await CreateWatch(client, name: name);
+        }
+
+        var watches = await client.GetFromJsonAsync<JsonArray>("/api/watches", testContext.CancellationToken);
+
+        Assert.AreSequenceEqual(["apple", "Banana", "Zebra"], watches!.Select(watch => watch!["name"]!.GetValue<string>()));
+    }
+
+    private async Task<JsonObject> CreateWatch(HttpClient client, string notificationUrl = "https://example.com/widget",
+        string name = "Widget price")
+    {
+        using var form = WatchForm(notificationUrl, name);
         var response = await client.PostAsync(new Uri("/api/watches", UriKind.Relative), form, testContext.CancellationToken);
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<JsonObject>(testContext.CancellationToken))!;
@@ -323,11 +427,12 @@ public sealed class WatchesTests(TestContext testContext)
         return (await response.Content.ReadFromJsonAsync<JsonObject>(testContext.CancellationToken))!;
     }
 
-    private static MultipartFormDataContent WatchForm(string notificationUrl = "https://example.com/widget")
+    private static MultipartFormDataContent WatchForm(string notificationUrl = "https://example.com/widget",
+        string name = "Widget price")
     {
         return new MultipartFormDataContent
         {
-            { new StringContent("Widget price"), "name" },
+            { new StringContent(name), "name" },
             { new StringContent(notificationUrl), "notificationUrl" },
             { new StringContent("export default { async run() { return { success: true, content: '£20' }; } };"), "script", "price.ts" }
         };

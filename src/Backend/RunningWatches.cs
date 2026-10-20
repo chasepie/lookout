@@ -2,7 +2,10 @@ using System.Collections.Concurrent;
 
 namespace ChasePie.Lookout.Backend;
 
-/// <summary>Prevents two on-demand Runs from evaluating the same Watch's stale Baseline.</summary>
+/// <summary>
+/// Stops this process from starting a second on-demand Run of a Watch that is already running.
+/// <see cref="Model.Watch.Revision"/> still rejects a stale Run that starts elsewhere.
+/// </summary>
 public sealed class RunningWatches
 {
     private readonly ConcurrentDictionary<Guid, byte> _running = new();

@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 using ChasePie.Lookout.Backend.Runner;
@@ -19,12 +20,14 @@ public sealed class RunnerFailureTests(TestContext testContext)
     [DataRow(200, "{\"outcome\":\"unexpected\",\"durationMs\":1}")]
     [DataRow(200, "{\"outcome\":\"succeeded\",\"content\":\"bad\",\"durationMs\":-1}")]
     [DataRow(0, "Connection refused")]
-    public async Task RecordsAnErroredRunWhenTheRunnerCannotProvideAResult(int status, string body)
+    [DataRow(200, "{\"outcome\":\"succeeded\",\"content\":\"£20\",\"durationMs\":1}", "application/json; charset=bogus")]
+    [DataRow(502, "<p>Bad gateway</p>", "text/html; charset=bogus")]
+    public async Task RecordsAnErroredRunWhenTheRunnerCannotProvideAResult(int status, string body, string? contentType = null)
     {
         await using var factory = new LookoutWebApplicationFactory();
         await using var host = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
             services.AddHttpClient<IRunnerClient, HttpRunnerClient>()
-                .ConfigurePrimaryHttpMessageHandler(() => new RunnerResponseHandler(status, body))));
+                .ConfigurePrimaryHttpMessageHandler(() => new RunnerResponseHandler(status, body, contentType))));
         using var client = host.CreateClient();
         using var form = new MultipartFormDataContent
         {
@@ -52,7 +55,7 @@ public sealed class RunnerFailureTests(TestContext testContext)
         Assert.AreEqual("errored", watches[0]!["lastRun"]!["outcome"]!.GetValue<string>());
     }
 
-    private sealed class RunnerResponseHandler(int status, string body) : HttpMessageHandler
+    private sealed class RunnerResponseHandler(int status, string body, string? contentType) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
@@ -60,7 +63,12 @@ public sealed class RunnerFailureTests(TestContext testContext)
             {
                 throw new HttpRequestException(body);
             }
-            return Task.FromResult(new HttpResponseMessage((HttpStatusCode)status) { Content = new StringContent(body) });
+            var content = new StringContent(body);
+            if (contentType is not null)
+            {
+                content.Headers.ContentType = MediaTypeHeaderValue.Parse(contentType);
+            }
+            return Task.FromResult(new HttpResponseMessage((HttpStatusCode)status) { Content = content });
         }
     }
 }

@@ -107,6 +107,10 @@ namespace ChasePie.Lookout.Database.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<long>("Revision")
+                        .IsConcurrencyToken()
+                        .HasColumnType("INTEGER");
+
                     b.HasKey("Id");
 
                     b.HasIndex("CurrentScriptVersionId");
@@ -119,7 +123,7 @@ namespace ChasePie.Lookout.Database.Migrations
                     b.HasOne("ChasePie.Lookout.Model.ScriptVersion", null)
                         .WithMany()
                         .HasForeignKey("ScriptVersionId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
 
                     b.HasOne("ChasePie.Lookout.Model.Watch", null)

@@ -55,7 +55,8 @@ namespace ChasePie.Lookout.Database.Migrations
                     Name = table.Column<string>(type: "TEXT", nullable: false),
                     NotificationUrl = table.Column<string>(type: "TEXT", nullable: false),
                     CurrentScriptVersionId = table.Column<Guid>(type: "TEXT", nullable: true),
-                    Baseline = table.Column<string>(type: "TEXT", nullable: true)
+                    Baseline = table.Column<string>(type: "TEXT", nullable: true),
+                    Revision = table.Column<long>(type: "INTEGER", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -93,8 +94,7 @@ namespace ChasePie.Lookout.Database.Migrations
                 table: "Runs",
                 column: "ScriptVersionId",
                 principalTable: "ScriptVersions",
-                principalColumn: "Id",
-                onDelete: ReferentialAction.Restrict);
+                principalColumn: "Id");
 
             migrationBuilder.AddForeignKey(
                 name: "FK_Runs_Watches_WatchId",

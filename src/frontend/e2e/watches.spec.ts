@@ -15,6 +15,7 @@ test('create a Watch with a Script, Run now, and see the saved content', async (
   const watch = page.getByRole('article', { name });
   await expect(watch.getByText('No Runs yet', { exact: true })).toHaveCount(1);
   await watch.getByRole('button', { name: 'Run now' }).click();
+  await expect(page.getByRole('status')).toHaveText(`Run of ${name} finished: Succeeded.`);
   await expect(watch).toContainText('£19.99');
   await expect(watch.getByText('Last Run: Succeeded', { exact: true })).toBeVisible();
   await page.reload();
@@ -32,7 +33,7 @@ for (const [outcome, label] of [['known-failure', 'Known failure'], ['errored', 
     expect(created.status()).toBe(201);
     await page.goto('/');
     const watch = page.getByRole('article', { name });
-    await expect(watch.getByText('Pending', { exact: true })).toHaveCount(0);
+    await expect(watch.getByText('No Runs yet', { exact: true })).toBeVisible();
     await watch.getByRole('button', { name: 'Run now' }).click();
     await expect(watch.getByText(`Last Run: ${label}`, { exact: true })).toBeVisible();
     await expect(watch).toContainText('No content yet');

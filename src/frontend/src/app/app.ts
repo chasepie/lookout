@@ -2,7 +2,7 @@ import { DatePipe, DecimalPipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { FormField, form, maxLength, pattern, required, submit } from '@angular/forms/signals';
-import type { RunOutcome } from './watch.model';
+import type { RunOutcome, Watch } from './watch.model';
 import { Watches } from './watches';
 
 @Component({
@@ -59,12 +59,14 @@ export class App {
     });
   }
 
-  protected async runNow(id: string) {
+  protected async runNow({ id, name }: Watch) {
     this.running.update((ids) => new Set(ids).add(id));
     this.error.set('');
     this.notice.set('');
     try {
-      await this.watches.runNow(id);
+      const run = await this.watches.runNow(id);
+      // Announced through the status region; the reloaded list itself isn't live, so cards aren't re-read.
+      this.notice.set(`Run of ${name} finished: ${this.outcomes[run.outcome]}.`);
       this.watches.list.reload();
     } catch (error: unknown) {
       this.error.set(problemMessage(error, 'Could not run the Watch. Please try again.'));
