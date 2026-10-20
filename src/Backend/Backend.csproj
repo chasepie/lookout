@@ -15,4 +15,9 @@
     <ProjectReference Include="..\Database\Database.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Seeded into new development databases; see ExampleWatches. -->
+    <EmbeddedResource Include="..\..\examples\bot-detection.ts" LogicalName="ExampleScripts/bot-detection.ts" />
+  </ItemGroup>
+
 </Project>

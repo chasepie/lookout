@@ -90,7 +90,14 @@ public class Program
     private static void MigrateDatabase(WebApplication app)
     {
         using var scope = app.Services.CreateScope();
-        scope.ServiceProvider.GetRequiredService<LookoutDbContext>().Database.Migrate();
+        var database = scope.ServiceProvider.GetRequiredService<LookoutDbContext>();
+        // Seeding only a database this startup creates keeps a removed example from coming back.
+        var created = !database.Database.GetAppliedMigrations().Any();
+        database.Database.Migrate();
+        if (created && app.Environment.IsDevelopment())
+        {
+            ExampleWatches.Seed(database, scope.ServiceProvider.GetRequiredService<WatchSchedules>());
+        }
     }
 
     public static void ConfigureApplication(WebApplication app)
