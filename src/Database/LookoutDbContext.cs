@@ -12,15 +12,33 @@ public class LookoutDbContext(DbContextOptions<LookoutDbContext> options) : DbCo
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.Entity<Watch>().HasMany(watch => watch.ScriptVersions)
-            .WithOne().HasForeignKey(version => version.WatchId);
-        modelBuilder.Entity<Watch>().HasOne(watch => watch.CurrentScriptVersion)
-            .WithMany().HasForeignKey(watch => watch.CurrentScriptVersionId).OnDelete(DeleteBehavior.Restrict);
-        modelBuilder.Entity<Watch>().HasMany(watch => watch.Runs)
-            .WithOne().HasForeignKey(run => run.WatchId);
-        modelBuilder.Entity<Run>().HasOne<ScriptVersion>()
-            .WithMany().HasForeignKey(run => run.ScriptVersionId).OnDelete(DeleteBehavior.Restrict);
-        modelBuilder.Entity<Run>().Property(run => run.Outcome).HasConversion<string>();
-        modelBuilder.Entity<Run>().HasIndex(run => new { run.WatchId, run.Id });
+        modelBuilder.Entity<Watch>()
+            .HasMany(watch => watch.ScriptVersions)
+            .WithOne()
+            .HasForeignKey(version => version.WatchId);
+
+        modelBuilder.Entity<Watch>()
+            .HasOne(watch => watch.CurrentScriptVersion)
+            .WithMany()
+            .HasForeignKey(watch => watch.CurrentScriptVersionId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<Watch>()
+            .HasMany(watch => watch.Runs)
+            .WithOne()
+            .HasForeignKey(run => run.WatchId);
+
+        modelBuilder.Entity<Run>()
+            .HasOne<ScriptVersion>()
+            .WithMany()
+            .HasForeignKey(run => run.ScriptVersionId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<Run>()
+            .Property(run => run.Outcome)
+            .HasConversion<string>();
+
+        modelBuilder.Entity<Run>()
+            .HasIndex(run => new { run.WatchId, run.Id });
     }
 }

@@ -4,7 +4,12 @@ import js from '@eslint/js';
 import { defineConfig, globalIgnores } from 'eslint/config';
 import tseslint from 'typescript-eslint';
 
-export default defineConfig(globalIgnores(['src/Backend/wwwroot/**', '**/.angular/**', '**/test-results/**']), {
+const ignores = globalIgnores([
+  'src/Backend/wwwroot/**',
+  '**/.angular/**',
+  '**/test-results/**'
+]);
+export default defineConfig(ignores, {
   files: ['**/*.{js,ts}'],
   extends: [
     js.configs.recommended,
@@ -15,7 +20,10 @@ export default defineConfig(globalIgnores(['src/Backend/wwwroot/**', '**/.angula
     parserOptions: {
       projectService: {
         // The runner must accept JavaScript Scripts, which the TypeScript project doesn't include
-        allowDefaultProject: ['src/runner/test/fixtures/*.js', 'src/frontend/playwright.config.ts']
+        allowDefaultProject: [
+          'src/runner/test/fixtures/*.js',
+          'src/frontend/playwright.config.ts'
+        ]
       }
     }
   }

@@ -9,8 +9,11 @@ public sealed record RunEvaluation(string? Baseline, bool IsChange)
         {
             return new RunEvaluation(baseline, false);
         }
+
         ArgumentNullException.ThrowIfNull(content);
-        return new RunEvaluation(content, baseline is not null
-            && !string.Equals(baseline.Trim(), content.Trim(), StringComparison.Ordinal));
+
+        var isChange = baseline is not null
+            && !string.Equals(baseline.Trim(), content.Trim(), StringComparison.Ordinal);
+        return new RunEvaluation(content, isChange);
     }
 }

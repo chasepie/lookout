@@ -25,7 +25,10 @@ public class Program
     private static void ConfigureServices(IServiceCollection services, ConfigurationManager configuration)
     {
         services.AddControllers().AddJsonOptions(options =>
-            options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter<RunOutcome>(JsonNamingPolicy.CamelCase, false)));
+        {
+            var enumConverter = new JsonStringEnumConverter<RunOutcome>(JsonNamingPolicy.CamelCase, false);
+            options.JsonSerializerOptions.Converters.Add(enumConverter);
+        });
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<RunningWatches>();
         services.AddHttpClient<IRunnerClient, HttpRunnerClient>(client =>
