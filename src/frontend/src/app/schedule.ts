@@ -33,10 +33,10 @@ const minutesPer: Record<IntervalUnit, number> = { minutes: 1, hours: 60, days: 
 
 /** Mirrors the backend's rules, which also check cron expressions against the 3-minute minimum. */
 export const scheduleSchema = schema<ScheduleForm>((path) => {
-  hidden(path.every, (field) => field.valueOf(path.kind) !== 'interval');
-  hidden(path.unit, (field) => field.valueOf(path.kind) !== 'interval');
-  hidden(path.timeOfDay, (field) => field.valueOf(path.kind) !== 'daily');
-  hidden(path.cron, (field) => field.valueOf(path.kind) !== 'cron');
+  hidden(path.every, { when: (field) => field.valueOf(path.kind) !== 'interval' });
+  hidden(path.unit, { when: (field) => field.valueOf(path.kind) !== 'interval' });
+  hidden(path.timeOfDay, { when: (field) => field.valueOf(path.kind) !== 'daily' });
+  hidden(path.cron, { when: (field) => field.valueOf(path.kind) !== 'cron' });
   required(path.every);
   validate(path.every, (field) => {
     const every = field.value();
