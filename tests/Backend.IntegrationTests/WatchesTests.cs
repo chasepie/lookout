@@ -3,6 +3,9 @@ using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 using ChasePie.Lookout.Backend.Runner;
 using ChasePie.Lookout.Model;
+using ChasePie.Lookout.Database;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace ChasePie.Lookout.Backend.IntegrationTests;
 
@@ -19,6 +22,7 @@ public sealed class WatchesTests(TestContext testContext)
         var response = await client.PostAsync(new Uri("/api/watches", UriKind.Relative), form, testContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.Created, response.StatusCode);
+        Assert.IsNull(response.Headers.Location);
         var created = await response.Content.ReadFromJsonAsync<JsonObject>(testContext.CancellationToken);
         var watches = await client.GetFromJsonAsync<JsonArray>("/api/watches", testContext.CancellationToken);
         Assert.IsNotNull(created);
@@ -180,9 +184,133 @@ public sealed class WatchesTests(TestContext testContext)
         Assert.IsEmpty(watches);
     }
 
-    private async Task<JsonObject> CreateWatch(HttpClient client)
+    [TestMethod]
+    public async Task RecordsTheRunAfterTheCallerDisconnects()
     {
-        using var form = WatchForm();
+        await using var factory = new LookoutWebApplicationFactory();
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finished = new TaskCompletionSource<RunnerResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        factory.Runner.OnExecute = (_, token) => { started.TrySetResult(); return finished.Task.WaitAsync(token); };
+        using var client = factory.CreateClient();
+        var watch = await CreateWatch(client);
+        var id = watch["id"]!.GetValue<string>();
+        using var caller = CancellationTokenSource.CreateLinkedTokenSource(testContext.CancellationToken);
+        var pending = client.PostAsync(new Uri($"/api/watches/{id}/runs", UriKind.Relative), null, caller.Token);
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(5), testContext.CancellationToken);
+        await caller.CancelAsync();
+        finished.SetResult(new RunnerResult { Outcome = RunOutcome.Succeeded, Content = "£20", DurationMs = 1 });
+        await Assert.ThrowsAsync<OperationCanceledException>(async () => await pending);
+
+        JsonArray? history = null;
+        for (var attempt = 0; attempt < 50; attempt++)
+        {
+            history = await client.GetFromJsonAsync<JsonArray>($"/api/watches/{id}/runs", testContext.CancellationToken);
+            if (history!.Count == 1) break;
+            await Task.Delay(50, testContext.CancellationToken);
+        }
+        Assert.IsNotNull(history);
+        Assert.HasCount(1, history);
+        Assert.AreEqual("succeeded", history[0]!["outcome"]!.GetValue<string>());
+        var watches = await client.GetFromJsonAsync<JsonArray>("/api/watches", testContext.CancellationToken);
+        Assert.AreEqual("£20", watches![0]!["baseline"]!.GetValue<string>());
+    }
+
+    [TestMethod]
+    public async Task TrimsTheNotificationUrlBeforeStoringAndExecutingIt()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        factory.Runner.OnExecute = (request, _) =>
+        {
+            Assert.AreEqual("https://example.com/widget", request.Context.NotificationUrl);
+            return Task.FromResult(new RunnerResult { Outcome = RunOutcome.Succeeded, Content = "£20", DurationMs = 1 });
+        };
+        using var client = factory.CreateClient();
+        var watch = await CreateWatch(client, " https://example.com/widget\n");
+        Assert.AreEqual("https://example.com/widget", watch["notificationUrl"]!.GetValue<string>());
+        var watches = await client.GetFromJsonAsync<JsonArray>("/api/watches", testContext.CancellationToken);
+        Assert.AreEqual("https://example.com/widget", watches![0]!["notificationUrl"]!.GetValue<string>());
+        await RunNow(client, watch["id"]!.GetValue<string>());
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task RecordsInvalidSucceededResultsAsErrored(bool hasBaseline)
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        using var client = factory.CreateClient();
+        var watch = await CreateWatch(client);
+        var id = watch["id"]!.GetValue<string>();
+        if (hasBaseline)
+        {
+            factory.Runner.Results.Enqueue(new RunnerResult { Outcome = RunOutcome.Succeeded, Content = "£20", DurationMs = 1 });
+            await RunNow(client, id);
+        }
+        factory.Runner.Results.Enqueue(new RunnerResult { Outcome = RunOutcome.Succeeded, Content = null, DurationMs = 1 });
+
+        var run = await RunNow(client, id);
+
+        Assert.AreEqual("errored", run["outcome"]!.GetValue<string>());
+        Assert.Contains("content", run["errorMessage"]!.GetValue<string>());
+        Assert.IsFalse(run["isChange"]!.GetValue<bool>());
+        var watches = await client.GetFromJsonAsync<JsonArray>("/api/watches", testContext.CancellationToken);
+        Assert.AreEqual(hasBaseline ? "£20" : null, watches![0]!["baseline"]?.GetValue<string>());
+        Assert.AreEqual("errored", watches[0]!["lastRun"]!["outcome"]!.GetValue<string>());
+    }
+
+    [TestMethod]
+    public async Task ExplainsWhyAWatchWithoutACurrentScriptCannotRun()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        using var client = factory.CreateClient();
+        var watch = await CreateWatch(client);
+        var id = watch["id"]!.GetValue<Guid>();
+        // Arrange an incomplete legacy row. Creation through the API is atomic and cannot produce one.
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var database = scope.ServiceProvider.GetRequiredService<LookoutDbContext>();
+            await database.Watches.Where(item => item.Id == id)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(item => item.CurrentScriptVersionId, (Guid?)null), testContext.CancellationToken);
+        }
+
+        var response = await client.PostAsync(new Uri($"/api/watches/{id}/runs", UriKind.Relative), null, testContext.CancellationToken);
+
+        Assert.AreEqual(HttpStatusCode.Conflict, response.StatusCode);
+        var problem = await response.Content.ReadFromJsonAsync<JsonObject>(testContext.CancellationToken);
+        Assert.AreEqual("This Watch has no current Script version.", problem!["detail"]!.GetValue<string>());
+    }
+
+    [TestMethod]
+    public async Task PagesRunHistoryNewestFirstWithoutLosingOlderRuns()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        factory.Runner.DefaultResult = new RunnerResult { Outcome = RunOutcome.Succeeded, Content = "latest", DurationMs = 1 };
+        factory.Runner.Results.Enqueue(new RunnerResult { Outcome = RunOutcome.Succeeded, Content = "first", DurationMs = 1 });
+        factory.Runner.Results.Enqueue(new RunnerResult { Outcome = RunOutcome.Succeeded, Content = "second", DurationMs = 1 });
+        using var client = factory.CreateClient();
+        var watch = await CreateWatch(client);
+        var id = watch["id"]!.GetValue<string>();
+        for (var index = 0; index < 52; index++) await RunNow(client, id);
+
+        var page = await client.GetFromJsonAsync<JsonArray>($"/api/watches/{id}/runs", testContext.CancellationToken);
+
+        Assert.IsNotNull(page);
+        Assert.HasCount(50, page);
+        var before = page[^1]!["id"]!.GetValue<long>();
+        var older = await client.GetFromJsonAsync<JsonArray>($"/api/watches/{id}/runs?before={before}&limit=2", testContext.CancellationToken);
+        Assert.IsNotNull(older);
+        Assert.HasCount(2, older);
+        Assert.AreEqual("second", older[0]!["content"]!.GetValue<string>());
+        Assert.AreEqual("first", older[1]!["content"]!.GetValue<string>());
+        var limited = await client.GetFromJsonAsync<JsonArray>($"/api/watches/{id}/runs?limit=2", testContext.CancellationToken);
+        Assert.HasCount(2, limited!);
+        var invalid = await client.GetAsync(new Uri($"/api/watches/{id}/runs?limit=101", UriKind.Relative), testContext.CancellationToken);
+        Assert.AreEqual(HttpStatusCode.BadRequest, invalid.StatusCode);
+    }
+
+    private async Task<JsonObject> CreateWatch(HttpClient client, string notificationUrl = "https://example.com/widget")
+    {
+        using var form = WatchForm(notificationUrl);
         var response = await client.PostAsync(new Uri("/api/watches", UriKind.Relative), form, testContext.CancellationToken);
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<JsonObject>(testContext.CancellationToken))!;
@@ -195,12 +323,12 @@ public sealed class WatchesTests(TestContext testContext)
         return (await response.Content.ReadFromJsonAsync<JsonObject>(testContext.CancellationToken))!;
     }
 
-    private static MultipartFormDataContent WatchForm()
+    private static MultipartFormDataContent WatchForm(string notificationUrl = "https://example.com/widget")
     {
         return new MultipartFormDataContent
         {
             { new StringContent("Widget price"), "name" },
-            { new StringContent("https://example.com/widget"), "notificationUrl" },
+            { new StringContent(notificationUrl), "notificationUrl" },
             { new StringContent("export default { async run() { return { success: true, content: '£20' }; } };"), "script", "price.ts" }
         };
     }

@@ -13,6 +13,12 @@ public static class Program
         {
             Outcome = RunOutcome.Succeeded, Content = "£19.99", Details = "In stock", DurationMs = 25
         };
+        factory.Runner.OnExecute = (request, _) => Task.FromResult(request.Context.NotificationUrl switch
+        {
+            "https://example.com/known-failure" => new RunnerResult { Outcome = RunOutcome.KnownFailure, Details = "Access denied", DurationMs = 25 },
+            "https://example.com/errored" => new RunnerResult { Outcome = RunOutcome.Errored, ErrorMessage = "Page unavailable", DurationMs = 25 },
+            _ => factory.Runner.DefaultResult
+        });
         factory.UseKestrel(5117);
         using var client = factory.CreateClient();
         using var shutdown = new CancellationTokenSource();

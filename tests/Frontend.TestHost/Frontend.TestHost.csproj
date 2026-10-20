@@ -7,5 +7,6 @@
     <ProjectReference Include="../../src/Backend/Backend.csproj" />
     <Compile Include="../Backend.IntegrationTests/LookoutWebApplicationFactory.cs" Link="LookoutWebApplicationFactory.cs" />
     <Compile Include="../Backend.IntegrationTests/FakeRunnerClient.cs" Link="FakeRunnerClient.cs" />
+    <Compile Include="../Backend.IntegrationTests/RepositoryRoot.cs" Link="RepositoryRoot.cs" />
   </ItemGroup>
 </Project>

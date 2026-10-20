@@ -1,4 +1,5 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { FormField, form, maxLength, pattern, required, submit } from '@angular/forms/signals';
 import { Watches } from './watches';
@@ -52,8 +53,8 @@ export class App {
         input.value = '';
         this.notice.set('Watch created. Run it now to read its first content.');
         this.watches.list.reload();
-      } catch {
-        this.error.set('Could not create the Watch. Check the fields and try again.');
+      } catch (error: unknown) {
+        this.error.set(problemMessage(error, 'Could not create the Watch. Check the fields and try again.'));
       }
     });
   }
@@ -65,8 +66,8 @@ export class App {
     try {
       await this.watches.runNow(id);
       this.watches.list.reload();
-    } catch {
-      this.error.set('Could not run the Watch. Please try again.');
+    } catch (error: unknown) {
+      this.error.set(problemMessage(error, 'Could not run the Watch. Please try again.'));
     } finally {
       this.running.update((ids) => {
         const next = new Set(ids);
@@ -75,4 +76,16 @@ export class App {
       });
     }
   }
+}
+
+function problemMessage(error: unknown, fallback: string): string {
+  if (!(error instanceof HttpErrorResponse)) return fallback;
+  const body: unknown = error.error;
+  if (!body || typeof body !== 'object') return fallback;
+  if ('detail' in body && typeof body.detail === 'string' && body.detail.trim()) return body.detail;
+  if ('errors' in body && body.errors && typeof body.errors === 'object') {
+    const messages = Object.values(body.errors).flat().filter((message: unknown): message is string => typeof message === 'string');
+    if (messages.length) return messages.join(' ');
+  }
+  return fallback;
 }

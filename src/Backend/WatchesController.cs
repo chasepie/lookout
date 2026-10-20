@@ -12,7 +12,8 @@ public sealed class WatchesController(
     LookoutDbContext database,
     IRunnerClient runner,
     TimeProvider timeProvider,
-    RunningWatches runningWatches)
+    RunningWatches runningWatches,
+    IHostApplicationLifetime applicationLifetime)
     : ControllerBase
 {
     [HttpGet]
@@ -58,7 +59,7 @@ public sealed class WatchesController(
             return Problem("Script source must not be empty.", statusCode: 400);
         }
 
-        var watch = new Watch { Name = request.Name.Trim(), NotificationUrl = request.NotificationUrl };
+        var watch = new Watch { Name = request.Name.Trim(), NotificationUrl = request.NotificationUrl.Trim() };
         var version = new ScriptVersion { WatchId = watch.Id, Source = source, FileKind = fileKind[1..] };
         watch.ScriptVersions.Add(version);
 
@@ -70,13 +71,18 @@ public sealed class WatchesController(
         await database.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
-        return Created("/api/watches", new WatchSummary(watch.Id, watch.Name, watch.NotificationUrl,
+        return StatusCode(StatusCodes.Status201Created, new WatchSummary(watch.Id, watch.Name, watch.NotificationUrl,
             version.Id, null, null, null));
     }
 
     [HttpGet("{id:guid}/runs")]
-    public async Task<ActionResult<IReadOnlyList<Run>>> History(Guid id, CancellationToken cancellationToken)
+    public async Task<ActionResult<IReadOnlyList<Run>>> History(Guid id, CancellationToken cancellationToken,
+        [FromQuery] int limit = 50, [FromQuery] long? before = null)
     {
+        if (limit is < 1 or > 100 || before is <= 0)
+        {
+            return Problem("History limit must be between 1 and 100; before must be a positive Run ID.", statusCode: 400);
+        }
         if (!await database.Watches.AnyAsync(watch => watch.Id == id, cancellationToken))
         {
             return NotFound();
@@ -84,12 +90,14 @@ public sealed class WatchesController(
 
         return await database.Runs.AsNoTracking()
             .Where(run => run.WatchId == id)
+            .Where(run => before == null || run.Id < before)
             .OrderByDescending(run => run.Id)
+            .Take(limit)
             .ToListAsync(cancellationToken);
     }
 
     [HttpPost("{id:guid}/runs")]
-    public async Task<ActionResult<Run>> RunNow(Guid id, CancellationToken cancellationToken)
+    public async Task<ActionResult<Run>> RunNow(Guid id)
     {
         if (!runningWatches.TryStart(id))
         {
@@ -98,7 +106,7 @@ public sealed class WatchesController(
 
         try
         {
-            return await ExecuteRun(id, cancellationToken);
+            return await ExecuteRun(id, applicationLifetime.ApplicationStopping);
         }
         finally
         {
@@ -115,7 +123,11 @@ public sealed class WatchesController(
             return NotFound();
         }
 
-        var script = watch.CurrentScriptVersion!;
+        var script = watch.CurrentScriptVersion;
+        if (script is null)
+        {
+            return Problem("This Watch has no current Script version.", statusCode: 409);
+        }
         var startedAt = timeProvider.GetUtcNow();
         var runRequest = new RunnerRequest(
             Source: script.Source,
@@ -123,15 +135,15 @@ public sealed class WatchesController(
             Context: new ScriptContext(watch.NotificationUrl));
         var result = await runner.ExecuteAsync(runRequest, cancellationToken);
 
-        var evaluation = RunEvaluation.Evaluate(watch.Baseline, result.Outcome, result.Content);
+        var evaluation = RunEvaluation.Evaluate(watch.Baseline, result.Outcome, result.Content, result.ErrorMessage);
         var run = new Run
         {
             WatchId = id,
             ScriptVersionId = script.Id,
-            Outcome = result.Outcome,
+            Outcome = evaluation.Outcome,
             Content = result.Content,
             Details = result.Details,
-            ErrorMessage = result.ErrorMessage,
+            ErrorMessage = evaluation.ErrorMessage,
             DurationMs = result.DurationMs,
             StartedAt = startedAt,
             FinishedAt = timeProvider.GetUtcNow(),

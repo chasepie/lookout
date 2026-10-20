@@ -1,8 +1,5 @@
 using ChasePie.Lookout.Database;
-using ChasePie.Lookout.Model;
 using ChasePie.Lookout.Backend.Runner;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
 
@@ -24,16 +21,13 @@ public class Program
 
     private static void ConfigureServices(IServiceCollection services, ConfigurationManager configuration)
     {
-        services.AddControllers().AddJsonOptions(options =>
-        {
-            var enumConverter = new JsonStringEnumConverter<RunOutcome>(JsonNamingPolicy.CamelCase, false);
-            options.JsonSerializerOptions.Converters.Add(enumConverter);
-        });
+        services.AddControllers();
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<RunningWatches>();
         services.AddHttpClient<IRunnerClient, HttpRunnerClient>(client =>
         {
-            client.BaseAddress = new Uri(configuration["Runner:BaseUrl"] ?? "http://localhost:3000");
+            var baseUrl = configuration["Runner:BaseUrl"] ?? "http://localhost:3000";
+            client.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/");
             // The runner allows five seconds to capture a timeout screenshot, plus transport overhead.
             client.Timeout = TimeSpan.FromSeconds(135);
         });
@@ -67,6 +61,7 @@ public class Program
             app.MapScalarApiReference();
         }
 
+        app.UseHttpsRedirection();
         app.UseAuthorization();
 
         app.UseDefaultFiles();
@@ -74,6 +69,7 @@ public class Program
 
         app.MapControllers();
         app.MapHealthChecks("/health");
-        app.MapFallbackToFile("index.html");
+        // Keep API misses in endpoint routing, including 405 responses for unsupported methods.
+        app.MapFallbackToFile("{*path:nonfile:regex(^(?!api(?:/|$)).*)}", "index.html");
     }
 }

@@ -1,11 +1,17 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
 namespace ChasePie.Lookout.Model;
 
+[JsonConverter(typeof(RunOutcomeJsonConverter))]
 public enum RunOutcome
 {
     Succeeded,
     KnownFailure,
     Errored
 }
+
+public sealed class RunOutcomeJsonConverter() : JsonStringEnumConverter<RunOutcome>(JsonNamingPolicy.CamelCase, false);
 
 public sealed class Run
 {

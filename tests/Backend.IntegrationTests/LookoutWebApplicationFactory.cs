@@ -18,13 +18,7 @@ public sealed class LookoutWebApplicationFactory : WebApplicationFactory<Program
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        var repository = new DirectoryInfo(AppContext.BaseDirectory);
-        while (repository is not null && !File.Exists(Path.Combine(repository.FullName, "Lookout.slnx")))
-        {
-            repository = repository.Parent;
-        }
-        builder.UseContentRoot(Path.Combine(repository?.FullName
-            ?? throw new InvalidOperationException("Could not find the Lookout repository."), "src/Backend"));
+        builder.UseContentRoot(Path.Combine(RepositoryRoot.Find(), "src/Backend"));
         var databasePath = Path.Combine(Path.GetTempPath(), $"lookout-test-{Guid.NewGuid():N}.db");
         _databasePaths.Add(databasePath);
 

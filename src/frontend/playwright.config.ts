@@ -12,7 +12,7 @@ export default defineConfig({
   },
   projects: [{ name: 'chromium', use: devices['Desktop Chrome'] }],
   webServer: {
-    command: 'dotnet run --project ../../tests/Frontend.TestHost --no-launch-profile',
+    command: 'dotnet run --project ../../tests/Frontend.TestHost --no-launch-profile --no-build',
     url: 'http://127.0.0.1:5117/health',
     reuseExistingServer: false,
     timeout: 60_000,

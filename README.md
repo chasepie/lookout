@@ -22,6 +22,8 @@ dotnet run --project src/Backend --no-launch-profile --urls http://localhost:500
 
 Open <http://localhost:5000>. The backend serves the Angular build and API from the same origin and applies database migrations on startup. Its database defaults to `src/Backend/lookout.db` when started this way. Set `ConnectionStrings__Lookout` to choose another SQLite location and `Runner__BaseUrl` to change the runner address (default `http://localhost:3000`). Set `HEADLESS=true` when starting the runner to hide Chromium.
 
+When an HTTPS endpoint is configured (including the `https` launch profile), HTTP requests redirect to it. The HTTP-only command above continues to serve HTTP. A runner base URL may include a path prefix, such as `http://proxy/runner/`.
+
 For UI development, run `npm start -w src/frontend` with the backend listening on port 5000. Angular's development server proxies `/api` to the backend. Rebuild the frontend before running the backend alone or publishing it: `npm run build:frontend && dotnet publish src/Backend -c Release`. The build goes into the backend's `wwwroot` and is included in its publish output.
 
 A Script default-exports an object or class with a `run` method. For example, save this as `price.ts` and upload it when creating a Watch:
@@ -37,7 +39,7 @@ export default {
 } satisfies LookoutScript;
 ```
 
-See [the runner documentation](src/runner/README.md) for the Script contract and execution limits. Uploads accept `.ts` and `.js` files up to 64 KiB. Each Run uses a 120-second timeout. Running the same Watch again while it is already running returns HTTP 409.
+See [the runner documentation](src/runner/README.md) for the Script contract and execution limits. Uploads accept `.ts` and `.js` files up to 64 KiB. Each Run uses a 120-second timeout. Running the same Watch again while it is already running returns HTTP 409. Once started, a Run continues and is recorded even if its browser tab disconnects; application shutdown still cancels active Runs.
 
 The first Succeeded Run sets the Baseline silently. Later Succeeded Runs record a Change when their trimmed content differs. Original content is retained, and details never affect comparison. Known failure and Errored Runs stay in history without replacing the Baseline; the list continues to show the most recent successful content.
 
@@ -48,7 +50,7 @@ The initial API is:
 | POST | `/api/watches` | Create a Watch atomically with multipart fields `name`, `notificationUrl`, and file `script` |
 | GET | `/api/watches` | List Watches with their Baseline, latest successful content, and last Run |
 | POST | `/api/watches/{id}/runs` | Execute and record a Run; respond when it completes |
-| GET | `/api/watches/{id}/runs` | Read Run history, newest first, including `isChange` |
+| GET | `/api/watches/{id}/runs` | Read Run history, newest first, including `isChange`; defaults to 50 Runs, with `limit=1..100` and `before=<Run ID>` for older pages |
 | GET | `/health` | Check the migrated database |
 
 Run the complete local test suite:
@@ -59,4 +61,4 @@ npm run lint
 npm test
 ```
 
-`npm test` runs the runner tests, the .NET tests (including the HTTP client against the real runner), and the Playwright flow. Tests use local pages and temporary SQLite databases. Playwright builds Angular and launches a test-only backend on port 5117 with a fake runner; the production backend always uses the HTTP runner client. `npm run test:runner`, `dotnet test --project tests/Backend.IntegrationTests`, and `npm run test:e2e` run those suites individually. Tests in `examples/` contact an external bot-detection site and are excluded from the automated suite.
+`npm test` runs the runner tests, the .NET tests (including the HTTP client against the real runner), and the Playwright flow. Tests use local pages and temporary SQLite databases. The end-to-end command builds Angular and the test host before Playwright launches a test-only backend on port 5117 with a fake runner; the production backend always uses the HTTP runner client. `npm run test:runner`, `dotnet test --project tests/Backend.IntegrationTests`, and `npm run test:e2e` run those suites individually. Tests in `examples/` contact an external bot-detection site and are excluded from the automated suite.

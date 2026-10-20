@@ -12,6 +12,7 @@ public sealed class RunnerFailureTests(TestContext testContext)
 {
     [TestMethod]
     [DataRow(503, "unavailable")]
+    [DataRow(400, "{\"error\":\"timeoutMs must be an integer\"}")]
     [DataRow(200, "not json")]
     [DataRow(200, "{}")]
     [DataRow(200, "{\"outcome\":\"succeeded\",\"durationMs\":1}")]
@@ -42,6 +43,10 @@ public sealed class RunnerFailureTests(TestContext testContext)
         Assert.AreEqual("errored", run!["outcome"]!.GetValue<string>());
         Assert.IsFalse(run["isChange"]!.GetValue<bool>());
         Assert.IsFalse(string.IsNullOrWhiteSpace(run["errorMessage"]!.GetValue<string>()));
+        if (status == 400)
+        {
+            Assert.Contains("timeoutMs must be an integer", run["errorMessage"]!.GetValue<string>());
+        }
         var watches = await client.GetFromJsonAsync<JsonArray>("/api/watches", testContext.CancellationToken);
         Assert.IsNull(watches![0]!["baseline"]);
         Assert.AreEqual("errored", watches[0]!["lastRun"]!["outcome"]!.GetValue<string>());
