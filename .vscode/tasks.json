@@ -3,11 +3,8 @@
   "tasks": [
     {
       "type": "npm",
-      "script": "start",
+      "script": "start:frontend",
       "isBackground": true,
-      "options": {
-        "cwd": "${workspaceFolder}/src/frontend"
-      },
       "problemMatcher": {
         "owner": "typescript",
         "pattern": "$tsc",

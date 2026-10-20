@@ -17,14 +17,14 @@ npm start -w src/runner
 ```
 
 ```sh
-dotnet run --project src/Backend --no-launch-profile --urls http://localhost:5000
+dotnet run --project src/Backend --no-launch-profile --urls http://localhost:5280
 ```
 
-Open <http://localhost:5000>. The backend serves the Angular build and API from the same origin and applies database migrations on startup. Its database defaults to `src/Backend/lookout.db` when started this way. Set `ConnectionStrings__Lookout` to choose another SQLite location and `Runner__BaseUrl` to change the runner address (default `http://localhost:3000`). Set `HEADLESS=true` when starting the runner to hide Chromium.
+Open <http://localhost:5280>. The backend serves the Angular build and API from the same origin and applies database migrations on startup. Its database defaults to `src/Backend/lookout.db` when started this way. Set `ConnectionStrings__Lookout` to choose another SQLite location and `Runner__BaseUrl` to change the runner address (default `http://localhost:3000`). Set `HEADLESS=true` when starting the runner to hide Chromium.
 
 When an HTTPS endpoint is configured (including the `https` launch profile), HTTP requests redirect to it. The HTTP-only command above continues to serve HTTP. A runner base URL may include a path prefix, such as `http://proxy/runner/`.
 
-For UI development, run `npm start -w src/frontend` with the backend listening on port 5000. Angular's development server proxies `/api` to the backend. Rebuild the frontend before running the backend alone or publishing it: `npm run build:frontend && dotnet publish src/Backend -c Release`. The build goes into the backend's `wwwroot` and is included in its publish output.
+For UI development, run `npm start -w src/frontend` with the backend started from its `https` launch profile (`dotnet run --project src/Backend`), which listens on `https://localhost:5281`. Angular's development server proxies `/api` to that endpoint and accepts the ASP.NET Core development certificate; run `dotnet dev-certs https` once if you don't have one. Rebuild the frontend before running the backend alone or publishing it: `npm run build:frontend && dotnet publish src/Backend -c Release`. The build goes into the backend's `wwwroot` and is included in its publish output.
 
 A Script default-exports an object or class with a `run` method. For example, save this as `price.ts` and upload it when creating a Watch:
 

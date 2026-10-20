@@ -14,6 +14,7 @@
   "main": "index.js",
   "scripts": {
     "start:frontend": "npm start -w ./src/frontend",
+    "start:runner": "npm start -w ./src/runner",
     "typecheck": "tsc -b && ngc --noEmit -p src/frontend/tsconfig.app.json && tsc --noEmit -p src/frontend/e2e/tsconfig.json",
     "build:frontend": "npm run build -w src/frontend",
     "test": "npm run test:runner && dotnet test --solution Lookout.slnx && npm run test:e2e",
