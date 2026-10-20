@@ -44,6 +44,14 @@ _Avoid_: Diff, Update
 The content of a Watch's most recent Succeeded Run, which the next Succeeded Run is compared against.
 _Avoid_: Last value, Previous result
 
+**Account**:
+The single local login that protects Lookout, created by first-launch setup.
+_Avoid_: User, Admin
+
+**Session**:
+One login to the Account, lasting from logging in until logging out.
+_Avoid_: Token
+
 ### Watch statuses
 
 **Pending**:

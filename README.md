@@ -43,10 +43,16 @@ See [the runner documentation](src/runner/README.md) for the Script contract and
 
 The first Succeeded Run sets the Baseline silently. Later Succeeded Runs record a Change when their trimmed content differs. Original content is retained, and details never affect comparison. Known failure and Errored Runs stay in history without replacing the Baseline; the list continues to show the most recent successful content.
 
+On first launch, Lookout asks you to set up its single local account; after that, it asks you to log in. The login is kept in an `HttpOnly`, `SameSite=Strict` cookie and lasts until you log out. Logging out ends that session on the server, so a copied cookie stops working too. Every endpoint below except the first three needs a logged-in session and returns HTTP 401 without one; endpoints added later are protected unless they explicitly allow anonymous access. Every POST, PUT, PATCH and DELETE must also send the `X-XSRF-TOKEN` header with the value of the `Lookout.XSRF-TOKEN` cookie that `GET /api/session` sets, or it gets HTTP 400; this stops pages from other services on the same host acting with your login. The token belongs to one login, so fetch `GET /api/session` again after setup, login or logout. The Angular app does all of this automatically. Every response also carries a Content Security Policy that allows only Lookout's own scripts, enforces Trusted Types and stops other sites framing the app.
+
 The initial API is:
 
 | Method | Path | Behavior |
 | --- | --- | --- |
+| GET | `/api/session` | Report whether the account exists (`accountExists`) and who is logged in (`userName`, or `null`), and set the `Lookout.XSRF-TOKEN` request-token cookie |
+| POST | `/api/setup` | Create the account from JSON `userName` and `password` (8+ characters) and log in; HTTP 409 once the account exists |
+| POST | `/api/session` | Log in with JSON `userName` and `password`; HTTP 401 for wrong credentials |
+| DELETE | `/api/session` | Log out, ending the session |
 | POST | `/api/watches` | Create a Watch atomically with multipart fields `name`, `notificationUrl`, and file `script` |
 | GET | `/api/watches` | List Watches with their Baseline (the latest successful content) and last Run |
 | POST | `/api/watches/{id}/runs` | Execute and record a Run; respond when it completes |

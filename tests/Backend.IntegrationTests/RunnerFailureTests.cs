@@ -28,7 +28,7 @@ public sealed class RunnerFailureTests(TestContext testContext)
         await using var host = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
             services.AddHttpClient<IRunnerClient, HttpRunnerClient>()
                 .ConfigurePrimaryHttpMessageHandler(() => new RunnerResponseHandler(status, body, contentType))));
-        using var client = host.CreateClient();
+        using var client = await host.CreateSignedInClientAsync(testContext.CancellationToken);
         using var form = new MultipartFormDataContent
         {
             { new StringContent("Widget"), "name" },

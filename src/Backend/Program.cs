@@ -1,5 +1,10 @@
 using ChasePie.Lookout.Database;
 using ChasePie.Lookout.Backend.Runner;
+using ChasePie.Lookout.Model;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
 
@@ -21,7 +26,8 @@ public class Program
 
     private static void ConfigureServices(IServiceCollection services, ConfigurationManager configuration)
     {
-        services.AddControllers();
+        // Every POST, PUT, PATCH and DELETE to a controller must carry the request token (see RequestForgery).
+        services.AddControllers(options => options.Filters.Add<RequestForgery.ValidateTokenFilter>());
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<RunningWatches>();
         var runnerUrl = configuration["Runner:BaseUrl"] ?? "http://localhost:3000";
@@ -37,6 +43,14 @@ public class Program
             client.Timeout = Timeout.InfiniteTimeSpan;
         });
         services.AddOpenApi();
+
+        services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme).AddCookie(SessionCookie.Configure);
+        // Every endpoint requires a login unless it explicitly allows anonymous access.
+        services.AddAuthorizationBuilder()
+            .SetFallbackPolicy(new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
+        services.AddAntiforgery(RequestForgery.Configure);
+        services.AddDataProtection().SetApplicationName("Lookout").PersistKeysToDbContext<LookoutDbContext>();
+        services.AddSingleton<IPasswordHasher<Account>, PasswordHasher<Account>>();
 
         var connectionString = configuration.GetConnectionString("Lookout")
             ?? throw new InvalidOperationException("ConnectionStrings:Lookout is not configured");
@@ -67,14 +81,18 @@ public class Program
         }
 
         app.UseHttpsRedirection();
-        app.UseAuthorization();
+        ContentSecurityPolicy.Apply(app);
 
+        // The app's files are public: it shows setup or login itself, before the user has a session.
         app.UseDefaultFiles();
         app.UseStaticFiles();
 
+        app.UseAuthentication();
+        app.UseAuthorization();
+
         app.MapControllers();
-        app.MapHealthChecks("/health");
+        app.MapHealthChecks("/health").AllowAnonymous();
         // Keep API misses in endpoint routing, including 405 responses for unsupported methods.
-        app.MapFallbackToFile("{*path:nonfile:regex(^(?!api(?:/|$)).*)}", "index.html");
+        app.MapFallbackToFile("{*path:nonfile:regex(^(?!api(?:/|$)).*)}", "index.html").AllowAnonymous();
     }
 }

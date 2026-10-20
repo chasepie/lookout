@@ -1,0 +1,51 @@
+// Lookout's design tokens, shared by the global stylesheet and every component's styles.
+
+// Text
+$text: #243c35;
+$text-muted: #596b62;
+$text-heading: #314b3d;
+$text-label: #607267;
+$text-placeholder: #708177;
+$text-icon: #768b7a;
+
+// Surfaces
+$page: #f6f7f2;
+$header: #fcfdf9;
+$surface: #fff;
+$input: #fcfdfb;
+
+// Borders
+$border: #dce3d9;
+$border-header: #dfe5db;
+$border-divider: #e8ece5;
+$border-dashed: #c5d2c4;
+$border-input: #b9c7bc;
+
+// Brand and actions
+$brand: #287055;
+$focus: #297a61;
+$primary: #285740;
+$primary-hover: #1c4430;
+$button: #f5f8f1;
+$button-hover: #e9f0e2;
+$button-border: #bdccc0;
+$button-text: #294c3c;
+$file-button: #eaf0e6;
+$empty-icon: #7f9779;
+
+// Outcomes
+$positive: #286b48;
+$success: #226442;
+$success-surface: #edf4e5;
+$failure: #933820;
+$failure-surface: #faece7;
+$badge-surface: #eef0eb;
+$error: #9a341e;
+
+// Shape
+$radius-panel: 12px;
+$radius-control: 6px;
+
+// Layout
+$content-width: 1180px;
+$narrow: 800px;

@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
+import { createWatch } from './watches';
 
 test('create a Watch with a Script, Run now, and see the saved content', async ({ page }) => {
   const name = `Widget price ${randomUUID()}`;
@@ -26,11 +27,7 @@ test('create a Watch with a Script, Run now, and see the saved content', async (
 for (const [outcome, label] of [['known-failure', 'Known failure'], ['errored', 'Errored']] as const) {
   test(`labels the first ${outcome} Run as an outcome`, async ({ page }) => {
     const name = `First failure ${randomUUID()}`;
-    const created = await page.request.post('/api/watches', { multipart: {
-      name, notificationUrl: `https://example.com/${outcome}`,
-      script: { name: 'price.ts', mimeType: 'text/plain', buffer: Buffer.from('export default {}') },
-    } });
-    expect(created.status()).toBe(201);
+    await createWatch(page, name, `https://example.com/${outcome}`);
     await page.goto('/');
     const watch = page.getByRole('article', { name });
     await expect(watch.getByText('No Runs yet', { exact: true })).toBeVisible();
@@ -53,11 +50,7 @@ test('shows the backend validation message when a Script is empty', async ({ pag
 
 test('shows why Run now was rejected with a conflict', async ({ page }) => {
   const name = `Busy Watch ${randomUUID()}`;
-  const created = await page.request.post('/api/watches', { multipart: {
-    name, notificationUrl: 'https://example.com/widget',
-    script: { name: 'price.ts', mimeType: 'text/plain', buffer: Buffer.from('export default {}') },
-  } });
-  expect(created.status()).toBe(201);
+  await createWatch(page, name);
   await page.goto('/');
   // The backend suite proves overlapping Runs return 409; this checks its presentation in the browser.
   await page.route('**/api/watches/*/runs', (route) => route.fulfill({

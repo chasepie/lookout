@@ -1,0 +1,27 @@
+<section class="account-panel" aria-labelledby="setup-heading">
+  <p class="eyebrow">FIRST LAUNCH</p>
+  <h1 id="setup-heading">Set up Lookout</h1>
+  <p>Create the account that protects your Watches. You'll use it to log in.</p>
+  @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+  <form (submit)="$event.preventDefault(); setUp()">
+    <label for="setup-user-name">User name</label>
+    <input id="setup-user-name" autocomplete="username" [formField]="setupForm.userName" />
+    @if (setupForm.userName().touched() && setupForm.userName().invalid()) {
+      <small class="error">Enter a user name of up to 100 characters.</small>
+    }
+    <label for="setup-password">Password</label>
+    <input id="setup-password" type="password" autocomplete="new-password" [formField]="setupForm.password" aria-describedby="password-help" />
+    <small id="password-help">At least 8 characters.</small>
+    @if (setupForm.password().touched() && setupForm.password().invalid()) {
+      <small class="error">Enter a password of 8 to 1024 characters.</small>
+    }
+    <label for="setup-confirm-password">Confirm password</label>
+    <input id="setup-confirm-password" type="password" autocomplete="new-password" [formField]="setupForm.confirmPassword" />
+    @if (setupForm.confirmPassword().touched() && setupForm.confirmPassword().invalid()) {
+      <small class="error">Passwords do not match.</small>
+    }
+    <button class="primary" type="submit" [disabled]="setupForm().submitting() || setupForm().invalid()">
+      {{ setupForm().submitting() ? 'Creating…' : 'Create account' }}
+    </button>
+  </form>
+</section>

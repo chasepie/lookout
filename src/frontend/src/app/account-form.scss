@@ -1,0 +1,25 @@
+@use 'tokens';
+@use 'mixins';
+
+:host { display: block; }
+
+.account-panel {
+  @include mixins.panel;
+  max-width: 400px;
+  margin: 0 auto;
+  padding: 32px;
+
+  > p:not(.eyebrow) { font-size: 14px; color: tokens.$text-muted; line-height: 1.6; margin: 0 0 24px; }
+}
+
+.eyebrow { @include mixins.eyebrow; margin: 0; }
+h1 { font-size: 32px; font-weight: 650; letter-spacing: -1px; margin: 8px 0 10px; }
+
+@include mixins.stacked-form;
+
+small { color: tokens.$text-muted; }
+button.primary { @include mixins.primary-button; }
+
+.error { color: tokens.$error; font-size: 14px; overflow-wrap: anywhere; }
+small.error { font-size: 12px; }
+p.error { margin: 0 0 18px; }

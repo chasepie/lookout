@@ -1,0 +1,146 @@
+@use 'tokens';
+@use 'mixins';
+
+:host { display: block; }
+
+.site-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 24px max(24px, calc((100vw - #{tokens.$content-width}) / 2));
+  border-bottom: 1px solid tokens.$border-header;
+  background: tokens.$header;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  font-size: 23px;
+  font-weight: 750;
+  letter-spacing: -.7px;
+}
+
+.brand-mark { color: tokens.$brand; font-size: 30px; }
+
+.tagline, small, .details { color: tokens.$text-muted; }
+
+.tagline {
+  font-size: 14px;
+
+  @include mixins.narrow { display: none; }
+}
+
+.account {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+  color: tokens.$text-muted;
+
+  > span {
+    @include mixins.narrow { display: none; }
+  }
+}
+
+main {
+  max-width: 1228px;
+  padding: 48px 24px 80px;
+  margin: auto;
+
+  @include mixins.narrow { padding-top: 30px; }
+}
+
+h1 { font-size: 42px; font-weight: 650; letter-spacing: -1.5px; margin: 8px 0 12px; }
+h2 { font-size: 19px; margin: 0; }
+p { line-height: 1.6; }
+.page-heading > p:last-child { color: tokens.$text-muted; margin: 0; }
+.eyebrow { @include mixins.eyebrow; }
+
+.workspace {
+  display: grid;
+  grid-template-columns: 335px minmax(0, 1fr);
+  gap: 30px;
+  align-items: start;
+
+  @include mixins.narrow { grid-template-columns: 1fr; }
+}
+
+.create-panel, .watch-card { @include mixins.panel; padding: 25px; }
+.create-panel > p { font-size: 14px; color: tokens.$text-muted; margin: 10px 0 25px; }
+
+@include mixins.stacked-form;
+
+input {
+  &::placeholder { color: tokens.$text-placeholder; font-size: 12px; }
+  &[type=file] { padding: 9px; font-size: 12px; }
+
+  &::file-selector-button {
+    border: 0;
+    background: tokens.$file-button;
+    padding: 8px;
+    border-radius: 4px;
+    color: tokens.$text;
+    margin-right: 8px;
+  }
+}
+
+button {
+  border: 1px solid tokens.$button-border;
+  background: tokens.$button;
+  color: tokens.$button-text;
+  padding: 9px 16px;
+  border-radius: tokens.$radius-control;
+  font-size: 13px;
+  font-weight: 650;
+  white-space: nowrap;
+
+  &:hover:not(:disabled) { background: tokens.$button-hover; }
+  &.primary { @include mixins.primary-button; }
+}
+
+.watch-list { display: grid; gap: 16px; }
+.watch-heading, .watch-footer { display: flex; justify-content: space-between; align-items: center; gap: 15px; }
+
+.watch-heading {
+  h2 { min-width: 0; overflow-wrap: anywhere; }
+
+  a {
+    text-decoration: none;
+
+    &:hover { text-decoration: underline; }
+    span { color: tokens.$text-icon; font-size: 16px; }
+  }
+}
+
+.badge { font-size: 11px; padding: 5px 9px; border-radius: 5px; background: tokens.$badge-surface; white-space: nowrap; }
+.success { color: tokens.$success; background: tokens.$success-surface; }
+.failure { color: tokens.$failure; background: tokens.$failure-surface; }
+.content-label { margin: 28px 0 5px; color: tokens.$text-label; }
+.content { font-size: 26px; letter-spacing: -.5px; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.details, .error { font-size: 14px; overflow-wrap: anywhere; }
+.change { color: tokens.$positive; font-size: 13px; font-weight: 650; }
+
+.watch-footer {
+  border-top: 1px solid tokens.$border-divider;
+  margin-top: 24px;
+  padding-top: 18px;
+
+  @include mixins.narrow { align-items: end; }
+}
+
+.empty-state {
+  text-align: center;
+  border: 1px dashed tokens.$border-dashed;
+  border-radius: tokens.$radius-panel;
+  padding: 55px 20px;
+  color: tokens.$text-muted;
+
+  h2 { color: tokens.$text-heading; }
+  p { font-size: 14px; }
+}
+
+.empty-icon { display: block; font-size: 46px; color: tokens.$empty-icon; margin-bottom: 20px; }
+.notice { color: tokens.$positive; font-size: 14px; min-height: 22px; margin: 14px 0; }
+.error { color: tokens.$error; }

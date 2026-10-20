@@ -18,7 +18,7 @@ public sealed class WatchesTests(TestContext testContext)
     public async Task CreatesAWatchWithAScriptAndListsItAsPending()
     {
         await using var factory = new LookoutWebApplicationFactory();
-        using var client = factory.CreateClient();
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         using var form = WatchForm();
 
         var response = await client.PostAsync(new Uri("/api/watches", UriKind.Relative), form, testContext.CancellationToken);
@@ -46,7 +46,7 @@ public sealed class WatchesTests(TestContext testContext)
         {
             Outcome = RunOutcome.Succeeded, Content = "£20", Details = "In stock", DurationMs = 123
         });
-        using var client = factory.CreateClient();
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         var watch = await CreateWatch(client);
 
         var run = await RunNow(client, watch["id"]!.GetValue<string>());
@@ -78,7 +78,7 @@ public sealed class WatchesTests(TestContext testContext)
         factory.Runner.Results.Enqueue(new RunnerResult { Outcome = RunOutcome.Succeeded, Content = baseline, DurationMs = 1 });
         factory.Runner.Results.Enqueue(new RunnerResult { Outcome = RunOutcome.Succeeded, Content = content, Details = "Different details", DurationMs = 2 });
         factory.Runner.Results.Enqueue(new RunnerResult { Outcome = RunOutcome.Succeeded, Content = content, DurationMs = 3 });
-        using var client = factory.CreateClient();
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         var watch = await CreateWatch(client);
         var id = watch["id"]!.GetValue<string>();
         await RunNow(client, id);
@@ -109,7 +109,7 @@ public sealed class WatchesTests(TestContext testContext)
             Outcome = outcome, Content = "Access denied", Details = "Try later", ErrorMessage = "Page unavailable", DurationMs = 42
         });
         factory.Runner.Results.Enqueue(new RunnerResult { Outcome = RunOutcome.Succeeded, Content = "£19", DurationMs = 1 });
-        using var client = factory.CreateClient();
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         var watch = await CreateWatch(client);
         var id = watch["id"]!.GetValue<string>();
         if (hasBaseline)
@@ -139,7 +139,7 @@ public sealed class WatchesTests(TestContext testContext)
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var finished = new TaskCompletionSource<RunnerResult>(TaskCreationOptions.RunContinuationsAsynchronously);
         factory.Runner.OnExecute = (_, _) => { started.TrySetResult(); return finished.Task; };
-        using var client = factory.CreateClient();
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         var watch = await CreateWatch(client);
         var id = watch["id"]!.GetValue<string>();
         var first = RunNow(client, id);
@@ -171,7 +171,7 @@ public sealed class WatchesTests(TestContext testContext)
     public async Task RejectsInvalidWatchUploadsWithoutCreatingAWatch(string name, string url, string fileName, string source)
     {
         await using var factory = new LookoutWebApplicationFactory();
-        using var client = factory.CreateClient();
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         using var form = new MultipartFormDataContent
         {
             { new StringContent(name), "name" },
@@ -192,7 +192,7 @@ public sealed class WatchesTests(TestContext testContext)
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var finished = new TaskCompletionSource<RunnerResult>(TaskCreationOptions.RunContinuationsAsynchronously);
         factory.Runner.OnExecute = (_, token) => { started.TrySetResult(); return finished.Task.WaitAsync(token); };
-        using var client = factory.CreateClient();
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         var watch = await CreateWatch(client);
         var id = watch["id"]!.GetValue<string>();
         using var caller = CancellationTokenSource.CreateLinkedTokenSource(testContext.CancellationToken);
@@ -225,7 +225,7 @@ public sealed class WatchesTests(TestContext testContext)
             Assert.AreEqual("https://example.com/widget", request.Context.NotificationUrl);
             return Task.FromResult(new RunnerResult { Outcome = RunOutcome.Succeeded, Content = "£20", DurationMs = 1 });
         };
-        using var client = factory.CreateClient();
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         var watch = await CreateWatch(client, " https://example.com/widget\n");
         Assert.AreEqual("https://example.com/widget", watch["notificationUrl"]!.GetValue<string>());
         var watches = await client.GetFromJsonAsync<JsonArray>("/api/watches", testContext.CancellationToken);
@@ -239,7 +239,7 @@ public sealed class WatchesTests(TestContext testContext)
     public async Task RecordsInvalidSucceededResultsAsErrored(bool hasBaseline)
     {
         await using var factory = new LookoutWebApplicationFactory();
-        using var client = factory.CreateClient();
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         var watch = await CreateWatch(client);
         var id = watch["id"]!.GetValue<string>();
         if (hasBaseline)
@@ -263,7 +263,7 @@ public sealed class WatchesTests(TestContext testContext)
     public async Task ExplainsWhyAWatchWithoutACurrentScriptCannotRun()
     {
         await using var factory = new LookoutWebApplicationFactory();
-        using var client = factory.CreateClient();
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         var watch = await CreateWatch(client);
         var id = watch["id"]!.GetValue<Guid>();
         // Arrange an incomplete legacy row. Creation through the API is atomic and cannot produce one.
@@ -288,7 +288,7 @@ public sealed class WatchesTests(TestContext testContext)
         factory.Runner.DefaultResult = new RunnerResult { Outcome = RunOutcome.Succeeded, Content = "latest", DurationMs = 1 };
         factory.Runner.Results.Enqueue(new RunnerResult { Outcome = RunOutcome.Succeeded, Content = "first", DurationMs = 1 });
         factory.Runner.Results.Enqueue(new RunnerResult { Outcome = RunOutcome.Succeeded, Content = "second", DurationMs = 1 });
-        using var client = factory.CreateClient();
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         var watch = await CreateWatch(client);
         var id = watch["id"]!.GetValue<string>();
         for (var index = 0; index < 52; index++) await RunNow(client, id);
@@ -314,7 +314,7 @@ public sealed class WatchesTests(TestContext testContext)
     {
         await using var factory = new LookoutWebApplicationFactory();
         factory.Runner.DefaultResult = new RunnerResult { Outcome = RunOutcome.Succeeded, Content = "£20", DurationMs = 1 };
-        using var client = factory.CreateClient();
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         var watch = await CreateWatch(client);
         var id = watch["id"]!.GetValue<Guid>();
         await RunNow(client, id.ToString());
@@ -332,7 +332,7 @@ public sealed class WatchesTests(TestContext testContext)
     public async Task RejectsARunEvaluatedAgainstABaselineAnotherRunAdvanced()
     {
         await using var factory = new LookoutWebApplicationFactory();
-        using var client = factory.CreateClient();
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         var watch = await CreateWatch(client);
         var id = watch["id"]!.GetValue<Guid>();
         factory.Runner.OnExecute = async (_, cancellationToken) =>
@@ -364,7 +364,7 @@ public sealed class WatchesTests(TestContext testContext)
             factory.Services.GetRequiredService<IHostApplicationLifetime>().StopApplication();
             return Task.FromResult(new RunnerResult { Outcome = RunOutcome.Succeeded, Content = "£20", DurationMs = 1 });
         };
-        using var client = factory.CreateClient();
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         var watch = await CreateWatch(client);
         var id = watch["id"]!.GetValue<Guid>();
         // The test host disposes its services as it stops, so read the database file directly afterwards.
@@ -388,7 +388,7 @@ public sealed class WatchesTests(TestContext testContext)
     public async Task ValidatesTheNameAfterTrimmingIt()
     {
         await using var factory = new LookoutWebApplicationFactory();
-        using var client = factory.CreateClient();
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         var name = new string('a', 195);
 
         var created = await CreateWatch(client, name: $"  {name}          ");
@@ -400,7 +400,7 @@ public sealed class WatchesTests(TestContext testContext)
     public async Task ListsWatchesAlphabeticallyIgnoringCase()
     {
         await using var factory = new LookoutWebApplicationFactory();
-        using var client = factory.CreateClient();
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         foreach (var name in (string[])["Zebra", "apple", "Banana"])
         {
             await CreateWatch(client, name: name);

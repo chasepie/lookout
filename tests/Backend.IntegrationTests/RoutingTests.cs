@@ -22,10 +22,11 @@ public sealed class RoutingTests(TestContext testContext)
         }));
         using var client = host.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
 
-        var response = await client.GetAsync(new Uri("/api/watches", UriKind.Relative), testContext.CancellationToken);
+        // The session endpoint allows anonymous access, so this checks the redirect alone.
+        var response = await client.GetAsync(new Uri("/api/session", UriKind.Relative), testContext.CancellationToken);
 
         Assert.AreEqual(expected, response.StatusCode);
-        Assert.AreEqual(httpsConfigured ? new Uri("https://localhost:7443/api/watches") : null, response.Headers.Location);
+        Assert.AreEqual(httpsConfigured ? new Uri("https://localhost:7443/api/session") : null, response.Headers.Location);
     }
 
     [TestMethod]
@@ -43,7 +44,7 @@ public sealed class RoutingTests(TestContext testContext)
             await File.WriteAllTextAsync(Path.Combine(webRoot, "index.html"), "<h1>Lookout app</h1>", testContext.CancellationToken);
             await using var factory = new LookoutWebApplicationFactory();
             await using var host = factory.WithWebHostBuilder(builder => builder.UseWebRoot(webRoot));
-            using var client = host.CreateClient();
+            using var client = await host.CreateSignedInClientAsync(testContext.CancellationToken);
             using var request = new HttpRequestMessage(new HttpMethod(method), path);
 
             var response = await client.SendAsync(request, testContext.CancellationToken);
@@ -54,6 +55,32 @@ public sealed class RoutingTests(TestContext testContext)
                 Assert.AreEqual("text/html", response.Content.Headers.ContentType?.MediaType);
                 Assert.AreEqual("<h1>Lookout app</h1>", await response.Content.ReadAsStringAsync(testContext.CancellationToken));
             }
+        }
+        finally
+        {
+            Directory.Delete(webRoot, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    [DataRow("/", "<h1>Lookout app</h1>")]
+    [DataRow("/some-page", "<h1>Lookout app</h1>")]
+    [DataRow("/main.js", "console.log('app');")]
+    public async Task ServesTheAppWithoutASessionSoItCanShowSetupOrLogin(string path, string expected)
+    {
+        var webRoot = Directory.CreateTempSubdirectory("lookout-routing-").FullName;
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(webRoot, "index.html"), "<h1>Lookout app</h1>", testContext.CancellationToken);
+            await File.WriteAllTextAsync(Path.Combine(webRoot, "main.js"), "console.log('app');", testContext.CancellationToken);
+            await using var factory = new LookoutWebApplicationFactory();
+            await using var host = factory.WithWebHostBuilder(builder => builder.UseWebRoot(webRoot));
+            using var client = host.CreateClient();
+
+            var response = await client.GetAsync(new Uri(path, UriKind.Relative), testContext.CancellationToken);
+
+            Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+            Assert.AreEqual(expected, await response.Content.ReadAsStringAsync(testContext.CancellationToken));
         }
         finally
         {

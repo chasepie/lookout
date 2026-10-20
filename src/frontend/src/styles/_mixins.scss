@@ -1,0 +1,78 @@
+// Style patterns shared between components, whose styles are encapsulated and can't share rules directly.
+@use 'tokens';
+
+/// Applies its content on screens narrower than the two-column layout needs.
+@mixin narrow {
+  @media (max-width: tokens.$narrow) {
+    @content;
+  }
+}
+
+@mixin eyebrow {
+  letter-spacing: 1.8px;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+@mixin panel {
+  background: tokens.$surface;
+  border: 1px solid tokens.$border;
+  border-radius: tokens.$radius-panel;
+}
+
+/// A stacked form of labels, inputs and hints, as the create-Watch, setup and login forms use.
+@mixin stacked-form {
+  form {
+    display: flex;
+    flex-direction: column;
+
+    small {
+      margin-top: 7px;
+    }
+  }
+
+  label {
+    font-size: 13px;
+    font-weight: 650;
+    margin-bottom: 8px;
+  }
+
+  input {
+    border: 1px solid tokens.$border-input;
+    border-radius: tokens.$radius-control;
+    min-width: 0;
+    width: 100%;
+    padding: 11px;
+    background: tokens.$input;
+    color: inherit;
+
+    + label {
+      margin-top: 23px;
+    }
+  }
+
+  small {
+    font-size: 12px;
+    line-height: 1.5;
+
+    + label {
+      margin-top: 23px;
+    }
+  }
+}
+
+/// The form's main action, filled with the primary colour.
+@mixin primary-button {
+  background: tokens.$primary;
+  border: 1px solid tokens.$primary;
+  border-radius: tokens.$radius-control;
+  color: white;
+  margin-top: 26px;
+  padding: 12px;
+  font-size: 13px;
+  font-weight: 650;
+
+  &:hover:not(:disabled) {
+    background: tokens.$primary-hover;
+  }
+}
