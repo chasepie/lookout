@@ -89,7 +89,7 @@
             }
           </ol>
           @if (canShowOlderRuns()) {
-            <button type="button" (click)="showOlderRuns()">Show older Runs</button>
+            <button type="button" (click)="showOlderRuns()" [disabled]="olderRuns().loading || latestRuns.isLoading()">{{ olderRuns().loading ? 'Loading older Runs…' : 'Show older Runs' }}</button>
           }
         } @else {
           <p class="details">No Runs yet. Choose Run now to read the page.</p>

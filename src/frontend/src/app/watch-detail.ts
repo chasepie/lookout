@@ -1,6 +1,6 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
-import { HttpErrorResponse, httpResource } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, computed, inject, input, linkedSignal, signal } from '@angular/core';
+import { HttpErrorResponse, type HttpResourceRef, httpResource } from '@angular/common/http';
+import { ChangeDetectionStrategy, Component, type WritableSignal, computed, inject, input, linkedSignal, signal } from '@angular/core';
 import { FormField, form, submit } from '@angular/forms/signals';
 import { Router, RouterLink } from '@angular/router';
 import { problemMessage } from './problem';
@@ -11,6 +11,15 @@ import { Watches } from './watches';
 const historyPageSize = 50;
 
 type WatchAction = 'running' | 'pausing' | 'resuming' | 'deleting';
+
+/** The pages of Run history loaded beyond the latest page. Each change makes a new object, so a stale load can tell. */
+interface OlderRuns {
+  runs: Run[];
+  ended: boolean;
+  loading: boolean;
+}
+
+const noOlderRuns: OlderRuns = { runs: [], ended: false, loading: false };
 
 @Component({
   selector: 'app-watch-detail',
@@ -24,17 +33,28 @@ export class WatchDetail {
   private readonly router = inject(Router);
   readonly id = input.required<string>();
 
-  protected readonly watch = httpResource<Watch>(() => `/api/watches/${this.id()}`);
-  protected readonly latestRuns = httpResource<Run[]>(() => ({
-    url: `/api/watches/${this.id()}/runs`, params: { limit: historyPageSize },
-  }));
-  protected readonly olderRuns = signal<Run[]>([]);
-  private readonly olderRunsEnded = signal(false);
-  // A resource's value() throws while it is in an error state, so these check hasValue() first.
-  protected readonly runs = computed(() => [
-    ...(this.latestRuns.hasValue() ? this.latestRuns.value() : []), ...this.olderRuns()]);
-  protected readonly canShowOlderRuns = computed(() => !this.olderRunsEnded()
-    && this.latestRuns.hasValue() && this.latestRuns.value().length === historyPageSize);
+  // Each read's request is a new object, so bumping its counter restarts a read that reload() won't.
+  private readonly watchReads = signal(0);
+  private readonly runReads = signal(0);
+  protected readonly watch = httpResource<Watch>(() => {
+    this.watchReads();
+    return { url: `/api/watches/${this.id()}` };
+  });
+  protected readonly latestRuns = httpResource<Run[]>(() => {
+    this.runReads();
+    return { url: `/api/watches/${this.id()}/runs`, params: { limit: historyPageSize } };
+  });
+  // A resource's value() throws while it is in an error state, so this checks hasValue() first.
+  private readonly latestPage = computed(() => (this.latestRuns.hasValue() ? this.latestRuns.value() : undefined));
+  // Older pages continue the latest page they were loaded after, so they reset whenever it or the Watch changes.
+  // Moving to another Watch's page reuses this component, which is why the other per-Watch state below resets too.
+  protected readonly olderRuns = linkedSignal<unknown, OlderRuns>({
+    source: () => [this.id(), this.latestPage()],
+    computation: () => noOlderRuns,
+  });
+  protected readonly runs = computed(() => [...(this.latestPage() ?? []), ...this.olderRuns().runs]);
+  protected readonly canShowOlderRuns = computed(() => !this.olderRuns().ended
+    && this.latestPage()?.length === historyPageSize);
   protected readonly missing = computed(() => {
     const error = this.watch.error();
     return error instanceof HttpErrorResponse && error.status === 404;
@@ -54,46 +74,54 @@ export class WatchDetail {
   });
   protected readonly maxTimeoutSeconds = maxTimeoutSeconds;
 
-  protected readonly busy = signal<WatchAction | undefined>(undefined);
-  protected readonly confirmingDelete = signal(false);
-  protected readonly error = signal('');
-  protected readonly notice = signal('');
+  protected readonly busy = linkedSignal<string, WatchAction | undefined>({ source: this.id, computation: () => undefined });
+  protected readonly confirmingDelete = linkedSignal({ source: this.id, computation: () => false });
+  protected readonly error = linkedSignal({ source: this.id, computation: () => '' });
+  protected readonly notice = linkedSignal({ source: this.id, computation: () => '' });
   protected readonly outcomes = outcomeLabels;
   protected readonly statuses = statusLabels;
 
   protected async save() {
+    const id = this.id();
     await submit(this.settingsForm, async () => {
       this.clearMessages();
       try {
-        this.watch.set(await this.watches.edit(this.id(), this.model()));
+        await this.watches.edit(id, this.model());
+        if (id !== this.id()) {return;}
         this.notice.set('Settings saved.');
-        this.watches.list.reload();
       } catch (error: unknown) {
-        this.error.set(problemMessage(error, 'Could not save the settings. Check the fields and try again.'));
+        if (id === this.id()) {
+          this.error.set(problemMessage(error, 'Could not save the settings. Check the fields and try again.'));
+        }
       }
+      this.refreshWatch();
     });
   }
 
   protected async runNow() {
-    await this.performAction('running', 'Could not run the Watch. Please try again.', async () => {
+    await this.performAction('running', 'Could not run the Watch. Please try again.', async (isCurrent) => {
       try {
         const run = await this.watches.runNow(this.id());
-        this.notice.set(`Run finished: ${this.outcomes[run.outcome]}.${run.isChange ? ' Change recorded.' : ''}`);
+        if (isCurrent()) {
+          this.notice.set(`Run finished: ${this.outcomes[run.outcome]}.${run.isChange ? ' Change recorded.' : ''}`);
+        }
       } finally {
         // A rejected Run can mean the Watch changed or was deleted elsewhere, so refresh either way.
-        this.olderRuns.set([]);
-        this.olderRunsEnded.set(false);
-        this.latestRuns.reload();
-        this.watch.reload();
+        if (isCurrent()) {
+          refresh(this.latestRuns, this.runReads);
+        }
       }
     });
   }
 
   protected async togglePaused({ isPaused }: Watch) {
-    await this.performAction(isPaused ? 'resuming' : 'pausing', `Could not ${isPaused ? 'resume' : 'pause'} the Watch. Please try again.`, async () => {
+    const action = isPaused ? 'resuming' : 'pausing';
+    await this.performAction(action, `Could not ${isPaused ? 'resume' : 'pause'} the Watch. Please try again.`, async (isCurrent) => {
       const id = this.id();
-      this.watch.set(await (isPaused ? this.watches.resume(id) : this.watches.pause(id)));
-      this.notice.set(isPaused ? 'Watch resumed.' : 'Watch paused. It will not run on its schedule.');
+      await (isPaused ? this.watches.resume(id) : this.watches.pause(id));
+      if (isCurrent()) {
+        this.notice.set(isPaused ? 'Watch resumed.' : 'Watch paused. It will not run on its schedule.');
+      }
     });
   }
 
@@ -105,34 +133,63 @@ export class WatchDetail {
   }
 
   protected async showOlderRuns() {
+    const current = this.olderRuns();
     const oldest = this.runs().at(-1);
-    if (!oldest) {return;}
+    if (current.loading || current.ended || this.latestRuns.isLoading() || !oldest) {return;}
+    const loading = { ...current, loading: true };
+    this.olderRuns.set(loading);
     try {
       const page = await this.watches.history(this.id(), oldest.id, historyPageSize);
-      this.olderRuns.update((runs) => [...runs, ...page]);
-      this.olderRunsEnded.set(page.length < historyPageSize);
+      // A refreshed latest page or another Watch replaced the pages this one would extend.
+      if (this.olderRuns() !== loading) {return;}
+      this.olderRuns.set({ runs: [...current.runs, ...page], ended: page.length < historyPageSize, loading: false });
     } catch (error: unknown) {
+      if (this.olderRuns() !== loading) {return;}
+      this.olderRuns.set(current);
       this.error.set(problemMessage(error, 'Could not load older Runs. Please try again.'));
     }
   }
 
-  /** Runs one of the Watch's actions, showing its failure message if it fails */
-  private async performAction(action: WatchAction, failure: string, work: () => Promise<void>) {
+  /**
+   * Runs one of the Watch's actions, showing its failure message if it fails, then reads the Watch afresh rather than
+   * trusting any response, which a later change may already have superseded.
+   */
+  private async performAction(action: WatchAction, failure: string,
+    work: (isCurrent: () => boolean) => Promise<void>) {
+    const id = this.id();
+    const isCurrent = () => id === this.id();
     this.busy.set(action);
     this.clearMessages();
     try {
-      await work();
-      this.watches.list.reload();
+      await work(isCurrent);
     } catch (error: unknown) {
-      this.error.set(problemMessage(error, failure));
+      if (isCurrent()) {this.error.set(problemMessage(error, failure));}
     } finally {
-      this.busy.set(undefined);
+      if (isCurrent()) {
+        this.busy.set(undefined);
+        this.refreshWatch();
+      }
     }
+  }
+
+  private refreshWatch() {
+    refresh(this.watch, this.watchReads);
+    this.watches.list.reload();
   }
 
   private clearMessages() {
     this.error.set('');
     this.notice.set('');
+  }
+}
+
+/**
+ * Reads a resource again. reload() declines while the resource is still loading its first value, which may predate
+ * the change, so then this restarts the read instead.
+ */
+function refresh(resource: HttpResourceRef<unknown>, reads: WritableSignal<number>) {
+  if (!resource.reload()) {
+    reads.update((count) => count + 1);
   }
 }
 
