@@ -10,7 +10,7 @@ test('first launch: set up the account, log out, and log in again', async ({ pag
   await page.getByLabel('Confirm password').fill('correct horse');
   await page.getByRole('button', { name: 'Create account' }).click();
   await expect(page.getByRole('heading', { name: 'Watches' })).toBeVisible();
-  await expect(page.getByText('Signed in as owner')).toBeVisible();
+  await expect(page.getByText('Logged in as owner')).toBeVisible();
 
   await page.getByRole('button', { name: 'Log out' }).click();
   await expect(page.getByRole('heading', { name: 'Log in' })).toBeVisible();
@@ -26,7 +26,7 @@ test('first launch: set up the account, log out, and log in again', async ({ pag
   await page.getByRole('button', { name: 'Log in' }).click();
   await expect(page.getByRole('heading', { name: 'Watches' })).toBeVisible();
   await page.reload();
-  await expect(page.getByText('Signed in as owner')).toBeVisible();
+  await expect(page.getByText('Logged in as owner')).toBeVisible();
 
   await page.context().storageState({ path: ownerStorageState });
 });

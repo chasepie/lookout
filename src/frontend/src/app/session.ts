@@ -1,11 +1,10 @@
-import { HttpClient, HttpErrorResponse, type HttpInterceptorFn, httpResource } from '@angular/common/http';
+import { HttpClient, HttpContext, HttpContextToken, HttpErrorResponse, type HttpInterceptorFn, httpResource } from '@angular/common/http';
 import { Service, computed, inject } from '@angular/core';
 import { catchError, firstValueFrom, throwError } from 'rxjs';
+import type { SessionStatus } from './session.model';
 
-export interface SessionStatus {
-  accountExists: boolean;
-  userName: string | null;
-}
+/** Marks a request whose 401 its caller answers itself, so it doesn't end the session. */
+const ANSWERS_UNAUTHORIZED = new HttpContextToken(() => false);
 
 /** Whether Lookout's single account exists and is logged in, which decides the screen the app shows. */
 @Service()
@@ -20,7 +19,9 @@ export class Session {
   }
 
   async logIn(userName: string, password: string) {
-    await firstValueFrom(this.http.post('/api/session', { userName, password }));
+    // A rejected login is answered on the login form.
+    const context = new HttpContext().set(ANSWERS_UNAUTHORIZED, true);
+    await firstValueFrom(this.http.post('/api/session', { userName, password }, { context }));
     this.status.reload();
   }
 
@@ -37,9 +38,7 @@ export class Session {
 export const sessionEnded: HttpInterceptorFn = (request, next) => {
   const session = inject(Session);
   return next(request).pipe(catchError((error: unknown) => {
-    // A rejected login is answered on the login form; it doesn't end a session.
-    const isLogin = request.method === 'POST' && request.url === '/api/session';
-    if (error instanceof HttpErrorResponse && error.status === 401 && !isLogin) {
+    if (error instanceof HttpErrorResponse && error.status === 401 && !request.context.get(ANSWERS_UNAUTHORIZED)) {
       session.status.reload();
     }
     return throwError(() => error);

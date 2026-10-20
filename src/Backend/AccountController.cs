@@ -16,7 +16,7 @@ public sealed class AccountController(
     TimeProvider timeProvider)
     : ControllerBase
 {
-    /// <summary>Tells the app whether to show setup, login, or the signed-in user's Watches.</summary>
+    /// <summary>Tells the app whether to show setup, login, or the logged-in user's Watches.</summary>
     [HttpGet("session")]
     [AllowAnonymous]
     public async Task<SessionStatus> Status(CancellationToken cancellationToken)

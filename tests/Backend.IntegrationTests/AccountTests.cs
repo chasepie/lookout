@@ -17,18 +17,18 @@ public sealed partial class AccountTests(TestContext testContext)
     {
         await using var factory = new LookoutWebApplicationFactory();
         using var client = factory.CreateClient();
-        Assert.IsFalse((await Session(client))["accountExists"]!.GetValue<bool>());
+        Assert.IsFalse((await SessionStatus(client))["accountExists"]!.GetValue<bool>());
 
-        var setup = await client.PostAsJsonAsync("/api/setup", new { userName = "owner", password = "correct horse" }, testContext.CancellationToken);
+        var setup = await client.PostAsJsonAsync("/api/setup", new { userName = SignedInClients.UserName, password = SignedInClients.Password }, testContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.Created, setup.StatusCode);
-        var session = await Session(client);
+        var session = await SessionStatus(client);
         Assert.IsTrue(session["accountExists"]!.GetValue<bool>());
         Assert.AreEqual("owner", session["userName"]!.GetValue<string>());
         using var other = factory.CreateClient();
         var again = await other.PostAsJsonAsync("/api/setup", new { userName = "intruder", password = "another password" }, testContext.CancellationToken);
         Assert.AreEqual(HttpStatusCode.Conflict, again.StatusCode);
-        Assert.IsNull((await Session(other))["userName"]);
+        Assert.IsNull((await SessionStatus(other))["userName"]);
         var login = await other.PostAsJsonAsync("/api/session", new { userName = "intruder", password = "another password" }, testContext.CancellationToken);
         Assert.AreEqual(HttpStatusCode.Unauthorized, login.StatusCode);
     }
@@ -46,7 +46,7 @@ public sealed partial class AccountTests(TestContext testContext)
         var login = await client.PostAsJsonAsync("/api/session", new { userName, password }, testContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.Unauthorized, login.StatusCode);
-        Assert.IsNull((await Session(client))["userName"]);
+        Assert.IsNull((await SessionStatus(client))["userName"]);
         var watches = await client.GetAsync(new Uri("/api/watches", UriKind.Relative), testContext.CancellationToken);
         Assert.AreEqual(HttpStatusCode.Unauthorized, watches.StatusCode);
     }
@@ -61,7 +61,7 @@ public sealed partial class AccountTests(TestContext testContext)
         var login = await client.PostAsJsonAsync("/api/session", new { userName = " Owner ", password = "correct horse" }, testContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.NoContent, login.StatusCode);
-        Assert.AreEqual("owner", (await Session(client))["userName"]!.GetValue<string>());
+        Assert.AreEqual("owner", (await SessionStatus(client))["userName"]!.GetValue<string>());
         var watches = await client.GetAsync(new Uri("/api/watches", UriKind.Relative), testContext.CancellationToken);
         Assert.AreEqual(HttpStatusCode.OK, watches.StatusCode);
     }
@@ -71,7 +71,7 @@ public sealed partial class AccountTests(TestContext testContext)
     {
         await using var factory = new LookoutWebApplicationFactory();
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = false });
-        var setup = await client.PostAsJsonAsync("/api/setup", new { userName = "owner", password = "correct horse" }, testContext.CancellationToken);
+        var setup = await client.PostAsJsonAsync("/api/setup", new { userName = SignedInClients.UserName, password = SignedInClients.Password }, testContext.CancellationToken);
         var cookie = setup.Headers.GetValues("Set-Cookie").Single().Split(';')[0];
         Assert.AreEqual(HttpStatusCode.OK, (await SendWithCookie(client, HttpMethod.Get, "/api/watches", cookie)).StatusCode);
 
@@ -88,7 +88,7 @@ public sealed partial class AccountTests(TestContext testContext)
         await using var factory = new LookoutWebApplicationFactory();
         using var client = factory.CreateClient();
 
-        var setup = await client.PostAsJsonAsync("/api/setup", new { userName = "owner", password = "correct horse" }, testContext.CancellationToken);
+        var setup = await client.PostAsJsonAsync("/api/setup", new { userName = SignedInClients.UserName, password = SignedInClients.Password }, testContext.CancellationToken);
 
         var cookie = setup.Headers.GetValues("Set-Cookie").Single();
         Assert.Contains("httponly", cookie);
@@ -132,6 +132,6 @@ public sealed partial class AccountTests(TestContext testContext)
         return await client.SendAsync(request, testContext.CancellationToken);
     }
 
-    private async Task<JsonObject> Session(HttpClient client) =>
+    private async Task<JsonObject> SessionStatus(HttpClient client) =>
         (await client.GetFromJsonAsync<JsonObject>("/api/session", testContext.CancellationToken))!;
 }
