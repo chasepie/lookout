@@ -1,13 +1,10 @@
 import { expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
+import { createWatch } from './watches';
 
 test('sends the user to log in when their session ends, then back to their Watches', async ({ page }) => {
   const name = `Session check ${randomUUID()}`;
-  const created = await page.request.post('/api/watches', { multipart: {
-    name, notificationUrl: 'https://example.com/widget',
-    script: { name: 'price.ts', mimeType: 'text/plain', buffer: Buffer.from('export default {}') },
-  } });
-  expect(created.status()).toBe(201);
+  await createWatch(page, name);
   await page.goto('/');
   await expect(page.getByRole('article', { name })).toBeVisible();
 
@@ -28,10 +25,12 @@ test.describe('without a session', () => {
   test('sends the user to log in when another browser set up the account first', async ({ page }) => {
     // This browser loaded setup before the account existed; the backend's account was created since.
     let stale = true;
-    await page.route('**/api/session', (route) => {
+    await page.route('**/api/session', async (route) => {
       if (stale && route.request().method() === 'GET') {
         stale = false;
-        return route.fulfill({ json: { accountExists: false, userName: null } });
+        // Keep the real response's request token; only its account status is out of date.
+        const response = await route.fetch();
+        return route.fulfill({ response, json: { accountExists: false, userName: null } });
       }
       return route.fallback();
     });

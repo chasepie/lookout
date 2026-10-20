@@ -26,7 +26,8 @@ public class Program
 
     private static void ConfigureServices(IServiceCollection services, ConfigurationManager configuration)
     {
-        services.AddControllers();
+        // Every POST, PUT, PATCH and DELETE to a controller must carry the request token (see RequestForgery).
+        services.AddControllers(options => options.Filters.Add<RequestForgery.ValidateTokenFilter>());
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<RunningWatches>();
         var runnerUrl = configuration["Runner:BaseUrl"] ?? "http://localhost:3000";
@@ -47,6 +48,7 @@ public class Program
         // Every endpoint requires a login unless it explicitly allows anonymous access.
         services.AddAuthorizationBuilder()
             .SetFallbackPolicy(new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
+        services.AddAntiforgery(RequestForgery.Configure);
         services.AddDataProtection().SetApplicationName("Lookout").PersistKeysToDbContext<LookoutDbContext>();
         services.AddSingleton<IPasswordHasher<Account>, PasswordHasher<Account>>();
 

@@ -1,6 +1,7 @@
 using System.Net;
 using ChasePie.Lookout.Database;
 using ChasePie.Lookout.Model;
+using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -14,14 +15,19 @@ namespace ChasePie.Lookout.Backend.Controllers;
 public sealed class AccountController(
     LookoutDbContext database,
     IPasswordHasher<Account> passwordHasher,
+    IAntiforgery antiforgery,
     TimeProvider timeProvider)
     : LookoutControllerBase
 {
-    /// <summary>Tells the app whether to show setup, login, or the logged-in user's Watches.</summary>
+    /// <summary>
+    /// Tells the app whether to show setup, login, or the logged-in user's Watches, and gives it the request token
+    /// for this login.
+    /// </summary>
     [HttpGet("session")]
     [AllowAnonymous]
     public async Task<SessionStatus> Status(CancellationToken cancellationToken)
     {
+        RequestForgery.IssueToken(HttpContext, antiforgery);
         var accountExists = await database.Accounts.AnyAsync(cancellationToken);
         return new SessionStatus(accountExists, User.Identity?.IsAuthenticated == true ? User.Identity.Name : null);
     }

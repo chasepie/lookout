@@ -16,7 +16,7 @@ public sealed partial class AccountTests(TestContext testContext)
     public async Task SetupCreatesTheAccountAndSignsInOnlyOnce()
     {
         await using var factory = new LookoutWebApplicationFactory();
-        using var client = factory.CreateClient();
+        using var client = await factory.CreateAppClientAsync(testContext.CancellationToken);
         Assert.IsFalse((await SessionStatus(client))["accountExists"]!.GetValue<bool>());
 
         var setup = await client.PostAsJsonAsync("/api/setup", new { userName = SignedInClients.UserName, password = SignedInClients.Password }, testContext.CancellationToken);
@@ -25,7 +25,7 @@ public sealed partial class AccountTests(TestContext testContext)
         var session = await SessionStatus(client);
         Assert.IsTrue(session["accountExists"]!.GetValue<bool>());
         Assert.AreEqual("owner", session["userName"]!.GetValue<string>());
-        using var other = factory.CreateClient();
+        using var other = await factory.CreateAppClientAsync(testContext.CancellationToken);
         var again = await other.PostAsJsonAsync("/api/setup", new { userName = "intruder", password = "another password" }, testContext.CancellationToken);
         Assert.AreEqual(HttpStatusCode.Conflict, again.StatusCode);
         Assert.IsNull((await SessionStatus(other))["userName"]);
@@ -41,7 +41,7 @@ public sealed partial class AccountTests(TestContext testContext)
     {
         await using var factory = new LookoutWebApplicationFactory();
         using (await factory.CreateSignedInClientAsync(testContext.CancellationToken)) { }
-        using var client = factory.CreateClient();
+        using var client = await factory.CreateAppClientAsync(testContext.CancellationToken);
 
         var login = await client.PostAsJsonAsync("/api/session", new { userName, password }, testContext.CancellationToken);
 
@@ -56,7 +56,7 @@ public sealed partial class AccountTests(TestContext testContext)
     {
         await using var factory = new LookoutWebApplicationFactory();
         using (await factory.CreateSignedInClientAsync(testContext.CancellationToken)) { }
-        using var client = factory.CreateClient();
+        using var client = await factory.CreateAppClientAsync(testContext.CancellationToken);
 
         var login = await client.PostAsJsonAsync("/api/session", new { userName = " Owner ", password = "correct horse" }, testContext.CancellationToken);
 
@@ -70,27 +70,29 @@ public sealed partial class AccountTests(TestContext testContext)
     public async Task LogoutEndsTheSessionEvenForACopyOfItsCookie()
     {
         await using var factory = new LookoutWebApplicationFactory();
-        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = false });
+        using var client = await factory.CreateAppClientAsync(testContext.CancellationToken);
         var setup = await client.PostAsJsonAsync("/api/setup", new { userName = SignedInClients.UserName, password = SignedInClients.Password }, testContext.CancellationToken);
-        var cookie = setup.Headers.GetValues("Set-Cookie").Single().Split(';')[0];
-        Assert.AreEqual(HttpStatusCode.OK, (await SendWithCookie(client, HttpMethod.Get, "/api/watches", cookie)).StatusCode);
+        var cookie = SessionCookie(setup).Split(';')[0];
+        using var copy = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = false });
+        Assert.AreEqual(HttpStatusCode.OK, (await SendWithCookie(copy, HttpMethod.Get, "/api/watches", cookie)).StatusCode);
+        await client.RefreshRequestTokenAsync(testContext.CancellationToken);
 
-        var logout = await SendWithCookie(client, HttpMethod.Delete, "/api/session", cookie);
+        var logout = await client.DeleteAsync(new Uri("/api/session", UriKind.Relative), testContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.NoContent, logout.StatusCode);
-        Assert.Contains("expires=Thu, 01 Jan 1970", logout.Headers.GetValues("Set-Cookie").Single());
-        Assert.AreEqual(HttpStatusCode.Unauthorized, (await SendWithCookie(client, HttpMethod.Get, "/api/watches", cookie)).StatusCode);
+        Assert.Contains("expires=Thu, 01 Jan 1970", SessionCookie(logout));
+        Assert.AreEqual(HttpStatusCode.Unauthorized, (await SendWithCookie(copy, HttpMethod.Get, "/api/watches", cookie)).StatusCode);
     }
 
     [TestMethod]
     public async Task IssuesAnHttpOnlySameSiteCookieThatLastsUntilLogout()
     {
         await using var factory = new LookoutWebApplicationFactory();
-        using var client = factory.CreateClient();
+        using var client = await factory.CreateAppClientAsync(testContext.CancellationToken);
 
         var setup = await client.PostAsJsonAsync("/api/setup", new { userName = SignedInClients.UserName, password = SignedInClients.Password }, testContext.CancellationToken);
 
-        var cookie = setup.Headers.GetValues("Set-Cookie").Single();
+        var cookie = SessionCookie(setup);
         Assert.Contains("httponly", cookie);
         Assert.Contains("samesite=strict", cookie);
         Assert.Contains("expires=", cookie);
@@ -131,6 +133,9 @@ public sealed partial class AccountTests(TestContext testContext)
         request.Headers.Add("Cookie", cookie);
         return await client.SendAsync(request, testContext.CancellationToken);
     }
+
+    private static string SessionCookie(HttpResponseMessage response) =>
+        response.Headers.GetValues("Set-Cookie").Single(value => value.StartsWith("Lookout.Session=", StringComparison.Ordinal));
 
     private async Task<JsonObject> SessionStatus(HttpClient client) =>
         (await client.GetFromJsonAsync<JsonObject>("/api/session", testContext.CancellationToken))!;
