@@ -12,9 +12,17 @@ namespace ChasePie.Lookout.Backend;
 /// </summary>
 public static class RequestForgery
 {
-    /// <summary>The cookie and header names Angular's <c>HttpClient</c> uses for XSRF tokens by default.</summary>
-    private const string TokenCookieName = "XSRF-TOKEN";
-    private const string TokenHeaderName = "X-XSRF-TOKEN";
+    /// <summary>
+    /// The cookie the app reads the request token from. Every port on a host shares cookies, so Angular's default
+    /// <c>XSRF-TOKEN</c> would collide with other Angular apps in the homelab; the app is configured with this name.
+    /// </summary>
+    public const string TokenCookieName = "Lookout.XSRF-TOKEN";
+
+    /// <summary>The header Angular's <c>HttpClient</c> sends the request token in by default.</summary>
+    public const string TokenHeaderName = "X-XSRF-TOKEN";
+
+    /// <summary>Identifies a rejected request token, so the app can fetch a fresh one and retry.</summary>
+    private const string MissingTokenProblemType = "urn:lookout:problem:request-token";
 
     public static void Configure(AntiforgeryOptions options)
     {
@@ -61,6 +69,7 @@ public static class RequestForgery
             catch (AntiforgeryValidationException)
             {
                 var problem = problemDetails.CreateProblemDetails(context.HttpContext, StatusCodes.Status400BadRequest,
+                    type: MissingTokenProblemType,
                     detail: "This request is missing Lookout's request token. Reload the page and try again.");
                 context.Result = new ObjectResult(problem) { StatusCode = problem.Status };
             }

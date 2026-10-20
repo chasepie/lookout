@@ -19,6 +19,19 @@ test('sends the user to log in when their session ends, then back to their Watch
   await expect(page.getByRole('article', { name })).toBeVisible();
 });
 
+test('recovers when the request token goes missing, such as when another app on the host overwrites it', async ({ page }) => {
+  const name = `Lost token ${randomUUID()}`;
+  await createWatch(page, name);
+  await page.goto('/');
+  await expect(page.getByRole('article', { name })).toBeVisible();
+
+  await page.context().clearCookies({ name: 'Lookout.XSRF-TOKEN' });
+  await page.getByRole('article', { name }).getByRole('button', { name: 'Run now' }).click();
+
+  await expect(page.getByRole('status')).toHaveText(`Run of ${name} finished: Succeeded.`);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+});
+
 test.describe('without a session', () => {
   test.use({ storageState: { cookies: [], origins: [] } });
 

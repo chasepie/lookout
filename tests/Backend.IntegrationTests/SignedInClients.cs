@@ -8,7 +8,7 @@ public static class SignedInClients
 {
     public const string UserName = "owner";
     public const string Password = "correct horse";
-    public const string RequestTokenHeader = "X-XSRF-TOKEN";
+    public const string RequestTokenHeader = RequestForgery.TokenHeaderName;
 
     /// <summary>Creates a client that has set up the host's account and holds its session cookie.</summary>
     public static async Task<HttpClient> CreateSignedInClientAsync(this WebApplicationFactory<Program> factory,
@@ -52,7 +52,7 @@ public static class SignedInClients
         using var response = await client.GetAsync(new Uri("/api/session", UriKind.Relative), cancellationToken);
         response.EnsureSuccessStatusCode();
         var token = SetCookieHeaderValue.ParseList(response.Headers.GetValues("Set-Cookie").ToList())
-            .Single(cookie => cookie.Name == "XSRF-TOKEN").Value.ToString();
+            .Single(cookie => cookie.Name == RequestForgery.TokenCookieName).Value.ToString();
         client.DefaultRequestHeaders.Remove(RequestTokenHeader);
         client.DefaultRequestHeaders.Add(RequestTokenHeader, token);
     }

@@ -81,6 +81,7 @@ public class Program
         }
 
         app.UseHttpsRedirection();
+        ContentSecurityPolicy.Apply(app);
 
         // The app's files are public: it shows setup or login itself, before the user has a session.
         app.UseDefaultFiles();

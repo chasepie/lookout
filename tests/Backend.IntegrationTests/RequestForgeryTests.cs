@@ -19,7 +19,8 @@ public sealed class RequestForgeryTests(TestContext testContext)
 
         var response = await client.GetAsync(new Uri("/api/session", UriKind.Relative), testContext.CancellationToken);
 
-        var cookie = response.Headers.GetValues("Set-Cookie").Single(value => value.StartsWith("XSRF-TOKEN=", StringComparison.Ordinal));
+        // Other Angular apps on the same host share its cookies, so the default XSRF-TOKEN name would collide.
+        var cookie = response.Headers.GetValues("Set-Cookie").Single(value => value.StartsWith("Lookout.XSRF-TOKEN=", StringComparison.Ordinal));
         Assert.DoesNotContain("httponly", cookie);
         Assert.Contains("samesite=strict", cookie);
     }
@@ -58,6 +59,9 @@ public sealed class RequestForgeryTests(TestContext testContext)
 
         Assert.AreEqual(HttpStatusCode.BadRequest, create.StatusCode);
         Assert.AreEqual(HttpStatusCode.BadRequest, logout.StatusCode);
+        // The app recognises this problem, unlike a validation error, and retries with a fresh token.
+        var problem = await logout.Content.ReadFromJsonAsync<JsonObject>(testContext.CancellationToken);
+        Assert.AreEqual("urn:lookout:problem:request-token", problem!["type"]!.GetValue<string>());
         var watches = await client.GetFromJsonAsync<JsonArray>("/api/watches", testContext.CancellationToken);
         Assert.IsEmpty(watches!);
     }
