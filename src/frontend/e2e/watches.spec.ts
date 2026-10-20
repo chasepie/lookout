@@ -13,7 +13,7 @@ test('create a Watch with a Script, Run now, and see the saved content', async (
   });
   await page.getByRole('button', { name: 'Create Watch' }).click();
   const watch = page.getByRole('article', { name });
-  await expect(watch).toContainText('No Runs yet');
+  await expect(watch.getByText('No Runs yet', { exact: true })).toHaveCount(1);
   await watch.getByRole('button', { name: 'Run now' }).click();
   await expect(watch).toContainText('£19.99');
   await expect(watch.getByText('Last Run: Succeeded', { exact: true })).toBeVisible();

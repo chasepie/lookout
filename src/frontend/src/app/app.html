@@ -47,7 +47,7 @@
               <h2><a [href]="watch.notificationUrl" target="_blank" rel="noopener noreferrer">{{ watch.name }} <span aria-hidden="true">↗</span></a></h2>
               @if (watch.lastRun; as run) {
                 <span class="badge" [class.success]="run.outcome === 'succeeded'" [class.failure]="run.outcome !== 'succeeded'">Last Run: {{ outcomes[run.outcome] }}</span>
-              } @else { <span class="badge">No Runs yet</span> }
+              }
             </div>
             <p class="eyebrow content-label">LATEST CONTENT</p>
             <p class="content">{{ watch.latestContent === null ? 'No content yet' : watch.latestContent === '' ? '(Empty content)' : watch.latestContent }}</p>
