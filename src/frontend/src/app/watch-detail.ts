@@ -4,6 +4,7 @@ import { ChangeDetectionStrategy, Component, type WritableSignal, computed, inje
 import { FormField, form, submit } from '@angular/forms/signals';
 import { Router, RouterLink } from '@angular/router';
 import { problemMessage } from './problem';
+import { ScheduleEditor } from './schedule-editor';
 import { type Run, type Watch, type WatchSettings, outcomeLabels, statusLabels } from './watch.model';
 import { defaultTimeoutSeconds, maxTimeoutSeconds, nameAndNotificationUrlRules, timeoutRules } from './watch-settings';
 import { Watches } from './watches';
@@ -23,7 +24,7 @@ const noOlderRuns: OlderRuns = { runs: [], ended: false, loading: false };
 
 @Component({
   selector: 'app-watch-detail',
-  imports: [DatePipe, DecimalPipe, FormField, RouterLink],
+  imports: [DatePipe, DecimalPipe, FormField, RouterLink, ScheduleEditor],
   templateUrl: './watch-detail.html',
   styleUrl: './watch-detail.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -76,6 +77,7 @@ export class WatchDetail {
 
   protected readonly busy = linkedSignal<string, WatchAction | undefined>({ source: this.id, computation: () => undefined });
   protected readonly confirmingDelete = linkedSignal({ source: this.id, computation: () => false });
+  protected readonly editingSchedule = linkedSignal({ source: this.id, computation: () => false });
   protected readonly error = linkedSignal({ source: this.id, computation: () => '' });
   protected readonly notice = linkedSignal({ source: this.id, computation: () => '' });
   protected readonly outcomes = outcomeLabels;
@@ -96,6 +98,14 @@ export class WatchDetail {
       }
       this.refreshWatch();
     });
+  }
+
+  protected scheduleSaved() {
+    this.editingSchedule.set(false);
+    this.clearMessages();
+    this.notice.set('Schedule saved.');
+    // The editor has already saved; read the Watch afresh rather than trusting its response.
+    this.refreshWatch();
   }
 
   protected async runNow() {

@@ -34,6 +34,31 @@ test('open a Watch, edit its settings, and see its Run history with a highlighte
   await expect(runs).toHaveCount(2);
 });
 
+test('edit a Watch\'s schedule from its detail page, and see no next Run while it is paused', async ({ page }) => {
+  const id = await createWatch(page, `Detail schedule ${randomUUID()}`);
+  await page.goto(`/watches/${id}`);
+  const schedule = page.getByRole('region', { name: 'Schedule', exact: true });
+  const nextRun = schedule.getByText('Next Run').locator('time');
+  await expect(nextRun).toBeVisible();
+
+  await schedule.getByRole('button', { name: 'Edit schedule' }).click();
+  await schedule.getByLabel('Every', { exact: true }).fill('10');
+  await schedule.getByLabel('Unit').selectOption('minutes');
+  await schedule.getByRole('button', { name: 'Save schedule' }).click();
+
+  await expect(page.getByRole('status')).toHaveText('Schedule saved.');
+  await expect(schedule.getByRole('button', { name: 'Save schedule' })).toHaveCount(0);
+  await expect.poll(async () => {
+    const minutesAway = (new Date((await nextRun.getAttribute('datetime'))!).getTime() - Date.now()) / 60_000;
+    return Math.round(minutesAway);
+  }).toBe(10);
+
+  await page.getByRole('button', { name: 'Pause' }).click();
+  await expect(schedule).toContainText('No scheduled Runs while paused.');
+  await page.getByRole('button', { name: 'Resume' }).click();
+  await expect(nextRun).toBeVisible();
+});
+
 test('pause and resume a Watch', async ({ page }) => {
   const name = `Pausable ${randomUUID()}`;
   const id = await createWatch(page, name);

@@ -52,6 +52,19 @@
           </button>
         </form>
       </section>
+      <section class="panel" aria-labelledby="schedule-heading">
+        <h2 id="schedule-heading">Schedule</h2>
+        @if (current.nextRunAt) {
+          <p class="details">Next Run <time [attr.datetime]="current.nextRunAt">{{ current.nextRunAt | date:'medium' }}</time></p>
+        } @else if (current.isPaused) {
+          <p class="details">No scheduled Runs while paused.</p>
+        }
+        @if (editingSchedule()) {
+          <app-schedule-editor [watch]="current" (saved)="scheduleSaved()" (cancelled)="editingSchedule.set(false)" />
+        } @else {
+          <button type="button" (click)="editingSchedule.set(true)">Edit schedule</button>
+        }
+      </section>
       <section class="panel danger-zone" aria-labelledby="delete-heading">
         <h2 id="delete-heading">Delete</h2>
         @if (confirmingDelete()) {
