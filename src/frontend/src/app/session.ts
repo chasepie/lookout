@@ -14,7 +14,15 @@ export class Session {
   readonly userName = computed(() => (this.status.hasValue() ? this.status.value().userName : null));
 
   async setUp(userName: string, password: string) {
-    await firstValueFrom(this.http.post('/api/setup', { userName, password }));
+    try {
+      await firstValueFrom(this.http.post('/api/setup', { userName, password }));
+    } catch (error: unknown) {
+      // Another browser set up the account first, so this one should show login instead.
+      if (error instanceof HttpErrorResponse && error.status === 409) {
+        this.status.reload();
+      }
+      throw error;
+    }
     this.status.reload();
   }
 
