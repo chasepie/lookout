@@ -70,7 +70,7 @@ public sealed partial class Scheduler(
             .ToListAsync(cancellationToken);
         foreach (var watch in stale)
         {
-            watch.NextRunAt = schedules.NextRunAt(watch.Schedule, watch.JitterMinutes);
+            watch.NextRunAt = schedules.NextRunAt(watch.Schedule, watch.JitterMinutes, watch.LastScheduledRunAt);
             watch.NextRunTimeZone = timeZone;
         }
         await database.SaveChangesAsync(cancellationToken);
@@ -114,6 +114,7 @@ public sealed partial class Scheduler(
                     if (await Claim(database, watch, stoppingToken))
                     {
                         started = true;
+                        runningWatches.MarkExecuting(watch.Id);
                         Track(Task.Run(() => Run(watch.Id, stoppingToken), CancellationToken.None));
                     }
                 }
@@ -142,15 +143,18 @@ public sealed partial class Scheduler(
     }
 
     /// <summary>
-    /// Schedules the Watch's next Run from now, unless another backend instance has already claimed this one.
+    /// Records the Watch's due Run as starting now and schedules the next one from now, unless another backend
+    /// instance has already claimed this Run.
     /// </summary>
     private async Task<bool> Claim(LookoutDbContext database, Watch watch, CancellationToken cancellationToken)
     {
+        var now = timeProvider.GetUtcNow();
         var claimed = await database.Watches
             .Where(item => item.Id == watch.Id && item.NextRunAt == watch.NextRunAt)
             .ExecuteUpdateAsync(setters => setters
-                .SetProperty(item => item.NextRunAt, schedules.NextRunAfterRunStarts(watch.Schedule, watch.JitterMinutes))
-                .SetProperty(item => item.NextRunTimeZone, schedules.TimeZone.Id), cancellationToken);
+                .SetProperty(item => item.NextRunAt, schedules.NextRunAt(watch.Schedule, watch.JitterMinutes, now))
+                .SetProperty(item => item.NextRunTimeZone, schedules.TimeZone.Id)
+                .SetProperty(item => item.LastScheduledRunAt, now), cancellationToken);
         return claimed == 1;
     }
 

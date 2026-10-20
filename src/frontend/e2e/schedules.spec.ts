@@ -95,8 +95,10 @@ test('edit a Watch\'s schedule, then see it kept after a reload', async ({ page 
   await expect(page.getByRole('status')).toHaveText(`Schedule of ${name} saved.`);
   await expect(watch.getByRole('button', { name: 'Save schedule' })).toHaveCount(0);
   const nextRun = watch.getByText('Next Run').locator('time');
-  await expect.poll(async () => new Date((await nextRun.getAttribute('datetime'))!).getMinutes()).toBe(30);
-  expect(new Date((await nextRun.getAttribute('datetime'))!).getHours()).toBe(9);
+  await expect.poll(async () => {
+    const at = new Date((await nextRun.getAttribute('datetime'))!);
+    return [at.getHours(), at.getMinutes()];
+  }).toEqual([9, 30]);
 
   await page.reload();
   await watch.getByRole('button', { name: 'Edit schedule' }).click();
@@ -137,17 +139,59 @@ test('edit a Watch to run daily with jitter, then see both kept after a reload',
   await expect(page.getByRole('status')).toHaveText(`Schedule of ${name} saved.`);
 
   // The Run lands up to 10 minutes after 07:45 in the browser's time zone, which the test host shares.
+  // Polled as one condition, since the list shows the old next Run until it reloads.
   const nextRun = watch.getByText('Next Run').locator('time');
   await expect.poll(async () => {
     const at = new Date((await nextRun.getAttribute('datetime'))!);
-    return at.getHours() * 60 + at.getMinutes();
-  }).toBeGreaterThanOrEqual(7 * 60 + 45);
-  const at = new Date((await nextRun.getAttribute('datetime'))!);
-  expect(at.getHours() * 60 + at.getMinutes()).toBeLessThanOrEqual(7 * 60 + 55);
+    const minutes = at.getHours() * 60 + at.getMinutes();
+    return minutes >= 7 * 60 + 45 && minutes <= 7 * 60 + 55;
+  }).toBe(true);
 
   await page.reload();
   await watch.getByRole('button', { name: 'Edit schedule' }).click();
   await expect(watch.getByLabel('Schedule', { exact: true })).toHaveValue('daily');
   await expect(watch.getByLabel('Time of day')).toHaveValue('07:45');
   await expect(watch.getByLabel('Jitter (minutes)')).toHaveValue('10');
+});
+
+test('keeps unsaved schedule edits when the Watches list reloads', async ({ page }) => {
+  const name = `Unsaved edit ${randomUUID()}`;
+  const other = `Reloads the list ${randomUUID()}`;
+  await createWatch(page, name);
+  await createWatch(page, other);
+  await page.goto('/');
+  const watch = page.getByRole('article', { name });
+  await watch.getByRole('button', { name: 'Edit schedule' }).click();
+  await watch.getByLabel('Schedule', { exact: true }).selectOption('Advanced (cron)');
+  await watch.getByLabel('Cron expression').fill('30 9 * * 1-5');
+
+  await page.getByRole('article', { name: other }).getByRole('button', { name: 'Run now' }).click();
+  await expect(page.getByRole('status')).toHaveText(`Run of ${other} finished: Succeeded.`);
+
+  await expect(watch.getByLabel('Cron expression')).toHaveValue('30 9 * * 1-5');
+});
+
+for (const jitter of ['', '2.5']) {
+  test(`explains that jitter of "${jitter}" must be between 0 and 60 minutes`, async ({ page }) => {
+    await fillWatch(page, `Bad jitter ${randomUUID()}`);
+    await page.getByLabel('Jitter (minutes)').fill(jitter);
+    await page.getByLabel('Jitter (minutes)').blur();
+
+    await expect(page.getByText('Jitter must be between 0 and 60 minutes.')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Create Watch' })).toBeDisabled();
+  });
+}
+
+test('explains why an empty cron expression or time of day can\'t be saved', async ({ page }) => {
+  await fillWatch(page, `Empty schedule ${randomUUID()}`);
+  await page.getByLabel('Schedule', { exact: true }).selectOption('Advanced (cron)');
+  await page.getByLabel('Cron expression').focus();
+  await page.getByLabel('Cron expression').blur();
+  await expect(page.getByText('Enter a cron expression.')).toBeVisible();
+
+  await page.getByLabel('Schedule', { exact: true }).selectOption('Daily at a set time');
+  await page.getByLabel('Time of day').fill('');
+  await page.getByLabel('Time of day').blur();
+  await expect(page.getByText('Choose a time of day.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Create Watch' })).toBeDisabled();
 });

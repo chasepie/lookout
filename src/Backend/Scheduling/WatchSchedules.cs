@@ -12,21 +12,23 @@ public sealed class WatchSchedules(TimeProvider timeProvider, TimeZoneInfo? conf
 
     public string? Validate(Schedule schedule) => schedule.Validate(timeProvider.GetUtcNow(), TimeZone);
 
-    /// <summary>The schedule's next occurrence after now, delayed by up to <paramref name="jitterMinutes"/>.</summary>
-    public DateTimeOffset? NextRunAt(Schedule schedule, int jitterMinutes)
+    /// <summary>
+    /// The schedule's next occurrence after now, delayed by up to <paramref name="jitterMinutes"/>, in whole seconds.
+    /// Jitter can delay a Run until just before the schedule's next occurrence, so the next Run is also held at least
+    /// <see cref="Schedule.MinimumInterval"/> after <paramref name="lastRunAt"/>.
+    /// </summary>
+    public DateTimeOffset? NextRunAt(Schedule schedule, int jitterMinutes, DateTimeOffset? lastRunAt = null)
     {
         var jitter = TimeSpan.FromSeconds(Random.Shared.Next(jitterMinutes * 60 + 1));
-        return schedule.NextOccurrence(timeProvider.GetUtcNow(), TimeZone) + jitter;
-    }
-
-    /// <summary>
-    /// When to run a Watch whose Run is starting now. Jitter can delay a Run until just before the schedule's next
-    /// occurrence, so the next Run is held back to keep Runs at least <see cref="Schedule.MinimumInterval"/> apart.
-    /// </summary>
-    public DateTimeOffset? NextRunAfterRunStarts(Schedule schedule, int jitterMinutes)
-    {
-        var earliest = timeProvider.GetUtcNow() + Schedule.MinimumInterval;
-        var next = NextRunAt(schedule, jitterMinutes);
-        return next < earliest ? earliest : next;
+        var next = schedule.NextOccurrence(timeProvider.GetUtcNow(), TimeZone) + jitter;
+        var earliest = lastRunAt + Schedule.MinimumInterval;
+        if (next < earliest)
+        {
+            next = earliest;
+        }
+        // The database keeps a tenth of a millisecond, so rounding keeps a new Watch's response the same as its record.
+        return next is { } at
+            ? new DateTimeOffset((at.UtcTicks + TimeSpan.TicksPerSecond - 1) / TimeSpan.TicksPerSecond * TimeSpan.TicksPerSecond, TimeSpan.Zero)
+            : null;
     }
 }

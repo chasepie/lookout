@@ -19,6 +19,12 @@ namespace ChasePie.Lookout.Database.Migrations
                 defaultValue: 0);
 
             migrationBuilder.AddColumn<long>(
+                name: "LastScheduledRunAt",
+                table: "Watches",
+                type: "INTEGER",
+                nullable: true);
+
+            migrationBuilder.AddColumn<long>(
                 name: "NextRunAt",
                 table: "Watches",
                 type: "INTEGER",
@@ -79,6 +85,10 @@ namespace ChasePie.Lookout.Database.Migrations
 
             migrationBuilder.DropColumn(
                 name: "JitterMinutes",
+                table: "Watches");
+
+            migrationBuilder.DropColumn(
+                name: "LastScheduledRunAt",
                 table: "Watches");
 
             migrationBuilder.DropColumn(

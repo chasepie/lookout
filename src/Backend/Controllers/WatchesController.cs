@@ -100,24 +100,36 @@ public sealed class WatchesController(
             return scheduleProblem;
         }
 
-        // A set-based update leaves Revision alone, so a Run finishing meanwhile is still recorded.
-        var nextRunAt = schedules.NextRunAt(schedule, request.JitterMinutes);
-        var updated = await database.Watches
-            .Where(watch => watch.Id == id)
-            .ExecuteUpdateAsync(setters => setters
-                .SetProperty(watch => watch.Schedule, schedule)
-                .SetProperty(watch => watch.JitterMinutes, request.JitterMinutes)
-                .SetProperty(watch => watch.NextRunAt, nextRunAt)
-                .SetProperty(watch => watch.NextRunTimeZone, schedules.TimeZone.Id), cancellationToken);
-        if (updated == 0)
+        for (var attempt = 0; attempt < 3; attempt++)
         {
-            return NotFound();
-        }
+            var current = await database.Watches
+                .Where(watch => watch.Id == id)
+                .Select(watch => new { watch.LastScheduledRunAt })
+                .SingleOrDefaultAsync(cancellationToken);
+            if (current is null)
+            {
+                return NotFound();
+            }
 
-        return await database.Watches.AsNoTracking()
-            .Where(watch => watch.Id == id)
-            .Select(WatchSummary.Projection)
-            .SingleAsync(cancellationToken);
+            // A set-based update leaves Revision alone, so a Run finishing meanwhile is still recorded. It applies
+            // only if the scheduler started no Run since the read, as the next Run must stay clear of the last one.
+            var nextRunAt = schedules.NextRunAt(schedule, request.JitterMinutes, current.LastScheduledRunAt);
+            var updated = await database.Watches
+                .Where(watch => watch.Id == id && watch.LastScheduledRunAt == current.LastScheduledRunAt)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(watch => watch.Schedule, schedule)
+                    .SetProperty(watch => watch.JitterMinutes, request.JitterMinutes)
+                    .SetProperty(watch => watch.NextRunAt, nextRunAt)
+                    .SetProperty(watch => watch.NextRunTimeZone, schedules.TimeZone.Id), cancellationToken);
+            if (updated == 1)
+            {
+                return await database.Watches.AsNoTracking()
+                    .Where(watch => watch.Id == id)
+                    .Select(WatchSummary.Projection)
+                    .SingleAsync(cancellationToken);
+            }
+        }
+        return Problem("Runs of this Watch kept starting while its schedule was being saved. Please try again.", statusCode: HttpStatusCode.Conflict);
     }
 
     [HttpGet("{id:guid}/runs")]
@@ -147,12 +159,14 @@ public sealed class WatchesController(
     {
         if (!runningWatches.TryStart(id))
         {
-            return Problem("This Watch is already running.", statusCode: HttpStatusCode.Conflict);
+            return Problem(runningWatches.IsWaitingForSlot(id) ? "This Watch is waiting for a free slot to run." : "This Watch is already running.",
+                statusCode: HttpStatusCode.Conflict);
         }
 
         try
         {
             await runSlots.WaitAsync(applicationLifetime.ApplicationStopping);
+            runningWatches.MarkExecuting(id);
             RunExecution execution;
             try
             {

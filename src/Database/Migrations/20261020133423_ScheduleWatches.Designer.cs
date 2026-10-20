@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ChasePie.Lookout.Database.Migrations
 {
     [DbContext(typeof(LookoutDbContext))]
-    [Migration("20261020122637_ScheduleWatches")]
+    [Migration("20261020133423_ScheduleWatches")]
     partial class ScheduleWatches
     {
         /// <inheritdoc />
@@ -144,6 +144,9 @@ namespace ChasePie.Lookout.Database.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<int>("JitterMinutes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("LastScheduledRunAt")
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("Name")

@@ -15,6 +15,8 @@ public sealed class Watch
     public DateTimeOffset? NextRunAt { get; set; }
     /// <summary>The time zone <see cref="NextRunAt"/> was worked out in, so a restart in another one can redo it.</summary>
     public string? NextRunTimeZone { get; set; }
+    /// <summary>When the scheduler last started a Run of this Watch, which the next Run must stay clear of.</summary>
+    public DateTimeOffset? LastScheduledRunAt { get; set; }
     /// <summary>Advanced by every recorded Run, so a Run evaluated against a stale Baseline can't be saved.</summary>
     public long Revision { get; set; }
     public ICollection<ScriptVersion> ScriptVersions { get; set; } = [];

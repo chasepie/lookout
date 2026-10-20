@@ -70,6 +70,11 @@ public class LookoutDbContext(DbContextOptions<LookoutDbContext> options) : DbCo
             .HasConversion(new DateTimeOffsetToBinaryConverter());
 
         modelBuilder.Entity<Watch>()
+            .Property(watch => watch.LastScheduledRunAt)
+            // Schedule changes compare it to detect a Run that started meanwhile.
+            .HasConversion(new DateTimeOffsetToBinaryConverter());
+
+        modelBuilder.Entity<Watch>()
             .HasIndex(watch => watch.NextRunAt);
 
         modelBuilder.Entity<Run>()

@@ -1,7 +1,7 @@
-import { ChangeDetectionStrategy, Component, inject, input, linkedSignal, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, input, linkedSignal, output, signal, untracked } from '@angular/core';
 import { apply, form, submit } from '@angular/forms/signals';
 import { problemMessage } from './problem';
-import { scheduleFormFor, scheduleSchema } from './schedule';
+import { type ScheduleForm, scheduleFormFor, scheduleSchema } from './schedule';
 import { SchedulePicker } from './schedule-picker';
 import type { Watch } from './watch.model';
 import { Watches } from './watches';
@@ -19,7 +19,13 @@ export class ScheduleEditor {
   readonly watch = input.required<Watch>();
   readonly saved = output<Watch>();
   readonly cancelled = output();
-  protected readonly model = linkedSignal(() => ({ schedule: scheduleFormFor(this.watch().schedule, this.watch().jitterMinutes) }));
+  protected readonly model = linkedSignal<string, { schedule: ScheduleForm }>({
+    source: () => this.watch().id,
+    // Reloading the Watches list passes in a fresh copy of the same Watch, which must keep the unsaved edits.
+    computation: (id, previous) => previous?.source === id
+      ? previous.value
+      : untracked(() => ({ schedule: scheduleFormFor(this.watch().schedule, this.watch().jitterMinutes) })),
+  });
   protected readonly editForm = form(this.model, (fields) => {
     apply(fields.schedule, scheduleSchema);
   });

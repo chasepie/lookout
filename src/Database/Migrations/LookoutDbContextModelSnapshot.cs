@@ -143,6 +143,9 @@ namespace ChasePie.Lookout.Database.Migrations
                     b.Property<int>("JitterMinutes")
                         .HasColumnType("INTEGER");
 
+                    b.Property<long?>("LastScheduledRunAt")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("TEXT");

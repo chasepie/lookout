@@ -52,6 +52,10 @@ export const scheduleSchema = schema<ScheduleForm>((path) => {
   required(path.cron, { message: 'Enter a cron expression.' });
   min(path.jitterMinutes, 0, { message: 'Jitter must be between 0 and 60 minutes.' });
   max(path.jitterMinutes, 60, { message: 'Jitter must be between 0 and 60 minutes.' });
+  // min and max pass an empty or fractional number, which the backend can't read as whole minutes.
+  validate(path.jitterMinutes, (field) => Number.isInteger(field.value())
+    ? undefined
+    : { kind: 'wholeMinutes', message: 'Jitter must be between 0 and 60 minutes.' });
 });
 
 /** The fields the backend reads for this schedule, for a form upload or a JSON body. */

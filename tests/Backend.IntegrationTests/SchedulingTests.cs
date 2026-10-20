@@ -291,6 +291,98 @@ public sealed class SchedulingTests(TestContext testContext)
         (await otherOnDemand).EnsureSuccessStatusCode();
     }
 
+    [TestMethod]
+    public async Task ExplainsThatRunNowIsRejectedWhileTheWatchWaitsForASlot()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        var runner = new BlockingRunner();
+        factory.Runner.OnExecute = runner.Execute;
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
+        var id = (await CreateWatch(client, Every(3, "minutes")))["id"]!.GetValue<string>();
+        var busy = new List<Task<HttpResponseMessage>>();
+        for (var index = 0; index < 2; index++)
+        {
+            var other = (await CreateWatch(client, Every(1, "hours")))["id"]!.GetValue<string>();
+            busy.Add(client.PostAsync(new Uri($"/api/watches/{other}/runs", UriKind.Relative), null, testContext.CancellationToken));
+            await runner.WaitForStarted(index + 1);
+        }
+        factory.Time.Advance(TimeSpan.FromMinutes(3));
+        await Settle();
+
+        var runNow = await client.PostAsync(new Uri($"/api/watches/{id}/runs", UriKind.Relative), null, testContext.CancellationToken);
+
+        Assert.AreEqual(System.Net.HttpStatusCode.Conflict, runNow.StatusCode);
+        var problem = await runNow.Content.ReadFromJsonAsync<JsonObject>(testContext.CancellationToken);
+        Assert.AreEqual("This Watch is waiting for a free slot to run.", problem!["detail"]!.GetValue<string>());
+        runner.FinishAll();
+        await runner.WaitForStarted(3);
+        runner.FinishAll();
+        foreach (var response in busy) (await response).EnsureSuccessStatusCode();
+    }
+
+    [TestMethod]
+    public async Task KeepsAChangedScheduleThreeMinutesAwayFromTheRunThatJustStarted()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        factory.Runner.DefaultResult = Succeeded;
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
+        var id = (await CreateWatch(client, Every(5, "minutes")))["id"]!.GetValue<string>();
+        factory.Time.Advance(TimeSpan.FromMinutes(5));
+        await WaitForHistory(client, id, 1);
+
+        var response = await client.PutAsJsonAsync($"/api/watches/{id}/schedule",
+            new { scheduleKind = "daily", timeOfDay = "12:06" }, testContext.CancellationToken);
+
+        response.EnsureSuccessStatusCode();
+        // The Run started at 12:05, so 12:06 today is too soon.
+        Assert.AreEqual(DateTimeOffset.Parse("2026-10-19T12:08:00Z", System.Globalization.CultureInfo.InvariantCulture),
+            (await Watch(client, id))["nextRunAt"]!.GetValue<DateTimeOffset>());
+    }
+
+    [TestMethod]
+    public async Task KeepsARunRescheduledForANewTimeZoneThreeMinutesAwayFromTheLastRun()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        factory.Runner.DefaultResult = Succeeded;
+        var databasePath = Path.Combine(Path.GetTempPath(), $"lookout-test-{Guid.NewGuid():N}.db");
+        try
+        {
+            string id;
+            await using (var before = SharingDatabase(factory, databasePath))
+            {
+                using var client = await before.CreateSignedInClientAsync(testContext.CancellationToken);
+                // 12:05, 12:51, 17:05 and 17:51 in UTC; in Kathmandu (UTC+5:45), 17:51 local is 12:06 UTC.
+                id = (await CreateWatch(client, new() { ["scheduleKind"] = "cron", ["cron"] = "5,51 12,17 * * *" }))["id"]!.GetValue<string>();
+                factory.Time.Advance(TimeSpan.FromMinutes(5));
+                await WaitForHistory(client, id, 1);
+            }
+
+            await using var after = SharingDatabase(factory, databasePath, "Asia/Kathmandu");
+            using var restarted = await after.CreateLoggedInClientAsync(testContext.CancellationToken);
+
+            Assert.AreEqual(DateTimeOffset.Parse("2026-10-19T12:08:00Z", System.Globalization.CultureInfo.InvariantCulture),
+                (await Watch(restarted, id))["nextRunAt"]!.GetValue<DateTimeOffset>());
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    [TestMethod]
+    public async Task ReturnsTheNextRunAsStoredWhenCreatingAWatch()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        // A real clock rarely lands on a whole second.
+        factory.Time.Advance(TimeSpan.FromTicks(1_234_567));
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
+
+        var created = await CreateWatch(client, Every(5, "minutes"));
+
+        var listed = await Watch(client, created["id"]!.GetValue<string>());
+        Assert.AreEqual(listed["nextRunAt"]!.GetValue<string>(), created["nextRunAt"]!.GetValue<string>());
+    }
+
     private async Task AssertOneRunSetTheBaseline(HttpClient client, string id)
     {
         var history = await WaitForHistory(client, id, 1);
