@@ -1,3 +1,4 @@
+using System.Net;
 using ChasePie.Lookout.Database;
 using ChasePie.Lookout.Model;
 using Microsoft.AspNetCore.Authorization;
@@ -5,7 +6,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
-namespace ChasePie.Lookout.Backend;
+namespace ChasePie.Lookout.Backend.Controllers;
 
 /// <summary>First-launch setup of the single local account, and logging in and out of it (ADR-0002).</summary>
 [ApiController]
@@ -14,7 +15,7 @@ public sealed class AccountController(
     LookoutDbContext database,
     IPasswordHasher<Account> passwordHasher,
     TimeProvider timeProvider)
-    : ControllerBase
+    : LookoutControllerBase
 {
     /// <summary>Tells the app whether to show setup, login, or the logged-in user's Watches.</summary>
     [HttpGet("session")]
@@ -32,11 +33,11 @@ public sealed class AccountController(
         var userName = credentials.UserName.Trim();
         if (userName.Length is < 1 or > 100)
         {
-            return Problem("User name must contain between 1 and 100 characters.", statusCode: 400);
+            return Problem("User name must contain between 1 and 100 characters.", statusCode: HttpStatusCode.BadRequest);
         }
         if (credentials.Password.Length is < 8 or > 1024)
         {
-            return Problem("Password must contain between 8 and 1024 characters.", statusCode: 400);
+            return Problem("Password must contain between 8 and 1024 characters.", statusCode: HttpStatusCode.BadRequest);
         }
         if (await database.Accounts.AnyAsync(cancellationToken))
         {
@@ -67,7 +68,7 @@ public sealed class AccountController(
         var account = await database.Accounts.SingleOrDefaultAsync(cancellationToken);
         if (account is null)
         {
-            return Problem("Set up Lookout's account before logging in.", statusCode: 401);
+            return Problem("Set up Lookout's account before logging in.", statusCode: HttpStatusCode.Unauthorized);
         }
 
         // Check the password even for the wrong user name, so the response time doesn't reveal which was wrong.
@@ -75,7 +76,7 @@ public sealed class AccountController(
         if (verification == PasswordVerificationResult.Failed
             || !string.Equals(account.UserName, credentials.UserName.Trim(), StringComparison.OrdinalIgnoreCase))
         {
-            return Problem("Incorrect user name or password.", statusCode: 401);
+            return Problem("Incorrect user name or password.", statusCode: HttpStatusCode.Unauthorized);
         }
         if (verification == PasswordVerificationResult.SuccessRehashNeeded)
         {
@@ -94,7 +95,7 @@ public sealed class AccountController(
     }
 
     private ObjectResult AccountAlreadyExists() =>
-        Problem("Lookout's account is already set up. Log in instead.", statusCode: 409);
+        Problem("Lookout's account is already set up. Log in instead.", statusCode: HttpStatusCode.Conflict);
 }
 
 public sealed record SessionStatus(bool AccountExists, string? UserName);

@@ -4,8 +4,9 @@ using ChasePie.Lookout.Backend.Runner;
 using ChasePie.Lookout.Model;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Net;
 
-namespace ChasePie.Lookout.Backend;
+namespace ChasePie.Lookout.Backend.Controllers;
 
 [ApiController]
 [Route("api/watches")]
@@ -15,7 +16,7 @@ public sealed class WatchesController(
     TimeProvider timeProvider,
     RunningWatches runningWatches,
     IHostApplicationLifetime applicationLifetime)
-    : ControllerBase
+    : LookoutControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<WatchSummary>>> List(CancellationToken cancellationToken)
@@ -33,27 +34,27 @@ public sealed class WatchesController(
         var name = request.Name.Trim();
         if (name.Length is < 1 or > 200)
         {
-            return Problem("Name must contain between 1 and 200 characters.", statusCode: 400);
+            return Problem("Name must contain between 1 and 200 characters.", statusCode: HttpStatusCode.BadRequest);
         }
 
         var notificationUrl = request.NotificationUrl.Trim();
         if (!Uri.TryCreate(notificationUrl, UriKind.Absolute, out var parsedUrl)
             || parsedUrl.Scheme is not ("http" or "https") || notificationUrl.Length > 2048)
         {
-            return Problem("Notification URL must be an HTTP or HTTPS URL.", statusCode: 400);
+            return Problem("Notification URL must be an HTTP or HTTPS URL.", statusCode: HttpStatusCode.BadRequest);
         }
 
         var fileKind = Path.GetExtension(request.Script.FileName).ToLowerInvariant();
         if (fileKind is not (".ts" or ".js") || request.Script.Length is < 1 or > 65536)
         {
-            return Problem("Upload a .ts or .js Script between 1 byte and 64 KiB.", statusCode: 400);
+            return Problem("Upload a .ts or .js Script between 1 byte and 64 KiB.", statusCode: HttpStatusCode.BadRequest);
         }
 
         using var reader = new StreamReader(request.Script.OpenReadStream());
         var source = await reader.ReadToEndAsync(cancellationToken);
         if (string.IsNullOrWhiteSpace(source))
         {
-            return Problem("Script source must not be empty.", statusCode: 400);
+            return Problem("Script source must not be empty.", statusCode: HttpStatusCode.BadRequest);
         }
 
         var watch = new Watch
@@ -86,7 +87,7 @@ public sealed class WatchesController(
     {
         if (limit is < 1 or > 100 || before is <= 0)
         {
-            return Problem("History limit must be between 1 and 100; before must be a positive Run ID.", statusCode: 400);
+            return Problem("History limit must be between 1 and 100; before must be a positive Run ID.", statusCode: HttpStatusCode.BadRequest);
         }
 
         if (!await database.Watches.AnyAsync(watch => watch.Id == id, cancellationToken))
@@ -107,7 +108,7 @@ public sealed class WatchesController(
     {
         if (!runningWatches.TryStart(id))
         {
-            return Problem("This Watch is already running.", statusCode: 409);
+            return Problem("This Watch is already running.", statusCode: HttpStatusCode.Conflict);
         }
 
         try
@@ -132,7 +133,7 @@ public sealed class WatchesController(
         var script = watch.CurrentScriptVersion;
         if (script is null)
         {
-            return Problem("This Watch has no current Script version.", statusCode: 409);
+            return Problem("This Watch has no current Script version.", statusCode: HttpStatusCode.Conflict);
         }
         var startedAt = timeProvider.GetUtcNow();
         var runRequest = new RunnerRequest(
@@ -165,7 +166,7 @@ public sealed class WatchesController(
         }
         catch (DbUpdateConcurrencyException)
         {
-            return Problem("Another Run of this Watch finished first, so this Run was not recorded.", statusCode: 409);
+            return Problem("Another Run of this Watch finished first, so this Run was not recorded.", statusCode: HttpStatusCode.Conflict);
         }
 
         return Ok(run);
