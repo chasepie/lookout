@@ -13,6 +13,9 @@ public sealed class ContentSecurityPolicyTests(TestContext testContext)
     [
         "default-src 'self'",
         "script-src 'self'",
+        // Angular adds component styles as <style> elements, but nothing needs inline style="…" attributes.
+        "style-src-elem 'self' 'unsafe-inline'",
+        "style-src-attr 'none'",
         "object-src 'none'",
         "base-uri 'self'",
         "frame-ancestors 'none'",

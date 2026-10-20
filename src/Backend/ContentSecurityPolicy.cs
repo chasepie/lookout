@@ -10,7 +10,11 @@ public static class ContentSecurityPolicy
         "default-src 'self'",
         "script-src 'self'",
         // Angular adds component styles as <style> elements; allowing them needs a per-request nonce otherwise.
+        // Nothing needs inline style="…" attributes, the likelier route for injected CSS, so those are blocked.
+        // Browsers that predate these two directives fall back to style-src.
         "style-src 'self' 'unsafe-inline'",
+        "style-src-elem 'self' 'unsafe-inline'",
+        "style-src-attr 'none'",
         "object-src 'none'",
         "base-uri 'self'",
         "form-action 'self'",
