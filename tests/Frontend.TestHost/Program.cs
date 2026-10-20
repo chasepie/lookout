@@ -8,7 +8,8 @@ public static class Program
 {
     public static async Task Main()
     {
-        await using var factory = new LookoutWebApplicationFactory();
+        // Real time, so the browser shows next Runs relative to now; no flow waits the 3 minutes a scheduled Run needs.
+        await using var factory = new LookoutWebApplicationFactory { UseSystemTime = true };
         factory.Runner.DefaultResult = new RunnerResult
         {
             Outcome = RunOutcome.Succeeded, Content = "£19.99", Details = "In stock", DurationMs = 25

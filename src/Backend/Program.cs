@@ -1,5 +1,6 @@
 using ChasePie.Lookout.Database;
 using ChasePie.Lookout.Backend.Runner;
+using ChasePie.Lookout.Backend.Scheduling;
 using ChasePie.Lookout.Model;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
@@ -30,6 +31,8 @@ public class Program
         services.AddControllers(options => options.Filters.Add<RequestForgery.ValidateTokenFilter>());
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<RunningWatches>();
+        services.AddScoped<RunExecutor>();
+        ConfigureScheduling(services, configuration);
         var runnerUrl = configuration["Runner:BaseUrl"] ?? "http://localhost:3000";
         if (!Uri.TryCreate(runnerUrl.TrimEnd('/') + "/", UriKind.Absolute, out var runnerBaseAddress)
             || runnerBaseAddress.Scheme is not ("http" or "https"))
@@ -63,6 +66,25 @@ public class Program
                 await db.Database.ExecuteSqlRawAsync("SELECT COUNT(*) FROM __EFMigrationsHistory", cancellationToken);
                 return true;
             });
+    }
+
+    private static void ConfigureScheduling(IServiceCollection services, ConfigurationManager configuration)
+    {
+        var timeZoneId = configuration["Scheduling:TimeZone"];
+        TimeZoneInfo? timeZone = null;
+        if (!string.IsNullOrWhiteSpace(timeZoneId) && !TimeZoneInfo.TryFindSystemTimeZoneById(timeZoneId.Trim(), out timeZone))
+        {
+            throw new InvalidOperationException($"Scheduling:TimeZone must be a time zone ID such as Europe/London, not '{timeZoneId}'");
+        }
+        services.AddSingleton(provider => new WatchSchedules(provider.GetRequiredService<TimeProvider>(), timeZone));
+
+        var maxConcurrentRuns = configuration.GetValue("Scheduling:MaxConcurrentRuns", 2);
+        if (maxConcurrentRuns < 1)
+        {
+            throw new InvalidOperationException($"Scheduling:MaxConcurrentRuns must be at least 1, not {maxConcurrentRuns}");
+        }
+        services.AddSingleton(_ => new RunSlots(maxConcurrentRuns));
+        services.AddHostedService<Scheduler>();
     }
 
     private static void MigrateDatabase(WebApplication app)

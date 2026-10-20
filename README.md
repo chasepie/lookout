@@ -20,7 +20,7 @@ npm start -w src/runner
 dotnet run --project src/Backend --no-launch-profile --urls http://localhost:5280
 ```
 
-Open <http://localhost:5280>. The backend serves the Angular build and API from the same origin and applies database migrations on startup. Its database defaults to `src/Backend/lookout.db` when started this way. Set `ConnectionStrings__Lookout` to choose another SQLite location and `Runner__BaseUrl` to change the runner address (default `http://localhost:3000`). Set `HEADLESS=true` when starting the runner to hide Chromium.
+Open <http://localhost:5280>. The backend serves the Angular build and API from the same origin and applies database migrations on startup. Its database defaults to `src/Backend/lookout.db` when started this way. Set `ConnectionStrings__Lookout` to choose another SQLite location and `Runner__BaseUrl` to change the runner address (default `http://localhost:3000`). Schedules use the host's time zone; set `Scheduling__TimeZone` (such as `Europe/London`) to choose another. `Scheduling__MaxConcurrentRuns` limits how many Runs execute at once (default 2). Set `HEADLESS=true` when starting the runner to hide Chromium.
 
 When an HTTPS endpoint is configured (including the `https` launch profile), HTTP requests redirect to it. The HTTP-only command above continues to serve HTTP. A runner base URL may include a path prefix, such as `http://proxy/runner/`.
 
@@ -53,8 +53,9 @@ The initial API is:
 | POST | `/api/setup` | Create the account from JSON `userName` and `password` (8+ characters) and log in; HTTP 409 once the account exists |
 | POST | `/api/session` | Log in with JSON `userName` and `password`; HTTP 401 for wrong credentials |
 | DELETE | `/api/session` | Log out, ending the session |
-| POST | `/api/watches` | Create a Watch atomically with multipart fields `name`, `notificationUrl`, and file `script` |
-| GET | `/api/watches` | List Watches with their Baseline (the latest successful content) and last Run |
+| POST | `/api/watches` | Create a Watch atomically with multipart fields `name`, `notificationUrl`, file `script`, and a schedule: `scheduleKind` (`interval` with `every` and `unit` of `minutes`, `hours` or `days`; `daily` with `timeOfDay`; or `cron` with a five-field `cron`) and optional `jitterMinutes` (0–60). Schedules that run more than once every 3 minutes are rejected |
+| GET | `/api/watches` | List Watches with their Baseline (the latest successful content), last Run, schedule and `nextRunAt` |
+| PUT | `/api/watches/{id}/schedule` | Change a Watch's schedule and jitter, with the same fields as a JSON body, and schedule its next Run from now |
 | POST | `/api/watches/{id}/runs` | Execute and record a Run; respond when it completes |
 | GET | `/api/watches/{id}/runs` | Read Run history, newest first, including `isChange`; defaults to 50 Runs, with `limit=1..100` and `before=<Run ID>` for older pages |
 | GET | `/health` | Check the migrated database |

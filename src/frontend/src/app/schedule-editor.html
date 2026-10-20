@@ -1,0 +1,10 @@
+<form (submit)="$event.preventDefault(); save()">
+  <app-schedule-picker [schedule]="editForm.schedule" />
+  @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+  <div class="actions">
+    <button type="button" (click)="cancelled.emit()">Cancel</button>
+    <button class="primary" type="submit" [disabled]="editForm().submitting() || editForm().invalid()">
+      {{ editForm().submitting() ? 'Saving…' : 'Save schedule' }}
+    </button>
+  </div>
+</form>

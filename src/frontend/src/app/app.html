@@ -45,6 +45,7 @@
           <label for="script">Script</label>
           <input #scriptInput id="script" type="file" accept=".ts,.js" (change)="selectScript(scriptInput)" aria-describedby="script-help" required />
           <small id="script-help">Upload a TypeScript or JavaScript file, up to 64 KiB.</small>
+          <app-schedule-picker [schedule]="watchForm.schedule" />
           <button class="primary" type="submit" [disabled]="watchForm().submitting() || watchForm().invalid() || !script()">
             {{ watchForm().submitting() ? 'Creating…' : 'Create Watch' }}
           </button>
@@ -73,13 +74,26 @@
                 @if (run.errorMessage) { <p class="error">{{ run.errorMessage }}</p> }
               }
               <div class="watch-footer">
-                @if (watch.lastRun; as run) {
-                  <small>Last Run <time [attr.datetime]="run.finishedAt">{{ run.finishedAt | date:'medium' }}</time> · {{ run.durationMs / 1000 | number:'1.0-2' }}s</small>
-                } @else {
-                  <small>No Runs yet</small>
-                }
-                <button type="button" (click)="runNow(watch)" [disabled]="running().has(watch.id)">{{ running().has(watch.id) ? 'Running…' : 'Run now' }}</button>
+                <div class="run-times">
+                  @if (watch.lastRun; as run) {
+                    <small>Last Run <time [attr.datetime]="run.finishedAt">{{ run.finishedAt | date:'medium' }}</time> · {{ run.durationMs / 1000 | number:'1.0-2' }}s</small>
+                  } @else {
+                    <small>No Runs yet</small>
+                  }
+                  @if (watch.nextRunAt) {
+                    <small>Next Run <time [attr.datetime]="watch.nextRunAt">{{ watch.nextRunAt | date:'medium' }}</time></small>
+                  }
+                </div>
+                <div class="watch-actions">
+                  @if (editingSchedule() !== watch.id) {
+                    <button type="button" (click)="editingSchedule.set(watch.id)">Edit schedule</button>
+                  }
+                  <button type="button" (click)="runNow(watch)" [disabled]="running().has(watch.id)">{{ running().has(watch.id) ? 'Running…' : 'Run now' }}</button>
+                </div>
               </div>
+              @if (editingSchedule() === watch.id) {
+                <app-schedule-editor [watch]="watch" (saved)="scheduleSaved(watch)" (cancelled)="editingSchedule.set(undefined)" />
+              }
             </article>
           } @empty {
             <div class="empty-state">

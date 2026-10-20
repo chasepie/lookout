@@ -122,6 +122,9 @@ button {
 .details, .error { font-size: 14px; overflow-wrap: anywhere; }
 .change { color: tokens.$positive; font-size: 13px; font-weight: 650; }
 
+.run-times { display: flex; flex-direction: column; gap: 4px; }
+.watch-actions { display: flex; gap: 10px; }
+
 .watch-footer {
   border-top: 1px solid tokens.$border-divider;
   margin-top: 24px;

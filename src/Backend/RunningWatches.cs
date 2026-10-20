@@ -3,7 +3,7 @@ using System.Collections.Concurrent;
 namespace ChasePie.Lookout.Backend;
 
 /// <summary>
-/// Stops this process from starting a second on-demand Run of a Watch that is already running.
+/// Stops this process from starting a second Run of a Watch that is already running, whether scheduled or on demand.
 /// <see cref="Model.Watch.Revision"/> still rejects a stale Run that starts elsewhere.
 /// </summary>
 public sealed class RunningWatches

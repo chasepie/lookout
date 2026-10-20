@@ -1,0 +1,34 @@
+@use 'tokens';
+@use 'mixins';
+
+@include mixins.stacked-form;
+
+fieldset { display: flex; flex-direction: column; border: 0; padding: 0; margin: 23px 0 0; min-width: 0; }
+legend { font-size: 13px; font-weight: 650; padding: 0; margin-bottom: 14px; }
+
+// Selects match the mixin's inputs.
+select {
+  border: 1px solid tokens.$border-input;
+  border-radius: tokens.$radius-control;
+  min-width: 0;
+  width: 100%;
+  padding: 11px;
+  background: tokens.$input;
+  color: inherit;
+
+  + label, + .interval { margin-top: 16px; }
+}
+
+input::placeholder { color: tokens.$text-placeholder; font-size: 12px; }
+
+.interval {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr;
+  gap: 12px;
+
+  label { display: block; }
+  + label { margin-top: 23px; }
+}
+
+small { margin-top: 7px; color: tokens.$text-muted; }
+.error { color: tokens.$error; }
