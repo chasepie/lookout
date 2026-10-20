@@ -10,8 +10,12 @@ public enum RunExecutionStatus
     Recorded,
     WatchNotFound,
     NoScriptVersion,
-    /// <summary>Another Run of the Watch was recorded while this one executed, so this one was discarded.</summary>
-    Superseded
+    /// <summary>
+    /// Another Run of the Watch was recorded, or the Watch was resumed, while this one executed, so this one was discarded.
+    /// </summary>
+    Superseded,
+    /// <summary>The Watch was deleted while this Run executed, so there was nothing to record it against.</summary>
+    Deleted
 }
 
 public sealed record RunExecution(RunExecutionStatus Status, Run? Run = null);
@@ -42,10 +46,12 @@ public sealed class RunExecutor(LookoutDbContext database, IRunnerClient runner,
         var runRequest = new RunnerRequest(
             Source: script.Source,
             FileKind: script.FileKind,
-            Context: new ScriptContext(watch.NotificationUrl));
+            Context: new ScriptContext(watch.NotificationUrl),
+            TimeoutMs: watch.TimeoutSeconds * 1000);
         var result = await runner.ExecuteAsync(runRequest, cancellationToken);
 
-        var evaluation = RunEvaluation.Evaluate(watch.Baseline, result.Outcome, result.Content, result.ErrorMessage);
+        var evaluation = RunEvaluation.Evaluate(watch.Baseline, watch.FailureStreak, result.Outcome, result.Content,
+            result.ErrorMessage);
         var run = new Run
         {
             WatchId = watchId,
@@ -60,6 +66,7 @@ public sealed class RunExecutor(LookoutDbContext database, IRunnerClient runner,
             IsChange = evaluation.IsChange
         };
         watch.Baseline = evaluation.Baseline;
+        watch.FailureStreak = evaluation.FailureStreak;
         watch.Revision++;
         database.Runs.Add(run);
 
@@ -71,6 +78,15 @@ public sealed class RunExecutor(LookoutDbContext database, IRunnerClient runner,
         catch (DbUpdateConcurrencyException)
         {
             return new RunExecution(RunExecutionStatus.Superseded);
+        }
+        catch (DbUpdateException)
+        {
+            // Inserting the Run fails its foreign key before the Watch's concurrency check if the Watch was deleted.
+            if (await database.Watches.AnyAsync(item => item.Id == watchId, CancellationToken.None))
+            {
+                throw;
+            }
+            return new RunExecution(RunExecutionStatus.Deleted);
         }
 
         return new RunExecution(RunExecutionStatus.Recorded, run);

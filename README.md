@@ -39,11 +39,13 @@ export default {
 } satisfies LookoutScript;
 ```
 
-See [the runner documentation](src/runner/README.md) for the Script contract and execution limits. Uploads accept `.ts` and `.js` files up to 64 KiB. Each Run uses a 120-second timeout. Running the same Watch again while it is already running returns HTTP 409. Once started, a Run continues and is recorded even if its browser tab disconnects; application shutdown still cancels active Runs.
+See [the runner documentation](src/runner/README.md) for the Script contract and execution limits. Uploads accept `.ts` and `.js` files up to 64 KiB. Each Run uses its Watch's timeout: 120 seconds by default, editable from 1 to 600. Running the same Watch again while it is already running returns HTTP 409. Once started, a Run continues and is recorded even if its browser tab disconnects; application shutdown still cancels active Runs.
 
 The first Succeeded Run sets the Baseline silently. Later Succeeded Runs record a Change when their trimmed content differs. Original content is retained, and details never affect comparison. Known failure and Errored Runs stay in history without replacing the Baseline; the list continues to show the most recent successful content.
 
 On first launch, Lookout asks you to set up its single local account; after that, it asks you to log in. The login is kept in an `HttpOnly`, `SameSite=Strict` cookie and lasts until you log out. Logging out ends that session on the server, so a copied cookie stops working too. Every endpoint below except the first three needs a logged-in session and returns HTTP 401 without one; endpoints added later are protected unless they explicitly allow anonymous access. Every POST, PUT, PATCH and DELETE must also send the `X-XSRF-TOKEN` header with the value of the `Lookout.XSRF-TOKEN` cookie that `GET /api/session` sets, or it gets HTTP 400; this stops pages from other services on the same host acting with your login. The token belongs to one login, so fetch `GET /api/session` again after setup, login or logout. The Angular app does all of this automatically. Every response also carries a Content Security Policy that allows only Lookout's own scripts, enforces Trusted Types and stops other sites framing the app.
+
+Each Watch reports a status. Paused means the user stopped its scheduled Runs; Run now still works. Otherwise Failing means it is in a streak of Known failure or Errored Runs, which the next Succeeded Run ends. This applies even before its first Succeeded Run. Pending means it has no Baseline yet, and Healthy that its latest Run Succeeded. Pausing keeps the Baseline and clears the next Run; resuming schedules the next Run from now and starts a fresh failure streak. A Run that was in progress when the Watch was resumed or deleted is not recorded. Deleting a Watch deletes its Script versions and Run history.
 
 The initial API is:
 
@@ -54,7 +56,12 @@ The initial API is:
 | POST | `/api/session` | Log in with JSON `userName` and `password`; HTTP 401 for wrong credentials |
 | DELETE | `/api/session` | Log out, ending the session |
 | POST | `/api/watches` | Create a Watch atomically with multipart fields `name`, `notificationUrl`, file `script`, and a schedule: `scheduleKind` (`interval` with `every` and `unit` of `minutes`, `hours` or `days`; `daily` with `timeOfDay`; or `cron` with a five-field `cron`) and optional `jitterMinutes` (0–60). Schedules that run more than once every 3 minutes are rejected |
-| GET | `/api/watches` | List Watches with their Baseline (the latest successful content), last Run, schedule and `nextRunAt` |
+| GET | `/api/watches` | List Watches with their Baseline (the latest successful content), status, failure streak, timeout, last Run, schedule and `nextRunAt` |
+| GET | `/api/watches/{id}` | Read one Watch, in the same shape as the list |
+| PUT | `/api/watches/{id}` | Edit a Watch's settings with JSON `{ name, notificationUrl, timeoutSeconds }` |
+| DELETE | `/api/watches/{id}` | Delete a Watch with its Script versions and Run history |
+| POST | `/api/watches/{id}/pause` | Pause a Watch's scheduled Runs, keeping its Baseline and clearing its next Run |
+| POST | `/api/watches/{id}/resume` | Resume a paused Watch with a fresh failure streak, scheduling its next Run from now |
 | PUT | `/api/watches/{id}/schedule` | Change a Watch's schedule and jitter, with the same fields as a JSON body, and schedule its next Run from now |
 | POST | `/api/watches/{id}/runs` | Execute and record a Run; respond when it completes |
 | GET | `/api/watches/{id}/runs` | Read Run history, newest first, including `isChange`; defaults to 50 Runs, with `limit=1..100` and `before=<Run ID>` for older pages |

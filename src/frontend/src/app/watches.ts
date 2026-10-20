@@ -3,7 +3,7 @@ import { Service, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { type ScheduleForm, scheduleFields } from './schedule';
 import { Session } from './session';
-import type { Run, Watch } from './watch.model';
+import type { Run, Watch, WatchSettings } from './watch.model';
 
 @Service()
 export class Watches {
@@ -27,7 +27,27 @@ export class Watches {
     return firstValueFrom(this.http.put<Watch>(`/api/watches/${id}/schedule`, scheduleFields(schedule)));
   }
 
+  edit(id: string, settings: WatchSettings) {
+    return firstValueFrom(this.http.put<Watch>(`/api/watches/${id}`, settings));
+  }
+
+  pause(id: string) {
+    return firstValueFrom(this.http.post<Watch>(`/api/watches/${id}/pause`, {}));
+  }
+
+  resume(id: string) {
+    return firstValueFrom(this.http.post<Watch>(`/api/watches/${id}/resume`, {}));
+  }
+
+  delete(id: string) {
+    return firstValueFrom(this.http.delete<void>(`/api/watches/${id}`));
+  }
+
   runNow(id: string) {
     return firstValueFrom(this.http.post<Run>(`/api/watches/${id}/runs`, {}));
+  }
+
+  history(id: string, before: number, limit: number) {
+    return firstValueFrom(this.http.get<Run[]>(`/api/watches/${id}/runs`, { params: { before, limit } }));
   }
 }

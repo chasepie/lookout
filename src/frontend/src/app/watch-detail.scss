@@ -1,0 +1,73 @@
+@use 'tokens';
+@use 'mixins';
+
+:host { display: block; }
+
+@include mixins.page-heading;
+@include mixins.stacked-form;
+@include mixins.badge-colours;
+
+h2 { font-size: 19px; margin: 0; }
+p { line-height: 1.6; }
+small, .details { color: tokens.$text-muted; }
+
+.back-link {
+  display: inline-block;
+  font-size: 14px;
+  color: tokens.$text-muted;
+  text-decoration: none;
+  margin-bottom: 18px;
+
+  &:hover { text-decoration: underline; }
+}
+
+.status-line { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; color: tokens.$text-muted; font-size: 14px; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; }
+
+button {
+  @include mixins.button;
+
+  &.primary { @include mixins.primary-button; }
+  &.danger { color: tokens.$error; border-color: tokens.$danger-border; background: tokens.$danger-surface; }
+  &.danger:hover:not(:disabled) { background: tokens.$failure-surface; }
+  &.danger.primary { color: white; background: tokens.$error; border-color: tokens.$error; }
+}
+
+// Primary buttons sit in rows of actions here, not at the foot of a form.
+.actions button.primary { margin-top: 0; padding: 9px 16px; }
+
+.layout {
+  display: grid;
+  grid-template-columns: 335px minmax(0, 1fr);
+  gap: 30px;
+  align-items: start;
+  margin-top: 24px;
+
+  @include mixins.narrow { grid-template-columns: 1fr; }
+}
+
+.side { display: grid; gap: 16px; }
+.panel { @include mixins.panel; padding: 25px; }
+.panel h2 { margin-bottom: 18px; }
+.danger-zone p { font-size: 14px; color: tokens.$text-muted; margin-top: 0; }
+.badge { @include mixins.badge; }
+.change-badge { color: white; background: tokens.$positive; font-weight: 650; }
+
+.runs { list-style: none; margin: 0 0 16px; padding: 0; display: grid; gap: 10px; }
+
+.run {
+  border: 1px solid tokens.$border-run;
+  border-left: 4px solid tokens.$border-run;
+  border-radius: 8px;
+  padding: 14px 16px;
+
+  &.is-change { border-color: tokens.$change-border; border-left-color: tokens.$positive; background: tokens.$change-surface; }
+  .details, .error { margin: 8px 0 0; }
+}
+
+.run-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.content { font-size: 20px; margin: 10px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.details, .error { font-size: 14px; overflow-wrap: anywhere; }
+.empty-state { @include mixins.empty-state; }
+.notice { color: tokens.$positive; font-size: 14px; min-height: 22px; margin: 14px 0; }
+.error { color: tokens.$error; }

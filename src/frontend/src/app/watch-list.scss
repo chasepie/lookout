@@ -1,0 +1,82 @@
+@use 'tokens';
+@use 'mixins';
+
+:host { display: block; }
+
+@include mixins.page-heading;
+@include mixins.stacked-form;
+@include mixins.badge-colours;
+
+h2 { font-size: 19px; margin: 0; }
+p { line-height: 1.6; }
+small, .details { color: tokens.$text-muted; }
+
+.workspace {
+  display: grid;
+  grid-template-columns: 335px minmax(0, 1fr);
+  gap: 30px;
+  align-items: start;
+
+  @include mixins.narrow { grid-template-columns: 1fr; }
+}
+
+.create-panel, .watch-card { @include mixins.panel; padding: 25px; }
+.create-panel > p { font-size: 14px; color: tokens.$text-muted; margin: 10px 0 25px; }
+
+input {
+  &::placeholder { color: tokens.$text-placeholder; font-size: 12px; }
+  &[type=file] { padding: 9px; font-size: 12px; }
+
+  &::file-selector-button {
+    border: 0;
+    background: tokens.$file-button;
+    padding: 8px;
+    border-radius: 4px;
+    color: tokens.$text;
+    margin-right: 8px;
+  }
+}
+
+button {
+  @include mixins.button;
+
+  &.primary { @include mixins.primary-button; }
+}
+
+.watch-list { display: grid; gap: 16px; }
+.watch-heading, .watch-footer { display: flex; justify-content: space-between; align-items: center; gap: 15px; }
+
+.watch-heading {
+  h2 { min-width: 0; overflow-wrap: anywhere; }
+
+  a {
+    text-decoration: none;
+
+    &:hover { text-decoration: underline; }
+  }
+}
+
+.page-link { display: inline-block; margin-top: 6px; color: tokens.$text-muted; font-size: 13px; }
+.badge { @include mixins.badge; }
+.content-label { margin: 22px 0 5px; color: tokens.$text-label; }
+.content { font-size: 26px; letter-spacing: -.5px; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.details, .error { font-size: 14px; overflow-wrap: anywhere; }
+.change { color: tokens.$positive; font-size: 13px; font-weight: 650; }
+
+.run-times { display: flex; flex-direction: column; gap: 4px; }
+.watch-actions { display: flex; gap: 10px; }
+
+.watch-footer {
+  border-top: 1px solid tokens.$border-divider;
+  margin-top: 24px;
+  padding-top: 18px;
+
+  .badge { margin-right: 6px; }
+
+  @include mixins.narrow { align-items: end; }
+}
+
+.empty-state { @include mixins.empty-state; }
+.empty-icon { display: block; font-size: 46px; color: tokens.$empty-icon; margin-bottom: 20px; }
+.notice { color: tokens.$positive; font-size: 14px; min-height: 22px; margin: 14px 0; }
+.error { color: tokens.$error; }

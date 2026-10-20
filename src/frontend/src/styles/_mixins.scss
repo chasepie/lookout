@@ -76,3 +76,55 @@
     background: tokens.$primary-hover;
   }
 }
+
+/// A secondary action, as most of Lookout's buttons are.
+@mixin button {
+  border: 1px solid tokens.$button-border;
+  background: tokens.$button;
+  color: tokens.$button-text;
+  padding: 9px 16px;
+  border-radius: tokens.$radius-control;
+  font-size: 13px;
+  font-weight: 650;
+  white-space: nowrap;
+
+  &:hover:not(:disabled) {
+    background: tokens.$button-hover;
+  }
+}
+
+/// A short label, coloured by the outcome and status classes from badge-colours.
+@mixin badge {
+  font-size: 11px;
+  padding: 5px 9px;
+  border-radius: 5px;
+  background: tokens.$badge-surface;
+  white-space: nowrap;
+}
+
+/// Colours for Run outcomes (success, failure) and Watch statuses (status-*), as badges show them.
+@mixin badge-colours {
+  .success, .status-healthy { color: tokens.$success; background: tokens.$success-surface; }
+  .failure, .status-failing { color: tokens.$failure; background: tokens.$failure-surface; }
+  .status-pending { color: tokens.$text-muted; background: tokens.$badge-surface; }
+  .status-paused { color: tokens.$paused; background: tokens.$paused-surface; }
+}
+
+/// A page's eyebrow, heading and introduction.
+@mixin page-heading {
+  h1 { font-size: 42px; font-weight: 650; letter-spacing: -1.5px; margin: 8px 0 12px; overflow-wrap: anywhere; }
+  .eyebrow { @include eyebrow; }
+  .page-heading > p:last-child { color: tokens.$text-muted; margin: 0; }
+}
+
+/// A dashed placeholder for empty, missing or failed content.
+@mixin empty-state {
+  text-align: center;
+  border: 1px dashed tokens.$border-dashed;
+  border-radius: tokens.$radius-panel;
+  padding: 55px 20px;
+  color: tokens.$text-muted;
+
+  h2 { color: tokens.$text-heading; }
+  p { font-size: 14px; }
+}

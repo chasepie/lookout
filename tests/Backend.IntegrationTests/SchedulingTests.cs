@@ -40,6 +40,92 @@ public sealed class SchedulingTests(TestContext testContext)
     }
 
     [TestMethod]
+    public async Task APausedWatchIsNotScheduled()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        factory.Runner.DefaultResult = Succeeded;
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
+        var id = (await CreateWatch(client, Every(5, "minutes")))["id"]!.GetValue<string>();
+
+        var paused = await PostWatchAction(client, id, "pause");
+        factory.Time.Advance(TimeSpan.FromHours(1));
+        await Settle();
+
+        Assert.IsNull(paused["nextRunAt"]);
+        Assert.IsEmpty(await History(client, id));
+        Assert.IsNull((await Watch(client, id))["nextRunAt"]);
+    }
+
+    [TestMethod]
+    public async Task ResumingSchedulesTheNextRunFromNow()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        factory.Runner.DefaultResult = Succeeded;
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
+        var id = (await CreateWatch(client, Every(5, "minutes")))["id"]!.GetValue<string>();
+        await PostWatchAction(client, id, "pause");
+        factory.Time.Advance(TimeSpan.FromHours(1));
+
+        var resumed = await PostWatchAction(client, id, "resume");
+
+        Assert.AreEqual(factory.Time.GetUtcNow().AddMinutes(5), resumed["nextRunAt"]!.GetValue<DateTimeOffset>());
+        await Settle();
+        Assert.IsEmpty(await History(client, id));
+        factory.Time.Advance(TimeSpan.FromMinutes(5));
+        await WaitForHistory(client, id, 1);
+    }
+
+    [TestMethod]
+    public async Task APausedWatchStaysUnscheduledAfterARestart()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        factory.Runner.DefaultResult = Succeeded;
+        var databasePath = Path.Combine(Path.GetTempPath(), $"lookout-test-{Guid.NewGuid():N}.db");
+        try
+        {
+            string id;
+            await using (var before = SharingDatabase(factory, databasePath))
+            {
+                using var client = await before.CreateSignedInClientAsync(testContext.CancellationToken);
+                id = (await CreateWatch(client, Every(5, "minutes")))["id"]!.GetValue<string>();
+                await PostWatchAction(client, id, "pause");
+            }
+
+            factory.Time.Advance(TimeSpan.FromHours(1));
+            await using var after = SharingDatabase(factory, databasePath);
+            using var restarted = await after.CreateLoggedInClientAsync(testContext.CancellationToken);
+            factory.Time.Advance(TimeSpan.FromHours(1));
+            await Settle();
+
+            Assert.IsNull((await Watch(restarted, id))["nextRunAt"]);
+            Assert.IsEmpty(await History(restarted, id));
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    [TestMethod]
+    public async Task ChangingAPausedWatchsScheduleLeavesItUnscheduled()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        factory.Runner.DefaultResult = Succeeded;
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
+        var id = (await CreateWatch(client, Every(5, "minutes")))["id"]!.GetValue<string>();
+        await PostWatchAction(client, id, "pause");
+
+        var response = await client.PutAsJsonAsync($"/api/watches/{id}/schedule", Every(10, "minutes"), testContext.CancellationToken);
+
+        response.EnsureSuccessStatusCode();
+        var changed = await response.Content.ReadFromJsonAsync<JsonObject>(testContext.CancellationToken);
+        Assert.AreEqual(10, changed!["schedule"]!["every"]!.GetValue<int>());
+        Assert.IsNull(changed["nextRunAt"]);
+        Assert.AreEqual(factory.Time.GetUtcNow().AddMinutes(10),
+            (await PostWatchAction(client, id, "resume"))["nextRunAt"]!.GetValue<DateTimeOffset>());
+    }
+
+    [TestMethod]
     public async Task RunsOnceAfterTimePassesSeveralMissedRunsThenSchedulesFromNow()
     {
         await using var factory = new LookoutWebApplicationFactory();
@@ -738,6 +824,13 @@ public sealed class SchedulingTests(TestContext testContext)
             form.Add(new StringContent(value), name);
         }
         return await client.PostAsync(new Uri("/api/watches", UriKind.Relative), form, testContext.CancellationToken);
+    }
+
+    private async Task<JsonObject> PostWatchAction(HttpClient client, string id, string action)
+    {
+        var response = await client.PostAsync(new Uri($"/api/watches/{id}/{action}", UriKind.Relative), null, testContext.CancellationToken);
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<JsonObject>(testContext.CancellationToken))!;
     }
 
     private async Task<JsonObject> Watch(HttpClient client, string id)

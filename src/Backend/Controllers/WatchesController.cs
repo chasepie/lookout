@@ -34,16 +34,10 @@ public sealed class WatchesController(
     public async Task<ActionResult<WatchSummary>> Create([FromForm] CreateWatchRequest request, CancellationToken cancellationToken)
     {
         var name = request.Name.Trim();
-        if (name.Length is < 1 or > 200)
-        {
-            return Problem("Name must contain between 1 and 200 characters.", statusCode: HttpStatusCode.BadRequest);
-        }
-
         var notificationUrl = request.NotificationUrl.Trim();
-        if (!Uri.TryCreate(notificationUrl, UriKind.Absolute, out var parsedUrl)
-            || parsedUrl.Scheme is not ("http" or "https") || notificationUrl.Length > 2048)
+        if (ValidateSettings(name, notificationUrl, Watch.DefaultTimeoutSeconds) is { } invalid)
         {
-            return Problem("Notification URL must be an HTTP or HTTPS URL.", statusCode: HttpStatusCode.BadRequest);
+            return invalid;
         }
 
         var fileKind = Path.GetExtension(request.Script.FileName).ToLowerInvariant();
@@ -119,7 +113,8 @@ public sealed class WatchesController(
                 .ExecuteUpdateAsync(setters => setters
                     .SetProperty(watch => watch.Schedule, schedule)
                     .SetProperty(watch => watch.JitterMinutes, request.JitterMinutes)
-                    .SetProperty(watch => watch.NextRunAt, nextRunAt)
+                    // A paused Watch has no next Run until it is resumed.
+                    .SetProperty(watch => watch.NextRunAt, watch => watch.IsPaused ? null : nextRunAt)
                     .SetProperty(watch => watch.NextRunTimeZone, schedules.TimeZone.Id), cancellationToken);
             if (updated == 1)
             {
@@ -130,6 +125,77 @@ public sealed class WatchesController(
             }
         }
         return Problem("Runs of this Watch kept starting while its schedule was being saved. Please try again.", statusCode: HttpStatusCode.Conflict);
+    }
+
+    [HttpGet("{id:guid}")]
+    public async Task<ActionResult<WatchSummary>> Get(Guid id, CancellationToken cancellationToken)
+    {
+        var watch = await database.Watches.AsNoTracking()
+            .Where(watch => watch.Id == id)
+            .Select(WatchSummary.Projection)
+            .SingleOrDefaultAsync(cancellationToken);
+        return watch is null ? NotFound() : watch;
+    }
+
+    [HttpPut("{id:guid}")]
+    public async Task<ActionResult<WatchSummary>> Edit(Guid id, EditWatchRequest request, CancellationToken cancellationToken)
+    {
+        var name = request.Name.Trim();
+        var notificationUrl = request.NotificationUrl.Trim();
+        if (ValidateSettings(name, notificationUrl, request.TimeoutSeconds) is { } invalid)
+        {
+            return invalid;
+        }
+
+        // A set-based update leaves the Revision alone, so it neither races nor supersedes a Run being recorded.
+        await database.Watches.Where(watch => watch.Id == id)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(watch => watch.Name, name)
+                .SetProperty(watch => watch.NotificationUrl, notificationUrl)
+                .SetProperty(watch => watch.TimeoutSeconds, request.TimeoutSeconds), cancellationToken);
+        return await Get(id, cancellationToken);
+    }
+
+    [HttpDelete("{id:guid}")]
+    public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
+    {
+        // A set-based delete leaves the cascades to the Watch's Script versions and Runs to SQLite.
+        var deleted = await database.Watches.Where(watch => watch.Id == id).ExecuteDeleteAsync(cancellationToken);
+        return deleted == 0 ? NotFound() : NoContent();
+    }
+
+    [HttpPost("{id:guid}/pause")]
+    public async Task<ActionResult<WatchSummary>> Pause(Guid id, CancellationToken cancellationToken)
+    {
+        // Clearing the next Run also stops the scheduler claiming one it read as due just before.
+        await database.Watches.Where(watch => watch.Id == id)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(watch => watch.IsPaused, true)
+                .SetProperty(watch => watch.NextRunAt, (DateTimeOffset?)null), cancellationToken);
+        return await Get(id, cancellationToken);
+    }
+
+    [HttpPost("{id:guid}/resume")]
+    public async Task<ActionResult<WatchSummary>> Resume(Guid id, CancellationToken cancellationToken)
+    {
+        var paused = await database.Watches.AsNoTracking()
+            .Where(watch => watch.Id == id && watch.IsPaused)
+            .Select(watch => new { watch.Schedule, watch.JitterMinutes, watch.LastScheduledRunAt })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (paused is not null)
+        {
+            // The next Run is scheduled from now, so a Watch resumed after a long pause doesn't run at once.
+            // Advancing the Revision stops a Run that started before resuming from continuing the old streak.
+            var nextRunAt = schedules.NextRunAt(paused.Schedule, paused.JitterMinutes, paused.LastScheduledRunAt);
+            await database.Watches.Where(watch => watch.Id == id && watch.IsPaused)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(watch => watch.IsPaused, false)
+                    .SetProperty(watch => watch.FailureStreak, 0)
+                    .SetProperty(watch => watch.Revision, watch => watch.Revision + 1)
+                    .SetProperty(watch => watch.NextRunAt, nextRunAt)
+                    .SetProperty(watch => watch.NextRunTimeZone, schedules.TimeZone.Id), cancellationToken);
+        }
+        return await Get(id, cancellationToken);
     }
 
     [HttpGet("{id:guid}/runs")]
@@ -185,13 +251,35 @@ public sealed class WatchesController(
                 RunExecutionStatus.Recorded => Ok(execution.Run),
                 RunExecutionStatus.WatchNotFound => NotFound(),
                 RunExecutionStatus.NoScriptVersion => Problem("This Watch has no current Script version.", statusCode: HttpStatusCode.Conflict),
-                _ => Problem("Another Run of this Watch finished first, so this Run was not recorded.", statusCode: HttpStatusCode.Conflict)
+                RunExecutionStatus.Deleted => Problem("The Watch was deleted while this Run was in progress, so this Run was not recorded.", statusCode: HttpStatusCode.Conflict),
+                _ => Problem("The Watch changed while this Run was in progress, so this Run was not recorded.", statusCode: HttpStatusCode.Conflict)
             };
         }
         finally
         {
             runningWatches.Finish(id);
         }
+    }
+
+    private ObjectResult? ValidateSettings(string name, string notificationUrl, int timeoutSeconds)
+    {
+        if (name.Length is < 1 or > 200)
+        {
+            return Problem("Name must contain between 1 and 200 characters.", statusCode: HttpStatusCode.BadRequest);
+        }
+
+        if (!Uri.TryCreate(notificationUrl, UriKind.Absolute, out var parsedUrl)
+            || parsedUrl.Scheme is not ("http" or "https") || notificationUrl.Length > 2048)
+        {
+            return Problem("Notification URL must be an HTTP or HTTPS URL.", statusCode: HttpStatusCode.BadRequest);
+        }
+
+        if (timeoutSeconds is < 1 or > Watch.MaxTimeoutSeconds)
+        {
+            return Problem($"Timeout must be between 1 and {Watch.MaxTimeoutSeconds} seconds.", statusCode: HttpStatusCode.BadRequest);
+        }
+
+        return null;
     }
 
     /// <summary>Builds the requested schedule, or explains why it can't be used.</summary>
@@ -226,6 +314,10 @@ public sealed record WatchSummary(
     string NotificationUrl,
     Guid? CurrentScriptVersionId,
     string? Baseline,
+    WatchStatus Status,
+    bool IsPaused,
+    int FailureStreak,
+    int TimeoutSeconds,
     Run? LastRun,
     Schedule Schedule,
     int JitterMinutes,
@@ -238,6 +330,14 @@ public sealed record WatchSummary(
         watch.NotificationUrl,
         watch.CurrentScriptVersionId,
         watch.Baseline,
+        // A failure streak outranks Pending, since a Watch whose Script never Succeeded needs attention too.
+        watch.IsPaused ? WatchStatus.Paused
+            : watch.FailureStreak > 0 ? WatchStatus.Failing
+            : watch.Baseline == null ? WatchStatus.Pending
+            : WatchStatus.Healthy,
+        watch.IsPaused,
+        watch.FailureStreak,
+        watch.TimeoutSeconds,
         watch.Runs.OrderByDescending(run => run.Id).FirstOrDefault(),
         watch.Schedule,
         watch.JitterMinutes,
@@ -246,6 +346,13 @@ public sealed record WatchSummary(
     private static readonly Func<Watch, WatchSummary> CompiledProjection = Projection.Compile();
 
     public static WatchSummary From(Watch watch) => CompiledProjection(watch);
+}
+
+public sealed class EditWatchRequest
+{
+    public required string Name { get; init; }
+    public required string NotificationUrl { get; init; }
+    public required int TimeoutSeconds { get; init; }
 }
 
 public sealed class CreateWatchRequest : ScheduleRequest

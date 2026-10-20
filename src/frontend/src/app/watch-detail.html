@@ -1,0 +1,100 @@
+<a class="back-link" routerLink="/"><span aria-hidden="true">←</span> All Watches</a>
+@if (missing()) {
+  <div class="empty-state" role="alert">This Watch no longer exists.</div>
+} @else if (watch.error()) {
+  <div class="empty-state" role="alert">
+    <h2>Could not load this Watch</h2>
+    <button type="button" (click)="watch.reload()">Try again</button>
+  </div>
+} @else if (watch.hasValue()) {
+  @let current = watch.value();
+  <div class="page-heading">
+    <p class="eyebrow">WATCH</p>
+    <h1>{{ current.name }}</h1>
+    <p class="status-line">
+      <span class="badge" [class]="'status-' + current.status">{{ statuses[current.status] }}</span>
+      @if (current.failureStreak > 0) {
+        <span>{{ current.failureStreak }} Known failure or Errored {{ current.failureStreak === 1 ? 'Run' : 'Runs in a row' }}</span>
+      }
+      <a [href]="current.notificationUrl" target="_blank" rel="noopener noreferrer">Open page <span aria-hidden="true">↗</span></a>
+    </p>
+  </div>
+  <p class="notice" role="status">{{ notice() }}</p>
+  @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+  <div class="actions">
+    <button type="button" class="primary" (click)="runNow()" [disabled]="busy()">{{ busy() === 'running' ? 'Running…' : 'Run now' }}</button>
+    <button type="button" (click)="togglePaused(current)" [disabled]="busy()">{{ current.isPaused ? 'Resume' : 'Pause' }}</button>
+  </div>
+  <div class="layout">
+    <div class="side">
+      <section class="panel" aria-labelledby="settings-heading">
+        <h2 id="settings-heading">Settings</h2>
+        <form (submit)="$event.preventDefault(); save()">
+          <label for="name">Name</label>
+          <input id="name" [formField]="settingsForm.name" />
+          @if (settingsForm.name().touched() && settingsForm.name().invalid()) {
+            <small class="error">Enter a name between 1 and 200 characters.</small>
+          }
+          <label for="notification-url">Notification URL</label>
+          <input id="notification-url" type="url" [formField]="settingsForm.notificationUrl" aria-describedby="url-help" />
+          <small id="url-help">The page to open when you want a closer look.</small>
+          @if (settingsForm.notificationUrl().touched() && settingsForm.notificationUrl().invalid()) {
+            <small class="error">Enter a valid HTTP or HTTPS URL.</small>
+          }
+          <label for="timeout">Timeout (seconds)</label>
+          <input id="timeout" type="number" [formField]="settingsForm.timeoutSeconds" aria-describedby="timeout-help" />
+          <small id="timeout-help">How long a Run may take before it is stopped, up to {{ maxTimeoutSeconds }} seconds.</small>
+          @if (settingsForm.timeoutSeconds().touched() && settingsForm.timeoutSeconds().invalid()) {
+            <small class="error">Enter a timeout between 1 and {{ maxTimeoutSeconds }} seconds.</small>
+          }
+          <button class="primary" type="submit" [disabled]="settingsForm().submitting() || settingsForm().invalid()">
+            {{ settingsForm().submitting() ? 'Saving…' : 'Save settings' }}
+          </button>
+        </form>
+      </section>
+      <section class="panel danger-zone" aria-labelledby="delete-heading">
+        <h2 id="delete-heading">Delete</h2>
+        @if (confirmingDelete()) {
+          <p>This deletes the Watch, its Script versions and its whole Run history. It can't be undone.</p>
+          <div class="actions">
+            <button type="button" class="danger primary" (click)="delete()" [disabled]="busy()">{{ busy() === 'deleting' ? 'Deleting…' : 'Delete permanently' }}</button>
+            <button type="button" (click)="confirmingDelete.set(false)" [disabled]="busy()">Cancel</button>
+          </div>
+        } @else {
+          <p>Stop watching this page and remove its history.</p>
+          <button type="button" class="danger" (click)="confirmingDelete.set(true)">Delete Watch</button>
+        }
+      </section>
+    </div>
+    <section class="panel history" aria-labelledby="history-heading">
+      <h2 id="history-heading">Run history</h2>
+      @if (latestRuns.error()) {
+        <p class="error" role="alert">Could not load the Run history. <button type="button" (click)="latestRuns.reload()">Try again</button></p>
+      } @else if (latestRuns.hasValue()) {
+        @if (runs().length) {
+          <ol class="runs" aria-label="Run history">
+            @for (run of runs(); track run.id) {
+              <li class="run" [class.is-change]="run.isChange">
+                <div class="run-heading">
+                  <span class="badge" [class.success]="run.outcome === 'succeeded'" [class.failure]="run.outcome !== 'succeeded'">{{ outcomes[run.outcome] }}</span>
+                  @if (run.isChange) { <span class="badge change-badge">Change</span> }
+                  <small><time [attr.datetime]="run.finishedAt">{{ run.finishedAt | date:'medium' }}</time> · {{ run.durationMs / 1000 | number:'1.0-2' }}s</small>
+                </div>
+                @if (run.content !== null) {
+                  <p class="content">{{ run.content === '' ? '(Empty content)' : run.content }}</p>
+                }
+                @if (run.details) { <p class="details">{{ run.details }}</p> }
+                @if (run.errorMessage) { <p class="error">{{ run.errorMessage }}</p> }
+              </li>
+            }
+          </ol>
+          @if (canShowOlderRuns()) {
+            <button type="button" (click)="showOlderRuns()">Show older Runs</button>
+          }
+        } @else {
+          <p class="details">No Runs yet. Choose Run now to read the page.</p>
+        }
+      } @else { <p>Loading Run history…</p> }
+    </section>
+  </div>
+} @else { <p>Loading Watch…</p> }

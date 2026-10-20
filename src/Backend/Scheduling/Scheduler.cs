@@ -65,7 +65,9 @@ public sealed partial class Scheduler(
         var timeZone = schedules.TimeZone.Id;
 
         // Daily and cron times are wall-clock times, so they move when the install's time zone changes.
+        // A paused Watch has no next Run until it is resumed.
         var stale = await database.Watches
+            .Where(watch => !watch.IsPaused)
             .Where(watch =>
                 watch.NextRunAt == null
                 || watch.NextRunAt <= now
@@ -85,7 +87,7 @@ public sealed partial class Scheduler(
         var database = scope.ServiceProvider.GetRequiredService<LookoutDbContext>();
         var now = timeProvider.GetUtcNow();
         var due = await database.Watches.AsNoTracking()
-            .Where(watch => watch.NextRunAt <= now)
+            .Where(watch => watch.NextRunAt <= now && !watch.IsPaused)
             .OrderBy(watch => watch.NextRunAt)
             .ToListAsync(stoppingToken);
 

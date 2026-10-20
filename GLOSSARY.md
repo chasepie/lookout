@@ -55,7 +55,7 @@ _Avoid_: Token
 ### Watch statuses
 
 **Pending**:
-The Watch has no Baseline yet, because it is new or a new Script version was just uploaded.
+The Watch has no Baseline yet, because it is new or a new Script version was just uploaded. A Watch in a failure streak is Failing instead, even without a Baseline.
 _Avoid_: New, Unknown
 
 **Healthy**:

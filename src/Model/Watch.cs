@@ -8,6 +8,13 @@ public sealed class Watch
     public Guid? CurrentScriptVersionId { get; set; }
     public ScriptVersion? CurrentScriptVersion { get; set; }
     public string? Baseline { get; set; }
+    /// <summary>How many Known failure or Errored Runs in a row the Watch has had since its last Succeeded Run.</summary>
+    public int FailureStreak { get; set; }
+    /// <summary>Whether the user has stopped the Watch's scheduled Runs. Run now still works.</summary>
+    public bool IsPaused { get; set; }
+    public int TimeoutSeconds { get; set; } = DefaultTimeoutSeconds;
+    public const int DefaultTimeoutSeconds = 120;
+    public const int MaxTimeoutSeconds = 600;
     public required Schedule Schedule { get; set; }
     /// <summary>Up to this many minutes of random delay added to each scheduled Run.</summary>
     public int JitterMinutes { get; set; }

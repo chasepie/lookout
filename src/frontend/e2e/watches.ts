@@ -1,6 +1,6 @@
 import { type Page, expect } from '@playwright/test';
 
-/** Creates a Watch through the API with the page's login, sending the request token the app would. */
+/** Creates a Watch through the API with the page's login, sending the request token the app would, and returns its ID. */
 export async function createWatch(page: Page, name: string, notificationUrl = 'https://example.com/widget') {
   const token = (await page.context().cookies()).find((cookie) => cookie.name === 'Lookout.XSRF-TOKEN')?.value;
   expect(token, 'the saved login includes a request token').toBeDefined();
@@ -13,4 +13,5 @@ export async function createWatch(page: Page, name: string, notificationUrl = 'h
     },
   });
   expect(created.status()).toBe(201);
+  return ((await created.json()) as { id: string }).id;
 }
