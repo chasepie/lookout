@@ -1,4 +1,5 @@
 using ChasePie.Lookout.Database;
+using ChasePie.Lookout.Backend.Runner;
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
 
@@ -18,9 +19,23 @@ public class Program
         app.Run();
     }
 
-    private static void ConfigureServices(IServiceCollection services, IConfiguration configuration)
+    private static void ConfigureServices(IServiceCollection services, ConfigurationManager configuration)
     {
         services.AddControllers();
+        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<RunningWatches>();
+        var runnerUrl = configuration["Runner:BaseUrl"] ?? "http://localhost:3000";
+        if (!Uri.TryCreate(runnerUrl.TrimEnd('/') + "/", UriKind.Absolute, out var runnerBaseAddress)
+            || runnerBaseAddress.Scheme is not ("http" or "https"))
+        {
+            throw new InvalidOperationException($"Runner:BaseUrl must be an absolute HTTP or HTTPS URL, not '{runnerUrl}'");
+        }
+        services.AddHttpClient<IRunnerClient, HttpRunnerClient>(client =>
+        {
+            client.BaseAddress = runnerBaseAddress;
+            // HttpRunnerClient sets each request's deadline from its Script timeout.
+            client.Timeout = Timeout.InfiniteTimeSpan;
+        });
         services.AddOpenApi();
 
         var connectionString = configuration.GetConnectionString("Lookout")
@@ -54,7 +69,12 @@ public class Program
         app.UseHttpsRedirection();
         app.UseAuthorization();
 
+        app.UseDefaultFiles();
+        app.UseStaticFiles();
+
         app.MapControllers();
         app.MapHealthChecks("/health");
+        // Keep API misses in endpoint routing, including 405 responses for unsupported methods.
+        app.MapFallbackToFile("{*path:nonfile:regex(^(?!api(?:/|$)).*)}", "index.html");
     }
 }

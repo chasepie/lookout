@@ -13,10 +13,13 @@ concurrency:
   cancel-in-progress: true
 
 # Job names are required checks in the "Merge Gate" ruleset; rename a job there too.
+# Only Backend installs .NET; both jobs need Node and Chromium, for the real-runner and runner tests.
 jobs:
   backend:
     name: Backend
     runs-on: ubuntu-latest
+    # The browser tests take a few minutes; a hung run fails here rather than at GitHub's 6-hour limit
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
 
@@ -26,6 +29,20 @@ jobs:
 
       - name: Build
         run: dotnet build Lookout.slnx
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+
+      - name: Test backend and runner client
+        run: dotnet test --solution Lookout.slnx --no-build
+
+      - name: Test frontend against the backend with a fake runner
+        run: npm run test:e2e
 
   node:
     name: Runner and Scripting
@@ -52,7 +69,6 @@ jobs:
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
-      # The runner's tests only (Seam 2), which serve their own pages and need no internet. Not `--workspaces`:
-      # examples/ has a test against a real bot-detection site.
-      - name: Test
-        run: npm test
+      # These tests use local pages; examples/ contacts a real bot-detection site.
+      - name: Test runner
+        run: npm run test:runner

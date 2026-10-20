@@ -1,0 +1,28 @@
+{
+  "extends": "./tsconfig.json",
+  // Required: without it, the empty "files" inherited from tsconfig.json leaves this project with no files
+  "include": [
+    "**/*"
+  ],
+  "exclude": [
+    "src/frontend"
+  ],
+  "compilerOptions": {
+    "module": "nodenext",
+    // Match Node 24 (.nvmrc): "esnext" would type features it lacks, such as Temporal
+    "lib": [
+      "es2025",
+      "esnext.disposable",
+      "esnext.error"
+    ],
+    "types": [
+      "node"
+    ],
+    // Node runs the runner and Scripts with type stripping, which only supports erasable syntax
+    "erasableSyntaxOnly": true,
+    // ...and needs relative imports to name the .ts file
+    "rewriteRelativeImportExtensions": true,
+    "noEmit": true,
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo"
+  }
+}

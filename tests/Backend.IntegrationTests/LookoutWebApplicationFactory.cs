@@ -1,5 +1,8 @@
+using ChasePie.Lookout.Backend.Runner;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace ChasePie.Lookout.Backend.IntegrationTests;
 
@@ -11,13 +14,17 @@ namespace ChasePie.Lookout.Backend.IntegrationTests;
 public sealed class LookoutWebApplicationFactory : WebApplicationFactory<Program>
 {
     private readonly List<string> _databasePaths = [];
+    public FakeRunnerClient Runner { get; } = new();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
+        builder.UseContentRoot(Path.Combine(RepositoryRoot.Find(), "src/Backend"));
         var databasePath = Path.Combine(Path.GetTempPath(), $"lookout-test-{Guid.NewGuid():N}.db");
         _databasePaths.Add(databasePath);
 
         builder.UseEnvironment("Testing");
+        builder.UseSetting("Logging:LogLevel:Default", "Error");
+        builder.ConfigureTestServices(services => services.AddSingleton<IRunnerClient>(Runner));
         builder.UseSetting("ConnectionStrings:Lookout", $"Data Source={databasePath};Pooling=False");
     }
 

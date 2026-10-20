@@ -5,7 +5,7 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "C#: Debug Backend",
+      "name": "Serve Scalar API",
       "type": "dotnet",
       "request": "launch",
       "projectPath": "${workspaceFolder}/src/Backend/Backend.csproj",
@@ -15,6 +15,47 @@
         "pattern": "Now listening on: https://localhost:([0-9]+)",
         "uriFormat": "https://localhost:%s/scalar"
       }
+    },
+    {
+      "name": "Launch Runner",
+      "type": "node",
+      "request": "launch",
+      // Runs the runner under the debugger (a preLaunchTask would run it outside), so its breakpoints bind
+      "cwd": "${workspaceFolder}",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "start:runner"],
+      "presentation": {
+        "hidden": true
+      }
+    },
+    {
+      // Starts the dev server first, then opens Chrome only once the backend is listening,
+      // so the app's first /api requests don't reach the proxy before the backend is up.
+      "name": "Launch Backend + Frontend",
+      "type": "dotnet",
+      "request": "launch",
+      "projectPath": "${workspaceFolder}/src/Backend/Backend.csproj",
+      "preLaunchTask": "npm: start:frontend",
+      "serverReadyAction": {
+        "action": "debugWithChrome",
+        "killOnServerStop": true,
+        "pattern": "Now listening on: https://localhost:[0-9]+",
+        "uriFormat": "http://localhost:4200/"
+      },
+      "presentation": {
+        "hidden": true
+      }
+    }
+  ],
+  "compounds": [
+    {
+      // The backend only calls the runner when a Run starts, so the two can start together.
+      "name": "Launch App",
+      "configurations": [
+        "Launch Runner",
+        "Launch Backend + Frontend"
+      ],
+      "stopAll": true
     }
   ]
 }

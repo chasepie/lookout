@@ -13,3 +13,10 @@ insert_final_newline = true
 
 [*.{json,js,mjs,ts,csproj,props}]
 indent_size = 2
+
+[src/Database/Migrations/*.cs]
+generated_code = true
+
+[*.ts]
+quote_type = single
+ij_typescript_use_double_quotes = false
