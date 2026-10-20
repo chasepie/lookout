@@ -1,0 +1,137 @@
+using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.AspNetCore.Mvc.Testing;
+
+namespace ChasePie.Lookout.Backend.IntegrationTests;
+
+[TestClass]
+public sealed partial class AccountTests(TestContext testContext)
+{
+    [TestMethod]
+    public async Task SetupCreatesTheAccountAndSignsInOnlyOnce()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        using var client = factory.CreateClient();
+        Assert.IsFalse((await Session(client))["accountExists"]!.GetValue<bool>());
+
+        var setup = await client.PostAsJsonAsync("/api/setup", new { userName = "owner", password = "correct horse" }, testContext.CancellationToken);
+
+        Assert.AreEqual(HttpStatusCode.Created, setup.StatusCode);
+        var session = await Session(client);
+        Assert.IsTrue(session["accountExists"]!.GetValue<bool>());
+        Assert.AreEqual("owner", session["userName"]!.GetValue<string>());
+        using var other = factory.CreateClient();
+        var again = await other.PostAsJsonAsync("/api/setup", new { userName = "intruder", password = "another password" }, testContext.CancellationToken);
+        Assert.AreEqual(HttpStatusCode.Conflict, again.StatusCode);
+        Assert.IsNull((await Session(other))["userName"]);
+        var login = await other.PostAsJsonAsync("/api/session", new { userName = "intruder", password = "another password" }, testContext.CancellationToken);
+        Assert.AreEqual(HttpStatusCode.Unauthorized, login.StatusCode);
+    }
+
+    [TestMethod]
+    [DataRow("owner", "wrong password")]
+    [DataRow("someone", "correct horse")]
+    [DataRow("", "")]
+    public async Task RejectsLoginWithWrongCredentials(string userName, string password)
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        using (await factory.CreateSignedInClientAsync(testContext.CancellationToken)) { }
+        using var client = factory.CreateClient();
+
+        var login = await client.PostAsJsonAsync("/api/session", new { userName, password }, testContext.CancellationToken);
+
+        Assert.AreEqual(HttpStatusCode.Unauthorized, login.StatusCode);
+        Assert.IsNull((await Session(client))["userName"]);
+        var watches = await client.GetAsync(new Uri("/api/watches", UriKind.Relative), testContext.CancellationToken);
+        Assert.AreEqual(HttpStatusCode.Unauthorized, watches.StatusCode);
+    }
+
+    [TestMethod]
+    public async Task LogsInWithTheAccountsCredentials()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        using (await factory.CreateSignedInClientAsync(testContext.CancellationToken)) { }
+        using var client = factory.CreateClient();
+
+        var login = await client.PostAsJsonAsync("/api/session", new { userName = " Owner ", password = "correct horse" }, testContext.CancellationToken);
+
+        Assert.AreEqual(HttpStatusCode.NoContent, login.StatusCode);
+        Assert.AreEqual("owner", (await Session(client))["userName"]!.GetValue<string>());
+        var watches = await client.GetAsync(new Uri("/api/watches", UriKind.Relative), testContext.CancellationToken);
+        Assert.AreEqual(HttpStatusCode.OK, watches.StatusCode);
+    }
+
+    [TestMethod]
+    public async Task LogoutEndsTheSessionEvenForACopyOfItsCookie()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = false });
+        var setup = await client.PostAsJsonAsync("/api/setup", new { userName = "owner", password = "correct horse" }, testContext.CancellationToken);
+        var cookie = setup.Headers.GetValues("Set-Cookie").Single().Split(';')[0];
+        Assert.AreEqual(HttpStatusCode.OK, (await SendWithCookie(client, HttpMethod.Get, "/api/watches", cookie)).StatusCode);
+
+        var logout = await SendWithCookie(client, HttpMethod.Delete, "/api/session", cookie);
+
+        Assert.AreEqual(HttpStatusCode.NoContent, logout.StatusCode);
+        Assert.Contains("expires=Thu, 01 Jan 1970", logout.Headers.GetValues("Set-Cookie").Single());
+        Assert.AreEqual(HttpStatusCode.Unauthorized, (await SendWithCookie(client, HttpMethod.Get, "/api/watches", cookie)).StatusCode);
+    }
+
+    [TestMethod]
+    public async Task IssuesAnHttpOnlySameSiteCookieThatLastsUntilLogout()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var setup = await client.PostAsJsonAsync("/api/setup", new { userName = "owner", password = "correct horse" }, testContext.CancellationToken);
+
+        var cookie = setup.Headers.GetValues("Set-Cookie").Single();
+        Assert.Contains("httponly", cookie);
+        Assert.Contains("samesite=strict", cookie);
+        Assert.Contains("expires=", cookie);
+    }
+
+    [TestMethod]
+    public async Task ProtectsEveryApiEndpointExceptSetupAndLogin()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        using var client = factory.CreateClient();
+        string[] anonymous = ["GET api/session", "POST api/session", "POST api/setup"];
+        var endpoints = factory.Services.GetRequiredService<EndpointDataSource>().Endpoints.OfType<RouteEndpoint>()
+            .Where(endpoint => endpoint.RoutePattern.RawText?.TrimStart('/').StartsWith("api/", StringComparison.Ordinal) == true)
+            .SelectMany(endpoint => endpoint.Metadata.GetMetadata<HttpMethodMetadata>()!.HttpMethods
+                .Select(method => $"{method} {endpoint.RoutePattern.RawText!.TrimStart('/')}"))
+            .ToList();
+        Assert.IsGreaterThan(anonymous.Length, endpoints.Count);
+        CollectionAssert.IsSubsetOf(anonymous, endpoints);
+
+        foreach (var endpoint in endpoints.Except(anonymous))
+        {
+            var (method, pattern) = (endpoint.Split(' ')[0], endpoint.Split(' ')[1]);
+            var path = "/" + RouteParameter().Replace(pattern, Guid.NewGuid().ToString());
+            using var request = new HttpRequestMessage(new HttpMethod(method), path);
+
+            var response = await client.SendAsync(request, testContext.CancellationToken);
+
+            Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode, endpoint);
+        }
+    }
+
+    [GeneratedRegex(@"\{[^}]+\}")]
+    private static partial Regex RouteParameter();
+
+    private async Task<HttpResponseMessage> SendWithCookie(HttpClient client, HttpMethod method, string path, string cookie)
+    {
+        using var request = new HttpRequestMessage(method, path);
+        request.Headers.Add("Cookie", cookie);
+        return await client.SendAsync(request, testContext.CancellationToken);
+    }
+
+    private async Task<JsonObject> Session(HttpClient client) =>
+        (await client.GetFromJsonAsync<JsonObject>("/api/session", testContext.CancellationToken))!;
+}

@@ -15,7 +15,28 @@ namespace ChasePie.Lookout.Database.Migrations
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "10.0.12");
+            modelBuilder.HasAnnotation("ProductVersion", "10.0.13");
+
+            modelBuilder.Entity("ChasePie.Lookout.Model.Account", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UserName")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Accounts", t =>
+                        {
+                            t.HasCheckConstraint("CK_Accounts_Singleton", "Id = 1");
+                        });
+                });
 
             modelBuilder.Entity("ChasePie.Lookout.Model.Run", b =>
                 {
@@ -87,6 +108,25 @@ namespace ChasePie.Lookout.Database.Migrations
                     b.ToTable("ScriptVersions");
                 });
 
+            modelBuilder.Entity("ChasePie.Lookout.Model.Session", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("AccountId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AccountId");
+
+                    b.ToTable("Sessions");
+                });
+
             modelBuilder.Entity("ChasePie.Lookout.Model.Watch", b =>
                 {
                     b.Property<Guid>("Id")
@@ -118,6 +158,23 @@ namespace ChasePie.Lookout.Database.Migrations
                     b.ToTable("Watches");
                 });
 
+            modelBuilder.Entity("Microsoft.AspNetCore.DataProtection.EntityFrameworkCore.DataProtectionKey", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("FriendlyName")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Xml")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("DataProtectionKeys");
+                });
+
             modelBuilder.Entity("ChasePie.Lookout.Model.Run", b =>
                 {
                     b.HasOne("ChasePie.Lookout.Model.ScriptVersion", null)
@@ -138,6 +195,15 @@ namespace ChasePie.Lookout.Database.Migrations
                     b.HasOne("ChasePie.Lookout.Model.Watch", null)
                         .WithMany("ScriptVersions")
                         .HasForeignKey("WatchId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ChasePie.Lookout.Model.Session", b =>
+                {
+                    b.HasOne("ChasePie.Lookout.Model.Account", null)
+                        .WithMany()
+                        .HasForeignKey("AccountId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

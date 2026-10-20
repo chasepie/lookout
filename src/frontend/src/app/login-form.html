@@ -1,0 +1,15 @@
+<section class="account-panel" aria-labelledby="login-heading">
+  <p class="eyebrow">WELCOME BACK</p>
+  <h1 id="login-heading">Log in</h1>
+  <p>Log in to see your Watches.</p>
+  @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+  <form (submit)="$event.preventDefault(); logIn()">
+    <label for="login-user-name">User name</label>
+    <input id="login-user-name" autocomplete="username" [formField]="loginForm.userName" />
+    <label for="login-password">Password</label>
+    <input id="login-password" type="password" autocomplete="current-password" [formField]="loginForm.password" />
+    <button class="primary" type="submit" [disabled]="loginForm().submitting() || loginForm().invalid()">
+      {{ loginForm().submitting() ? 'Logging in…' : 'Log in' }}
+    </button>
+  </form>
+</section>

@@ -1,78 +1,95 @@
 <header class="site-header">
   <a class="brand" href="/" aria-label="Lookout home"><span class="brand-mark" aria-hidden="true">◉</span> Lookout</a>
-  <span class="tagline">Keep an eye on what matters.</span>
+  @if (session.userName(); as userName) {
+    <span class="account"><span>Signed in as {{ userName }}</span> <button type="button" (click)="logOut()">Log out</button></span>
+  } @else {
+    <span class="tagline">Keep an eye on what matters.</span>
+  }
 </header>
 <main>
-  <div class="page-heading">
-    <p class="eyebrow">YOUR LOOKOUT</p>
-    <h1>Watches</h1>
-    <p>Read a page. Keep the result. Know when it changes.</p>
-  </div>
-  <p class="notice" role="status">{{ notice() }}</p>
-  @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
-  <div class="workspace">
-    <section class="create-panel" aria-labelledby="create-heading">
-      <h2 id="create-heading">Create a Watch</h2>
-      <p>Give it a name and a Script that reads the page.</p>
-      <form (submit)="$event.preventDefault(); createWatch(scriptInput)">
-        <label for="name">Name</label>
-        <input id="name" [formField]="watchForm.name" placeholder="e.g. Coffee grinder price" />
-        @if (watchForm.name().touched() && watchForm.name().invalid()) {
-          <small class="error">Enter a name between 1 and 200 characters.</small>
-        }
-        <label for="notification-url">Notification URL</label>
-        <input id="notification-url" type="url" [formField]="watchForm.notificationUrl" placeholder="https://example.com/product" aria-describedby="url-help" />
-        <small id="url-help">The page to open when you want a closer look.</small>
-        @if (watchForm.notificationUrl().touched() && watchForm.notificationUrl().invalid()) {
-          <small class="error">Enter a valid HTTP or HTTPS URL.</small>
-        }
-        <label for="script">Script</label>
-        <input #scriptInput id="script" type="file" accept=".ts,.js" (change)="selectScript(scriptInput)" aria-describedby="script-help" required />
-        <small id="script-help">Upload a TypeScript or JavaScript file, up to 64 KiB.</small>
-        <button class="primary" type="submit" [disabled]="watchForm().submitting() || watchForm().invalid() || !script()">
-          {{ watchForm().submitting() ? 'Creating…' : 'Create Watch' }}
-        </button>
-      </form>
-    </section>
-    <section class="watch-list" aria-label="Your Watches">
-      @if (watches.list.error()) {
-        <div class="empty-state" role="alert">
-          <h2>Could not load your Watches</h2>
-          <button type="button" (click)="watches.list.reload()">Try again</button>
-        </div>
-      } @else if (watches.list.hasValue()) {
-        @for (watch of watches.list.value(); track watch.id) {
-          <article class="watch-card" [attr.aria-label]="watch.name" [attr.aria-busy]="running().has(watch.id)">
-            <div class="watch-heading">
-              <h2><a [href]="watch.notificationUrl" target="_blank" rel="noopener noreferrer">{{ watch.name }} <span aria-hidden="true">↗</span></a></h2>
-              @if (watch.lastRun; as run) {
-                <span class="badge" [class.success]="run.outcome === 'succeeded'" [class.failure]="run.outcome !== 'succeeded'">Last Run: {{ outcomes[run.outcome] }}</span>
-              }
-            </div>
-            <p class="eyebrow content-label">LATEST CONTENT</p>
-            <p class="content">{{ watch.baseline === null ? 'No content yet' : watch.baseline === '' ? '(Empty content)' : watch.baseline }}</p>
-            @if (watch.lastRun; as run) {
-              @if (run.isChange) { <p class="change">Change recorded</p> }
-              @if (run.details) { <p class="details">{{ run.details }}</p> }
-              @if (run.errorMessage) { <p class="error">{{ run.errorMessage }}</p> }
-            }
-            <div class="watch-footer">
-              @if (watch.lastRun; as run) {
-                <small>Last Run <time [attr.datetime]="run.finishedAt">{{ run.finishedAt | date:'medium' }}</time> · {{ run.durationMs / 1000 | number:'1.0-2' }}s</small>
-              } @else {
-                <small>No Runs yet</small>
-              }
-              <button type="button" (click)="runNow(watch)" [disabled]="running().has(watch.id)">{{ running().has(watch.id) ? 'Running…' : 'Run now' }}</button>
-            </div>
-          </article>
-        } @empty {
-          <div class="empty-state">
-            <span class="empty-icon" aria-hidden="true">◎</span>
-            <h2>Your first Watch starts here</h2>
-            <p>Create a Watch, then choose Run now.<br />Its latest content will appear here.</p>
+  @if (session.status.error()) {
+    <div class="empty-state" role="alert">
+      <h2>Could not reach Lookout</h2>
+      <button type="button" (click)="session.status.reload()">Try again</button>
+    </div>
+  } @else if (!session.status.hasValue()) {
+    <p>Loading…</p>
+  } @else if (!session.status.value().accountExists) {
+    <app-setup-form />
+  } @else if (!session.userName()) {
+    <app-login-form />
+  } @else {
+    <div class="page-heading">
+      <p class="eyebrow">YOUR LOOKOUT</p>
+      <h1>Watches</h1>
+      <p>Read a page. Keep the result. Know when it changes.</p>
+    </div>
+    <p class="notice" role="status">{{ notice() }}</p>
+    @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+    <div class="workspace">
+      <section class="create-panel" aria-labelledby="create-heading">
+        <h2 id="create-heading">Create a Watch</h2>
+        <p>Give it a name and a Script that reads the page.</p>
+        <form (submit)="$event.preventDefault(); createWatch(scriptInput)">
+          <label for="name">Name</label>
+          <input id="name" [formField]="watchForm.name" placeholder="e.g. Coffee grinder price" />
+          @if (watchForm.name().touched() && watchForm.name().invalid()) {
+            <small class="error">Enter a name between 1 and 200 characters.</small>
+          }
+          <label for="notification-url">Notification URL</label>
+          <input id="notification-url" type="url" [formField]="watchForm.notificationUrl" placeholder="https://example.com/product" aria-describedby="url-help" />
+          <small id="url-help">The page to open when you want a closer look.</small>
+          @if (watchForm.notificationUrl().touched() && watchForm.notificationUrl().invalid()) {
+            <small class="error">Enter a valid HTTP or HTTPS URL.</small>
+          }
+          <label for="script">Script</label>
+          <input #scriptInput id="script" type="file" accept=".ts,.js" (change)="selectScript(scriptInput)" aria-describedby="script-help" required />
+          <small id="script-help">Upload a TypeScript or JavaScript file, up to 64 KiB.</small>
+          <button class="primary" type="submit" [disabled]="watchForm().submitting() || watchForm().invalid() || !script()">
+            {{ watchForm().submitting() ? 'Creating…' : 'Create Watch' }}
+          </button>
+        </form>
+      </section>
+      <section class="watch-list" aria-label="Your Watches">
+        @if (watches.list.error()) {
+          <div class="empty-state" role="alert">
+            <h2>Could not load your Watches</h2>
+            <button type="button" (click)="watches.list.reload()">Try again</button>
           </div>
-        }
-      } @else { <p>Loading Watches…</p> }
-    </section>
-  </div>
+        } @else if (watches.list.hasValue()) {
+          @for (watch of watches.list.value(); track watch.id) {
+            <article class="watch-card" [attr.aria-label]="watch.name" [attr.aria-busy]="running().has(watch.id)">
+              <div class="watch-heading">
+                <h2><a [href]="watch.notificationUrl" target="_blank" rel="noopener noreferrer">{{ watch.name }} <span aria-hidden="true">↗</span></a></h2>
+                @if (watch.lastRun; as run) {
+                  <span class="badge" [class.success]="run.outcome === 'succeeded'" [class.failure]="run.outcome !== 'succeeded'">Last Run: {{ outcomes[run.outcome] }}</span>
+                }
+              </div>
+              <p class="eyebrow content-label">LATEST CONTENT</p>
+              <p class="content">{{ watch.baseline === null ? 'No content yet' : watch.baseline === '' ? '(Empty content)' : watch.baseline }}</p>
+              @if (watch.lastRun; as run) {
+                @if (run.isChange) { <p class="change">Change recorded</p> }
+                @if (run.details) { <p class="details">{{ run.details }}</p> }
+                @if (run.errorMessage) { <p class="error">{{ run.errorMessage }}</p> }
+              }
+              <div class="watch-footer">
+                @if (watch.lastRun; as run) {
+                  <small>Last Run <time [attr.datetime]="run.finishedAt">{{ run.finishedAt | date:'medium' }}</time> · {{ run.durationMs / 1000 | number:'1.0-2' }}s</small>
+                } @else {
+                  <small>No Runs yet</small>
+                }
+                <button type="button" (click)="runNow(watch)" [disabled]="running().has(watch.id)">{{ running().has(watch.id) ? 'Running…' : 'Run now' }}</button>
+              </div>
+            </article>
+          } @empty {
+            <div class="empty-state">
+              <span class="empty-icon" aria-hidden="true">◎</span>
+              <h2>Your first Watch starts here</h2>
+              <p>Create a Watch, then choose Run now.<br />Its latest content will appear here.</p>
+            </div>
+          }
+        } @else { <p>Loading Watches…</p> }
+      </section>
+    </div>
+  }
 </main>

@@ -1,18 +1,22 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
-import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { FormField, form, maxLength, pattern, required, submit } from '@angular/forms/signals';
+import { LoginForm } from './login-form';
+import { problemMessage } from './problem';
+import { Session } from './session';
+import { SetupForm } from './setup-form';
 import type { RunOutcome, Watch } from './watch.model';
 import { Watches } from './watches';
 
 @Component({
   selector: 'app-root',
-  imports: [DatePipe, DecimalPipe, FormField],
+  imports: [DatePipe, DecimalPipe, FormField, LoginForm, SetupForm],
   templateUrl: './app.html',
   styleUrl: './app.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class App {
+  protected readonly session = inject(Session);
   protected readonly watches = inject(Watches);
   protected readonly model = signal({ name: '', notificationUrl: '' });
   protected readonly watchForm = form(this.model, (fields) => {
@@ -30,6 +34,16 @@ export class App {
   protected readonly outcomes: Record<RunOutcome, string> = {
     succeeded: 'Succeeded', knownFailure: 'Known failure', errored: 'Errored',
   };
+
+  protected async logOut() {
+    this.error.set('');
+    this.notice.set('');
+    try {
+      await this.session.logOut();
+    } catch (error: unknown) {
+      this.error.set(problemMessage(error, 'Could not log out. Please try again.'));
+    }
+  }
 
   protected selectScript(input: HTMLInputElement) {
     this.script.set(input.files?.[0]);
@@ -78,16 +92,4 @@ export class App {
       });
     }
   }
-}
-
-function problemMessage(error: unknown, fallback: string): string {
-  if (!(error instanceof HttpErrorResponse)) {return fallback;}
-  const body: unknown = error.error;
-  if (!body || typeof body !== 'object') {return fallback;}
-  if ('detail' in body && typeof body.detail === 'string' && body.detail.trim()) {return body.detail;}
-  if ('errors' in body && body.errors && typeof body.errors === 'object') {
-    const messages = Object.values(body.errors).flat().filter((message: unknown): message is string => typeof message === 'string');
-    if (messages.length) {return messages.join(' ');}
-  }
-  return fallback;
 }

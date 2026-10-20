@@ -1,0 +1,15 @@
+:host { display: block; }
+.account-panel { max-width: 400px; margin: 0 auto; background: #fff; border: 1px solid #dce3d9; border-radius: 12px; padding: 32px; }
+.eyebrow { letter-spacing: 1.8px; font-size: 10px; font-weight: 750; margin: 0; }
+h1 { font-size: 32px; font-weight: 650; letter-spacing: -1px; margin: 8px 0 10px; }
+.account-panel > p:not(.eyebrow) { font-size: 14px; color: #596b62; line-height: 1.6; margin: 0 0 24px; }
+form { display: flex; flex-direction: column; }
+label { font-size: 13px; font-weight: 650; margin-bottom: 8px; }
+input { border: 1px solid #b9c7bc; border-radius: 6px; min-width: 0; width: 100%; padding: 11px; background: #fcfdfb; color: inherit; }
+input + label, small + label { margin-top: 23px; }
+small { font-size: 12px; line-height: 1.5; margin-top: 7px; color: #596b62; }
+button.primary { border: 1px solid #285740; background: #285740; color: white; margin-top: 26px; padding: 12px; border-radius: 6px; font-size: 13px; font-weight: 650; }
+button.primary:hover:not(:disabled) { background: #1c4430; }
+.error { color: #9a341e; font-size: 14px; overflow-wrap: anywhere; }
+small.error { font-size: 12px; }
+p.error { margin: 0 0 18px; }
