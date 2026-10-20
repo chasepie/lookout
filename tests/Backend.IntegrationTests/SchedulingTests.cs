@@ -1,8 +1,11 @@
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 using ChasePie.Lookout.Backend.Runner;
+using ChasePie.Lookout.Database;
 using ChasePie.Lookout.Model;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace ChasePie.Lookout.Backend.IntegrationTests;
 
@@ -381,6 +384,45 @@ public sealed class SchedulingTests(TestContext testContext)
 
         var listed = await Watch(client, created["id"]!.GetValue<string>());
         Assert.AreEqual(listed["nextRunAt"]!.GetValue<string>(), created["nextRunAt"]!.GetValue<string>());
+    }
+
+    [TestMethod]
+    public async Task DiscardsAScheduledRunEvaluatedAgainstABaselineAnotherInstanceAdvanced()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
+        var id = (await CreateWatch(client, Every(5, "minutes")))["id"]!.GetValue<string>();
+        var executions = 0;
+        factory.Runner.OnExecute = async (_, cancellationToken) =>
+        {
+            if (Interlocked.Increment(ref executions) == 1)
+            {
+                // Another backend instance, which RunningWatches can't see, records a Run while this one executes.
+                await using var scope = factory.Services.CreateAsyncScope();
+                await scope.ServiceProvider.GetRequiredService<LookoutDbContext>().Watches.Where(item => item.Id == Guid.Parse(id))
+                    .ExecuteUpdateAsync(setters => setters
+                        .SetProperty(item => item.Baseline, "£19")
+                        .SetProperty(item => item.Revision, item => item.Revision + 1), cancellationToken);
+            }
+            return Succeeded;
+        };
+
+        factory.Time.Advance(TimeSpan.FromMinutes(5));
+        for (var attempt = 0; attempt < 100 && Volatile.Read(ref executions) == 0; attempt++)
+        {
+            await Task.Delay(50, testContext.CancellationToken);
+        }
+        await Settle();
+
+        Assert.AreEqual(1, Volatile.Read(ref executions));
+        Assert.IsEmpty(await History(client, id));
+        Assert.AreEqual("£19", (await Watch(client, id))["baseline"]!.GetValue<string>());
+
+        // The discarded Run still released the Watch, so its next scheduled Run is recorded against the newer Baseline.
+        factory.Time.Advance(TimeSpan.FromMinutes(5));
+        var history = await WaitForHistory(client, id, 1);
+        Assert.AreEqual("£20", history[0]!["content"]!.GetValue<string>());
+        Assert.IsTrue(history[0]!["isChange"]!.GetValue<bool>());
     }
 
     private async Task AssertOneRunSetTheBaseline(HttpClient client, string id)
