@@ -260,6 +260,37 @@ public sealed class SchedulingTests(TestContext testContext)
         (await otherOnDemand).EnsureSuccessStatusCode();
     }
 
+    [TestMethod]
+    public async Task SkipsAScheduledRunOfARunningWatchWhileAnEarlierDueWatchWaitsForASlot()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        var runner = new BlockingRunner();
+        factory.Runner.OnExecute = runner.Execute;
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
+        await CreateWatch(client, Every(3, "minutes"));
+        var id = (await CreateWatch(client, Every(4, "minutes")))["id"]!.GetValue<string>();
+        var other = (await CreateWatch(client, Every(1, "hours")))["id"]!.GetValue<string>();
+        factory.Time.Advance(TimeSpan.FromMinutes(2));
+        var onDemand = client.PostAsync(new Uri($"/api/watches/{id}/runs", UriKind.Relative), null, testContext.CancellationToken);
+        await runner.WaitForStarted(1);
+        var otherOnDemand = client.PostAsync(new Uri($"/api/watches/{other}/runs", UriKind.Relative), null, testContext.CancellationToken);
+        await runner.WaitForStarted(2);
+
+        // The 3-minute Watch, due first, waits for a slot; the 4-minute Watch is due too but already running.
+        factory.Time.Advance(TimeSpan.FromMinutes(2));
+        await Settle();
+        runner.FinishOne();
+        (await onDemand).EnsureSuccessStatusCode();
+        await runner.WaitForStarted(3);
+        runner.FinishOne();
+        await Settle();
+
+        Assert.AreEqual(3, runner.Started);
+        Assert.HasCount(1, await History(client, id));
+        runner.FinishAll();
+        (await otherOnDemand).EnsureSuccessStatusCode();
+    }
+
     private async Task AssertOneRunSetTheBaseline(HttpClient client, string id)
     {
         var history = await WaitForHistory(client, id, 1);

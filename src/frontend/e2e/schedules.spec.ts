@@ -122,3 +122,32 @@ test('keeps a Watch\'s schedule when an edit is rejected', async ({ page }) => {
   await page.reload();
   await expect(nextRun).toHaveAttribute('datetime', before!);
 });
+
+test('edit a Watch to run daily with jitter, then see both kept after a reload', async ({ page }) => {
+  const name = `Edited daily ${randomUUID()}`;
+  await createWatch(page, name);
+  await page.goto('/');
+  const watch = page.getByRole('article', { name });
+
+  await watch.getByRole('button', { name: 'Edit schedule' }).click();
+  await watch.getByLabel('Schedule', { exact: true }).selectOption('Daily at a set time');
+  await watch.getByLabel('Time of day').fill('07:45');
+  await watch.getByLabel('Jitter (minutes)').fill('10');
+  await watch.getByRole('button', { name: 'Save schedule' }).click();
+  await expect(page.getByRole('status')).toHaveText(`Schedule of ${name} saved.`);
+
+  // The Run lands up to 10 minutes after 07:45 in the browser's time zone, which the test host shares.
+  const nextRun = watch.getByText('Next Run').locator('time');
+  await expect.poll(async () => {
+    const at = new Date((await nextRun.getAttribute('datetime'))!);
+    return at.getHours() * 60 + at.getMinutes();
+  }).toBeGreaterThanOrEqual(7 * 60 + 45);
+  const at = new Date((await nextRun.getAttribute('datetime'))!);
+  expect(at.getHours() * 60 + at.getMinutes()).toBeLessThanOrEqual(7 * 60 + 55);
+
+  await page.reload();
+  await watch.getByRole('button', { name: 'Edit schedule' }).click();
+  await expect(watch.getByLabel('Schedule', { exact: true })).toHaveValue('daily');
+  await expect(watch.getByLabel('Time of day')).toHaveValue('07:45');
+  await expect(watch.getByLabel('Jitter (minutes)')).toHaveValue('10');
+});

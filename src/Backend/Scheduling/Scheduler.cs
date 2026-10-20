@@ -86,20 +86,29 @@ public sealed partial class Scheduler(
             .OrderBy(watch => watch.NextRunAt)
             .ToListAsync(stoppingToken);
 
-        foreach (var watch in due)
+        // Decide which due Watches are already running before waiting for any slot. Otherwise a Watch's own Run
+        // could finish while an earlier due Watch waits, turning a Run it should skip into a queued one.
+        var queued = new Queue<Watch>();
+        try
         {
-            // A Watch that is already running skips this Run rather than overlapping it. Check before waiting
-            // for a slot, so the Watch's own Run finishing first can't turn the skipped Run into a queued one.
-            if (!runningWatches.TryStart(watch.Id))
+            foreach (var watch in due)
             {
-                await Claim(database, watch, stoppingToken);
-                continue;
+                if (runningWatches.TryStart(watch.Id))
+                {
+                    queued.Enqueue(watch);
+                }
+                else
+                {
+                    // A Watch that is already running skips this Run rather than overlapping it.
+                    await Claim(database, watch, stoppingToken);
+                }
             }
-            var started = false;
-            try
+
+            while (queued.TryPeek(out var watch))
             {
                 // Further due Runs wait here until a Run finishes.
                 await runSlots.WaitAsync(stoppingToken);
+                var started = false;
                 try
                 {
                     if (await Claim(database, watch, stoppingToken))
@@ -115,13 +124,19 @@ public sealed partial class Scheduler(
                         runSlots.Release();
                     }
                 }
-            }
-            finally
-            {
+                queued.Dequeue();
                 if (!started)
                 {
                     runningWatches.Finish(watch.Id);
                 }
+            }
+        }
+        finally
+        {
+            // Stopping or a database error left these Watches unstarted.
+            foreach (var watch in queued)
+            {
+                runningWatches.Finish(watch.Id);
             }
         }
     }

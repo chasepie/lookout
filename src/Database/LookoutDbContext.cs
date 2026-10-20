@@ -57,11 +57,12 @@ public class LookoutDbContext(DbContextOptions<LookoutDbContext> options) : DbCo
             .Property(run => run.Outcome)
             .HasConversion<string>();
 
-        modelBuilder.Entity<Watch>().ComplexProperty(watch => watch.Schedule, schedule =>
-        {
-            schedule.Property(value => value.Kind).HasConversion<string>();
-            schedule.Property(value => value.Unit).HasConversion<string>();
-        });
+        modelBuilder.Entity<Watch>()
+            .ComplexProperty(watch => watch.Schedule, schedule =>
+            {
+                schedule.Property(value => value.Kind).HasConversion<string>();
+                schedule.Property(value => value.Unit).HasConversion<string>();
+            });
 
         modelBuilder.Entity<Watch>()
             .Property(watch => watch.NextRunAt)

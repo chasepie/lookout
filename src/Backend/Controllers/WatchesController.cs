@@ -177,7 +177,9 @@ public sealed class WatchesController(
     }
 
     /// <summary>Builds the requested schedule, or explains why it can't be used.</summary>
-    private bool TryBuildSchedule(ScheduleRequest request, [NotNullWhen(true)] out Schedule? schedule,
+    private bool TryBuildSchedule(
+        ScheduleRequest request,
+        [NotNullWhen(true)] out Schedule? schedule,
         [NotNullWhen(false)] out ObjectResult? problem)
     {
         schedule = request.ScheduleKind switch
@@ -188,7 +190,9 @@ public sealed class WatchesController(
             ScheduleKind.Cron => Schedule.FromCron(request.Cron ?? ""),
             _ => null
         };
-        var message = schedule is null ? "Choose an interval, daily or cron schedule." : schedules.Validate(schedule);
+        var message = schedule is null
+            ? "Choose an interval, daily or cron schedule."
+            : schedules.Validate(schedule);
         if (message is null && request.JitterMinutes is < 0 or > WatchSchedules.MaximumJitterMinutes)
         {
             message = $"Jitter must be between 0 and {WatchSchedules.MaximumJitterMinutes} minutes.";
@@ -198,8 +202,16 @@ public sealed class WatchesController(
     }
 }
 
-public sealed record WatchSummary(Guid Id, string Name, string NotificationUrl, Guid? CurrentScriptVersionId,
-    string? Baseline, Run? LastRun, Schedule Schedule, int JitterMinutes, DateTimeOffset? NextRunAt)
+public sealed record WatchSummary(
+    Guid Id,
+    string Name,
+    string NotificationUrl,
+    Guid? CurrentScriptVersionId,
+    string? Baseline,
+    Run? LastRun,
+    Schedule Schedule,
+    int JitterMinutes,
+    DateTimeOffset? NextRunAt)
 {
     /// <summary>Maps a Watch in a database query; <see cref="From"/> applies the same mapping in memory.</summary>
     public static readonly Expression<Func<Watch, WatchSummary>> Projection = watch => new WatchSummary(
