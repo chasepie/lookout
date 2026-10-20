@@ -24,7 +24,8 @@ public sealed class RunExecutor(LookoutDbContext database, IRunnerClient runner,
 {
     public async Task<RunExecution> ExecuteAsync(Guid watchId, CancellationToken cancellationToken)
     {
-        var watch = await database.Watches.Include(watch => watch.CurrentScriptVersion)
+        var watch = await database.Watches
+            .Include(watch => watch.CurrentScriptVersion)
             .SingleOrDefaultAsync(watch => watch.Id == watchId, cancellationToken);
         if (watch is null)
         {
@@ -36,6 +37,7 @@ public sealed class RunExecutor(LookoutDbContext database, IRunnerClient runner,
         {
             return new RunExecution(RunExecutionStatus.NoScriptVersion);
         }
+
         var startedAt = timeProvider.GetUtcNow();
         var runRequest = new RunnerRequest(
             Source: script.Source,
@@ -60,6 +62,7 @@ public sealed class RunExecutor(LookoutDbContext database, IRunnerClient runner,
         watch.Baseline = evaluation.Baseline;
         watch.Revision++;
         database.Runs.Add(run);
+
         try
         {
             // The Run has finished, so record it even if shutdown started while the runner was replying.

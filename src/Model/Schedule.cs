@@ -46,60 +46,79 @@ public sealed record Schedule
     public TimeOnly? TimeOfDay { get; init; }
     public string? Cron { get; init; }
 
-    public static Schedule DailyAt(TimeOnly timeOfDay) =>
-        new() { Kind = ScheduleKind.Daily, TimeOfDay = new TimeOnly(timeOfDay.Hour, timeOfDay.Minute) };
+    public static Schedule DailyAt(TimeOnly timeOfDay) => new()
+    {
+        Kind = ScheduleKind.Daily,
+        TimeOfDay = new TimeOnly(timeOfDay.Hour, timeOfDay.Minute)
+    };
 
-    public static Schedule FromCron(string cron) => new() { Kind = ScheduleKind.Cron, Cron = cron.Trim() };
+    public static Schedule FromCron(string cron) => new()
+    {
+        Kind = ScheduleKind.Cron,
+        Cron = cron.Trim()
+    };
 
     /// <summary>Explains why this schedule can't be used, or returns null when it can.</summary>
     public string? Validate(DateTimeOffset now, TimeZoneInfo timeZone)
     {
-        switch (Kind)
+        string? ValidateInterval()
         {
-            case ScheduleKind.Interval:
-                if (Every is not { } every || Unit is not { } unit)
+            if (Every is not { } every || Unit is not { } unit)
+            {
+                return "An interval schedule needs a number and a unit of minutes, hours or days.";
+            }
+
+            if (every < 1)
+            {
+                return MinimumIntervalMessage;
+            }
+
+            // A year of minutes is the most any unit allows; checking it first keeps the length from overflowing.
+            const int minutesInYear = 60 * 24 * 365;
+            if (every > minutesInYear || IntervalLength(every, unit) > MaximumInterval)
+            {
+                return "An interval schedule must run at least once every 365 days.";
+            }
+            return IntervalLength(every, unit) < MinimumInterval ? MinimumIntervalMessage : null;
+        }
+
+        string? ValidateCron()
+        {
+            if (string.IsNullOrWhiteSpace(Cron) || Cron.Length > 200
+                || !CronExpression.TryParse(Cron, CronFormat.Standard, out var expression))
+            {
+                return "Enter a cron expression with five fields: minute, hour, day of month, month and day of week.";
+            }
+
+            var previous = expression.GetNextOccurrence(now, timeZone);
+            if (previous is null)
+            {
+                return "This cron expression never runs.";
+            }
+
+            for (var i = 1; i < CheckedOccurrences; i++)
+            {
+                var next = expression.GetNextOccurrence(previous.Value, timeZone);
+                if (next is null)
                 {
-                    return "An interval schedule needs a number and a unit of minutes, hours or days.";
+                    break;
                 }
-                if (every < 1)
+                if (next.Value - previous.Value < MinimumInterval)
                 {
                     return MinimumIntervalMessage;
                 }
-                // A year of minutes is the most any unit allows; checking it first keeps the length from overflowing.
-                if (every > 525_600 || IntervalLength(every, unit) > MaximumInterval)
-                {
-                    return "An interval schedule must run at least once every 365 days.";
-                }
-                return IntervalLength(every, unit) < MinimumInterval ? MinimumIntervalMessage : null;
-            case ScheduleKind.Daily:
-                return TimeOfDay is null ? "A daily schedule needs a time of day." : null;
-            case ScheduleKind.Cron:
-                if (!TryParseCron(out var expression))
-                {
-                    return "Enter a cron expression with five fields: minute, hour, day of month, month and day of week.";
-                }
-                var previous = expression.GetNextOccurrence(now, timeZone);
-                if (previous is null)
-                {
-                    return "This cron expression never runs.";
-                }
-                for (var index = 1; index < CheckedOccurrences; index++)
-                {
-                    var next = expression.GetNextOccurrence(previous.Value, timeZone);
-                    if (next is null)
-                    {
-                        break;
-                    }
-                    if (next.Value - previous.Value < MinimumInterval)
-                    {
-                        return MinimumIntervalMessage;
-                    }
-                    previous = next;
-                }
-                return null;
-            default:
-                return "Choose an interval, daily or cron schedule.";
+                previous = next;
+            }
+            return null;
         }
+
+        return Kind switch
+        {
+            ScheduleKind.Interval => ValidateInterval(),
+            ScheduleKind.Daily => TimeOfDay is null ? "A daily schedule needs a time of day." : null,
+            ScheduleKind.Cron => ValidateCron(),
+            _ => "Choose an interval, daily or cron schedule.",
+        };
     }
 
     /// <summary>The first time after <paramref name="now"/> this valid schedule runs, in UTC, or null if it never runs again.</summary>
@@ -123,22 +142,4 @@ public sealed record Schedule
         IntervalUnit.Days => TimeSpan.FromDays(every),
         _ => throw new InvalidOperationException($"Unknown interval unit {unit}.")
     };
-
-    private bool TryParseCron(out CronExpression expression)
-    {
-        expression = null!;
-        if (string.IsNullOrWhiteSpace(Cron) || Cron.Length > 200)
-        {
-            return false;
-        }
-        try
-        {
-            expression = CronExpression.Parse(Cron, CronFormat.Standard);
-            return true;
-        }
-        catch (CronFormatException)
-        {
-            return false;
-        }
-    }
 }

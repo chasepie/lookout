@@ -159,14 +159,17 @@ public sealed class WatchesController(
     {
         if (!runningWatches.TryStart(id))
         {
-            return Problem(runningWatches.IsWaitingForSlot(id) ? "This Watch is waiting for a free slot to run." : "This Watch is already running.",
-                statusCode: HttpStatusCode.Conflict);
+            var detail = runningWatches.IsWaitingForSlot(id)
+                ? "This Watch is waiting for a free slot to run."
+                : "This Watch is already running.";
+            return Problem(detail, statusCode: HttpStatusCode.Conflict);
         }
 
         try
         {
             await runSlots.WaitAsync(applicationLifetime.ApplicationStopping);
             runningWatches.MarkExecuting(id);
+
             RunExecution execution;
             try
             {
@@ -176,6 +179,7 @@ public sealed class WatchesController(
             {
                 runSlots.Release();
             }
+
             return execution.Status switch
             {
                 RunExecutionStatus.Recorded => Ok(execution.Run),

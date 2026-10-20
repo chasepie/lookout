@@ -63,9 +63,12 @@ public sealed partial class Scheduler(
         var database = scope.ServiceProvider.GetRequiredService<LookoutDbContext>();
         var now = timeProvider.GetUtcNow();
         var timeZone = schedules.TimeZone.Id;
+
         // Daily and cron times are wall-clock times, so they move when the install's time zone changes.
         var stale = await database.Watches
-            .Where(watch => watch.NextRunAt == null || watch.NextRunAt <= now
+            .Where(watch =>
+                watch.NextRunAt == null
+                || watch.NextRunAt <= now
                 || (watch.Schedule.Kind != ScheduleKind.Interval && watch.NextRunTimeZone != timeZone))
             .ToListAsync(cancellationToken);
         foreach (var watch in stale)
@@ -100,7 +103,7 @@ public sealed partial class Scheduler(
                 else
                 {
                     // A Watch that is already running skips this Run rather than overlapping it.
-                    await Claim(database, watch, stoppingToken);
+                    await TryClaimWatch(database, watch, stoppingToken);
                 }
             }
 
@@ -111,11 +114,11 @@ public sealed partial class Scheduler(
                 var started = false;
                 try
                 {
-                    if (await Claim(database, watch, stoppingToken))
+                    if (await TryClaimWatch(database, watch, stoppingToken))
                     {
                         started = true;
                         runningWatches.MarkExecuting(watch.Id);
-                        Track(Task.Run(() => Run(watch.Id, stoppingToken), CancellationToken.None));
+                        Track(Task.Run(() => RunWatch(watch.Id, stoppingToken), CancellationToken.None));
                     }
                 }
                 finally
@@ -125,6 +128,7 @@ public sealed partial class Scheduler(
                         runSlots.Release();
                     }
                 }
+
                 queued.Dequeue();
                 if (!started)
                 {
@@ -146,7 +150,7 @@ public sealed partial class Scheduler(
     /// Records the Watch's due Run as starting now and schedules the next one from now, unless another backend
     /// instance has already claimed this Run.
     /// </summary>
-    private async Task<bool> Claim(LookoutDbContext database, Watch watch, CancellationToken cancellationToken)
+    private async Task<bool> TryClaimWatch(LookoutDbContext database, Watch watch, CancellationToken cancellationToken)
     {
         var now = timeProvider.GetUtcNow();
         var claimed = await database.Watches
@@ -164,7 +168,7 @@ public sealed partial class Scheduler(
         _ = run.ContinueWith(finished => _runs.TryRemove(finished, out _), TaskScheduler.Default);
     }
 
-    private async Task Run(Guid watchId, CancellationToken stoppingToken)
+    private async Task RunWatch(Guid watchId, CancellationToken stoppingToken)
     {
         try
         {

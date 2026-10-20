@@ -26,9 +26,17 @@ public sealed class WatchSchedules(TimeProvider timeProvider, TimeZoneInfo? conf
         {
             next = earliest;
         }
+
         // The database keeps a tenth of a millisecond, so rounding keeps a new Watch's response the same as its record.
-        return next is { } at
-            ? new DateTimeOffset((at.UtcTicks + TimeSpan.TicksPerSecond - 1) / TimeSpan.TicksPerSecond * TimeSpan.TicksPerSecond, TimeSpan.Zero)
-            : null;
+        return next is { } at ? RoundUpToWholeSecond(at) : null;
+    }
+
+    /// <summary>
+    /// Rounds up rather than down, so a Run held <see cref="Schedule.MinimumInterval"/> after the last one stays clear of it.
+    /// </summary>
+    private static DateTimeOffset RoundUpToWholeSecond(DateTimeOffset time)
+    {
+        var seconds = (time.UtcTicks + TimeSpan.TicksPerSecond - 1) / TimeSpan.TicksPerSecond;
+        return new DateTimeOffset(seconds * TimeSpan.TicksPerSecond, TimeSpan.Zero);
     }
 }
