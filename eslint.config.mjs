@@ -26,5 +26,8 @@ export default defineConfig(ignores, {
         ]
       }
     }
+  },
+  rules: {
+    curly: 'error'
   }
 });

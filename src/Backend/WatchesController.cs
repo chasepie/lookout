@@ -59,8 +59,17 @@ public sealed class WatchesController(
             return Problem("Script source must not be empty.", statusCode: 400);
         }
 
-        var watch = new Watch { Name = request.Name.Trim(), NotificationUrl = request.NotificationUrl.Trim() };
-        var version = new ScriptVersion { WatchId = watch.Id, Source = source, FileKind = fileKind[1..] };
+        var watch = new Watch
+        {
+            Name = request.Name.Trim(),
+            NotificationUrl = request.NotificationUrl.Trim()
+        };
+        var version = new ScriptVersion
+        {
+            WatchId = watch.Id,
+            Source = source,
+            FileKind = fileKind[1..]
+        };
         watch.ScriptVersions.Add(version);
 
         await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
@@ -71,8 +80,15 @@ public sealed class WatchesController(
         await database.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
-        return StatusCode(StatusCodes.Status201Created, new WatchSummary(watch.Id, watch.Name, watch.NotificationUrl,
-            version.Id, null, null, null));
+        var summary = new WatchSummary(
+            Id: watch.Id,
+            Name: watch.Name,
+            NotificationUrl: watch.NotificationUrl,
+            CurrentScriptVersionId: version.Id,
+            Baseline: null,
+            LatestContent: null,
+            LastRun: null);
+        return StatusCode(StatusCodes.Status201Created, summary);
     }
 
     [HttpGet("{id:guid}/runs")]
@@ -83,6 +99,7 @@ public sealed class WatchesController(
         {
             return Problem("History limit must be between 1 and 100; before must be a positive Run ID.", statusCode: 400);
         }
+
         if (!await database.Watches.AnyAsync(watch => watch.Id == id, cancellationToken))
         {
             return NotFound();
