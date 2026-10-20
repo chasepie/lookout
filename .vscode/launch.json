@@ -5,7 +5,20 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "C#: Debug Backend",
+      "name": "Launch Backend",
+      "type": "dotnet",
+      "request": "launch",
+      "projectPath": "${workspaceFolder}/src/Backend/Backend.csproj",
+    },
+    {
+      "name": "Launch Frontend",
+      "type": "chrome",
+      "request": "launch",
+      "preLaunchTask": "npm: start",
+      "url": "http://localhost:4200/"
+    },
+    {
+      "name": "Serve Scalar API",
       "type": "dotnet",
       "request": "launch",
       "projectPath": "${workspaceFolder}/src/Backend/Backend.csproj",
@@ -15,6 +28,16 @@
         "pattern": "Now listening on: https://localhost:([0-9]+)",
         "uriFormat": "https://localhost:%s/scalar"
       }
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Launch Backend + Frontend",
+      "configurations": [
+        "Launch Backend",
+        "Launch Frontend"
+      ],
+      "stopAll": true
     }
   ]
 }
