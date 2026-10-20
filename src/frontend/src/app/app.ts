@@ -12,7 +12,7 @@ import { Watches } from './watches';
   selector: 'app-root',
   imports: [DatePipe, DecimalPipe, FormField, LoginForm, SetupForm],
   templateUrl: './app.html',
-  styleUrl: './app.css',
+  styleUrl: './app.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class App {

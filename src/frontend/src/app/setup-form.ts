@@ -8,7 +8,7 @@ import { Session } from './session';
   selector: 'app-setup-form',
   imports: [FormField],
   templateUrl: './setup-form.html',
-  styleUrl: './account-form.css',
+  styleUrl: './account-form.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class SetupForm {

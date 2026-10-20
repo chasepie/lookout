@@ -7,7 +7,7 @@ import { Session } from './session';
   selector: 'app-login-form',
   imports: [FormField],
   templateUrl: './login-form.html',
-  styleUrl: './account-form.css',
+  styleUrl: './account-form.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class LoginForm {
