@@ -1,11 +1,11 @@
 import { DatePipe } from '@angular/common';
-import { HttpErrorResponse, httpResource } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, computed, inject, input, linkedSignal, signal, untracked } from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, input, linkedSignal, untracked } from '@angular/core';
 import { FormField, form, submit } from '@angular/forms/signals';
 import { Router, RouterLink } from '@angular/router';
 import { OutcomeBadge } from '../outcome-badge/outcome-badge';
 import { problemMessage } from '../../shared/problem';
-import { refresh } from '../../shared/refresh';
+import { refreshableHttpResource } from '../../shared/refreshable-http-resource';
 import { RunTiming } from '../run-timing/run-timing';
 import { ScheduleEditor } from '../../schedules/schedule-editor/schedule-editor';
 import { StatusBadge } from '../status-badge/status-badge';
@@ -38,17 +38,13 @@ export class WatchDetail {
   private readonly router = inject(Router);
   readonly id = input.required<string>();
 
-  // Each read's request is a new object, so bumping its counter restarts a read that reload() won't.
-  private readonly watchReads = signal(0);
-  private readonly runReads = signal(0);
-  protected readonly watch = httpResource<Watch>(() => {
-    this.watchReads();
-    return { url: `/api/watches/${this.id()}` };
-  });
-  protected readonly latestRuns = httpResource<Run[]>(() => {
-    this.runReads();
-    return { url: `/api/watches/${this.id()}/runs`, params: { limit: historyPageSize } };
-  });
+  protected readonly watch = refreshableHttpResource<Watch>(() => ({ url: `/api/watches/${this.id()}` }));
+  protected readonly latestRuns = refreshableHttpResource<Run[]>(() => ({
+    url: `/api/watches/${this.id()}/runs`,
+    params: { limit: historyPageSize },
+  }));
+  // An action that finishes after leaving this page must not act on whatever page is shown by then.
+  private destroyed = false;
   // A resource's value() throws while it is in an error state, so this checks hasValue() first.
   private readonly latestPage = computed(() => (this.latestRuns.hasValue() ? this.latestRuns.value() : undefined));
   // Older pages continue the latest page they were loaded after, so they reset whenever it or the Watch changes.
@@ -70,7 +66,8 @@ export class WatchDetail {
     const watch = this.watch.value();
     return { name: watch.name, notificationUrl: watch.notificationUrl, timeoutSeconds: watch.timeoutSeconds };
   }, { equal: sameSettings });
-  // The settings this page is saving or last saved, whose arrival must not discard edits typed meanwhile.
+  // The settings this page is saving, as the backend will store them, until they arrive back. Their arrival must not
+  // discard edits typed meanwhile.
   private submitted: { id: string; settings: WatchSettings } | undefined;
   // Follows the saved settings, so pausing or running the Watch doesn't discard unsaved edits.
   protected readonly model = linkedSignal<WatchSettings | undefined, WatchSettings>({
@@ -79,6 +76,8 @@ export class WatchDetail {
       const submitted = this.submitted;
       // Settings shown before (not the placeholder while loading) carry the edits worth keeping.
       if (previous?.source && saved && submitted?.id === untracked(this.id) && sameSettings(saved, submitted.settings)) {
+        // Consumed once, so a later change elsewhere back to these same settings is shown.
+        this.submitted = undefined;
         return previous.value;
       }
       return saved ?? { name: '', notificationUrl: '', timeoutSeconds: defaultTimeoutSeconds };
@@ -97,12 +96,18 @@ export class WatchDetail {
   protected readonly notice = linkedSignal({ source: this.id, computation: () => '' });
   protected readonly outcomes = outcomeLabels;
 
+  constructor() {
+    inject(DestroyRef).onDestroy(() => {
+      this.destroyed = true;
+    });
+  }
+
   protected async save() {
     const id = this.id();
     await submit(this.settingsForm, async () => {
       this.clearMessages();
       const settings = this.model();
-      this.submitted = { id, settings };
+      this.submitted = { id, settings: trimmed(settings) };
       try {
         await this.watches.edit(id, settings);
         if (id !== this.id()) {return;}
@@ -135,7 +140,7 @@ export class WatchDetail {
       } finally {
         // A rejected Run can mean the Watch changed or was deleted elsewhere, so refresh either way.
         if (isCurrent()) {
-          refresh(this.latestRuns, this.runReads);
+          this.latestRuns.refresh();
         }
       }
     });
@@ -153,9 +158,11 @@ export class WatchDetail {
   }
 
   protected async delete() {
-    await this.performAction('deleting', 'Could not delete the Watch. Please try again.', async () => {
+    await this.performAction('deleting', 'Could not delete the Watch. Please try again.', async (isCurrent) => {
       await this.watches.delete(this.id());
-      await this.router.navigateByUrl('/');
+      if (isCurrent()) {
+        await this.router.navigateByUrl('/');
+      }
     });
   }
 
@@ -184,7 +191,7 @@ export class WatchDetail {
   private async performAction(action: WatchAction, failure: string,
     work: (isCurrent: () => boolean) => Promise<void>) {
     const id = this.id();
-    const isCurrent = () => id === this.id();
+    const isCurrent = () => !this.destroyed && id === this.id();
     this.busy.set(action);
     this.clearMessages();
     try {
@@ -200,13 +207,18 @@ export class WatchDetail {
   }
 
   private refreshWatch() {
-    refresh(this.watch, this.watchReads);
+    this.watch.refresh();
   }
 
   private clearMessages() {
     this.error.set('');
     this.notice.set('');
   }
+}
+
+/** The settings as the backend stores them, which trims the name and Notification URL. */
+function trimmed(settings: WatchSettings): WatchSettings {
+  return { ...settings, name: settings.name.trim(), notificationUrl: settings.notificationUrl.trim() };
 }
 
 function sameSettings(a: WatchSettings | undefined, b: WatchSettings | undefined): boolean {

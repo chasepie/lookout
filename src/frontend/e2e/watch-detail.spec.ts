@@ -1,6 +1,6 @@
 import { type Page, expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
-import { createWatch, runWatch } from './watches';
+import { createWatch, editWatch, runWatch } from './watches';
 
 test('open a Watch, edit its settings, and see its Run history with a highlighted Change', async ({ page }) => {
   const name = `Changing price ${randomUUID()}`;
@@ -117,6 +117,37 @@ test('a timeout must be a whole number of seconds', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Save settings' })).toBeDisabled();
 });
 
+test('a name of the longest length is accepted with surrounding spaces, which are trimmed', async ({ page }) => {
+  const id = await createWatch(page, `Long name ${randomUUID()}`);
+  await page.goto(`/watches/${id}`);
+  const longest = `Long name ${randomUUID()}`.padEnd(200, 'x');
+
+  await page.getByLabel('Name', { exact: true }).fill(` ${longest} `);
+  await page.getByRole('button', { name: 'Save settings' }).click();
+
+  await expect(page.getByRole('status')).toHaveText('Settings saved.');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(longest);
+});
+
+test('the settings form shows a name changed elsewhere back to one saved here', async ({ page }) => {
+  const original = `Original ${randomUUID()}`;
+  const id = await createWatch(page, original);
+  await page.goto(`/watches/${id}`);
+  const renamed = `Renamed ${randomUUID()}`;
+  await page.getByLabel('Name', { exact: true }).fill(renamed);
+  await page.getByRole('button', { name: 'Save settings' }).click();
+  await expect(page.getByRole('status')).toHaveText('Settings saved.');
+
+  await editWatch(page, id, { name: original, notificationUrl: 'https://example.com/widget', timeoutSeconds: 120 });
+  await page.getByRole('button', { name: 'Pause' }).click();
+  await expect(page.getByLabel('Name', { exact: true })).toHaveValue(original);
+  await editWatch(page, id, { name: renamed, notificationUrl: 'https://example.com/widget', timeoutSeconds: 120 });
+  await page.getByRole('button', { name: 'Resume' }).click();
+
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(renamed);
+  await expect(page.getByLabel('Name', { exact: true })).toHaveValue(renamed);
+});
+
 test.describe('when responses arrive late', () => {
   test.afterEach(async ({ page }) => {
     await page.unrouteAll({ behavior: 'ignoreErrors' });
@@ -170,8 +201,9 @@ test.describe('when responses arrive late', () => {
     await expect(page.getByLabel('Timeout (seconds)')).toHaveValue('120');
     const release = await holdFirst(page, `**/api/watches/${id}`);
 
+    // The backend trims the name it saves, which must still count as this save arriving.
     const renamed = `Renamed ${randomUUID()}`;
-    await page.getByLabel('Name', { exact: true }).fill(renamed);
+    await page.getByLabel('Name', { exact: true }).fill(` ${renamed} `);
     await page.getByRole('button', { name: 'Save settings' }).click();
     await expect(page.getByRole('button', { name: 'Saving…' })).toBeVisible();
     await page.getByLabel('Timeout (seconds)').fill('45');
@@ -180,7 +212,6 @@ test.describe('when responses arrive late', () => {
     await expect(page.getByRole('status')).toHaveText('Settings saved.');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(renamed);
     await expect(page.getByLabel('Timeout (seconds)')).toHaveValue('45');
-    await expect(page.getByLabel('Name', { exact: true })).toHaveValue(renamed);
   });
 
   test('a deleted Watch is gone from the list while the list reloads', async ({ page }) => {
@@ -196,6 +227,29 @@ test.describe('when responses arrive late', () => {
 
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Watches');
     await expect(card).toHaveCount(0);
+  });
+
+  test('a delete that finishes after moving to another Watch stays on that Watch', async ({ page }) => {
+    const deleted = await createWatch(page, `Deleted later ${randomUUID()}`);
+    const other = `Still open ${randomUUID()}`;
+    const otherId = await createWatch(page, other);
+    await page.goto(`/watches/${deleted}`);
+    await expect(page.getByRole('button', { name: 'Delete Watch' })).toBeVisible();
+    const release = await holdFirst(page, `**/api/watches/${deleted}`);
+
+    await page.getByRole('button', { name: 'Delete Watch' }).click();
+    await page.getByRole('button', { name: 'Delete permanently' }).click();
+    await page.getByRole('link', { name: 'All Watches' }).click();
+    await page.getByRole('article', { name: other }).getByRole('link', { name: other }).click();
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(other);
+    const deleteAnswered = page.waitForResponse((response) => response.request().method() === 'DELETE');
+    release();
+    await deleteAnswered;
+
+    // Nothing signals a navigation that must not happen, so give it time to.
+    await page.waitForTimeout(300);
+    await expect(page).toHaveURL(`/watches/${otherId}`);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(other);
   });
 
   test('a Run finished before the history first loads still appears', async ({ page }) => {

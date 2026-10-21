@@ -1,7 +1,7 @@
-import { HttpClient, httpResource } from '@angular/common/http';
-import { Service, inject, signal } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { Service, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
-import { refresh } from '../shared/refresh';
+import { refreshableHttpResource } from '../shared/refreshable-http-resource';
 import { type ScheduleForm, scheduleFields } from '../schedules/schedule';
 import { Session } from '../session/session';
 import type { Run, Watch, WatchSettings } from './watch.model';
@@ -10,18 +10,9 @@ import type { Run, Watch, WatchSettings } from './watch.model';
 export class Watches {
   private readonly http = inject(HttpClient);
   private readonly session = inject(Session);
-  // Each read's request is a new object, so bumping this restarts a read that reload() won't.
-  private readonly listReads = signal(0);
-  // Loaded only while logged in, so it is fetched again for the next login.
-  readonly list = httpResource<Watch[]>(() => {
-    this.listReads();
-    return this.session.userName() ? { url: '/api/watches' } : undefined;
-  });
-
-  /** Reads the list afresh, keeping the Watches on screen until the new list arrives. */
-  refreshList() {
-    refresh(this.list, this.listReads);
-  }
+  // Loaded only while logged in, so it is fetched again for the next login. Refreshing keeps the Watches on screen
+  // until the new list arrives.
+  readonly list = refreshableHttpResource<Watch[]>(() => (this.session.userName() ? { url: '/api/watches' } : undefined));
 
   create(name: string, notificationUrl: string, schedule: ScheduleForm, script: File) {
     const data = new FormData();

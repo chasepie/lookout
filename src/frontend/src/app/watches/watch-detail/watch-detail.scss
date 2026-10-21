@@ -5,10 +5,10 @@
 
 @include mixins.page-heading;
 @include mixins.stacked-form;
+@include mixins.messages;
 
 h2 { font-size: 19px; margin: 0; }
 p { line-height: 1.6; }
-small, .details { color: tokens.$text-muted; }
 
 .back-link {
   display: inline-block;
@@ -65,7 +65,4 @@ button {
 
 .run-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .content { font-size: 20px; margin: 10px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-.details, .error { font-size: 14px; overflow-wrap: anywhere; }
 .empty-state { @include mixins.empty-state; }
-.notice { color: tokens.$positive; font-size: 14px; min-height: 22px; margin: 14px 0; }
-.error { color: tokens.$error; }

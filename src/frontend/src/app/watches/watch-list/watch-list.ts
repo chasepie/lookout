@@ -37,7 +37,7 @@ export class WatchList {
 
   constructor() {
     // Runs, including scheduled ones, and changes made on a Watch's page happen while the list isn't on screen.
-    this.watches.refreshList();
+    this.watches.list.refresh();
   }
 
   protected selectScript(input: HTMLInputElement) {
@@ -61,7 +61,7 @@ export class WatchList {
         this.script.set(undefined);
         input.value = '';
         this.notice.set('Watch created. It runs on its schedule, or you can run it now.');
-        this.watches.refreshList();
+        this.watches.list.refresh();
       } catch (error: unknown) {
         this.error.set(problemMessage(error, 'Could not create the Watch. Check the fields and try again.'));
       }
@@ -72,7 +72,7 @@ export class WatchList {
     this.editingSchedule.set(undefined);
     this.error.set('');
     this.notice.set(`Schedule of ${name} saved.`);
-    this.watches.refreshList();
+    this.watches.list.refresh();
   }
 
   protected async runNow({ id, name }: Watch) {
@@ -83,7 +83,7 @@ export class WatchList {
       const run = await this.watches.runNow(id);
       // Announced through the status region; the reloaded list itself isn't live, so cards aren't re-read.
       this.notice.set(`Run of ${name} finished: ${this.outcomes[run.outcome]}.`);
-      this.watches.refreshList();
+      this.watches.list.refresh();
     } catch (error: unknown) {
       this.error.set(problemMessage(error, 'Could not run the Watch. Please try again.'));
     } finally {

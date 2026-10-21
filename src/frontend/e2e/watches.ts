@@ -21,6 +21,15 @@ export async function createWatch(page: Page, name: string, notificationUrl = 'h
   return ((await created.json()) as { id: string }).id;
 }
 
+/** Edits a Watch's settings through the API, as another browser tab would. */
+export async function editWatch(page: Page, id: string, settings: { name: string; notificationUrl: string; timeoutSeconds: number }) {
+  const response = await page.request.put(`/api/watches/${id}`, {
+    headers: { 'X-XSRF-TOKEN': await requestToken(page) },
+    data: settings,
+  });
+  expect(response.status()).toBe(204);
+}
+
 /** Runs a Watch through the API the given number of times, one Run after another. */
 export async function runWatch(page: Page, id: string, times: number) {
   const headers = { 'X-XSRF-TOKEN': await requestToken(page) };

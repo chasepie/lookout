@@ -61,6 +61,14 @@
   }
 }
 
+/// Notices, errors and muted details, as pages show them around their forms, Watches and Runs.
+@mixin messages {
+  small, .details { color: tokens.$text-muted; }
+  .details, .error { font-size: 14px; overflow-wrap: anywhere; }
+  .notice { color: tokens.$positive; font-size: 14px; min-height: 22px; margin: 14px 0; }
+  .error { color: tokens.$error; }
+}
+
 /// The form's main action, filled with the primary colour.
 @mixin primary-button {
   background: tokens.$primary;
