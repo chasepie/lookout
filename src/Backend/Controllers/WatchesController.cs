@@ -358,9 +358,13 @@ public sealed class WatchesController(
     {
         var version = await database.ScriptVersions.AsNoTracking()
             .Where(version => version.Id == versionId && version.WatchId == id)
-            .Select(version => new ScriptVersionSource(version.Id, version.Number, version.FileKind, version.UploadedAt,
-                database.Watches.Any(watch => watch.Id == id && watch.CurrentScriptVersionId == version.Id),
-                version.Source))
+            .Select(version => new ScriptVersionSource(
+                Id: version.Id,
+                Number: version.Number,
+                FileKind: version.FileKind,
+                UploadedAt: version.UploadedAt,
+                IsCurrent: database.Watches.Any(watch => watch.Id == id && watch.CurrentScriptVersionId == version.Id),
+                Source: version.Source))
             .SingleOrDefaultAsync(cancellationToken);
         return version is null ? NotFound() : version;
     }
@@ -406,8 +410,14 @@ public sealed class WatchesController(
 
         // Shows the outcome a Run would record for the same result.
         var evaluation = RunEvaluation.Evaluate(null, 0, result.Outcome, result.Content, result.ErrorMessage);
-        return new TestRun(evaluation.Outcome, result.Content, result.Details, evaluation.ErrorMessage, result.DurationMs,
-            result.Screenshot, result.ConsoleOutput);
+        return new TestRun(
+            Outcome: evaluation.Outcome,
+            Content: result.Content,
+            Details: result.Details,
+            ErrorMessage: evaluation.ErrorMessage,
+            DurationMs: result.DurationMs,
+            Screenshot: result.Screenshot,
+            ConsoleOutput: result.ConsoleOutput);
     }
 
     [HttpGet("{id:guid}/runs")]
