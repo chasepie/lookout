@@ -1,5 +1,5 @@
 import { hidden, max, min, required, schema, validate } from '@angular/forms/signals';
-import type { IntervalUnit, Schedule, ScheduleKind } from '../watches/watch.model';
+import type { IntervalUnit, Schedule, ScheduleKind } from './schedule.model';
 
 /** The schedule picker's fields; only those its kind uses are sent. */
 export interface ScheduleForm {
