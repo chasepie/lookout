@@ -6,8 +6,6 @@ using ChasePie.Lookout.Model;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Net;
-using Microsoft.VisualBasic;
-using System.Runtime.CompilerServices;
 
 namespace ChasePie.Lookout.Backend.Controllers;
 
