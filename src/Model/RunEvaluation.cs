@@ -23,13 +23,33 @@ public sealed record RunEvaluation(
             // A failure streak notifies once: on its first Errored Run, or on its third Known failure. Until it notifies,
             // a streak holds only Known failures, so its length is how many there have been in a row.
             var failureStreak = watch.FailureStreak + 1;
-            Notification? failure = watch.FailureStreakNotified ? null
-                : outcome == RunOutcome.Errored ? Notification.Errored(watch.Name, errorMessage, watch.NotificationUrl)
-                : failureStreak >= Notification.KnownFailuresBeforeNotifying
-                    ? Notification.KnownFailures(watch.Name, details, watch.NotificationUrl)
-                : null;
-            return new RunEvaluation(watch.Baseline, failureStreak, watch.FailureStreakNotified || failure is not null,
-                false, outcome, errorMessage, failure is null ? [] : [failure]);
+
+            Notification? failure;
+            if (watch.FailureStreakNotified)
+            {
+                failure = null;
+            }
+            else if (outcome == RunOutcome.Errored)
+            {
+                failure = Notification.Errored(watch.Name, errorMessage, watch.NotificationUrl);
+            }
+            else if (failureStreak >= Notification.KnownFailuresBeforeNotifying)
+            {
+                failure = Notification.KnownFailures(watch.Name, details, watch.NotificationUrl);
+            }
+            else
+            {
+                failure = null;
+            }
+
+            return new RunEvaluation(
+                Baseline: watch.Baseline,
+                FailureStreak: failureStreak,
+                FailureStreakNotified: watch.FailureStreakNotified || failure is not null,
+                IsChange: false,
+                Outcome: outcome,
+                ErrorMessage: errorMessage,
+                Notifications: failure is null ? [] : [failure]);
         }
 
         var isChange = watch.Baseline is not null
@@ -44,6 +64,13 @@ public sealed record RunEvaluation(
         {
             notifications.Add(Notification.Change(watch.Name, watch.Baseline!, content!, watch.NotificationUrl));
         }
-        return new RunEvaluation(content, 0, false, isChange, outcome, errorMessage, notifications);
+        return new RunEvaluation(
+            Baseline: content,
+            FailureStreak: 0,
+            FailureStreakNotified: false,
+            IsChange: isChange,
+            Outcome: outcome,
+            ErrorMessage: errorMessage,
+            Notifications: notifications);
     }
 }

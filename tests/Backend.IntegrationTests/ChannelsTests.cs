@@ -128,6 +128,19 @@ public sealed class ChannelsTests(TestContext testContext)
     }
 
     [TestMethod]
+    public async Task ABugInSendingATestNotificationIsNotPassedOffAsTheServiceRefusingIt()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        factory.Channels.OnSend = (_, _) => throw new InvalidOperationException("Internal detail");
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
+        var id = await CreateChannel(client, "Deals server");
+
+        // The test host passes unhandled exceptions to the client, where a real host would answer 500 and log them.
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => client.PostAsync(
+            new Uri($"/api/channels/{id}/test", UriKind.Relative), null, testContext.CancellationToken));
+    }
+
+    [TestMethod]
     public async Task TestingAMissingChannelIsNotFound()
     {
         await using var factory = new LookoutWebApplicationFactory();

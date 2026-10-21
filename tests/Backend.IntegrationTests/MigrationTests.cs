@@ -1,6 +1,8 @@
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
+using ChasePie.Lookout.Backend.Runner;
 using ChasePie.Lookout.Database;
+using ChasePie.Lookout.Model;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -39,6 +41,47 @@ public sealed class MigrationTests(TestContext testContext)
             Assert.AreEqual(0, byName["Recovered"]["failureStreak"]!.GetValue<int>());
             Assert.AreEqual("healthy", byName["Recovered"]["status"]!.GetValue<string>());
             Assert.IsTrue(watches!.All(watch => watch!["timeoutSeconds"]!.GetValue<int>() == 120));
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    [TestMethod]
+    public async Task AWatchAlreadyFailingBeforeNotificationsCountsItsStreakAsNotified()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"lookout-test-{Guid.NewGuid():N}.db");
+        var connectionString = $"Data Source={databasePath};Pooling=False";
+        try
+        {
+            await using (var database = new LookoutDbContext(new DbContextOptionsBuilder<LookoutDbContext>().UseSqlite(connectionString).Options))
+            {
+                await database.GetService<IMigrator>().MigrateAsync("CreateWatches", testContext.CancellationToken);
+                await InsertWatch(database, "Failing", "Succeeded", "Errored", "Errored", "Errored", "Errored");
+            }
+            await using var factory = new LookoutWebApplicationFactory();
+            factory.Runner.Results.Enqueue(new RunnerResult { Outcome = RunOutcome.KnownFailure, DurationMs = 1 });
+            factory.Runner.Results.Enqueue(new RunnerResult { Outcome = RunOutcome.Errored, DurationMs = 1 });
+            factory.Runner.Results.Enqueue(new RunnerResult { Outcome = RunOutcome.Succeeded, Content = "£20", DurationMs = 1 });
+            using var client = await factory
+                .WithWebHostBuilder(builder => builder.UseSetting("ConnectionStrings:Lookout", connectionString))
+                .CreateSignedInClientAsync(testContext.CancellationToken);
+            var id = (await client.GetFromJsonAsync<JsonArray>("/api/watches", testContext.CancellationToken))![0]!["id"]!.GetValue<string>();
+            var channel = await client.PostAsJsonAsync("/api/channels",
+                new { name = "Phone", kind = "discord", webhookUrl = "https://discord.com/api/webhooks/1/a" }, testContext.CancellationToken);
+            var channelId = (await channel.Content.ReadFromJsonAsync<JsonObject>(testContext.CancellationToken))!["id"]!.GetValue<string>();
+            (await client.PutAsJsonAsync($"/api/watches/{id}/channels", new { channelIds = new[] { channelId } },
+                testContext.CancellationToken)).EnsureSuccessStatusCode();
+
+            for (var run = 0; run < 3; run++)
+            {
+                (await client.PostAsync(new Uri($"/api/watches/{id}/runs", UriKind.Relative), null,
+                    testContext.CancellationToken)).EnsureSuccessStatusCode();
+            }
+
+            // Its streak of four Errored Runs neither counts as Known failures in a row nor starts over; it only recovers.
+            Assert.AreSequenceEqual([NotificationKind.Recovered], factory.Channels.Sent.Select(sent => sent.Notification.Kind));
         }
         finally
         {

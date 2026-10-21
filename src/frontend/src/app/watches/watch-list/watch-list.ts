@@ -3,6 +3,7 @@ import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/cor
 import { FormField, apply, form, submit } from '@angular/forms/signals';
 import { RouterLink } from '@angular/router';
 import { ChannelChoices } from '../../channels/channel-choices/channel-choices';
+import { Channels } from '../../channels/channels';
 import { OutcomeBadge } from '../outcome-badge/outcome-badge';
 import { problemMessage } from '../../shared/problem';
 import { RunTiming } from '../run-timing/run-timing';
@@ -23,6 +24,7 @@ import { Watches } from '../watches';
 })
 export class WatchList {
   protected readonly watches = inject(Watches);
+  private readonly channels = inject(Channels);
   protected readonly model = signal({ name: '', notificationUrl: '', schedule: defaultSchedule() });
   protected readonly watchForm = form(this.model, (fields) => {
     nameAndNotificationUrlRules(fields);
@@ -58,7 +60,7 @@ export class WatchList {
       this.notice.set('');
       try {
         const { name, notificationUrl, schedule } = this.model();
-        await this.watches.create(name, notificationUrl, schedule, script, this.channelIds());
+        await this.watches.create(name, notificationUrl, schedule, script, this.channels.stillListed(this.channelIds()));
         this.watchForm().reset({ name: '', notificationUrl: '', schedule: defaultSchedule() });
         this.script.set(undefined);
         this.channelIds.set(new Set());

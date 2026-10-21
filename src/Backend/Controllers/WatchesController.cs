@@ -83,7 +83,15 @@ public sealed class WatchesController(
 
         await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
         database.Watches.Add(watch);
-        await database.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await database.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException) when (channels.Count > 0)
+        {
+            // A chosen Channel was deleted since it was read, failing its join row's foreign key.
+            return Problem("One of the chosen Channels was deleted while the Watch was being created.", statusCode: HttpStatusCode.Conflict);
+        }
 
         watch.CurrentScriptVersionId = version.Id;
         await database.SaveChangesAsync(cancellationToken);
@@ -327,6 +335,10 @@ public sealed class WatchesController(
     private async Task<List<Channel>?> FindChannels(IReadOnlyList<Guid> ids, CancellationToken cancellationToken)
     {
         var chosen = ids.Distinct().ToList();
+        if (chosen.Count == 0)
+        {
+            return [];
+        }
         var channels = await database.Channels
             .Where(channel => chosen.Contains(channel.Id))
             .ToListAsync(cancellationToken);

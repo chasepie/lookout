@@ -17,8 +17,8 @@ public sealed partial class NotificationDispatcher(
         _senders[channel.Kind].SendAsync(channel, notification, cancellationToken);
 
     /// <summary>
-    /// Sends a Run's notifications to each Channel the Watch notifies, in order. A Channel that fails is logged and
-    /// skipped, so neither the Run nor the other Channels depend on it.
+    /// Sends a Run's notifications to each Channel the Watch notifies, in order. Failures are logged, never thrown: the
+    /// Run is already recorded, and a Channel that fails is skipped, so the other Channels don't depend on it.
     /// </summary>
     public async Task NotifyAsync(Guid watchId, IReadOnlyList<Notification> notifications, CancellationToken cancellationToken)
     {
@@ -27,9 +27,19 @@ public sealed partial class NotificationDispatcher(
             return;
         }
 
-        var channels = await database.Channels.AsNoTracking()
-            .Where(channel => channel.Watches.Any(watch => watch.Id == watchId))
-            .ToListAsync(cancellationToken);
+        List<Channel> channels;
+        try
+        {
+            channels = await database.Channels.AsNoTracking()
+                .Where(channel => channel.Watches.Any(watch => watch.Id == watchId))
+                .ToListAsync(cancellationToken);
+        }
+        catch (Exception error) when (!cancellationToken.IsCancellationRequested)
+        {
+            LogChannelsUnavailable(logger, error, watchId);
+            return;
+        }
+
         await Task.WhenAll(channels.Select(async channel =>
         {
             foreach (var notification in notifications)
@@ -45,6 +55,9 @@ public sealed partial class NotificationDispatcher(
             }
         }));
     }
+
+    [LoggerMessage(LogLevel.Error, "Could not read which Channels Watch {WatchId} notifies, so its Run's notifications were not sent.")]
+    private static partial void LogChannelsUnavailable(ILogger logger, Exception error, Guid watchId);
 
     [LoggerMessage(LogLevel.Warning, "Could not send a {Kind} notification to Channel {ChannelId} for Watch {WatchId}.")]
     private static partial void LogSendFailed(ILogger logger, Exception error, NotificationKind kind, Guid channelId, Guid watchId);

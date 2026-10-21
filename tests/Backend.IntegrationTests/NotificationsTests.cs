@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json.Nodes;
 using ChasePie.Lookout.Backend.Runner;
 using ChasePie.Lookout.Model;
@@ -223,6 +224,23 @@ public sealed class NotificationsTests(TestContext testContext)
         Assert.IsLessThanOrEqualTo(1024, message.Length);
         Assert.Contains("a… → bbb", message);
         Assert.EndsWith("b…", message);
+    }
+
+    [TestMethod]
+    public async Task ShorteningContentNeverSplitsACharacter()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        // The emoji, two UTF-16 code units, straddles where each content is cut.
+        var content = new string('a', 478) + "🏷️" + new string('a', 100);
+        Arrange(factory, Succeeded("£20"), Succeeded(content));
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
+        var watch = await CreateWatchNotifying(client, "Phone");
+
+        await RunNow(client, watch, times: 2);
+
+        var message = factory.Channels.Sent.Single().Notification.Message;
+        Assert.DoesNotContain(Rune.ReplacementChar, message.EnumerateRunes().ToList());
+        Assert.EndsWith(new string('a', 478) + "…", message);
     }
 
     [TestMethod]

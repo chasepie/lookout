@@ -4,6 +4,9 @@ import { type IncomingMessage, createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createWatch } from './watches';
 
+// For Channels no test sends to: a local port nothing listens on (the discard port), so nothing reaches Discord.
+const unreachableWebhook = 'http://127.0.0.1:9/api/webhooks/1/token';
+
 interface ReceivedRequest { path: string; body: unknown }
 
 /** Starts a local endpoint standing in for a Discord webhook, which records what it is sent. */
@@ -28,7 +31,7 @@ test('configure a Discord Channel and send it a test notification', async ({ pag
   try {
     const name = `Deals server ${randomUUID()}`;
     await page.goto('/');
-    await page.getByRole('link', { name: 'Settings' }).click();
+    await page.getByRole('link', { name: 'Settings', exact: true }).click();
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Settings');
 
     await page.getByLabel('Name', { exact: true }).fill(name);
@@ -85,17 +88,20 @@ test('create a Watch that notifies a Channel', async ({ page }) => {
   const watch = `Notifying from the start ${randomUUID()}`;
   await page.goto('/settings');
   await page.getByLabel('Name', { exact: true }).fill(channel);
-  await page.getByLabel('Webhook URL').fill('https://discord.com/api/webhooks/1/token');
+  await page.getByLabel('Webhook URL').fill(unreachableWebhook);
   await page.getByRole('button', { name: 'Add Channel' }).click();
   await expect(page.getByRole('status')).toHaveText(`${channel} added.`);
 
   await page.getByRole('link', { name: 'Lookout home' }).click();
+  // The form writes its empty model into fields typed in before its first render; the Channels it loads come after.
+  const choice = page.getByRole('group', { name: 'Channels to notify' }).getByLabel(channel);
+  await expect(choice).toBeVisible();
   await page.getByLabel('Name', { exact: true }).fill(watch);
   await page.getByLabel('Notification URL').fill('https://example.com/widget');
   await page.getByLabel('Script', { exact: true }).setInputFiles({
     name: 'price.ts', mimeType: 'text/plain', buffer: Buffer.from('export default {}'),
   });
-  await page.getByRole('group', { name: 'Channels to notify' }).getByLabel(channel).check();
+  await choice.check();
   await page.getByRole('button', { name: 'Create Watch' }).click();
 
   await page.getByRole('article', { name: watch }).getByRole('link', { name: watch }).click();
@@ -108,7 +114,7 @@ test('choose which Channels a Watch notifies, and see the choice kept after a re
   await page.goto('/settings');
   for (const name of [phone, server]) {
     await page.getByLabel('Name', { exact: true }).fill(name);
-    await page.getByLabel('Webhook URL').fill('https://discord.com/api/webhooks/1/token');
+    await page.getByLabel('Webhook URL').fill(unreachableWebhook);
     await page.getByRole('button', { name: 'Add Channel' }).click();
     await expect(page.getByRole('status')).toHaveText(`${name} added.`);
   }

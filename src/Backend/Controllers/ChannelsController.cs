@@ -61,15 +61,18 @@ public sealed partial class ChannelsController(LookoutDbContext database, Notifi
         {
             await notifications.SendAsync(channel, Notification.Test(channel.Name), cancellationToken);
         }
-        // Anything but the request being abandoned is the Channel's service refusing or failing to answer.
-        catch (Exception error) when (!cancellationToken.IsCancellationRequested)
+        // The Channel's service refused or didn't answer in time; the request itself wasn't abandoned.
+        catch (Exception error) when (error is HttpRequestException or TaskCanceledException
+            && !cancellationToken.IsCancellationRequested)
         {
             return Problem($"Could not send the test notification: {error.Message}", statusCode: HttpStatusCode.BadGateway);
         }
         return NoContent();
     }
 
-    private bool TryBuildChannel(ChannelRequest request, [NotNullWhen(true)] out Channel? channel,
+    private bool TryBuildChannel(
+        ChannelRequest request,
+        [NotNullWhen(true)] out Channel? channel,
         [NotNullWhen(false)] out ObjectResult? problem)
     {
         channel = null;

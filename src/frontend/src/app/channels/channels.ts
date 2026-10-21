@@ -29,6 +29,15 @@ export class Channels {
     }
   }
 
+  /**
+   * The chosen Channels that are still listed. A choice can outlive its Channel, which once deleted elsewhere has no
+   * checkbox to clear it, and would be rejected.
+   */
+  stillListed(chosen: Iterable<string>) {
+    const listed = new Set(this.list.hasValue() ? this.list.value().map((channel) => channel.id) : []);
+    return [...chosen].filter((id) => listed.has(id));
+  }
+
   sendTest(id: string) {
     return firstValueFrom(this.http.post<void>(`/api/channels/${id}/test`, {}));
   }

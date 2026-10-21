@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, inject, input, linkedSignal, output, signal } from '@angular/core';
 import { ChannelChoices } from '../../channels/channel-choices/channel-choices';
+import { Channels } from '../../channels/channels';
 import { problemMessage } from '../../shared/problem';
 import type { Watch } from '../watch.model';
 import { Watches } from '../watches';
@@ -14,6 +15,7 @@ import { Watches } from '../watches';
 })
 export class WatchChannels {
   private readonly watches = inject(Watches);
+  private readonly channels = inject(Channels);
   readonly watch = input.required<Watch>();
   readonly saved = output();
   // Follows the saved choice. A refreshed copy of the Watch, as pausing or running it brings, keeps unsaved edits.
@@ -31,7 +33,7 @@ export class WatchChannels {
     this.saving.set(true);
     this.error.set('');
     try {
-      await this.watches.changeChannels(this.watch().id, [...this.chosen()]);
+      await this.watches.changeChannels(this.watch().id, this.channels.stillListed(this.chosen()));
       this.saved.emit();
     } catch (error: unknown) {
       this.error.set(problemMessage(error, 'Could not save the Channels. Please try again.'));

@@ -18,6 +18,10 @@ namespace ChasePie.Lookout.Database.Migrations
                 nullable: false,
                 defaultValue: false);
 
+            // A Watch already failing has had its streak for a while, which is too late to notify of now. Counting the
+            // streak as notified also keeps a streak of Errored Runs from passing for Known failures in a row.
+            migrationBuilder.Sql("UPDATE Watches SET FailureStreakNotified = 1 WHERE FailureStreak > 0");
+
             migrationBuilder.CreateTable(
                 name: "Channels",
                 columns: table => new

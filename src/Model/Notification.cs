@@ -22,27 +22,46 @@ public sealed record Notification(NotificationKind Kind, string Title, string Me
     /// </summary>
     private const int MaxShownContentLength = 480;
 
-    public static Notification Change(string watchName, string oldContent, string newContent, string notificationUrl) =>
-        new(NotificationKind.Change, $"{watchName} changed", $"{Shown(oldContent)} → {Shown(newContent)}", notificationUrl);
+    public static Notification Change(string watchName, string oldContent, string newContent, string notificationUrl) => new(
+        Kind: NotificationKind.Change,
+        Title: $"{watchName} changed",
+        Message: $"{Shown(oldContent)} → {Shown(newContent)}",
+        Url: notificationUrl);
 
-    public static Notification Errored(string watchName, string? errorMessage, string notificationUrl) =>
-        new(NotificationKind.Errored, $"{watchName} errored",
-            string.IsNullOrWhiteSpace(errorMessage) ? "Its Run ended without an error message." : errorMessage.Trim(),
-            notificationUrl);
+    public static Notification Errored(string watchName, string? errorMessage, string notificationUrl) => new(
+        Kind: NotificationKind.Errored,
+        Title: $"{watchName} errored",
+        Message: string.IsNullOrWhiteSpace(errorMessage) ? "Its Run ended without an error message." : errorMessage.Trim(),
+        Url: notificationUrl);
 
-    public static Notification KnownFailures(string watchName, string? details, string notificationUrl) =>
-        new(NotificationKind.KnownFailures, $"{watchName} failed {KnownFailuresBeforeNotifying} times in a row",
-            string.IsNullOrWhiteSpace(details) ? "Its Script reported a Known failure." : details.Trim(), notificationUrl);
+    public static Notification KnownFailures(string watchName, string? details, string notificationUrl) => new(
+        Kind: NotificationKind.KnownFailures,
+        Title: $"{watchName} failed {KnownFailuresBeforeNotifying} times in a row",
+        Message: string.IsNullOrWhiteSpace(details) ? "Its Script reported a Known failure." : details.Trim(),
+        Url: notificationUrl);
 
-    public static Notification Recovered(string watchName, string content, string notificationUrl) =>
-        new(NotificationKind.Recovered, $"{watchName} recovered", $"It succeeded again: {Shown(content)}", notificationUrl);
+    public static Notification Recovered(string watchName, string content, string notificationUrl) => new(
+        Kind: NotificationKind.Recovered,
+        Title: $"{watchName} recovered",
+        Message: $"It succeeded again: {Shown(content)}",
+        Url: notificationUrl);
 
-    public static Notification Test(string channelName) =>
-        new(NotificationKind.Test, "Lookout test notification", $"{channelName} is set up to receive Lookout's notifications.");
+    public static Notification Test(string channelName) => new(
+        Kind: NotificationKind.Test,
+        Title: "Lookout test notification",
+        Message: $"{channelName} is set up to receive Lookout's notifications.");
 
     /// <summary>Shortens text to at most <paramref name="maxLength"/> characters, ending it with an ellipsis if cut.</summary>
-    public static string Fit(string text, int maxLength) =>
-        text.Length <= maxLength ? text : string.Concat(text.AsSpan(0, maxLength - 1), "…");
+    public static string Fit(string text, int maxLength)
+    {
+        if (text.Length <= maxLength)
+        {
+            return text;
+        }
+        // A cut between the two halves of a surrogate pair, such as an emoji's, would leave half a character.
+        var kept = char.IsHighSurrogate(text[maxLength - 2]) ? maxLength - 2 : maxLength - 1;
+        return string.Concat(text.AsSpan(0, kept), "…");
+    }
 
     private static string Shown(string content) =>
         content.Trim() is { Length: > 0 } trimmed ? Fit(trimmed, MaxShownContentLength) : "(empty)";
