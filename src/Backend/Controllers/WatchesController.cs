@@ -6,6 +6,8 @@ using ChasePie.Lookout.Model;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Net;
+using Microsoft.VisualBasic;
+using System.Runtime.CompilerServices;
 
 namespace ChasePie.Lookout.Backend.Controllers;
 
@@ -148,7 +150,8 @@ public sealed class WatchesController(
         }
 
         // A set-based update leaves the Revision alone, so it neither races nor supersedes a Run being recorded.
-        var updated = await database.Watches.Where(watch => watch.Id == id)
+        var updated = await database.Watches
+            .Where(watch => watch.Id == id)
             .ExecuteUpdateAsync(setters => setters
                 .SetProperty(watch => watch.Name, name)
                 .SetProperty(watch => watch.NotificationUrl, notificationUrl)
@@ -160,7 +163,9 @@ public sealed class WatchesController(
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
         // A set-based delete leaves the cascades to the Watch's Script versions and Runs to SQLite.
-        var deleted = await database.Watches.Where(watch => watch.Id == id).ExecuteDeleteAsync(cancellationToken);
+        var deleted = await database.Watches
+            .Where(watch => watch.Id == id)
+            .ExecuteDeleteAsync(cancellationToken);
         return deleted == 0 ? NotFound() : NoContent();
     }
 
@@ -168,7 +173,8 @@ public sealed class WatchesController(
     public async Task<IActionResult> Pause(Guid id, CancellationToken cancellationToken)
     {
         // Clearing the next Run also stops the scheduler claiming one it read as due just before.
-        var updated = await database.Watches.Where(watch => watch.Id == id)
+        var updated = await database.Watches
+            .Where(watch => watch.Id == id)
             .ExecuteUpdateAsync(setters => setters
                 .SetProperty(watch => watch.IsPaused, true)
                 .SetProperty(watch => watch.NextRunAt, (DateTimeOffset?)null), cancellationToken);
@@ -193,7 +199,8 @@ public sealed class WatchesController(
             // failure streak carries on, and a set-based update leaves the Revision alone, so a Run in progress is
             // still recorded.
             var nextRunAt = schedules.NextRunAt(current.Schedule, current.JitterMinutes, current.LastScheduledRunAt);
-            await database.Watches.Where(watch => watch.Id == id && watch.IsPaused)
+            await database.Watches
+                .Where(watch => watch.Id == id && watch.IsPaused)
                 .ExecuteUpdateAsync(setters => setters
                     .SetProperty(watch => watch.IsPaused, false)
                     .SetProperty(watch => watch.NextRunAt, nextRunAt)
@@ -327,6 +334,14 @@ public sealed record WatchSummary(
     int JitterMinutes,
     DateTimeOffset? NextRunAt)
 {
+    private static WatchStatus CalcWatchStatus(Watch watch)
+    {
+        if (watch.IsPaused) { return WatchStatus.Paused; }
+        if (watch.FailureStreak > 0) { return WatchStatus.Failing; }
+        if (watch.Baseline == null) { return WatchStatus.Pending; }
+        return WatchStatus.Healthy;
+    }
+
     /// <summary>Maps a Watch in a database query; <see cref="From"/> applies the same mapping in memory.</summary>
     public static readonly Expression<Func<Watch, WatchSummary>> Projection = watch => new WatchSummary(
         watch.Id,
@@ -334,11 +349,7 @@ public sealed record WatchSummary(
         watch.NotificationUrl,
         watch.CurrentScriptVersionId,
         watch.Baseline,
-        // A failure streak outranks Pending, since a Watch whose Script never Succeeded needs attention too.
-        watch.IsPaused ? WatchStatus.Paused
-            : watch.FailureStreak > 0 ? WatchStatus.Failing
-            : watch.Baseline == null ? WatchStatus.Pending
-            : WatchStatus.Healthy,
+        Status: CalcWatchStatus(watch),
         watch.IsPaused,
         watch.FailureStreak,
         watch.TimeoutSeconds,
