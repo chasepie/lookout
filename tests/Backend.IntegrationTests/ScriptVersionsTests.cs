@@ -176,12 +176,13 @@ public sealed class ScriptVersionsTests(TestContext testContext)
     }
 
     [TestMethod]
-    public async Task ATestRunShowsTheResultWithoutTouchingTheWatchsHistoryBaselineStatusOrScript()
+    public async Task ATestRunShowsTheResultWithoutTouchingTheWatchsHistoryBaselineStatusScriptOrNotifications()
     {
         await using var factory = new LookoutWebApplicationFactory();
         factory.Runner.Results.Enqueue(new RunnerResult { Outcome = RunOutcome.Succeeded, Content = "£20", DurationMs = 1 });
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         var id = await CreateWatch(client);
+        await ChooseAChannel(client, id);
         await RunNow(client, id);
         var before = await GetWatch(client, id);
         RunnerRequest? executed = null;
@@ -216,6 +217,73 @@ public sealed class ScriptVersionsTests(TestContext testContext)
         Assert.HasCount(1, history!);
         var versions = await client.GetFromJsonAsync<JsonArray>($"/api/watches/{id}/script-versions", testContext.CancellationToken);
         Assert.HasCount(1, versions!);
+        // A Run with the same content would have notified a Change.
+        Assert.IsEmpty(factory.Channels.Sent);
+    }
+
+    [TestMethod]
+    public async Task ANewVersionStartsAFreshFailureStreakThatNotifiesAgain()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        factory.Runner.DefaultResult = new RunnerResult { Outcome = RunOutcome.Errored, ErrorMessage = "No price", DurationMs = 1 };
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
+        var id = await CreateWatch(client);
+        await ChooseAChannel(client, id);
+        await RunNow(client, id);
+        await RunNow(client, id);
+
+        await UploadScript(client, id, NewScript);
+        await RunNow(client, id);
+
+        // The first streak notifies once; the new version's streak is a new one, so it notifies too.
+        Assert.AreSequenceEqual([NotificationKind.Errored, NotificationKind.Errored],
+            factory.Channels.Sent.Select(sent => sent.Notification.Kind));
+    }
+
+    [TestMethod]
+    public async Task KeepingTheBaselineCarriesOnTheFailureStreakWithoutNotifyingAgain()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        factory.Runner.DefaultResult = new RunnerResult { Outcome = RunOutcome.Errored, ErrorMessage = "No price", DurationMs = 1 };
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
+        var id = await CreateWatch(client);
+        await ChooseAChannel(client, id);
+        await RunNow(client, id);
+
+        await UploadScript(client, id, NewScript, keepBaseline: true);
+        await RunNow(client, id);
+
+        Assert.AreSequenceEqual([NotificationKind.Errored], factory.Channels.Sent.Select(sent => sent.Notification.Kind));
+    }
+
+    [TestMethod]
+    public async Task PushesAStatusChangeOnlyWhenANewVersionMovesTheWatchToPendingAndNothingForATestRun()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        factory.Runner.DefaultResult = new RunnerResult { Outcome = RunOutcome.Succeeded, Content = "£20", DurationMs = 1 };
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
+        await using var listener = await WatchEventsListener.ConnectAsync(factory, testContext.CancellationToken);
+        var id = await CreateWatch(client);
+        await RunNow(client, id);
+
+        await UploadScript(client, id, NewScript, keepBaseline: true);
+        using (var testRun = await PostTestRun(client, id, NewScript))
+        {
+            Assert.AreEqual(HttpStatusCode.OK, testRun.StatusCode);
+        }
+        await UploadScript(client, id, NewScript);
+        await UploadScript(client, id, NewScript);
+        // Pausing pushes an event that shows nothing else came first.
+        using (var pause = await client.PostAsync(new Uri($"/api/watches/{id}/pause", UriKind.Relative), null, testContext.CancellationToken))
+        {
+            Assert.AreEqual(HttpStatusCode.NoContent, pause.StatusCode);
+        }
+
+        var events = await listener.NextAsync(5, testContext.CancellationToken);
+        Assert.AreEqual("RunStarted RunFinished WatchStatusChanged WatchStatusChanged WatchStatusChanged",
+            string.Join(' ', events.Select(item => item.Name)));
+        Assert.AreEqual("healthy pending paused", string.Join(' ', events.Skip(2).Select(item => item.Payload.GetProperty("status").GetString())));
+        Assert.IsTrue(events.All(item => item.Payload.GetProperty("watchId").GetString() == id));
     }
 
     [TestMethod]
@@ -300,6 +368,18 @@ public sealed class ScriptVersionsTests(TestContext testContext)
             form.Add(new StringContent(keep ? "true" : "false"), "keepBaseline");
         }
         return client.PostAsync(new Uri($"/api/watches/{id}/script-versions", UriKind.Relative), form, testContext.CancellationToken);
+    }
+
+    /// <summary>Has the Watch notify a new Channel, whose notifications the factory records.</summary>
+    private async Task ChooseAChannel(HttpClient client, string id)
+    {
+        using var created = await client.PostAsJsonAsync("/api/channels",
+            new { name = "Phone", kind = "discord", webhookUrl = "https://discord.com/api/webhooks/1/a" }, testContext.CancellationToken);
+        created.EnsureSuccessStatusCode();
+        var channelId = (await created.Content.ReadFromJsonAsync<JsonObject>(testContext.CancellationToken))!["id"]!.GetValue<string>();
+        using var chosen = await client.PutAsJsonAsync($"/api/watches/{id}/channels", new { channelIds = new[] { channelId } },
+            testContext.CancellationToken);
+        chosen.EnsureSuccessStatusCode();
     }
 
     private Task<HttpResponseMessage> PostTestRun(HttpClient client, string id, string source, string fileName = "price.ts")

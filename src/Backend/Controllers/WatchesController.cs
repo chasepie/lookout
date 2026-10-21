@@ -290,7 +290,7 @@ public sealed class WatchesController(
         }
 
         await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
-        if (!await database.Watches.AnyAsync(watch => watch.Id == id, cancellationToken))
+        if (await WatchSummary.StatusAsync(database.Watches, id, cancellationToken) is not { } previousStatus)
         {
             return NotFound();
         }
@@ -320,14 +320,21 @@ public sealed class WatchesController(
                     .SetProperty(watch => watch.CurrentScriptVersionId, version.Id)
                     .SetProperty(watch => watch.Revision, watch => watch.Revision + 1);
                 // A new Script may report its content differently, so by default it starts afresh, as Pending.
+                // Its failures are a new streak, which notifies afresh.
                 if (!request.KeepBaseline)
                 {
                     setters
                         .SetProperty(watch => watch.Baseline, (string?)null)
-                        .SetProperty(watch => watch.FailureStreak, 0);
+                        .SetProperty(watch => watch.FailureStreak, 0)
+                        .SetProperty(watch => watch.FailureStreakNotified, false);
                 }
             }, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+
+        if (await WatchSummary.StatusAsync(database.Watches, id, CancellationToken.None) is { } status && status != previousStatus)
+        {
+            await watchEvents.StatusChangedAsync(id, status);
+        }
 
         return StatusCode(StatusCodes.Status201Created,
             new ScriptVersionSummary(version.Id, version.Number, version.FileKind, version.UploadedAt, IsCurrent: true));
@@ -408,12 +415,12 @@ public sealed class WatchesController(
         }
 
         // Shows the outcome a Run would record for the same result.
-        var evaluation = RunEvaluation.Evaluate(null, 0, result.Outcome, result.Content, result.ErrorMessage);
+        var (outcome, errorMessage) = RunEvaluation.RecordedOutcome(result.Outcome, result.Content, result.ErrorMessage);
         return new TestRun(
-            Outcome: evaluation.Outcome,
+            Outcome: outcome,
             Content: result.Content,
             Details: result.Details,
-            ErrorMessage: evaluation.ErrorMessage,
+            ErrorMessage: errorMessage,
             DurationMs: result.DurationMs,
             Screenshot: result.Screenshot,
             ConsoleOutput: result.ConsoleOutput);
