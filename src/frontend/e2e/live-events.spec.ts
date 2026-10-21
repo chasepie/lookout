@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
+import { holdFirst } from './hold';
 import { createWatch, pauseWatch, runWatch } from './watches';
 
 // Each Run is started through the API, as another tab or the scheduler would, so only pushed events update the page.
@@ -71,4 +72,27 @@ test('the page stays when live events drop while the backend is unreachable', as
 
   await expect(page.getByRole('heading', { name: 'Could not reach Lookout' })).toHaveCount(0);
   await expect(page.getByRole('article', { name })).toBeVisible();
+});
+
+test('connecting while the Watches list loads reads it again without cancelling the read under way', async ({ page }) => {
+  const name = `Connects mid-read ${randomUUID()}`;
+  await createWatch(page, name);
+  const aborted: string[] = [];
+  page.on('requestfailed', (request) => aborted.push(`${request.method()} ${request.url()}`));
+  const release = await holdFirst(page, '**/api/watches', 'GET');
+  const socket = page.waitForEvent('websocket');
+  await page.goto('/');
+  // The connection's handshake answered, so it has opened while the list's first read is still held.
+  await (await socket).waitForEvent('framereceived');
+  let listReads = 0;
+  page.on('response', (response) => {
+    if (response.request().method() === 'GET' && new URL(response.url()).pathname === '/api/watches') {listReads++;}
+  });
+
+  release();
+
+  // The held read lands, then the list is read again, as the held read may predate what the connection missed.
+  await expect.poll(() => listReads).toBeGreaterThanOrEqual(2);
+  await expect(page.getByRole('article', { name })).toBeVisible();
+  expect(aborted).toEqual([]);
 });
