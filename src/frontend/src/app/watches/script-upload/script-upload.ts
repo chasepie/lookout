@@ -69,13 +69,14 @@ export class ScriptUpload {
     if (!script || this.saving()) {return;}
     this.saving.set(true);
     this.error.set('');
+    const isCurrent = () => !this.destroyed && id === this.id();
     try {
       await this.watches.uploadScript(id, script, this.keepBaseline());
-      if (!this.destroyed && id === this.id()) {
+      if (isCurrent()) {
         await this.router.navigate(['/watches', id]);
       }
     } catch (error: unknown) {
-      if (!this.destroyed && id === this.id()) {
+      if (isCurrent()) {
         this.error.set(problemMessage(error, 'Could not save the Script. Please try again.'));
         this.saving.set(false);
       }

@@ -334,7 +334,7 @@ public sealed class WatchesController(
     }
 
     [HttpGet("{id:guid}/script-versions")]
-    public async Task<ActionResult<IReadOnlyList<ScriptVersionSummary>>> ScriptVersions(Guid id, CancellationToken cancellationToken)
+    public async Task<ActionResult<IReadOnlyList<ScriptVersionSummary>>> ListScriptVersions(Guid id, CancellationToken cancellationToken)
     {
         var currentVersionId = await database.Watches
             .Where(watch => watch.Id == id)
@@ -354,7 +354,7 @@ public sealed class WatchesController(
     }
 
     [HttpGet("{id:guid}/script-versions/{versionId:guid}")]
-    public async Task<ActionResult<ScriptVersionSource>> ScriptVersion(Guid id, Guid versionId, CancellationToken cancellationToken)
+    public async Task<ActionResult<ScriptVersionSource>> GetScriptVersion(Guid id, Guid versionId, CancellationToken cancellationToken)
     {
         var version = await database.ScriptVersions.AsNoTracking()
             .Where(version => version.Id == versionId && version.WatchId == id)
@@ -367,7 +367,7 @@ public sealed class WatchesController(
 
     [HttpPost("{id:guid}/test-runs")]
     [RequestSizeLimit(128 * 1024)]
-    public async Task<ActionResult<TestRun>> TestRun(Guid id, [FromForm] TestRunRequest request, CancellationToken cancellationToken)
+    public async Task<ActionResult<TestRun>> RunTest(Guid id, [FromForm] TestRunRequest request, CancellationToken cancellationToken)
     {
         var (script, scriptProblem) = await ReadScriptAsync(request.Script, cancellationToken);
         if (script is null)

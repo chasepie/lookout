@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { createWatch, runWatch } from './watches';
 
-const newScript = "export default { async run(page) { return { success: true, content: await page.title() }; } };\n";
+const newScript = 'export default { async run(page) { return { success: true, content: await page.title() }; } };\n';
 
 test('upload a new Script version, see its Test run, save it, and view its source', async ({ page }) => {
   const id = await createWatch(page, `New version ${randomUUID()}`);
