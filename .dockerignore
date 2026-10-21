@@ -1,0 +1,22 @@
+# Only what the images build from, so local databases, secrets and build output stay out of the build context
+*
+!package.json
+!package-lock.json
+!tsconfig.json
+!.editorconfig
+!global.json
+!Directory.Build.props
+!Directory.Packages.props
+!examples/package.json
+!examples/bot-detection.ts
+!src/
+**/bin/
+**/obj/
+**/node_modules/
+**/*.db
+**/*.db-*
+src/Backend/wwwroot/
+src/frontend/.angular/
+src/frontend/e2e/
+src/runner/test/
+src/runner/*.spec.ts

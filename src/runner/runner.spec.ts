@@ -2,11 +2,13 @@ import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { createServer, type Server } from 'node:http';
+import { createServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { Duplex } from 'node:stream';
 import { fileURLToPath } from 'node:url';
+import { chromium, type BrowserServer } from 'playwright';
 import { afterAll, beforeAll, describe, expect, onTestFinished, test } from 'vitest';
 import type { FileKind } from './execute.ts';
 import type { ProxySettings } from './protocol.ts';
@@ -416,6 +418,7 @@ test('a Script whose caller disconnects is stopped, with the subprocesses it sta
   const caller = new AbortController();
   const response = fetch(`${runnerUrl}/execute`, {
     method: 'POST',
+    headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       source: await fixtureSource('starts-subprocess.ts'),
       fileKind: 'ts',
@@ -441,6 +444,7 @@ test("a Script's process exits when the runner dies, with the subprocesses it st
   });
   const response = fetch(`${url}/execute`, {
     method: 'POST',
+    headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       source: await fixtureSource('starts-subprocess.ts'),
       fileKind: 'ts',
@@ -479,6 +483,7 @@ test.each(['SIGINT', 'SIGTERM'] as const)('a runner stopped by %s takes a Script
   });
   const response = fetch(`${url}/execute`, {
     method: 'POST',
+    headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       source: await fixtureSource('blocks-event-loop.ts'),
       fileKind: 'ts',
@@ -656,9 +661,83 @@ describe.skipIf(process.platform === 'linux' && !process.env['DISPLAY'])('a non-
   });
 });
 
+// Browserless serves Playwright's protocol, as a browser server Playwright launches does
+describe('a runner that connects to a browser server', () => {
+  let browserServer: BrowserServer;
+  let connectingRunner: ChildProcess;
+  let connectingRunnerUrl: string;
+
+  beforeAll(async () => {
+    browserServer = await chromium.launchServer({ headless: true });
+    ({ runner: connectingRunner, url: connectingRunnerUrl } = await startRunner({
+      BROWSERLESS_URL: browserServer.wsEndpoint(),
+    }));
+  });
+
+  afterAll(async () => {
+    connectingRunner.kill();
+    await browserServer.close();
+  });
+
+  test('runs Scripts in its browser', { timeout: 30_000 }, async () => {
+    const result = await execute('read-price.ts', {}, connectingRunnerUrl);
+
+    expect(result).toEqual({ outcome: 'succeeded', content: '£20.00' });
+  });
+
+  test("hides that its browser is headless from the Script's pages", { timeout: 30_000 }, async () => {
+    const result = await execute('report-user-agent.ts', {}, connectingRunnerUrl);
+
+    expect(result['content']).toMatch(/ Chrome\/\d+\.0\.0\.0 /);
+    expect(result['content']).not.toContain('Headless');
+  });
+
+  test('Errors a Script that starts a process, since its own process needs none', { timeout: 30_000 }, async () => {
+    const { marker, notificationUrl } = subprocessScript();
+
+    const result = await execute('starts-subprocess.ts', { notificationUrl }, connectingRunnerUrl);
+
+    expect(result).toEqual({
+      outcome: 'errored',
+      errorMessage: expect.stringContaining('Access to this API has been restricted') as unknown,
+    });
+    expect(await hasMarkedProcesses(marker)).toBe(false);
+  });
+});
+
+test('a connecting runner asks for a headless Chromium with the flags that hide automation and the home IP', { timeout: 30_000 }, async () => {
+  // Stands in for Browserless: records the URL the runner connects to, then refuses the connection
+  const requestedUrls: string[] = [];
+  const browserless = createServer();
+  browserless.on('upgrade', (request: IncomingMessage, socket: Duplex) => {
+    requestedUrls.push(request.url ?? '');
+    socket.end('HTTP/1.1 403 Forbidden\r\n\r\n');
+  });
+  const browserlessUrl = (await listen(browserless)).replace(/^http/, 'ws');
+  const { runner: connectingRunner, url } = await startRunner({
+    BROWSERLESS_URL: `${browserlessUrl}/chromium/playwright?token=secret`,
+  });
+  try {
+    const result = await execute('read-price.ts', {}, url);
+
+    expect(result).toMatchObject({ outcome: 'errored' });
+    const requested = new URL(requestedUrls[0] ?? '', browserlessUrl);
+    expect(requested.pathname).toBe('/chromium/playwright');
+    expect(requested.searchParams.get('token')).toBe('secret');
+    expect(JSON.parse(requested.searchParams.get('launch') ?? 'null')).toEqual({
+      headless: true,
+      args: ['--disable-blink-features=AutomationControlled', '--webrtc-ip-handling-policy=disable_non_proxied_udp'],
+    });
+  } finally {
+    connectingRunner.kill();
+    browserless.close();
+  }
+});
+
 test('a request whose proxy is null runs without one', { timeout: 30_000 }, async () => {
   const response = await fetch(`${runnerUrl}/execute`, {
     method: 'POST',
+    headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ ...validRequest, proxy: null }),
   });
 
@@ -666,9 +745,47 @@ test('a request whose proxy is null runs without one', { timeout: 30_000 }, asyn
   expect(await response.json()).toMatchObject({ outcome: 'succeeded' });
 });
 
+test.each([
+  ['no Content-Type', undefined],
+  ['a text Content-Type', 'text/plain;charset=UTF-8'],
+])('a request with %s is refused, so a web page can only send one after a CORS preflight', { timeout: 30_000 }, async (_, contentType) => {
+  const response = await fetch(`${runnerUrl}/execute`, {
+    method: 'POST',
+    // fetch gives a string body text/plain unless told otherwise, as a page's no-cors request would have
+    body: contentType === undefined ? new Blob([JSON.stringify(validRequest)]) : JSON.stringify(validRequest),
+    ...(contentType !== undefined && { headers: { 'content-type': contentType } }),
+  });
+
+  expect(response.status).toBe(415);
+  expect(await response.json()).toEqual({ error: 'Content-Type must be application/json' });
+});
+
+test('a request from a web page is refused, even one the page counts as same-origin', { timeout: 30_000 }, async () => {
+  const response = await fetch(`${runnerUrl}/execute`, {
+    method: 'POST',
+    // As a page on a domain rebound to the runner's address would send
+    headers: { 'content-type': 'application/json', origin: 'http://rebound.example' },
+    body: JSON.stringify(validRequest),
+  });
+
+  expect(response.status).toBe(403);
+  expect(await response.json()).toEqual({ error: 'Requests from web pages are refused' });
+});
+
+test('a request whose Content-Type has parameters is accepted', { timeout: 30_000 }, async () => {
+  const response = await fetch(`${runnerUrl}/execute`, {
+    method: 'POST',
+    headers: { 'content-type': 'Application/JSON; charset=utf-8' },
+    body: JSON.stringify(validRequest),
+  });
+
+  expect(response.status).toBe(200);
+});
+
 test('a request body over 1 MiB is rejected as too large', { timeout: 30_000 }, async () => {
   const response = await fetch(`${runnerUrl}/execute`, {
     method: 'POST',
+    headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ ...validRequest, source: `// ${'x'.repeat(1024 * 1024)}` }),
   });
 
@@ -677,13 +794,19 @@ test('a request body over 1 MiB is rejected as too large', { timeout: 30_000 }, 
   expect(await execute('read-price.ts')).toMatchObject({ outcome: 'succeeded' });
 });
 
+const portError = 'PORT must be an integer from 0 to 65535';
+const browserlessUrlError = 'BROWSERLESS_URL must be a ws:// or wss:// URL';
+
 test.each([
-  ['empty', ''],
-  ['not a number', 'http'],
-  ['out of range', '70000'],
-])('a runner whose PORT is %s refuses to start', { timeout: 30_000 }, async (_, port) => {
+  ['a PORT that is empty', { PORT: '' }, portError],
+  ['a PORT that is not a number', { PORT: 'http' }, portError],
+  ['a PORT that is out of range', { PORT: '70000' }, portError],
+  ['a BROWSERLESS_URL that is not a URL', { BROWSERLESS_URL: 'browserless:3000' }, browserlessUrlError],
+  ['a BROWSERLESS_URL that is not a WebSocket URL', { BROWSERLESS_URL: 'http://browserless:3000/chromium/playwright' },
+    browserlessUrlError],
+])('a runner with %s refuses to start', { timeout: 30_000 }, async (_, env, error) => {
   const badRunner = spawn(process.execPath, [runnerPath], {
-    env: { ...process.env, PORT: port },
+    env: { ...process.env, PORT: '0', ...env },
     stdio: ['ignore', 'pipe', 'pipe'],
     // A runner that starts anyway is killed, rather than left listening
     timeout: 5_000,
@@ -696,7 +819,7 @@ test.each([
   const [code] = await once(badRunner, 'exit') as [number | null];
 
   expect(code).toBe(1);
-  expect(stderr).toContain('PORT must be an integer from 0 to 65535');
+  expect(stderr).toContain(error);
 });
 
 const validRequest = {
@@ -720,6 +843,7 @@ test.each([
 ])('a request with %s is rejected', { timeout: 30_000 }, async (_, body, error) => {
   const response = await fetch(`${runnerUrl}/execute`, {
     method: 'POST',
+    headers: { 'content-type': 'application/json' },
     body: typeof body === 'string' ? body : JSON.stringify(body),
   });
 

@@ -5,7 +5,9 @@ using ChasePie.Lookout.Model;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
 
@@ -16,7 +18,7 @@ public class Program
     public static void Main(string[] args)
     {
         var builder = WebApplication.CreateBuilder(args);
-        ConfigureServices(builder.Services, builder.Configuration);
+        ConfigureServices(builder.Services, builder.Configuration, builder.Environment);
 
         var app = builder.Build();
         MigrateDatabase(app);
@@ -25,7 +27,8 @@ public class Program
         app.Run();
     }
 
-    private static void ConfigureServices(IServiceCollection services, ConfigurationManager configuration)
+    private static void ConfigureServices(
+        IServiceCollection services, ConfigurationManager configuration, IWebHostEnvironment environment)
     {
         // Every POST, PUT, PATCH and DELETE to a controller must carry the request token (see RequestForgery).
         services.AddControllers(options => options.Filters.Add<RequestForgery.ValidateTokenFilter>());
@@ -55,8 +58,7 @@ public class Program
         services.AddDataProtection().SetApplicationName("Lookout").PersistKeysToDbContext<LookoutDbContext>();
         services.AddSingleton<IPasswordHasher<Account>, PasswordHasher<Account>>();
 
-        var connectionString = configuration.GetConnectionString("Lookout")
-            ?? throw new InvalidOperationException("ConnectionStrings:Lookout is not configured");
+        var connectionString = DatabaseConnectionString(configuration, environment);
         services.AddDbContext<LookoutDbContext>(options => options.UseSqlite(connectionString));
         services.AddHealthChecks()
             .AddDbContextCheck<LookoutDbContext>(customTestQuery: async (db, cancellationToken) =>
@@ -66,6 +68,30 @@ public class Program
                 await db.Database.ExecuteSqlRawAsync("SELECT COUNT(*) FROM __EFMigrationsHistory", cancellationToken);
                 return true;
             });
+    }
+
+    /// <summary>
+    /// The database's connection string, with a relative path resolved against the data directory
+    /// (<c>Storage:DataDirectory</c>, by default the content root), which is created if it's missing. SQLite would
+    /// resolve it against the working directory, which depends on how the app was started; in a container, that's
+    /// lost with the container unless a volume happens to be mounted there. A URI, an in-memory database, or a path
+    /// using Microsoft.Data.Sqlite's <c>|DataDirectory|</c> is left as given.
+    /// </summary>
+    private static string DatabaseConnectionString(ConfigurationManager configuration, IWebHostEnvironment environment)
+    {
+        var connection = new SqliteConnectionStringBuilder(configuration.GetConnectionString("Lookout")
+            ?? throw new InvalidOperationException("ConnectionStrings:Lookout is not configured"));
+        if (connection.DataSource is "" or ":memory:"
+            || connection.Mode == SqliteOpenMode.Memory
+            || connection.DataSource.StartsWith("file:", StringComparison.OrdinalIgnoreCase)
+            || connection.DataSource.StartsWith("|DataDirectory|", StringComparison.OrdinalIgnoreCase))
+        {
+            return connection.ConnectionString;
+        }
+        var dataDirectory = Path.GetFullPath(configuration["Storage:DataDirectory"] ?? ".", environment.ContentRootPath);
+        connection.DataSource = Path.GetFullPath(connection.DataSource, dataDirectory);
+        Directory.CreateDirectory(Path.GetDirectoryName(connection.DataSource)!);
+        return connection.ConnectionString;
     }
 
     private static void ConfigureScheduling(IServiceCollection services, ConfigurationManager configuration)
@@ -109,7 +135,15 @@ public class Program
             app.MapScalarApiReference();
         }
 
-        app.UseHttpsRedirection();
+        // HTTPS comes from the user's own reverse proxy (ADR-0002), so a request it says came over HTTPS counts as one,
+        // and its cookies are Secure. The proxy's address isn't known, so any client is trusted to say so: on the LAN,
+        // the most one can do by lying is mark its own cookies Secure, or skip the redirect to HTTPS.
+        var forwardedHeaders = new ForwardedHeadersOptions { ForwardedHeaders = ForwardedHeaders.XForwardedProto };
+        forwardedHeaders.KnownIPNetworks.Clear();
+        forwardedHeaders.KnownProxies.Clear();
+        app.UseForwardedHeaders(forwardedHeaders);
+        // Health probes, such as a container's, check over HTTP and needn't follow a redirect.
+        app.UseWhen(context => !context.Request.Path.StartsWithSegments("/health"), branch => branch.UseHttpsRedirection());
         ContentSecurityPolicy.Apply(app);
 
         // The app's files are public: it shows setup or login itself, before the user has a session.

@@ -6,12 +6,12 @@ import { findPackageJSON } from 'node:module';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chromium } from 'playwright';
 import {
   erroredResult,
   isReportFor,
   timedOutMessage,
   timeoutGraceMs,
+  type BrowserSettings,
   type ProxySettings,
   type Screenshot,
   type ScriptJob,
@@ -19,8 +19,9 @@ import {
 } from './protocol.ts';
 
 export interface RunnerConfig {
-  /** Whether the launched Chromium is headless; non-headless is for local debugging */
-  headless: boolean;
+  browser: BrowserSettings;
+  /** What a Script's process may do on top of what every one may, for its browser; see {@link createRunnerConfig} */
+  browserPermissionArgs: string[];
 }
 
 /** The languages a Script may be written in */
@@ -61,11 +62,10 @@ const runnerDirectory = fileURLToPath(new URL('.', import.meta.url));
 /** The node_modules the runner's playwright is installed in, which a Script's playwright imports resolve to */
 const packagesDirectory = dirname(dirname(findPackageJSON('playwright', import.meta.url)!));
 
-/**
- * Where Playwright installs its browsers, which it reads from to launch Chromium. Only launching needs this, and
- * starting processes; connecting to Browserless (#13) needs neither.
- */
-function findBrowsersDirectory() {
+/** Where Playwright installs its browsers, which it reads from to launch Chromium */
+async function findBrowsersDirectory() {
+  // Imported only here, since a runner that connects to Browserless needs none of it
+  const { chromium } = await import('playwright');
   // The executable is nested in a directory for its build, such as chromium-1248, inside the install directory
   for (let directory = chromium.executablePath(); directory !== dirname(directory); directory = dirname(directory)) {
     if (basename(directory).startsWith('chromium-')) {
@@ -75,30 +75,50 @@ function findBrowsersDirectory() {
   throw new Error(`Can't find Playwright's browsers directory from ${chromium.executablePath()}`);
 }
 
-const browsersDirectory = findBrowsersDirectory();
+/**
+ * System files Playwright reads on Linux as it's imported: the signs of running under WSL. These, and the one it
+ * reads to launch Chromium, are granted even where they don't exist, since under the permission model even checking
+ * whether a file exists throws for a path that isn't granted.
+ */
+const playwrightSystemFiles = ['/proc/version', '/proc/sys/fs/binfmt_misc/WSLInterop', '/run/WSL'];
+
+/** The OS's name, which Playwright reads on Linux to tell which build of Chromium to launch */
+const osReleaseFile = '/etc/os-release';
 
 /**
- * System files Playwright reads on Linux: the OS's name, to tell which build of Chromium the host needs, and the
- * signs of running under WSL. They're granted even where they don't exist, since under the permission model even
- * checking whether a file exists throws for a path that isn't granted.
+ * The runner's configuration for getting browsers from `browser`. To launch Chromium, a Script's process needs to
+ * read the browsers and the OS's name, and to start processes, since Chromium is one. That allowance lets a Script
+ * get around the file limits, and start a process that outlives it, so a process that connects to Browserless
+ * doesn't get it. Worked out as the runner starts, so an install it can't launch from stops it there.
  */
-const playwrightSystemFiles = ['/etc/os-release', '/proc/version', '/proc/sys/fs/binfmt_misc/WSLInterop', '/run/WSL'];
+export async function createRunnerConfig(browser: BrowserSettings): Promise<RunnerConfig> {
+  if (browser.provider === 'connect') {
+    return { browser, browserPermissionArgs: [] };
+  }
+  const browsersDirectory = await findBrowsersDirectory();
+  return {
+    browser,
+    browserPermissionArgs: [
+      ...[browsersDirectory, osReleaseFile].map((path) => `--allow-fs-read=${path}`),
+      '--allow-child-process',
+      // Node warns about that allowance on every start, which would end up in every Script's console output
+      '--disable-warning=PERM0002',
+    ],
+  };
+}
 
 /**
  * Node's permission model for a Script's process. It may read only its own directory, the runner's code and
- * packages, the browsers and the system files Playwright needs, and write only to its temp directory. Starting processes is allowed only because
- * Playwright starts Chromium as one. Node doesn't treat its permission model as a security boundary, and that
- * allowance in particular lets a Script get around the file limits; the runner's container is what contains a
+ * packages and the system files Playwright needs, and write only to its temp directory, with what its browser needs
+ * on top. Node doesn't treat its permission model as a security boundary; the runner's container is what contains a
  * Script (ADR-0003).
  */
-const permissionArgs = (scriptDirectory: string, tempDirectory: string) => [
+const permissionArgs = (config: RunnerConfig, scriptDirectory: string, tempDirectory: string) => [
   '--permission',
-  ...[scriptDirectory, runnerDirectory, packagesDirectory, browsersDirectory, ...playwrightSystemFiles]
+  ...[scriptDirectory, runnerDirectory, packagesDirectory, ...playwrightSystemFiles]
     .map((path) => `--allow-fs-read=${path}`),
   `--allow-fs-write=${tempDirectory}`,
-  '--allow-child-process',
-  // Node warns about that allowance on every start, which would end up in every Script's console output
-  '--disable-warning=PERM0002',
+  ...config.browserPermissionArgs,
 ];
 
 /** How many characters of a Script's console output the runner keeps, so a Script that logs without end can't exhaust it */
@@ -190,13 +210,19 @@ function killProcessGroup(pid: number) {
  * Runs a Script's child process to completion, killing it when `signal` aborts or, after a grace period for a
  * screenshot, at the timeout. The process reports its result over IPC, so the Script's console output can't be
  * mistaken for it, and exits after reporting even if the Script left a handle open. Whichever way it ends,
- * anything it started goes with it. Its temp files go in `tempDirectory`, since a killed process can't clean up
- * after itself.
+ * anything it started goes with it. It runs with `execArgv`, its limits, and its temp files go in `tempDirectory`,
+ * since a killed process can't clean up after itself.
  */
-const runScriptProcess = (job: ScriptJob, timeoutMs: number, tempDirectory: string, signal: AbortSignal) =>
+const runScriptProcess = (
+  job: ScriptJob,
+  execArgv: string[],
+  timeoutMs: number,
+  tempDirectory: string,
+  signal: AbortSignal,
+) =>
   new Promise<ScriptResult & DebugOutput>((resolve) => {
     const child = fork(scriptProcessPath, {
-      execArgv: [`--max-old-space-size=${memoryLimitMb}`, ...permissionArgs(dirname(job.scriptPath), tempDirectory)],
+      execArgv,
       env: scriptEnvironment(tempDirectory),
       stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
       // In a process group of its own, which everything it starts joins, so they can all be killed together
@@ -321,10 +347,14 @@ export async function execute(
       token: randomUUID(),
       scriptPath,
       context: request.context,
-      headless: config.headless,
+      browser: config.browser,
       ...(request.proxy && { proxy: request.proxy }),
     };
-    const result = await runScriptProcess(job, request.timeoutMs, tempDirectory, signal);
+    const execArgv = [
+      `--max-old-space-size=${memoryLimitMb}`,
+      ...permissionArgs(config, directory, tempDirectory),
+    ];
+    const result = await runScriptProcess(job, execArgv, request.timeoutMs, tempDirectory, signal);
     return { ...result, durationMs: Math.round(performance.now() - started) };
   } finally {
     // A killed Script's browser may still be writing its profile as it exits, so retry while it's busy.
