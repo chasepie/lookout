@@ -10,9 +10,7 @@ public enum RunExecutionStatus
     Recorded,
     WatchNotFound,
     NoScriptVersion,
-    /// <summary>
-    /// Another Run of the Watch was recorded, or the Watch was resumed, while this one executed, so this one was discarded.
-    /// </summary>
+    /// <summary>Another Run of the Watch was recorded while this one executed, so this one was discarded.</summary>
     Superseded,
     /// <summary>The Watch was deleted while this Run executed, so there was nothing to record it against.</summary>
     Deleted
@@ -75,18 +73,18 @@ public sealed class RunExecutor(LookoutDbContext database, IRunnerClient runner,
             // The Run has finished, so record it even if shutdown started while the runner was replying.
             await database.SaveChangesAsync(CancellationToken.None);
         }
-        catch (DbUpdateConcurrencyException)
+        catch (DbUpdateException exception)
         {
-            return new RunExecution(RunExecutionStatus.Superseded);
-        }
-        catch (DbUpdateException)
-        {
-            // Inserting the Run fails its foreign key before the Watch's concurrency check if the Watch was deleted.
-            if (await database.Watches.AnyAsync(item => item.Id == watchId, CancellationToken.None))
+            // A deleted Watch fails either the Run's foreign key or the Watch's concurrency check, whichever EF sends first.
+            if (!await database.Watches.AnyAsync(item => item.Id == watchId, CancellationToken.None))
             {
-                throw;
+                return new RunExecution(RunExecutionStatus.Deleted);
             }
-            return new RunExecution(RunExecutionStatus.Deleted);
+            if (exception is DbUpdateConcurrencyException)
+            {
+                return new RunExecution(RunExecutionStatus.Superseded);
+            }
+            throw;
         }
 
         return new RunExecution(RunExecutionStatus.Recorded, run);

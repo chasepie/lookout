@@ -182,29 +182,42 @@ public sealed class WatchesController(
     [HttpPost("{id:guid}/resume")]
     public async Task<IActionResult> Resume(Guid id, CancellationToken cancellationToken)
     {
-        var current = await database.Watches.AsNoTracking()
-            .Where(watch => watch.Id == id)
-            .Select(watch => new { watch.IsPaused, watch.Schedule, watch.JitterMinutes, watch.LastScheduledRunAt })
-            .SingleOrDefaultAsync(cancellationToken);
-        if (current is null)
+        for (var attempt = 0; attempt < 3; attempt++)
         {
-            return NotFound();
-        }
+            var current = await database.Watches.AsNoTracking()
+                .Where(watch => watch.Id == id)
+                .Select(watch => new { watch.IsPaused, watch.Schedule, watch.JitterMinutes, watch.LastScheduledRunAt })
+                .SingleOrDefaultAsync(cancellationToken);
+            if (current is null)
+            {
+                return NotFound();
+            }
 
-        if (current.IsPaused)
-        {
+            if (!current.IsPaused)
+            {
+                return NoContent();
+            }
+
             // The next Run is scheduled from now, so a Watch resumed after a long pause doesn't run at once. The
             // failure streak carries on, and a set-based update leaves the Revision alone, so a Run in progress is
-            // still recorded.
+            // still recorded. It applies only if the schedule is still the one read, as one saved meanwhile decides
+            // the next Run.
             var nextRunAt = schedules.NextRunAt(current.Schedule, current.JitterMinutes, current.LastScheduledRunAt);
-            await database.Watches
-                .Where(watch => watch.Id == id && watch.IsPaused)
+            var updated = await database.Watches
+                .Where(watch => watch.Id == id && watch.IsPaused
+                    && watch.Schedule == current.Schedule
+                    && watch.JitterMinutes == current.JitterMinutes
+                    && watch.LastScheduledRunAt == current.LastScheduledRunAt)
                 .ExecuteUpdateAsync(setters => setters
                     .SetProperty(watch => watch.IsPaused, false)
                     .SetProperty(watch => watch.NextRunAt, nextRunAt)
                     .SetProperty(watch => watch.NextRunTimeZone, schedules.TimeZone.Id), cancellationToken);
+            if (updated == 1)
+            {
+                return NoContent();
+            }
         }
-        return NoContent();
+        return Problem("The schedule of this Watch kept changing while it was being resumed. Please try again.", statusCode: HttpStatusCode.Conflict);
     }
 
     [HttpGet("{id:guid}/runs")]
@@ -261,7 +274,7 @@ public sealed class WatchesController(
                 RunExecutionStatus.WatchNotFound => NotFound(),
                 RunExecutionStatus.NoScriptVersion => Problem("This Watch has no current Script version.", statusCode: HttpStatusCode.Conflict),
                 RunExecutionStatus.Deleted => Problem("The Watch was deleted while this Run was in progress, so this Run was not recorded.", statusCode: HttpStatusCode.Conflict),
-                _ => Problem("The Watch changed while this Run was in progress, so this Run was not recorded.", statusCode: HttpStatusCode.Conflict)
+                _ => Problem("Another Run of this Watch finished first, so this Run was not recorded.", statusCode: HttpStatusCode.Conflict)
             };
         }
         finally
@@ -332,14 +345,6 @@ public sealed record WatchSummary(
     int JitterMinutes,
     DateTimeOffset? NextRunAt)
 {
-    private static WatchStatus CalcWatchStatus(Watch watch)
-    {
-        if (watch.IsPaused) { return WatchStatus.Paused; }
-        if (watch.FailureStreak > 0) { return WatchStatus.Failing; }
-        if (watch.Baseline == null) { return WatchStatus.Pending; }
-        return WatchStatus.Healthy;
-    }
-
     /// <summary>Maps a Watch in a database query; <see cref="From"/> applies the same mapping in memory.</summary>
     public static readonly Expression<Func<Watch, WatchSummary>> Projection = watch => new WatchSummary(
         watch.Id,
@@ -347,7 +352,12 @@ public sealed record WatchSummary(
         watch.NotificationUrl,
         watch.CurrentScriptVersionId,
         watch.Baseline,
-        Status: CalcWatchStatus(watch),
+        // Inline rather than a method call, so EF translates it to SQL. A failure streak outranks Pending, since a
+        // Watch whose Script never Succeeded needs attention too.
+        Status: watch.IsPaused ? WatchStatus.Paused
+            : watch.FailureStreak > 0 ? WatchStatus.Failing
+            : watch.Baseline == null ? WatchStatus.Pending
+            : WatchStatus.Healthy,
         watch.IsPaused,
         watch.FailureStreak,
         watch.TimeoutSeconds,
