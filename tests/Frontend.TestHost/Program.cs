@@ -14,8 +14,13 @@ public static class Program
         {
             Outcome = RunOutcome.Succeeded, Content = "£19.99", Details = "In stock", DurationMs = 25
         };
+        var changingRuns = 0;
         factory.Runner.OnExecute = (request, _) => Task.FromResult(request.Context.NotificationUrl switch
         {
+            "https://example.com/changing" => new RunnerResult
+            {
+                Outcome = RunOutcome.Succeeded, Content = $"£{20 - Interlocked.Increment(ref changingRuns)}", DurationMs = 25
+            },
             "https://example.com/known-failure" => new RunnerResult { Outcome = RunOutcome.KnownFailure, Details = "Access denied", DurationMs = 25 },
             "https://example.com/errored" => new RunnerResult { Outcome = RunOutcome.Errored, ErrorMessage = "Page unavailable", DurationMs = 25 },
             _ => factory.Runner.DefaultResult

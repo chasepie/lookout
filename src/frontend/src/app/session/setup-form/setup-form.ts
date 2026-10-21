@@ -1,14 +1,14 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { FormField, form, maxLength, minLength, pattern, required, submit, validate } from '@angular/forms/signals';
-import { problemMessage } from './problem';
-import { Session } from './session';
+import { problemMessage } from '../../shared/problem';
+import { Session } from '../session';
 
 /** First-launch setup of Lookout's single account. The app shows it only while no account exists. */
 @Component({
   selector: 'app-setup-form',
   imports: [FormField],
   templateUrl: './setup-form.html',
-  styleUrl: './account-form.scss',
+  styleUrl: '../account-form.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class SetupForm {

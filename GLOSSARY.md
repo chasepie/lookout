@@ -55,7 +55,7 @@ _Avoid_: Token
 ### Watch statuses
 
 **Pending**:
-The Watch has no Baseline yet, because it is new or a new Script version was just uploaded.
+The Watch has no Baseline yet, because it is new or a new Script version was just uploaded. A Watch in a failure streak is Failing instead, even without a Baseline.
 _Avoid_: New, Unknown
 
 **Healthy**:
@@ -67,7 +67,7 @@ The Watch is in a streak of Known failure or Errored Runs.
 _Avoid_: Broken, Erroring
 
 **Paused**:
-The user has stopped the Watch's scheduled Runs; its Baseline is kept.
+The user has stopped the Watch's scheduled Runs; its Baseline and failure streak are kept.
 _Avoid_: Disabled, Stopped
 
 **Running**:

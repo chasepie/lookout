@@ -1,10 +1,10 @@
 import { ChangeDetectionStrategy, Component, inject, input, linkedSignal, output, signal, untracked } from '@angular/core';
 import { apply, form, submit } from '@angular/forms/signals';
-import { problemMessage } from './problem';
-import { type ScheduleForm, scheduleFormFor, scheduleSchema } from './schedule';
-import { SchedulePicker } from './schedule-picker';
-import type { Watch } from './watch.model';
-import { Watches } from './watches';
+import { problemMessage } from '../../shared/problem';
+import { type ScheduleForm, scheduleFormFor, scheduleSchema } from '../schedule';
+import { SchedulePicker } from '../schedule-picker/schedule-picker';
+import type { Watch } from '../../watches/watch.model';
+import { Watches } from '../../watches/watches';
 
 /** Changes an existing Watch's schedule and jitter. */
 @Component({

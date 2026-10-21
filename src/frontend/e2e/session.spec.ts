@@ -32,6 +32,22 @@ test('recovers when the request token goes missing, such as when another app on 
   await expect(page.getByRole('alert')).toHaveCount(0);
 });
 
+test('an error from logging out is cleared on moving to another page', async ({ page }) => {
+  const name = `After logout error ${randomUUID()}`;
+  await createWatch(page, name);
+  await page.route('**/api/session', (route) => route.request().method() === 'DELETE'
+    ? route.fulfill({ status: 500 })
+    : route.fallback());
+  await page.goto('/');
+
+  await page.getByRole('button', { name: 'Log out' }).click();
+  await expect(page.getByRole('alert')).toHaveText('Could not log out. Please try again.');
+  await page.getByRole('article', { name }).getByRole('link', { name }).click();
+
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(name);
+  await expect(page.getByText('Could not log out. Please try again.')).toHaveCount(0);
+});
+
 test.describe('without a session', () => {
   test.use({ storageState: { cookies: [], origins: [] } });
 

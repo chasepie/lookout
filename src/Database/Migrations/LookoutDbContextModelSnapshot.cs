@@ -140,6 +140,12 @@ namespace ChasePie.Lookout.Database.Migrations
                     b.Property<Guid?>("CurrentScriptVersionId")
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("FailureStreak")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsPaused")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("JitterMinutes")
                         .HasColumnType("INTEGER");
 
@@ -162,6 +168,9 @@ namespace ChasePie.Lookout.Database.Migrations
 
                     b.Property<long>("Revision")
                         .IsConcurrencyToken()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("TimeoutSeconds")
                         .HasColumnType("INTEGER");
 
                     b.ComplexProperty(typeof(Dictionary<string, object>), "Schedule", "ChasePie.Lookout.Model.Watch.Schedule#Schedule", b1 =>
