@@ -5,7 +5,10 @@ using Microsoft.EntityFrameworkCore;
 namespace ChasePie.Lookout.Backend.Notifications;
 
 /// <summary>Sends notifications to Channels through the sender for each Channel's kind.</summary>
-public sealed partial class Notifier(LookoutDbContext database, IEnumerable<IChannelSender> senders, ILogger<Notifier> logger)
+public sealed partial class NotificationDispatcher(
+    LookoutDbContext database,
+    IEnumerable<IChannelSender> senders,
+    ILogger<NotificationDispatcher> logger)
 {
     private readonly Dictionary<ChannelKind, IChannelSender> _senders = senders.ToDictionary(sender => sender.Kind);
 

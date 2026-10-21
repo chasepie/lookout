@@ -23,7 +23,11 @@ public sealed record RunExecution(RunExecutionStatus Status, Run? Run = null);
 /// Executes a Watch's current Script, records the Run and sends its notifications, for both scheduled and on-demand Runs.
 /// Callers admit the Run first through <see cref="RunningWatches"/> and <see cref="RunSlots"/>.
 /// </summary>
-public sealed class RunExecutor(LookoutDbContext database, IRunnerClient runner, Notifier notifier, TimeProvider timeProvider)
+public sealed class RunExecutor(
+    LookoutDbContext database,
+    IRunnerClient runner,
+    NotificationDispatcher notifications,
+    TimeProvider timeProvider)
 {
     public async Task<RunExecution> ExecuteAsync(Guid watchId, CancellationToken cancellationToken)
     {
@@ -89,7 +93,7 @@ public sealed class RunExecutor(LookoutDbContext database, IRunnerClient runner,
         }
 
         // Like the save, notifications of a finished Run still go out if shutdown started; senders time out by themselves.
-        await notifier.NotifyAsync(watchId, evaluation.Notifications, CancellationToken.None);
+        await notifications.NotifyAsync(watchId, evaluation.Notifications, CancellationToken.None);
         return new RunExecution(RunExecutionStatus.Recorded, run);
     }
 }

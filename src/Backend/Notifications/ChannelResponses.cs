@@ -2,13 +2,9 @@ using System.Text.Json;
 
 namespace ChasePie.Lookout.Backend.Notifications;
 
-/// <summary>What the Discord and Pushover senders share: fitting text to a service's limits and reading its refusals.</summary>
+/// <summary>Reads the responses of the services Channels send to, such as Discord and Pushover.</summary>
 internal static class ChannelResponses
 {
-    /// <summary>Shortens text to at most <paramref name="maxLength"/> characters, ending it with an ellipsis if cut.</summary>
-    public static string Fit(string text, int maxLength) =>
-        text.Length <= maxLength ? text : string.Concat(text.AsSpan(0, maxLength - 1), "…");
-
     /// <summary>
     /// Throws if the service refused the notification, saying why in its own words where it gave any. The message never
     /// includes the request's URL or body, which hold the Channel's secrets.

@@ -179,6 +179,53 @@ public sealed class NotificationsTests(TestContext testContext)
     }
 
     [TestMethod]
+    public async Task AWatchCanChooseItsChannelsWhenItIsCreated()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        Arrange(factory, Succeeded("£20"), Succeeded("£19"));
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
+        var phone = await CreateChannel(client, "Phone");
+        await CreateChannel(client, "Deals server");
+
+        var created = await CreateWatch(client, phone);
+        await RunNow(client, created, times: 2);
+
+        Assert.AreEqual("Phone", factory.Channels.Sent.Single().ChannelName);
+        var watch = await client.GetFromJsonAsync<JsonObject>($"/api/watches/{created}", testContext.CancellationToken);
+        Assert.AreSequenceEqual([phone], watch!["channelIds"]!.AsArray().Select(id => id!.GetValue<string>()));
+    }
+
+    [TestMethod]
+    public async Task CreatingAWatchWithAChannelThatDoesNotExistIsRejected()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
+
+        using var form = WatchForm(Guid.NewGuid().ToString());
+        var response = await client.PostAsync(new Uri("/api/watches", UriKind.Relative), form, testContext.CancellationToken);
+
+        Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.IsEmpty((await client.GetFromJsonAsync<JsonArray>("/api/watches", testContext.CancellationToken))!);
+    }
+
+    [TestMethod]
+    public async Task AChangeOfLongContentStillShowsTheStartOfTheNewContent()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        Arrange(factory, Succeeded(new string('a', 3000)), Succeeded(new string('b', 3000)));
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
+        var watch = await CreateWatchNotifying(client, "Phone");
+
+        await RunNow(client, watch, times: 2);
+
+        // Short enough for Pushover's 1024 characters, with both sides shortened rather than the new content cut off.
+        var message = factory.Channels.Sent.Single().Notification.Message;
+        Assert.IsLessThanOrEqualTo(1024, message.Length);
+        Assert.Contains("a… → bbb", message);
+        Assert.EndsWith("b…", message);
+    }
+
+    [TestMethod]
     public async Task AChannelThatFailsToSendNeitherFailsTheRunNorStopsOtherChannels()
     {
         await using var factory = new LookoutWebApplicationFactory();
@@ -293,9 +340,17 @@ public sealed class NotificationsTests(TestContext testContext)
         return (await response.Content.ReadFromJsonAsync<JsonObject>(testContext.CancellationToken))!["id"]!.GetValue<string>();
     }
 
-    private async Task<string> CreateWatch(HttpClient client)
+    private async Task<string> CreateWatch(HttpClient client, params string[] channelIds)
     {
-        using var form = new MultipartFormDataContent
+        using var form = WatchForm(channelIds);
+        var response = await client.PostAsync(new Uri("/api/watches", UriKind.Relative), form, testContext.CancellationToken);
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<JsonObject>(testContext.CancellationToken))!["id"]!.GetValue<string>();
+    }
+
+    private static MultipartFormDataContent WatchForm(params string[] channelIds)
+    {
+        var form = new MultipartFormDataContent
         {
             { new StringContent("Widget price"), "name" },
             { new StringContent("https://example.com/widget"), "notificationUrl" },
@@ -304,9 +359,11 @@ public sealed class NotificationsTests(TestContext testContext)
             { new StringContent("1"), "every" },
             { new StringContent("hours"), "unit" }
         };
-        var response = await client.PostAsync(new Uri("/api/watches", UriKind.Relative), form, testContext.CancellationToken);
-        response.EnsureSuccessStatusCode();
-        return (await response.Content.ReadFromJsonAsync<JsonObject>(testContext.CancellationToken))!["id"]!.GetValue<string>();
+        foreach (var id in channelIds)
+        {
+            form.Add(new StringContent(id), "channelIds");
+        }
+        return form;
     }
 
     private async Task SetChannels(HttpClient client, string watch, params string[] channelIds)

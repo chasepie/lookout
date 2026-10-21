@@ -80,6 +80,28 @@ test('add a Pushover Channel, see why its test notification failed, and delete i
   await expect(channel).toHaveCount(0);
 });
 
+test('create a Watch that notifies a Channel', async ({ page }) => {
+  const channel = `Phone ${randomUUID()}`;
+  const watch = `Notifying from the start ${randomUUID()}`;
+  await page.goto('/settings');
+  await page.getByLabel('Name', { exact: true }).fill(channel);
+  await page.getByLabel('Webhook URL').fill('https://discord.com/api/webhooks/1/token');
+  await page.getByRole('button', { name: 'Add Channel' }).click();
+  await expect(page.getByRole('status')).toHaveText(`${channel} added.`);
+
+  await page.getByRole('link', { name: 'Lookout home' }).click();
+  await page.getByLabel('Name', { exact: true }).fill(watch);
+  await page.getByLabel('Notification URL').fill('https://example.com/widget');
+  await page.getByLabel('Script', { exact: true }).setInputFiles({
+    name: 'price.ts', mimeType: 'text/plain', buffer: Buffer.from('export default {}'),
+  });
+  await page.getByRole('group', { name: 'Channels to notify' }).getByLabel(channel).check();
+  await page.getByRole('button', { name: 'Create Watch' }).click();
+
+  await page.getByRole('article', { name: watch }).getByRole('link', { name: watch }).click();
+  await expect(page.getByRole('region', { name: 'Channels' }).getByLabel(channel)).toBeChecked();
+});
+
 test('choose which Channels a Watch notifies, and see the choice kept after a reload', async ({ page }) => {
   const phone = `Phone ${randomUUID()}`;
   const server = `Deals server ${randomUUID()}`;

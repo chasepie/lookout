@@ -12,8 +12,9 @@
     <form (submit)="$event.preventDefault(); addChannel()">
       <label for="channel-kind">Kind</label>
       <select id="channel-kind" [formField]="channelForm.kind">
-        <option value="discord">Discord</option>
-        <option value="pushover">Pushover</option>
+        @for (kind of kinds | keyvalue; track kind.key) {
+          <option [value]="kind.key">{{ kind.value }}</option>
+        }
       </select>
       <label for="channel-name">Name</label>
       <input id="channel-name" [formField]="channelForm.name" placeholder="e.g. Deals server" />

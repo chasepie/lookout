@@ -49,9 +49,7 @@ button {
   @include mixins.button;
 
   &.primary { @include mixins.primary-button; }
-  &.danger { color: tokens.$error; border-color: tokens.$danger-border; background: tokens.$danger-surface; }
-  &.danger:hover:not(:disabled) { background: tokens.$failure-surface; }
-  &.danger.primary { color: white; background: tokens.$error; border-color: tokens.$error; }
+  &.danger { @include mixins.danger-button; }
 }
 
 // Primary buttons sit in rows of actions here, not at the foot of a form.

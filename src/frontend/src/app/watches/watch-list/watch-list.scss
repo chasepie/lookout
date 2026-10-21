@@ -20,6 +20,7 @@ p { line-height: 1.6; }
 }
 
 .create-panel, .watch-card { @include mixins.panel; padding: 25px; }
+.channel-choices { margin-top: 23px; }
 .create-panel > p { font-size: 14px; color: tokens.$text-muted; margin: 10px 0 25px; }
 
 input {

@@ -13,7 +13,8 @@ namespace ChasePie.Lookout.Backend.Controllers;
 /// <summary>The Channels Watches can notify. Responses never include a Channel's secrets.</summary>
 [ApiController]
 [Route("api/channels")]
-public sealed partial class ChannelsController(LookoutDbContext database, Notifier notifier) : LookoutControllerBase
+public sealed partial class ChannelsController(LookoutDbContext database, NotificationDispatcher notifications)
+    : LookoutControllerBase
 {
     [HttpGet]
     public async Task<IReadOnlyList<ChannelSummary>> List(CancellationToken cancellationToken)
@@ -58,7 +59,7 @@ public sealed partial class ChannelsController(LookoutDbContext database, Notifi
 
         try
         {
-            await notifier.SendAsync(channel, Notification.Test(channel.Name), cancellationToken);
+            await notifications.SendAsync(channel, Notification.Test(channel.Name), cancellationToken);
         }
         // Anything but the request being abandoned is the Channel's service refusing or failing to answer.
         catch (Exception error) when (!cancellationToken.IsCancellationRequested)
@@ -81,8 +82,7 @@ public sealed partial class ChannelsController(LookoutDbContext database, Notifi
         else if (request.Kind == ChannelKind.Discord)
         {
             var webhookUrl = request.WebhookUrl?.Trim() ?? "";
-            if (!Uri.TryCreate(webhookUrl, UriKind.Absolute, out var parsed) || parsed.Scheme is not ("http" or "https")
-                || webhookUrl.Length > 2048)
+            if (!HttpUrls.IsValid(webhookUrl))
             {
                 message = "Webhook URL must be an HTTP or HTTPS URL, such as https://discord.com/api/webhooks/….";
             }

@@ -6,7 +6,7 @@ namespace ChasePie.Lookout.Backend.Notifications;
 /// <summary>Sends notifications through Pushover's Message API, authorised by the Channel's app token and user key.</summary>
 public sealed class PushoverSender(HttpClient client) : IChannelSender
 {
-    public static readonly Uri DefaultBaseAddress = new("https://api.pushover.net/");
+    public const string DefaultBaseUrl = "https://api.pushover.net/";
 
     // Pushover's limits on a message's title, message and supplementary URL.
     private const int MaxTitleLength = 250;
@@ -21,8 +21,8 @@ public sealed class PushoverSender(HttpClient client) : IChannelSender
         {
             ["token"] = channel.AppToken!,
             ["user"] = channel.UserKey!,
-            ["title"] = ChannelResponses.Fit(notification.Title, MaxTitleLength),
-            ["message"] = ChannelResponses.Fit(notification.Message, MaxMessageLength)
+            ["title"] = Notification.Fit(notification.Title, MaxTitleLength),
+            ["message"] = Notification.Fit(notification.Message, MaxMessageLength)
         };
         // A link that doesn't fit would be broken, so it's left out rather than shortened.
         if (notification.Url is { Length: <= MaxUrlLength } url)

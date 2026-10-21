@@ -1,3 +1,4 @@
+import { KeyValuePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { FormField, form, hidden, maxLength, pattern, required, submit } from '@angular/forms/signals';
 import { type Channel, type NewChannel, channelKindLabels } from '../channels/channel.model';
@@ -11,7 +12,7 @@ const emptyChannel = (): NewChannel => ({ kind: 'discord', name: '', webhookUrl:
 /** Lookout's settings: the Channels Watches can notify. */
 @Component({
   selector: 'app-settings',
-  imports: [FormField],
+  imports: [FormField, KeyValuePipe],
   templateUrl: './settings.html',
   styleUrl: './settings.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

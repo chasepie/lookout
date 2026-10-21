@@ -1,22 +1,6 @@
-@if (channels.list.error()) {
-  <p class="error" role="alert">Could not load your Channels. <button type="button" (click)="channels.list.reload()">Try again</button></p>
-} @else if (channels.list.hasValue()) {
-  @if (channels.list.value().length) {
-    <form (submit)="$event.preventDefault(); save()">
-      <fieldset>
-        <legend class="details">Notify these Channels of Changes and of failures that need attention.</legend>
-        @for (channel of channels.list.value(); track channel.id) {
-          <label class="choice">
-            <input #box type="checkbox" [checked]="chosen().has(channel.id)" (change)="toggle(channel.id, box.checked)" />
-            <span>{{ channel.name }}</span>
-            <small>{{ kinds[channel.kind] }}</small>
-          </label>
-        }
-      </fieldset>
-      @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
-      <button type="submit" [disabled]="saving()">{{ saving() ? 'Saving…' : 'Save Channels' }}</button>
-    </form>
-  } @else {
-    <p class="details">No Channels yet. <a routerLink="/settings">Add one in Settings</a> to get notified.</p>
-  }
-} @else { <p>Loading Channels…</p> }
+<form (submit)="$event.preventDefault(); save()">
+  <app-channel-choices [(chosen)]="chosen">
+    @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+    <button type="submit" [disabled]="saving()">{{ saving() ? 'Saving…' : 'Save Channels' }}</button>
+  </app-channel-choices>
+</form>

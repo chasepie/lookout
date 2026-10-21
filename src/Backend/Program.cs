@@ -38,12 +38,7 @@ public class Program
         services.AddScoped<RunExecutor>();
         ConfigureScheduling(services, configuration);
         ConfigureNotifications(services, configuration);
-        var runnerUrl = configuration["Runner:BaseUrl"] ?? "http://localhost:3000";
-        if (!Uri.TryCreate(runnerUrl.TrimEnd('/') + "/", UriKind.Absolute, out var runnerBaseAddress)
-            || runnerBaseAddress.Scheme is not ("http" or "https"))
-        {
-            throw new InvalidOperationException($"Runner:BaseUrl must be an absolute HTTP or HTTPS URL, not '{runnerUrl}'");
-        }
+        var runnerBaseAddress = HttpUrls.ConfiguredBaseAddress(configuration, "Runner:BaseUrl", "http://localhost:3000");
         services.AddHttpClient<IRunnerClient, HttpRunnerClient>(client =>
         {
             client.BaseAddress = runnerBaseAddress;
@@ -117,12 +112,8 @@ public class Program
 
     private static void ConfigureNotifications(IServiceCollection services, ConfigurationManager configuration)
     {
-        var pushoverUrl = configuration["Notifications:PushoverBaseUrl"] ?? PushoverSender.DefaultBaseAddress.ToString();
-        if (!Uri.TryCreate(pushoverUrl.TrimEnd('/') + "/", UriKind.Absolute, out var pushoverBaseAddress)
-            || pushoverBaseAddress.Scheme is not ("http" or "https"))
-        {
-            throw new InvalidOperationException($"Notifications:PushoverBaseUrl must be an absolute HTTP or HTTPS URL, not '{pushoverUrl}'");
-        }
+        var pushoverBaseAddress = HttpUrls.ConfiguredBaseAddress(configuration, "Notifications:PushoverBaseUrl",
+            PushoverSender.DefaultBaseUrl);
 
         // A sender's request URL or body holds its Channel's secrets, so its requests are never logged. A notification
         // is sent while its Run holds a slot, so a Channel's service that doesn't answer is given up on soon.
@@ -137,7 +128,7 @@ public class Program
             new DiscordSender(provider.GetRequiredService<IHttpClientFactory>().CreateClient(nameof(DiscordSender))));
         services.AddTransient<IChannelSender>(provider =>
             new PushoverSender(provider.GetRequiredService<IHttpClientFactory>().CreateClient(nameof(PushoverSender))));
-        services.AddScoped<Notifier>();
+        services.AddScoped<NotificationDispatcher>();
     }
 
     private static void MigrateDatabase(WebApplication app)

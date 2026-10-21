@@ -17,8 +17,8 @@ public sealed class DiscordSender(HttpClient client) : IChannelSender
     {
         var message = new WebhookMessage(
             Username: "Lookout",
-            Embeds: [new Embed(ChannelResponses.Fit(notification.Title, MaxTitleLength),
-                ChannelResponses.Fit(notification.Message, MaxDescriptionLength), notification.Url)],
+            Embeds: [new Embed(Notification.Fit(notification.Title, MaxTitleLength),
+                Notification.Fit(notification.Message, MaxDescriptionLength), notification.Url)],
             // Content from a page could mention @everyone or a role; nobody should be pinged by it.
             AllowedMentions: new AllowedMentions([]));
         using var response = await client.PostAsJsonAsync(channel.WebhookUrl, message, cancellationToken);

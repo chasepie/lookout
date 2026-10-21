@@ -25,6 +25,7 @@
       <input #scriptInput id="script" type="file" accept=".ts,.js" (change)="selectScript(scriptInput)" aria-describedby="script-help" required />
       <small id="script-help">Upload a TypeScript or JavaScript file, up to 64 KiB.</small>
       <app-schedule-picker [schedule]="watchForm.schedule" />
+      <app-channel-choices class="channel-choices" [(chosen)]="channelIds" />
       <button class="primary" type="submit" [disabled]="watchForm().submitting() || watchForm().invalid() || !script()">
         {{ watchForm().submitting() ? 'Creating…' : 'Create Watch' }}
       </button>

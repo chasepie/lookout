@@ -14,12 +14,15 @@ export class Watches {
   // until the new list arrives.
   readonly list = refreshableHttpResource<Watch[]>(() => (this.session.userName() ? { url: '/api/watches' } : undefined));
 
-  create(name: string, notificationUrl: string, schedule: ScheduleForm, script: File) {
+  create(name: string, notificationUrl: string, schedule: ScheduleForm, script: File, channelIds: Iterable<string>) {
     const data = new FormData();
     data.set('name', name);
     data.set('notificationUrl', notificationUrl);
     for (const [field, value] of Object.entries(scheduleFields(schedule))) {
       data.set(field, String(value));
+    }
+    for (const id of channelIds) {
+      data.append('channelIds', id);
     }
     data.set('script', script);
     return firstValueFrom(this.http.post<Watch>('/api/watches', data));

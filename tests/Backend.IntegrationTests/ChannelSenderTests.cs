@@ -38,7 +38,7 @@ public sealed class ChannelSenderTests(TestContext testContext)
     }
 
     [TestMethod]
-    public async Task DiscordLeavesOutTheUrlOfANotificationWithout()
+    public async Task DiscordLeavesOutTheUrlOfANotificationWithoutOne()
     {
         await using var server = await FakeHttpServer.StartAsync(testContext.CancellationToken);
         using var http = new HttpClient();
@@ -55,7 +55,7 @@ public sealed class ChannelSenderTests(TestContext testContext)
     {
         await using var server = await FakeHttpServer.StartAsync(testContext.CancellationToken);
         using var http = new HttpClient();
-        var notification = Notification.Change(new string('n', 300), new string('a', 3000), new string('b', 3000), "https://example.com");
+        var notification = new Notification(NotificationKind.Change, new string('n', 300), new string('m', 5000), "https://example.com");
 
         await new DiscordSender(http).SendAsync(Discord(new Uri(server.BaseAddress, "api/webhooks/1/a")), notification,
             testContext.CancellationToken);
@@ -110,7 +110,7 @@ public sealed class ChannelSenderTests(TestContext testContext)
     }
 
     [TestMethod]
-    public async Task PushoverLeavesOutTheUrlOfANotificationWithout()
+    public async Task PushoverLeavesOutTheUrlOfANotificationWithoutOne()
     {
         await using var server = await FakeHttpServer.StartAsync(testContext.CancellationToken);
         server.Respond = context => context.Response.WriteAsJsonAsync(new { status = 1, request = "abc" }, context.RequestAborted);
@@ -129,7 +129,7 @@ public sealed class ChannelSenderTests(TestContext testContext)
         await using var server = await FakeHttpServer.StartAsync(testContext.CancellationToken);
         server.Respond = context => context.Response.WriteAsJsonAsync(new { status = 1, request = "abc" }, context.RequestAborted);
         using var http = new HttpClient { BaseAddress = server.BaseAddress };
-        var notification = Notification.Change(new string('n', 300), new string('a', 1000), new string('b', 1000), "https://example.com");
+        var notification = new Notification(NotificationKind.Change, new string('n', 300), new string('m', 2000), "https://example.com");
 
         await new PushoverSender(http).SendAsync(Pushover(), notification, testContext.CancellationToken);
 

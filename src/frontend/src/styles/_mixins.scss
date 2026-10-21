@@ -101,6 +101,23 @@
   }
 }
 
+/// A destructive action, such as deleting. Alongside .primary, it is the confirmation of one.
+@mixin danger-button {
+  color: tokens.$error;
+  border-color: tokens.$danger-border;
+  background: tokens.$danger-surface;
+
+  &:hover:not(:disabled) {
+    background: tokens.$failure-surface;
+  }
+
+  &.primary {
+    color: white;
+    background: tokens.$error;
+    border-color: tokens.$error;
+  }
+}
+
 /// A short label, as Run outcomes, Watch statuses and Changes show.
 @mixin badge {
   font-size: 11px;

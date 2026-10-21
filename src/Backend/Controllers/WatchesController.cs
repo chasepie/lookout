@@ -58,6 +58,11 @@ public sealed class WatchesController(
             return Problem("Script source must not be empty.", statusCode: HttpStatusCode.BadRequest);
         }
 
+        if (await FindChannels(request.ChannelIds, cancellationToken) is not { } channels)
+        {
+            return ChannelMissing();
+        }
+
         var watch = new Watch
         {
             Name = name,
@@ -65,7 +70,8 @@ public sealed class WatchesController(
             Schedule = schedule,
             JitterMinutes = request.JitterMinutes,
             NextRunAt = schedules.NextRunAt(schedule, request.JitterMinutes),
-            NextRunTimeZone = schedules.TimeZone.Id
+            NextRunTimeZone = schedules.TimeZone.Id,
+            Channels = channels
         };
         var version = new ScriptVersion
         {
@@ -231,13 +237,9 @@ public sealed class WatchesController(
             return NotFound();
         }
 
-        var chosen = request.ChannelIds.Distinct().ToList();
-        var channels = await database.Channels
-            .Where(channel => chosen.Contains(channel.Id))
-            .ToListAsync(cancellationToken);
-        if (channels.Count != chosen.Count)
+        if (await FindChannels(request.ChannelIds, cancellationToken) is not { } channels)
         {
-            return Problem("One of the chosen Channels no longer exists.", statusCode: HttpStatusCode.BadRequest);
+            return ChannelMissing();
         }
 
         // Only the join rows change, so the Watch's Revision is left alone and a Run in progress is still recorded.
@@ -321,6 +323,19 @@ public sealed class WatchesController(
         }
     }
 
+    /// <summary>The chosen Channels, or null if any of them doesn't exist.</summary>
+    private async Task<List<Channel>?> FindChannels(IReadOnlyList<Guid> ids, CancellationToken cancellationToken)
+    {
+        var chosen = ids.Distinct().ToList();
+        var channels = await database.Channels
+            .Where(channel => chosen.Contains(channel.Id))
+            .ToListAsync(cancellationToken);
+        return channels.Count == chosen.Count ? channels : null;
+    }
+
+    private ObjectResult ChannelMissing() =>
+        Problem("One of the chosen Channels no longer exists.", statusCode: HttpStatusCode.BadRequest);
+
     private ObjectResult? ValidateSettings(string name, string notificationUrl, int timeoutSeconds)
     {
         if (name.Length is < 1 or > 200)
@@ -328,8 +343,7 @@ public sealed class WatchesController(
             return Problem("Name must contain between 1 and 200 characters.", statusCode: HttpStatusCode.BadRequest);
         }
 
-        if (!Uri.TryCreate(notificationUrl, UriKind.Absolute, out var parsedUrl)
-            || parsedUrl.Scheme is not ("http" or "https") || notificationUrl.Length > 2048)
+        if (!HttpUrls.IsValid(notificationUrl))
         {
             return Problem("Notification URL must be an HTTP or HTTPS URL.", statusCode: HttpStatusCode.BadRequest);
         }
@@ -428,6 +442,7 @@ public sealed class CreateWatchRequest : ScheduleRequest
     public required string Name { get; init; }
     public required string NotificationUrl { get; init; }
     public required IFormFile Script { get; init; }
+    public List<Guid> ChannelIds { get; init; } = [];
 }
 
 public class ScheduleRequest
