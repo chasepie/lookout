@@ -418,6 +418,7 @@ test('a Script whose caller disconnects is stopped, with the subprocesses it sta
   const caller = new AbortController();
   const response = fetch(`${runnerUrl}/execute`, {
     method: 'POST',
+    headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       source: await fixtureSource('starts-subprocess.ts'),
       fileKind: 'ts',
@@ -443,6 +444,7 @@ test("a Script's process exits when the runner dies, with the subprocesses it st
   });
   const response = fetch(`${url}/execute`, {
     method: 'POST',
+    headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       source: await fixtureSource('starts-subprocess.ts'),
       fileKind: 'ts',
@@ -481,6 +483,7 @@ test.each(['SIGINT', 'SIGTERM'] as const)('a runner stopped by %s takes a Script
   });
   const response = fetch(`${url}/execute`, {
     method: 'POST',
+    headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       source: await fixtureSource('blocks-event-loop.ts'),
       fileKind: 'ts',
@@ -734,6 +737,7 @@ test('a connecting runner asks for a headless Chromium with the flags that hide 
 test('a request whose proxy is null runs without one', { timeout: 30_000 }, async () => {
   const response = await fetch(`${runnerUrl}/execute`, {
     method: 'POST',
+    headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ ...validRequest, proxy: null }),
   });
 
@@ -741,9 +745,47 @@ test('a request whose proxy is null runs without one', { timeout: 30_000 }, asyn
   expect(await response.json()).toMatchObject({ outcome: 'succeeded' });
 });
 
+test.each([
+  ['no Content-Type', undefined],
+  ['a text Content-Type', 'text/plain;charset=UTF-8'],
+])('a request with %s is refused, so a web page can only send one after a CORS preflight', { timeout: 30_000 }, async (_, contentType) => {
+  const response = await fetch(`${runnerUrl}/execute`, {
+    method: 'POST',
+    // fetch gives a string body text/plain unless told otherwise, as a page's no-cors request would have
+    body: contentType === undefined ? new Blob([JSON.stringify(validRequest)]) : JSON.stringify(validRequest),
+    ...(contentType !== undefined && { headers: { 'content-type': contentType } }),
+  });
+
+  expect(response.status).toBe(415);
+  expect(await response.json()).toEqual({ error: 'Content-Type must be application/json' });
+});
+
+test('a request from a web page is refused, even one the page counts as same-origin', { timeout: 30_000 }, async () => {
+  const response = await fetch(`${runnerUrl}/execute`, {
+    method: 'POST',
+    // As a page on a domain rebound to the runner's address would send
+    headers: { 'content-type': 'application/json', origin: 'http://rebound.example' },
+    body: JSON.stringify(validRequest),
+  });
+
+  expect(response.status).toBe(403);
+  expect(await response.json()).toEqual({ error: 'Requests from web pages are refused' });
+});
+
+test('a request whose Content-Type has parameters is accepted', { timeout: 30_000 }, async () => {
+  const response = await fetch(`${runnerUrl}/execute`, {
+    method: 'POST',
+    headers: { 'content-type': 'Application/JSON; charset=utf-8' },
+    body: JSON.stringify(validRequest),
+  });
+
+  expect(response.status).toBe(200);
+});
+
 test('a request body over 1 MiB is rejected as too large', { timeout: 30_000 }, async () => {
   const response = await fetch(`${runnerUrl}/execute`, {
     method: 'POST',
+    headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ ...validRequest, source: `// ${'x'.repeat(1024 * 1024)}` }),
   });
 
@@ -801,6 +843,7 @@ test.each([
 ])('a request with %s is rejected', { timeout: 30_000 }, async (_, body, error) => {
   const response = await fetch(`${runnerUrl}/execute`, {
     method: 'POST',
+    headers: { 'content-type': 'application/json' },
     body: typeof body === 'string' ? body : JSON.stringify(body),
   });
 

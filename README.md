@@ -20,7 +20,7 @@ npm start -w src/runner
 dotnet run --project src/Backend --no-launch-profile --urls http://localhost:5280
 ```
 
-Open <http://localhost:5280>. The backend serves the Angular build and API from the same origin and applies database migrations on startup. Its database is `lookout.db` in the backend's content root, `src/Backend`, when started this way. Set `Storage__DataDirectory` to keep it in another directory, or `ConnectionStrings__Lookout` to choose another SQLite connection string, whose relative path is resolved against that directory. A database the Development environment creates starts with one example Watch, which runs `examples/bot-detection.ts` against browserscan.net every hour; other environments start empty. Set `Runner__BaseUrl` to change the runner address (default `http://localhost:3000`). Schedules use the host's time zone; set `Scheduling__TimeZone` (such as `Europe/London`) to choose another. `Scheduling__MaxConcurrentRuns` limits how many Runs execute at once (default 2). Set `HEADLESS=true` when starting the runner to hide Chromium.
+Open <http://localhost:5280>. The backend serves the Angular build and API from the same origin and applies database migrations on startup. Its database is `lookout.db` in the backend's content root, `src/Backend`, when started this way. Set `Storage__DataDirectory` to keep it in another directory, or `ConnectionStrings__Lookout` to choose another SQLite connection string, whose relative path is resolved against that directory (a `file:` URI is used as given). A database the Development environment creates starts with one example Watch, which runs `examples/bot-detection.ts` against browserscan.net every hour; other environments start empty. Set `Runner__BaseUrl` to change the runner address (default `http://localhost:3000`). Schedules use the host's time zone; set `Scheduling__TimeZone` (such as `Europe/London`) to choose another. `Scheduling__MaxConcurrentRuns` limits how many Runs execute at once (default 2). Set `HEADLESS=true` when starting the runner to hide Chromium.
 
 When an HTTPS endpoint is configured (including the `https` launch profile), HTTP requests redirect to it, except those to `/health`, so health probes can check over HTTP. The HTTP-only command above continues to serve HTTP. A runner base URL may include a path prefix, such as `http://proxy/runner/`.
 
@@ -82,8 +82,10 @@ npm test
 Lookout deploys to a homelab with one Docker Compose file, [`compose.yaml`](compose.yaml), which runs three services:
 
 - **`lookout`:** the backend, serving the Angular app on port 8080. Its database is on the `lookout-data` volume, mounted at `/data`, the image's data directory. Nothing else mounts it.
-- **`runner`:** runs Scripts. It's attached only to an internal network with no route to the internet, so a Script's own Node code can't reach it, and it has nothing mounted: no database, secrets or backend configuration ([ADR-0003](docs/adr/0003-scripts-run-in-an-offline-runner-container.md)). Its container limits a Script's memory outside V8's heap.
-- **`browserless`:** runs the headless Chromium each Script drives, on the internal network and one with internet access. It's the only part of a Run that reaches the internet.
+- **`runner`:** runs Scripts. It's attached only to internal networks with no route to the internet, so a Script's own Node code can't reach it, and it has nothing mounted: no database, secrets or backend configuration ([ADR-0003](docs/adr/0003-scripts-run-in-an-offline-runner-container.md)). Its container limits a Script's memory outside V8's heap.
+- **`browserless`:** runs the headless Chromium each Script drives. It shares an internal network with the runner, and has one with internet access: it's the only part of a Run that reaches the internet.
+
+Each pair of services that talk shares a network of its own, so Browserless's Chromium, which loads whatever pages Scripts visit, can't reach Lookout. It can reach the runner, which refuses requests from web pages.
 
 On a host with Docker Compose, from a clone of this repository:
 
@@ -97,10 +99,11 @@ Then open `http://<host>:8080` and set up the account. To upgrade, pull the late
 | --- | --- | --- |
 | `LOOKOUT_PORT` | `8080` | The host port Lookout is served on |
 | `LOOKOUT_TIME_ZONE` | UTC | The time zone schedules use, such as `Europe/London` |
-| `LOOKOUT_MAX_CONCURRENT_RUNS` | `2` | How many Runs execute at once, and how many browsers Browserless runs at once. Raise `LOOKOUT_RUNNER_MEMORY` with it |
+| `LOOKOUT_MAX_CONCURRENT_RUNS` | `2` | How many Runs execute at once, and how many browsers Browserless runs at once. Raise the two memory limits with it |
 | `LOOKOUT_RUNNER_MEMORY` | `1536m` | The runner's memory limit: 640 MB per concurrent Run, plus 256 MB for the runner itself |
+| `LOOKOUT_BROWSERLESS_MEMORY` | `3g` | Browserless's memory limit: about 1.5 GB per concurrent Run |
 
-Lookout serves plain HTTP and is meant to be reached only from your local network ([ADR-0002](docs/adr/0002-designed-for-lan-only-homelab-deployment.md)). For HTTPS, put your own reverse proxy in front of it. Read ADR-0002 before exposing it to the internet: Lookout isn't hardened for that, and the ADR lists what it would take.
+Lookout serves plain HTTP and is meant to be reached only from your local network ([ADR-0002](docs/adr/0002-designed-for-lan-only-homelab-deployment.md)). For HTTPS, put your own reverse proxy in front of it, sending `X-Forwarded-Proto`, as Caddy, nginx and Traefik setups usually do. Lookout then treats requests that came over HTTPS as such, and marks its cookies `Secure` for them. Read ADR-0002 before exposing it to the internet: Lookout isn't hardened for that, and the ADR lists what it would take.
 
 Browserless's `TIMEOUT` is set to 11 minutes, above the longest Run timeout, since its default of 30 seconds would end longer Runs. The runner's `playwright` must match Browserless's Playwright at the major.minor level: `ghcr.io/browserless/chromium:v2.57.1` serves Playwright 1.60 to 1.64, and the runner has 1.64. Upgrade them together.
 
@@ -110,7 +113,7 @@ Browserless's `TIMEOUT` is set to 11 minutes, above the longest Run timeout, sin
 
 The automated tests don't cover the real Browserless stack, so check a deployment by hand:
 
-1. `docker compose ps` shows all three services running, and `lookout` as healthy.
+1. `docker compose ps` shows all three services running, and `lookout` and `browserless` as healthy.
 2. Open Lookout and set up the account.
 3. Create a Watch with the Notification URL `https://example.com/` and this Script, saved as `title.ts`:
 

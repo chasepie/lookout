@@ -6,7 +6,7 @@
  * - `HEADLESS`: `true` runs the launched Chromium headless, as tests do; otherwise it is visible, for local debugging.
  *   Browserless's is always headless.
  */
-import { stopAllScripts } from './execute.ts';
+import { createRunnerConfig, stopAllScripts } from './execute.ts';
 import { createRunnerServer } from './server.ts';
 
 const portText = process.env['PORT'] ?? '3000';
@@ -29,11 +29,11 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   });
 }
 
-const server = createRunnerServer({
-  browser: browserlessUrl
+const server = createRunnerServer(await createRunnerConfig(
+  browserlessUrl
     ? { provider: 'connect', url: browserlessUrl }
     : { provider: 'launch', headless: process.env['HEADLESS'] === 'true' },
-});
+));
 
 server.listen(Number(portText), () => {
   const address = server.address();

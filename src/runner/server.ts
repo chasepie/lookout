@@ -93,7 +93,22 @@ const sendJson = (response: ServerResponse, status: number, body: unknown) => {
   response.end(JSON.stringify(body));
 };
 
+/**
+ * Whether the request says its body is JSON. A web page can send a request without a CORS preflight only with a
+ * text or form body, so requiring JSON keeps a page that Browserless's Chromium loads from running a Script here.
+ */
+const isJsonRequest = (request: IncomingMessage) =>
+  request.headers['content-type']?.split(';')[0]?.trim().toLowerCase() === 'application/json';
+
 async function handleExecute(request: IncomingMessage, response: ServerResponse, config: RunnerConfig) {
+  // Browsers send an Origin with every POST, and the backend doesn't. This refuses a page whose domain was rebound
+  // to the runner's address, which counts as same-origin and so needs no preflight.
+  if (request.headers.origin !== undefined) {
+    throw new InvalidRequestError('Requests from web pages are refused', 403);
+  }
+  if (!isJsonRequest(request)) {
+    throw new InvalidRequestError('Content-Type must be application/json', 415);
+  }
   const executeRequest = parseExecuteRequest(await readJson(request));
   // A caller that goes away won't read the outcome, so stop the Script rather than let it run to its timeout
   const callerGone = new AbortController();

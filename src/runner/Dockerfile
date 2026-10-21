@@ -5,10 +5,11 @@ FROM node:24-slim
 ENV NODE_ENV=production
 WORKDIR /app
 COPY package-lock.json ./
-# Only playwright, at the lock file's version. Installing the runner's workspace would bring other workspaces'
-# packages along.
-RUN npm install --omit=dev --ignore-scripts --no-save --no-package-lock \
-      "playwright@$(node --print "require('./package-lock.json').packages['node_modules/playwright'].version")" \
+# Only playwright, at the version the lock file gives the runner: its own copy if it needs one other than the
+# workspaces' shared one. Installing the runner's workspace would bring other workspaces' packages along.
+RUN npm install --omit=dev --ignore-scripts --no-save --no-package-lock "playwright@$(node --print " \
+      const { packages } = require('./package-lock.json'); \
+      (packages['src/runner/node_modules/playwright'] ?? packages['node_modules/playwright']).version")" \
     && rm package-lock.json \
     && npm cache clean --force
 COPY src/runner src/runner

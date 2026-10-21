@@ -6,6 +6,9 @@ namespace ChasePie.Lookout.Backend.IntegrationTests;
 [TestClass]
 public sealed class DataDirectoryTests(TestContext testContext)
 {
+    /// <summary>A relative database path, as the default configuration has.</summary>
+    private const string RelativeDatabase = "Data Source=lookout.db;Pooling=False";
+
     [TestMethod]
     public async Task KeepsARelativeDatabasePathInTheDataDirectory()
     {
@@ -13,13 +16,13 @@ public sealed class DataDirectoryTests(TestContext testContext)
         var dataDirectory = Path.Combine(Path.GetTempPath(), $"lookout-data-{Guid.NewGuid():N}");
         try
         {
-            await StartAsync(builder => builder.UseSetting("Storage:DataDirectory", dataDirectory));
+            await StartAsync(RelativeDatabase, builder => builder.UseSetting("Storage:DataDirectory", dataDirectory));
 
             Assert.IsTrue(File.Exists(Path.Combine(dataDirectory, "lookout.db")), "Expected the database in the data directory");
         }
         finally
         {
-            Directory.Delete(dataDirectory, recursive: true);
+            DeleteDirectory(dataDirectory);
         }
     }
 
@@ -29,23 +32,41 @@ public sealed class DataDirectoryTests(TestContext testContext)
         var contentRoot = Directory.CreateTempSubdirectory("lookout-content-").FullName;
         try
         {
-            await StartAsync(builder => builder.UseContentRoot(contentRoot));
+            await StartAsync(RelativeDatabase, builder => builder.UseContentRoot(contentRoot));
 
             Assert.IsTrue(File.Exists(Path.Combine(contentRoot, "lookout.db")), "Expected the database in the content root");
         }
         finally
         {
-            Directory.Delete(contentRoot, recursive: true);
+            DeleteDirectory(contentRoot);
         }
     }
 
-    /// <summary>Starts the backend with a relative database path, as the default configuration has, and checks it's healthy.</summary>
-    private async Task StartAsync(Action<IWebHostBuilder> configure)
+    [TestMethod]
+    public async Task KeepsADatabaseUriAsGiven()
+    {
+        var contentRoot = Directory.CreateTempSubdirectory("lookout-content-").FullName;
+        var databasePath = Path.Combine(Path.GetTempPath(), $"lookout-uri-{Guid.NewGuid():N}.db");
+        try
+        {
+            await StartAsync($"Data Source=file:{databasePath};Pooling=False", builder => builder.UseContentRoot(contentRoot));
+
+            Assert.IsTrue(File.Exists(databasePath), "Expected the database at the URI's path");
+        }
+        finally
+        {
+            File.Delete(databasePath);
+            DeleteDirectory(contentRoot);
+        }
+    }
+
+    /// <summary>Starts the backend with the database <paramref name="connectionString"/> names, and checks it's healthy.</summary>
+    private async Task StartAsync(string connectionString, Action<IWebHostBuilder> configure)
     {
         await using var factory = new LookoutWebApplicationFactory();
         await using var host = factory.WithWebHostBuilder(builder =>
         {
-            builder.UseSetting("ConnectionStrings:Lookout", "Data Source=lookout.db;Pooling=False");
+            builder.UseSetting("ConnectionStrings:Lookout", connectionString);
             configure(builder);
         });
         using var client = host.CreateClient();
@@ -53,5 +74,14 @@ public sealed class DataDirectoryTests(TestContext testContext)
         var response = await client.GetAsync(new Uri("/health", UriKind.Relative), testContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    /// <summary>Deletes a test's directory, which a backend that failed to start may not have created.</summary>
+    private static void DeleteDirectory(string path)
+    {
+        if (Directory.Exists(path))
+        {
+            Directory.Delete(path, recursive: true);
+        }
     }
 }

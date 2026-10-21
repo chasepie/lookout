@@ -20,6 +20,8 @@ import {
 
 export interface RunnerConfig {
   browser: BrowserSettings;
+  /** What a Script's process may do on top of what every one may, for its browser; see {@link createRunnerConfig} */
+  browserPermissionArgs: string[];
 }
 
 /** The languages a Script may be written in */
@@ -83,33 +85,40 @@ const playwrightSystemFiles = ['/proc/version', '/proc/sys/fs/binfmt_misc/WSLInt
 /** The OS's name, which Playwright reads on Linux to tell which build of Chromium to launch */
 const osReleaseFile = '/etc/os-release';
 
-let cachedLaunchPermissionArgs: Promise<string[]> | undefined;
-
 /**
- * What a Script's process needs on top to launch Chromium: reading the browsers and the OS's name, and starting
- * processes, since Chromium is one. That allowance lets a Script get around the file limits, and start a process
- * that outlives it, so a process that connects to Browserless doesn't get it. Worked out once, on the first launch.
+ * The runner's configuration for getting browsers from `browser`. To launch Chromium, a Script's process needs to
+ * read the browsers and the OS's name, and to start processes, since Chromium is one. That allowance lets a Script
+ * get around the file limits, and start a process that outlives it, so a process that connects to Browserless
+ * doesn't get it. Worked out as the runner starts, so an install it can't launch from stops it there.
  */
-const launchPermissionArgs = () =>
-  cachedLaunchPermissionArgs ??= findBrowsersDirectory().then((browsersDirectory) => [
-    ...[browsersDirectory, osReleaseFile].map((path) => `--allow-fs-read=${path}`),
-    '--allow-child-process',
-    // Node warns about that allowance on every start, which would end up in every Script's console output
-    '--disable-warning=PERM0002',
-  ]);
+export async function createRunnerConfig(browser: BrowserSettings): Promise<RunnerConfig> {
+  if (browser.provider === 'connect') {
+    return { browser, browserPermissionArgs: [] };
+  }
+  const browsersDirectory = await findBrowsersDirectory();
+  return {
+    browser,
+    browserPermissionArgs: [
+      ...[browsersDirectory, osReleaseFile].map((path) => `--allow-fs-read=${path}`),
+      '--allow-child-process',
+      // Node warns about that allowance on every start, which would end up in every Script's console output
+      '--disable-warning=PERM0002',
+    ],
+  };
+}
 
 /**
  * Node's permission model for a Script's process. It may read only its own directory, the runner's code and
- * packages and the system files Playwright needs, and write only to its temp directory, with what launching
- * Chromium needs on top. Node doesn't treat its permission model as a security boundary; the runner's container is
- * what contains a Script (ADR-0003).
+ * packages and the system files Playwright needs, and write only to its temp directory, with what its browser needs
+ * on top. Node doesn't treat its permission model as a security boundary; the runner's container is what contains a
+ * Script (ADR-0003).
  */
-const permissionArgs = async (browser: BrowserSettings, scriptDirectory: string, tempDirectory: string) => [
+const permissionArgs = (config: RunnerConfig, scriptDirectory: string, tempDirectory: string) => [
   '--permission',
   ...[scriptDirectory, runnerDirectory, packagesDirectory, ...playwrightSystemFiles]
     .map((path) => `--allow-fs-read=${path}`),
   `--allow-fs-write=${tempDirectory}`,
-  ...browser.provider === 'launch' ? await launchPermissionArgs() : [],
+  ...config.browserPermissionArgs,
 ];
 
 /** How many characters of a Script's console output the runner keeps, so a Script that logs without end can't exhaust it */
@@ -343,7 +352,7 @@ export async function execute(
     };
     const execArgv = [
       `--max-old-space-size=${memoryLimitMb}`,
-      ...await permissionArgs(config.browser, directory, tempDirectory),
+      ...permissionArgs(config, directory, tempDirectory),
     ];
     const result = await runScriptProcess(job, execArgv, request.timeoutMs, tempDirectory, signal);
     return { ...result, durationMs: Math.round(performance.now() - started) };

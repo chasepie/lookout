@@ -2,8 +2,12 @@
 # this one:
 #   LOOKOUT_PORT                 the host port Lookout is served on (default 8080)
 #   LOOKOUT_TIME_ZONE            the time zone schedules use, such as Europe/London (default UTC)
-#   LOOKOUT_MAX_CONCURRENT_RUNS  how many Runs execute at once (default 2); raise LOOKOUT_RUNNER_MEMORY with it
+#   LOOKOUT_MAX_CONCURRENT_RUNS  how many Runs execute at once (default 2); raise the memory limits with it
 #   LOOKOUT_RUNNER_MEMORY        the runner's memory limit (default 1536m): 640m per concurrent Run, plus 256m
+#   LOOKOUT_BROWSERLESS_MEMORY   Browserless's memory limit (default 3g): about 1.5g per concurrent Run
+#
+# Each pair of services that talk shares a network of its own, so Browserless's Chromium, which loads whatever pages
+# Scripts visit, can't reach Lookout. It can reach the runner, which refuses requests from web pages.
 name: lookout
 
 services:
@@ -21,14 +25,18 @@ services:
     # The database, in the image's data directory. Nothing else mounts it.
     volumes:
       - lookout-data:/data
-    # internet: to be reached from the LAN and, later, to send notifications
+    # lan: to be reached from the LAN and, later, to send notifications
     networks:
-      - internal
-      - internet
+      - runs
+      - lan
+    # Runs that start before Browserless is ready would be Errored
     depends_on:
-      - runner
+      runner:
+        condition: service_started
+      browserless:
+        condition: service_healthy
 
-  # Runs Scripts. It reaches only Browserless and is reached only by Lookout, and has nothing mounted: no database,
+  # Runs Scripts. It reaches only Browserless and Lookout, which calls it, and has nothing mounted: no database,
   # secrets or backend configuration (ADR-0003).
   runner:
     build:
@@ -38,7 +46,8 @@ services:
     environment:
       BROWSERLESS_URL: ws://browserless:3000/chromium/playwright
     networks:
-      - internal
+      - runs
+      - browsers
     # A minimal init as PID 1, which reaps the processes the runner kills and forwards signals to it. Node, as PID 1,
     # would leave them as zombies.
     init: true
@@ -46,7 +55,8 @@ services:
     # Run (a Script's 512 MB heap and Node's own) and 256 MB for the runner. Without it, a Script could take the
     # host's memory, and the kernel's OOM killer could pick the runner, ending every Run.
     mem_limit: ${LOOKOUT_RUNNER_MEMORY:-1536m}
-    pids_limit: 128
+    # Counts threads: each Node process has about a dozen, so this allows about 40 concurrent Runs
+    pids_limit: 512
     read_only: true
     tmpfs:
       - /tmp
@@ -54,8 +64,6 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
-    depends_on:
-      - browserless
 
   # Runs the browsers Scripts drive, the only part of a Run that reaches the internet
   browserless:
@@ -68,13 +76,24 @@ services:
       # As many browsers as Lookout runs Runs at once
       CONCURRENT: ${LOOKOUT_MAX_CONCURRENT_RUNS:-2}
     networks:
-      - internal
+      - browsers
       - internet
+    # The pages it renders aren't Lookout's to vouch for; one that leaks memory mustn't take the host's
+    mem_limit: ${LOOKOUT_BROWSERLESS_MEMORY:-3g}
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, --output, /dev/null, http://localhost:3000/active]
+      interval: 30s
+      start_period: 30s
+      start_interval: 1s
 
 networks:
-  # No route out, so a Script's own Node code can't reach the internet
-  internal:
+  # Lookout and the runner. No route out, so a Script's own Node code can't reach the internet.
+  runs:
     internal: true
+  # The runner and Browserless, with no route out either
+  browsers:
+    internal: true
+  lan:
   internet:
 
 volumes:

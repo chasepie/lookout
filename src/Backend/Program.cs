@@ -5,6 +5,7 @@ using ChasePie.Lookout.Model;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -73,13 +74,17 @@ public class Program
     /// The database's connection string, with a relative path resolved against the data directory
     /// (<c>Storage:DataDirectory</c>, by default the content root), which is created if it's missing. SQLite would
     /// resolve it against the working directory, which depends on how the app was started; in a container, that's
-    /// lost with the container unless a volume happens to be mounted there.
+    /// lost with the container unless a volume happens to be mounted there. A URI, an in-memory database, or a path
+    /// using Microsoft.Data.Sqlite's <c>|DataDirectory|</c> is left as given.
     /// </summary>
     private static string DatabaseConnectionString(ConfigurationManager configuration, IWebHostEnvironment environment)
     {
         var connection = new SqliteConnectionStringBuilder(configuration.GetConnectionString("Lookout")
             ?? throw new InvalidOperationException("ConnectionStrings:Lookout is not configured"));
-        if (connection.DataSource is "" or ":memory:" || connection.Mode == SqliteOpenMode.Memory)
+        if (connection.DataSource is "" or ":memory:"
+            || connection.Mode == SqliteOpenMode.Memory
+            || connection.DataSource.StartsWith("file:", StringComparison.OrdinalIgnoreCase)
+            || connection.DataSource.StartsWith("|DataDirectory|", StringComparison.OrdinalIgnoreCase))
         {
             return connection.ConnectionString;
         }
@@ -130,6 +135,13 @@ public class Program
             app.MapScalarApiReference();
         }
 
+        // HTTPS comes from the user's own reverse proxy (ADR-0002), so a request it says came over HTTPS counts as one,
+        // and its cookies are Secure. The proxy's address isn't known, so any client is trusted to say so: on the LAN,
+        // the most one can do by lying is mark its own cookies Secure, or skip the redirect to HTTPS.
+        var forwardedHeaders = new ForwardedHeadersOptions { ForwardedHeaders = ForwardedHeaders.XForwardedProto };
+        forwardedHeaders.KnownIPNetworks.Clear();
+        forwardedHeaders.KnownProxies.Clear();
+        app.UseForwardedHeaders(forwardedHeaders);
         // Health probes, such as a container's, check over HTTP and needn't follow a redirect.
         app.UseWhen(context => !context.Request.Path.StartsWithSegments("/health"), branch => branch.UseHttpsRedirection());
         ContentSecurityPolicy.Apply(app);
