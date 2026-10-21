@@ -42,7 +42,7 @@
         <article class="watch-card" [attr.aria-label]="watch.name" [attr.aria-busy]="running().has(watch.id)">
           <div class="watch-heading">
             <h2><a [routerLink]="['/watches', watch.id]">{{ watch.name }}</a></h2>
-            <app-status-badge [status]="watch.status" />
+            <app-status-badge [status]="watch.status" [running]="watch.isRunning" />
           </div>
           <a class="page-link" [href]="watch.notificationUrl" target="_blank" rel="noopener noreferrer">Open page <span aria-hidden="true">↗</span></a>
           <p class="eyebrow content-label">LATEST CONTENT</p>
@@ -67,7 +67,8 @@
               @if (editingSchedule() !== watch.id) {
                 <button type="button" (click)="editingSchedule.set(watch.id)">Edit schedule</button>
               }
-              <button type="button" (click)="runNow(watch)" [disabled]="running().has(watch.id)">{{ running().has(watch.id) ? 'Running…' : 'Run now' }}</button>
+              @let runningNow = running().has(watch.id) || watch.isRunning;
+              <button type="button" (click)="runNow(watch)" [disabled]="runningNow">{{ runningNow ? 'Running…' : 'Run now' }}</button>
             </div>
           </div>
           @if (editingSchedule() === watch.id) {

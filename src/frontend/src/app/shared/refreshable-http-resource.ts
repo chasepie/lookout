@@ -1,5 +1,5 @@
 import { type HttpResourceRef, type HttpResourceRequest, httpResource } from '@angular/common/http';
-import { signal } from '@angular/core';
+import { effect, linkedSignal, untracked } from '@angular/core';
 
 /** An httpResource that can be read afresh at any time. */
 export interface RefreshableHttpResource<T> extends HttpResourceRef<T> {
@@ -9,21 +9,30 @@ export interface RefreshableHttpResource<T> extends HttpResourceRef<T> {
 }
 
 /**
- * Creates an httpResource whose refresh() reads it again. reload() declines while the resource is still loading its
- * first value, which may predate the change, so then refresh() restarts the read with a new request object.
+ * Creates an httpResource whose refresh() reads it again. reload() declines while the resource is loading, and the
+ * read under way may predate the change, so refresh() then reads again once that read lands. Restarting the read
+ * instead would cancel the request under way, and drop the value on screen during a reload.
  */
 export function refreshableHttpResource<T>(request: () => HttpResourceRequest | undefined): RefreshableHttpResource<T | undefined> {
-  const reads = signal(0);
-  const resource = httpResource<T>(() => {
-    reads();
-    const current = request();
-    return current && { ...current };
+  const resource = httpResource<T>(request);
+  // Forgotten when the request changes, as the new request's read is fresh anyway.
+  const readAgain = linkedSignal({
+    source: () => JSON.stringify(request() ?? null),
+    computation: () => false
+  });
+  effect(() => {
+    if (readAgain() && !resource.isLoading()) {
+      untracked(() => {
+        readAgain.set(false);
+        resource.reload();
+      });
+    }
   });
   // The same object once narrowed still has refresh(), which TypeScript can't see through hasValue()'s predicate.
   return Object.assign(resource, {
     refresh() {
       if (!resource.reload()) {
-        reads.update((count) => count + 1);
+        readAgain.set(true);
       }
     },
   }) as RefreshableHttpResource<T | undefined>;

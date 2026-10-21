@@ -1,5 +1,6 @@
 import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormField, apply, form, submit } from '@angular/forms/signals';
 import { RouterLink } from '@angular/router';
 import { ChannelChoices } from '../../channels/channel-choices/channel-choices';
@@ -11,6 +12,7 @@ import { defaultSchedule, scheduleSchema } from '../../schedules/schedule';
 import { ScheduleEditor } from '../../schedules/schedule-editor/schedule-editor';
 import { SchedulePicker } from '../../schedules/schedule-picker/schedule-picker';
 import { StatusBadge } from '../status-badge/status-badge';
+import { WatchEvents } from '../watch-events';
 import { type Watch, outcomeLabels } from '../watch.model';
 import { nameAndNotificationUrlRules } from '../watch-settings';
 import { Watches } from '../watches';
@@ -42,6 +44,9 @@ export class WatchList {
   constructor() {
     // Runs, including scheduled ones, and changes made on a Watch's page happen while the list isn't on screen.
     this.watches.list.refresh();
+    // While it is, every event changes some Watch on it; the list is read afresh rather than patched, as an event may
+    // overtake a read already under way.
+    inject(WatchEvents).events.pipe(takeUntilDestroyed()).subscribe(() => this.watches.list.refresh());
   }
 
   protected selectScript(input: HTMLInputElement) {

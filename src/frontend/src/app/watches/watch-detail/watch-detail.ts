@@ -1,6 +1,7 @@
 import { DatePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, input, linkedSignal, untracked } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormField, form, submit } from '@angular/forms/signals';
 import { Router, RouterLink } from '@angular/router';
 import { OutcomeBadge } from '../outcome-badge/outcome-badge';
@@ -9,6 +10,7 @@ import { refreshableHttpResource } from '../../shared/refreshable-http-resource'
 import { RunTiming } from '../run-timing/run-timing';
 import { ScheduleEditor } from '../../schedules/schedule-editor/schedule-editor';
 import { StatusBadge } from '../status-badge/status-badge';
+import { WatchEvents } from '../watch-events';
 import { type Run, type Watch, type WatchSettings, outcomeLabels } from '../watch.model';
 import { defaultTimeoutSeconds, maxTimeoutSeconds, nameAndNotificationUrlRules, timeoutRules } from '../watch-settings';
 import { WatchChannels } from '../watch-channels/watch-channels';
@@ -48,11 +50,20 @@ export class WatchDetail {
   private destroyed = false;
   // A resource's value() throws while it is in an error state, so this checks hasValue() first.
   private readonly latestPage = computed(() => (this.latestRuns.hasValue() ? this.latestRuns.value() : undefined));
-  // Older pages continue the latest page they were loaded after, so they reset whenever it or the Watch changes.
+  // Older pages continue the latest page they were loaded after. When it's read again, such as after a Run, the older
+  // pages shown are kept below it as long as it still reaches them, so nothing is skipped; otherwise, and when the
+  // Watch changes, they reset. An older page still loading is discarded either way.
   // Moving to another Watch's page reuses this component, which is why the other per-Watch state below resets too.
-  protected readonly olderRuns = linkedSignal<unknown, OlderRuns>({
-    source: () => [this.id(), this.latestPage()],
-    computation: () => noOlderRuns,
+  protected readonly olderRuns = linkedSignal<{ id: string; latest: Run[] | undefined }, OlderRuns>({
+    source: () => ({ id: this.id(), latest: this.latestPage() }),
+    computation: ({ id, latest }, previous) => {
+      const older = previous?.value.runs ?? [];
+      const oldest = latest?.at(-1)?.id;
+      if (previous?.source.id !== id || !older.length || oldest === undefined) {return noOlderRuns;}
+      const shown = [...(previous.source.latest ?? []), ...older];
+      if (!shown.some((run) => run.id === oldest)) {return noOlderRuns;}
+      return { runs: shown.filter((run) => run.id < oldest), ended: previous.value.ended, loading: false };
+    },
   });
   protected readonly runs = computed(() => [...(this.latestPage() ?? []), ...this.olderRuns().runs]);
   protected readonly canShowOlderRuns = computed(() => !this.olderRuns().ended
@@ -100,6 +111,14 @@ export class WatchDetail {
   constructor() {
     inject(DestroyRef).onDestroy(() => {
       this.destroyed = true;
+    });
+    // Read afresh rather than patched, as an event may overtake a read already under way.
+    inject(WatchEvents).events.pipe(takeUntilDestroyed()).subscribe((event) => {
+      if (event.type !== 'connected' && event.watchId !== this.id()) {return;}
+      this.refreshWatch();
+      if (event.type === 'connected' || (event.type === 'runFinished' && event.runId !== null)) {
+        this.latestRuns.refresh();
+      }
     });
   }
 

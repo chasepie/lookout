@@ -182,7 +182,7 @@ test.describe('when responses arrive late', () => {
     const id = await createWatch(page, `Late save ${randomUUID()}`);
     await page.goto(`/watches/${id}`);
     await expect(page.getByLabel('Timeout (seconds)')).toHaveValue('120');
-    const release = await holdFirst(page, `**/api/watches/${id}`);
+    const release = await holdFirst(page, `**/api/watches/${id}`, 'PUT');
 
     // The backend trims the name it saves, which must still count as this save arriving.
     const renamed = `Renamed ${randomUUID()}`;
@@ -218,7 +218,7 @@ test.describe('when responses arrive late', () => {
     const otherId = await createWatch(page, other);
     await page.goto(`/watches/${deleted}`);
     await expect(page.getByRole('button', { name: 'Delete Watch' })).toBeVisible();
-    const release = await holdFirst(page, `**/api/watches/${deleted}`);
+    const release = await holdFirst(page, `**/api/watches/${deleted}`, 'DELETE');
 
     await page.getByRole('button', { name: 'Delete Watch' }).click();
     await page.getByRole('button', { name: 'Delete permanently' }).click();

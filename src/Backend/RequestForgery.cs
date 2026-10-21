@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.AspNetCore.Mvc.Infrastructure;
+using Microsoft.Extensions.Primitives;
 
 namespace ChasePie.Lookout.Backend;
 
@@ -46,6 +47,41 @@ public static class RequestForgery
             SameSite = SameSiteMode.Strict,
             Secure = context.Request.IsHttps
         });
+    }
+
+    /// <summary>
+    /// Protects a SignalR hub from cross-site WebSocket hijacking, which would let a page on another port read what it
+    /// pushes. Browsers send cookies, but no headers, when opening a WebSocket, so it can't carry the request token.
+    /// Instead, negotiating a connection must carry it, and every other request to the hub must belong to a negotiated
+    /// connection. A page on another origin can send a negotiation but can't read the connection ID in the response.
+    /// </summary>
+    public static void ProtectHub(WebApplication app, PathString path)
+    {
+        app.UseWhen(context => context.Request.Path.StartsWithSegments(path), branch => branch.Use(async (context, next) =>
+        {
+            var negotiating = context.Request.Path.StartsWithSegments(path.Add("/negotiate"));
+            if (negotiating && !await context.RequestServices.GetRequiredService<IAntiforgery>().IsRequestValidAsync(context))
+            {
+                await Results
+                    .Problem(
+                        type: MissingTokenProblemType,
+                        statusCode: StatusCodes.Status400BadRequest,
+                        detail: "This connection is missing Lookout's request token. Reload the page and try again.")
+                    .ExecuteAsync(context);
+                return;
+            }
+            // The same test SignalR applies to the connection ID, which starts a new connection when it's missing or empty.
+            if (!negotiating && StringValues.IsNullOrEmpty(context.Request.Query["id"]))
+            {
+                await Results
+                    .Problem(
+                        statusCode: StatusCodes.Status400BadRequest,
+                        detail: "Negotiate a connection before connecting.")
+                    .ExecuteAsync(context);
+                return;
+            }
+            await next(context);
+        }));
     }
 
     /// <summary>

@@ -29,6 +29,8 @@ export interface Watch {
   notificationUrl: string;
   baseline: string | null;
   status: WatchStatus;
+  /** Whether a Run is in progress, shown alongside the status. */
+  isRunning: boolean;
   isPaused: boolean;
   failureStreak: number;
   timeoutSeconds: number;

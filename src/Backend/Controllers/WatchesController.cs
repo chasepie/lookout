@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
 using ChasePie.Lookout.Database;
+using ChasePie.Lookout.Backend.Events;
 using ChasePie.Lookout.Backend.Scheduling;
 using ChasePie.Lookout.Model;
 using Microsoft.AspNetCore.Mvc;
@@ -17,16 +18,18 @@ public sealed class WatchesController(
     WatchSchedules schedules,
     RunningWatches runningWatches,
     RunSlots runSlots,
+    WatchEvents watchEvents,
     IHostApplicationLifetime applicationLifetime)
     : LookoutControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<WatchSummary>>> List(CancellationToken cancellationToken)
     {
-        return await database.Watches.AsNoTracking()
+        var watches = await database.Watches.AsNoTracking()
             .OrderBy(watch => EF.Functions.Collate(watch.Name, "NOCASE"))
             .Select(WatchSummary.Projection)
             .ToListAsync(cancellationToken);
+        return watches.ConvertAll(WithRunning);
     }
 
     [HttpPost]
@@ -132,10 +135,10 @@ public sealed class WatchesController(
                     .SetProperty(watch => watch.NextRunTimeZone, schedules.TimeZone.Id), cancellationToken);
             if (updated == 1)
             {
-                return await database.Watches.AsNoTracking()
+                return WithRunning(await database.Watches.AsNoTracking()
                     .Where(watch => watch.Id == id)
                     .Select(WatchSummary.Projection)
-                    .SingleAsync(cancellationToken);
+                    .SingleAsync(cancellationToken));
             }
         }
         return Problem("Runs of this Watch kept starting while its schedule was being saved. Please try again.", statusCode: HttpStatusCode.Conflict);
@@ -148,7 +151,7 @@ public sealed class WatchesController(
             .Where(watch => watch.Id == id)
             .Select(WatchSummary.Projection)
             .SingleOrDefaultAsync(cancellationToken);
-        return watch is null ? NotFound() : watch;
+        return watch is null ? NotFound() : WithRunning(watch);
     }
 
     [HttpPut("{id:guid}")]
@@ -186,11 +189,16 @@ public sealed class WatchesController(
     {
         // Clearing the next Run also stops the scheduler claiming one it read as due just before.
         var updated = await database.Watches
-            .Where(watch => watch.Id == id)
+            .Where(watch => watch.Id == id && !watch.IsPaused)
             .ExecuteUpdateAsync(setters => setters
                 .SetProperty(watch => watch.IsPaused, true)
                 .SetProperty(watch => watch.NextRunAt, (DateTimeOffset?)null), cancellationToken);
-        return updated == 0 ? NotFound() : NoContent();
+        if (updated == 1)
+        {
+            await watchEvents.StatusChangedAsync(id, WatchStatus.Paused);
+            return NoContent();
+        }
+        return await database.Watches.AnyAsync(watch => watch.Id == id, cancellationToken) ? NoContent() : NotFound();
     }
 
     [HttpPost("{id:guid}/resume")]
@@ -228,6 +236,10 @@ public sealed class WatchesController(
                     .SetProperty(watch => watch.NextRunTimeZone, schedules.TimeZone.Id), cancellationToken);
             if (updated == 1)
             {
+                if (await WatchSummary.StatusAsync(database.Watches, id, CancellationToken.None) is { } resumed)
+                {
+                    await watchEvents.StatusChangedAsync(id, resumed);
+                }
                 return NoContent();
             }
         }
@@ -348,6 +360,8 @@ public sealed class WatchesController(
     private ObjectResult ChannelMissing() =>
         Problem("One of the chosen Channels no longer exists.", statusCode: HttpStatusCode.BadRequest);
 
+    private WatchSummary WithRunning(WatchSummary watch) => watch with { IsRunning = watchEvents.IsRunning(watch.Id) };
+
     private ObjectResult? ValidateSettings(string name, string notificationUrl, int timeoutSeconds)
     {
         if (name.Length is < 1 or > 200)
@@ -410,19 +424,27 @@ public sealed record WatchSummary(
     DateTimeOffset? NextRunAt,
     IReadOnlyList<Guid> ChannelIds)
 {
+    /// <summary>
+    /// A Watch's status, as an expression rather than a method, so EF translates it to SQL. A failure streak outranks
+    /// Pending, since a Watch whose Script never Succeeded needs attention too.
+    /// </summary>
+    private static readonly Expression<Func<Watch, WatchStatus>> StatusProjection = watch =>
+        watch.IsPaused
+            ? WatchStatus.Paused
+            : watch.FailureStreak > 0
+                ? WatchStatus.Failing
+                : watch.Baseline == null
+                    ? WatchStatus.Pending
+                    : WatchStatus.Healthy;
+
     /// <summary>Maps a Watch in a database query; <see cref="From"/> applies the same mapping in memory.</summary>
-    public static readonly Expression<Func<Watch, WatchSummary>> Projection = watch => new WatchSummary(
+    public static readonly Expression<Func<Watch, WatchSummary>> Projection = WithStatus((watch, status) => new WatchSummary(
         watch.Id,
         watch.Name,
         watch.NotificationUrl,
         watch.CurrentScriptVersionId,
         watch.Baseline,
-        // Inline rather than a method call, so EF translates it to SQL. A failure streak outranks Pending, since a
-        // Watch whose Script never Succeeded needs attention too.
-        Status: watch.IsPaused ? WatchStatus.Paused
-            : watch.FailureStreak > 0 ? WatchStatus.Failing
-            : watch.Baseline == null ? WatchStatus.Pending
-            : WatchStatus.Healthy,
+        status,
         watch.IsPaused,
         watch.FailureStreak,
         watch.TimeoutSeconds,
@@ -430,11 +452,39 @@ public sealed record WatchSummary(
         watch.Schedule,
         watch.JitterMinutes,
         watch.NextRunAt,
-        watch.Channels.Select(channel => channel.Id).ToList());
+        watch.Channels.Select(channel => channel.Id).ToList()));
+
+    /// <summary>Whether the Watch is Running, which is shown alongside its <see cref="Status"/>.</summary>
+    public bool IsRunning { get; init; }
 
     private static readonly Func<Watch, WatchSummary> CompiledProjection = Projection.Compile();
+    private static readonly Func<Watch, WatchStatus> CompiledStatus = StatusProjection.Compile();
 
     public static WatchSummary From(Watch watch) => CompiledProjection(watch);
+
+    public static WatchStatus StatusOf(Watch watch) => CompiledStatus(watch);
+
+    /// <summary>The Watch's status as stored, or null if it doesn't exist.</summary>
+    public static Task<WatchStatus?> StatusAsync(IQueryable<Watch> watches, Guid id, CancellationToken cancellationToken) =>
+        watches.Where(watch => watch.Id == id)
+            .Select(StatusProjection)
+            .Select(status => (WatchStatus?)status)
+            .SingleOrDefaultAsync(cancellationToken);
+
+    /// <summary>Puts <see cref="StatusProjection"/> in the shape's status, so EF translates the whole projection.</summary>
+    private static Expression<Func<Watch, WatchSummary>> WithStatus(Expression<Func<Watch, WatchStatus, WatchSummary>> shape)
+    {
+        var watch = shape.Parameters[0];
+        var status = new ReplaceParameter(StatusProjection.Parameters[0], watch)
+            .Visit(StatusProjection.Body);
+        return Expression.Lambda<Func<Watch, WatchSummary>>(
+            new ReplaceParameter(shape.Parameters[1], status).Visit(shape.Body), watch);
+    }
+
+    private sealed class ReplaceParameter(ParameterExpression parameter, Expression replacement) : ExpressionVisitor
+    {
+        protected override Expression VisitParameter(ParameterExpression node) => node == parameter ? replacement : node;
+    }
 }
 
 public sealed class ChannelsRequest

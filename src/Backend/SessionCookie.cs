@@ -64,7 +64,7 @@ public static class SessionCookie
         }
     }
 
-    private static Guid? SessionId(ClaimsPrincipal? principal) =>
+    public static Guid? SessionId(ClaimsPrincipal? principal) =>
         Guid.TryParse(principal?.FindFirstValue(SessionIdClaim), out var id) ? id : null;
 
     private static Task SetStatus(HttpResponse response, int statusCode)
