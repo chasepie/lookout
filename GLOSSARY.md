@@ -67,7 +67,7 @@ The Watch is in a streak of Known failure or Errored Runs.
 _Avoid_: Broken, Erroring
 
 **Paused**:
-The user has stopped the Watch's scheduled Runs; its Baseline is kept.
+The user has stopped the Watch's scheduled Runs; its Baseline and failure streak are kept.
 _Avoid_: Disabled, Stopped
 
 **Running**:

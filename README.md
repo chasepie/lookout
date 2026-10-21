@@ -45,7 +45,7 @@ The first Succeeded Run sets the Baseline silently. Later Succeeded Runs record 
 
 On first launch, Lookout asks you to set up its single local account; after that, it asks you to log in. The login is kept in an `HttpOnly`, `SameSite=Strict` cookie and lasts until you log out. Logging out ends that session on the server, so a copied cookie stops working too. Every endpoint below except the first three needs a logged-in session and returns HTTP 401 without one; endpoints added later are protected unless they explicitly allow anonymous access. Every POST, PUT, PATCH and DELETE must also send the `X-XSRF-TOKEN` header with the value of the `Lookout.XSRF-TOKEN` cookie that `GET /api/session` sets, or it gets HTTP 400; this stops pages from other services on the same host acting with your login. The token belongs to one login, so fetch `GET /api/session` again after setup, login or logout. The Angular app does all of this automatically. Every response also carries a Content Security Policy that allows only Lookout's own scripts, enforces Trusted Types and stops other sites framing the app.
 
-Each Watch reports a status. Paused means the user stopped its scheduled Runs; Run now still works. Otherwise Failing means it is in a streak of Known failure or Errored Runs, which the next Succeeded Run ends. This applies even before its first Succeeded Run. Pending means it has no Baseline yet, and Healthy that its latest Run Succeeded. Pausing keeps the Baseline and clears the next Run; resuming schedules the next Run from now and starts a fresh failure streak. A Run that was in progress when the Watch was resumed or deleted is not recorded. Deleting a Watch deletes its Script versions and Run history.
+Each Watch reports a status. Paused means the user stopped its scheduled Runs; Run now still works. Otherwise Failing means it is in a streak of Known failure or Errored Runs, which the next Succeeded Run ends. This applies even before its first Succeeded Run. Pending means it has no Baseline yet, and Healthy that its latest Run Succeeded. Pausing keeps the Baseline and clears the next Run; resuming schedules the next Run from now and keeps the failure streak, so a Watch that was Failing stays Failing until a Run Succeeds. A Run that was in progress when the Watch was deleted is not recorded. Deleting a Watch deletes its Script versions and Run history.
 
 The initial API is:
 
@@ -61,7 +61,7 @@ The initial API is:
 | PUT | `/api/watches/{id}` | Edit a Watch's settings with JSON `{ name, notificationUrl, timeoutSeconds }` |
 | DELETE | `/api/watches/{id}` | Delete a Watch with its Script versions and Run history |
 | POST | `/api/watches/{id}/pause` | Pause a Watch's scheduled Runs, keeping its Baseline and clearing its next Run |
-| POST | `/api/watches/{id}/resume` | Resume a paused Watch with a fresh failure streak, scheduling its next Run from now |
+| POST | `/api/watches/{id}/resume` | Resume a paused Watch, scheduling its next Run from now |
 | PUT | `/api/watches/{id}/schedule` | Change a Watch's schedule and jitter, with the same fields as a JSON body, and schedule its next Run from now |
 | POST | `/api/watches/{id}/runs` | Execute and record a Run; respond when it completes |
 | GET | `/api/watches/{id}/runs` | Read Run history, newest first, including `isChange`; defaults to 50 Runs, with `limit=1..100` and `before=<Run ID>` for older pages |

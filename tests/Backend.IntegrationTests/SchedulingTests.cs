@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 using ChasePie.Lookout.Backend.Runner;
@@ -47,7 +48,8 @@ public sealed class SchedulingTests(TestContext testContext)
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         var id = (await CreateWatch(client, Every(5, "minutes")))["id"]!.GetValue<string>();
 
-        var paused = await PostWatchAction(client, id, "pause");
+        await PostWatchAction(client, id, "pause");
+        var paused = await Watch(client, id);
         factory.Time.Advance(TimeSpan.FromHours(1));
         await Settle();
 
@@ -66,7 +68,8 @@ public sealed class SchedulingTests(TestContext testContext)
         await PostWatchAction(client, id, "pause");
         factory.Time.Advance(TimeSpan.FromHours(1));
 
-        var resumed = await PostWatchAction(client, id, "resume");
+        await PostWatchAction(client, id, "resume");
+        var resumed = await Watch(client, id);
 
         Assert.AreEqual(factory.Time.GetUtcNow().AddMinutes(5), resumed["nextRunAt"]!.GetValue<DateTimeOffset>());
         await Settle();
@@ -121,8 +124,9 @@ public sealed class SchedulingTests(TestContext testContext)
         var changed = await response.Content.ReadFromJsonAsync<JsonObject>(testContext.CancellationToken);
         Assert.AreEqual(10, changed!["schedule"]!["every"]!.GetValue<int>());
         Assert.IsNull(changed["nextRunAt"]);
+        await PostWatchAction(client, id, "resume");
         Assert.AreEqual(factory.Time.GetUtcNow().AddMinutes(10),
-            (await PostWatchAction(client, id, "resume"))["nextRunAt"]!.GetValue<DateTimeOffset>());
+            (await Watch(client, id))["nextRunAt"]!.GetValue<DateTimeOffset>());
     }
 
     [TestMethod]
@@ -826,11 +830,10 @@ public sealed class SchedulingTests(TestContext testContext)
         return await client.PostAsync(new Uri("/api/watches", UriKind.Relative), form, testContext.CancellationToken);
     }
 
-    private async Task<JsonObject> PostWatchAction(HttpClient client, string id, string action)
+    private async Task PostWatchAction(HttpClient client, string id, string action)
     {
         var response = await client.PostAsync(new Uri($"/api/watches/{id}/{action}", UriKind.Relative), null, testContext.CancellationToken);
-        response.EnsureSuccessStatusCode();
-        return (await response.Content.ReadFromJsonAsync<JsonObject>(testContext.CancellationToken))!;
+        Assert.AreEqual(HttpStatusCode.NoContent, response.StatusCode);
     }
 
     private async Task<JsonObject> Watch(HttpClient client, string id)

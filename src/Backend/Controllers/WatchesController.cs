@@ -138,7 +138,7 @@ public sealed class WatchesController(
     }
 
     [HttpPut("{id:guid}")]
-    public async Task<ActionResult<WatchSummary>> Edit(Guid id, EditWatchRequest request, CancellationToken cancellationToken)
+    public async Task<IActionResult> Edit(Guid id, EditWatchRequest request, CancellationToken cancellationToken)
     {
         var name = request.Name.Trim();
         var notificationUrl = request.NotificationUrl.Trim();
@@ -148,12 +148,12 @@ public sealed class WatchesController(
         }
 
         // A set-based update leaves the Revision alone, so it neither races nor supersedes a Run being recorded.
-        await database.Watches.Where(watch => watch.Id == id)
+        var updated = await database.Watches.Where(watch => watch.Id == id)
             .ExecuteUpdateAsync(setters => setters
                 .SetProperty(watch => watch.Name, name)
                 .SetProperty(watch => watch.NotificationUrl, notificationUrl)
                 .SetProperty(watch => watch.TimeoutSeconds, request.TimeoutSeconds), cancellationToken);
-        return await Get(id, cancellationToken);
+        return updated == 0 ? NotFound() : NoContent();
     }
 
     [HttpDelete("{id:guid}")]
@@ -165,37 +165,41 @@ public sealed class WatchesController(
     }
 
     [HttpPost("{id:guid}/pause")]
-    public async Task<ActionResult<WatchSummary>> Pause(Guid id, CancellationToken cancellationToken)
+    public async Task<IActionResult> Pause(Guid id, CancellationToken cancellationToken)
     {
         // Clearing the next Run also stops the scheduler claiming one it read as due just before.
-        await database.Watches.Where(watch => watch.Id == id)
+        var updated = await database.Watches.Where(watch => watch.Id == id)
             .ExecuteUpdateAsync(setters => setters
                 .SetProperty(watch => watch.IsPaused, true)
                 .SetProperty(watch => watch.NextRunAt, (DateTimeOffset?)null), cancellationToken);
-        return await Get(id, cancellationToken);
+        return updated == 0 ? NotFound() : NoContent();
     }
 
     [HttpPost("{id:guid}/resume")]
-    public async Task<ActionResult<WatchSummary>> Resume(Guid id, CancellationToken cancellationToken)
+    public async Task<IActionResult> Resume(Guid id, CancellationToken cancellationToken)
     {
-        var paused = await database.Watches.AsNoTracking()
-            .Where(watch => watch.Id == id && watch.IsPaused)
-            .Select(watch => new { watch.Schedule, watch.JitterMinutes, watch.LastScheduledRunAt })
+        var current = await database.Watches.AsNoTracking()
+            .Where(watch => watch.Id == id)
+            .Select(watch => new { watch.IsPaused, watch.Schedule, watch.JitterMinutes, watch.LastScheduledRunAt })
             .SingleOrDefaultAsync(cancellationToken);
-        if (paused is not null)
+        if (current is null)
         {
-            // The next Run is scheduled from now, so a Watch resumed after a long pause doesn't run at once.
-            // Advancing the Revision stops a Run that started before resuming from continuing the old streak.
-            var nextRunAt = schedules.NextRunAt(paused.Schedule, paused.JitterMinutes, paused.LastScheduledRunAt);
+            return NotFound();
+        }
+
+        if (current.IsPaused)
+        {
+            // The next Run is scheduled from now, so a Watch resumed after a long pause doesn't run at once. The
+            // failure streak carries on, and a set-based update leaves the Revision alone, so a Run in progress is
+            // still recorded.
+            var nextRunAt = schedules.NextRunAt(current.Schedule, current.JitterMinutes, current.LastScheduledRunAt);
             await database.Watches.Where(watch => watch.Id == id && watch.IsPaused)
                 .ExecuteUpdateAsync(setters => setters
                     .SetProperty(watch => watch.IsPaused, false)
-                    .SetProperty(watch => watch.FailureStreak, 0)
-                    .SetProperty(watch => watch.Revision, watch => watch.Revision + 1)
                     .SetProperty(watch => watch.NextRunAt, nextRunAt)
                     .SetProperty(watch => watch.NextRunTimeZone, schedules.TimeZone.Id), cancellationToken);
         }
-        return await Get(id, cancellationToken);
+        return NoContent();
     }
 
     [HttpGet("{id:guid}/runs")]

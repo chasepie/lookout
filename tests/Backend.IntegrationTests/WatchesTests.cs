@@ -193,7 +193,7 @@ public sealed class WatchesTests(TestContext testContext)
     }
 
     [TestMethod]
-    public async Task PausingKeepsTheBaselineAndResumingStartsAFreshFailureStreak()
+    public async Task PausingKeepsTheBaselineAndResumingKeepsTheFailureStreak()
     {
         await using var factory = new LookoutWebApplicationFactory();
         factory.Runner.Results.Enqueue(new RunnerResult { Outcome = RunOutcome.Succeeded, Content = "£20", DurationMs = 1 });
@@ -203,17 +203,18 @@ public sealed class WatchesTests(TestContext testContext)
         await RunNow(client, id);
         await RunNow(client, id);
 
-        var paused = await PostWatchAction(client, id, "pause");
-        var resumed = await PostWatchAction(client, id, "resume");
+        await PostWatchAction(client, id, "pause");
+        var paused = await GetWatch(client, id);
+        await PostWatchAction(client, id, "resume");
+        var resumed = await GetWatch(client, id);
 
         Assert.AreEqual("paused", paused["status"]!.GetValue<string>());
         Assert.IsTrue(paused["isPaused"]!.GetValue<bool>());
         Assert.AreEqual("£20", paused["baseline"]!.GetValue<string>());
-        Assert.AreEqual("healthy", resumed["status"]!.GetValue<string>());
+        Assert.AreEqual("failing", resumed["status"]!.GetValue<string>());
         Assert.IsFalse(resumed["isPaused"]!.GetValue<bool>());
-        Assert.AreEqual(0, resumed["failureStreak"]!.GetValue<int>());
+        Assert.AreEqual(1, resumed["failureStreak"]!.GetValue<int>());
         Assert.AreEqual("£20", resumed["baseline"]!.GetValue<string>());
-        Assert.AreEqual(resumed.ToJsonString(), (await GetWatch(client, id)).ToJsonString());
     }
 
     [TestMethod]
@@ -234,7 +235,7 @@ public sealed class WatchesTests(TestContext testContext)
     }
 
     [TestMethod]
-    public async Task ARunThatStartedBeforeResumingDoesNotContinueTheOldStreak()
+    public async Task ARunInProgressWhenTheWatchIsResumedIsRecorded()
     {
         await using var factory = new LookoutWebApplicationFactory();
         factory.Runner.Results.Enqueue(new RunnerResult { Outcome = RunOutcome.Errored, DurationMs = 1 });
@@ -252,10 +253,11 @@ public sealed class WatchesTests(TestContext testContext)
         finished.SetResult(new RunnerResult { Outcome = RunOutcome.Errored, DurationMs = 1 });
         var response = await pending;
 
-        Assert.AreEqual(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
         var watch = await GetWatch(client, id);
-        Assert.AreEqual(0, watch["failureStreak"]!.GetValue<int>());
-        Assert.HasCount(1, (await client.GetFromJsonAsync<JsonArray>($"/api/watches/{id}/runs", testContext.CancellationToken))!);
+        Assert.AreEqual(2, watch["failureStreak"]!.GetValue<int>());
+        Assert.IsFalse(watch["isPaused"]!.GetValue<bool>());
+        Assert.HasCount(2, (await client.GetFromJsonAsync<JsonArray>($"/api/watches/{id}/runs", testContext.CancellationToken))!);
     }
 
     [TestMethod]
@@ -292,12 +294,11 @@ public sealed class WatchesTests(TestContext testContext)
             testContext.CancellationToken);
         await RunNow(client, id);
 
-        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
-        var edited = await response.Content.ReadFromJsonAsync<JsonObject>(testContext.CancellationToken);
-        Assert.AreEqual("Gadget price", edited!["name"]!.GetValue<string>());
+        Assert.AreEqual(HttpStatusCode.NoContent, response.StatusCode);
+        var edited = await GetWatch(client, id);
+        Assert.AreEqual("Gadget price", edited["name"]!.GetValue<string>());
         Assert.AreEqual("https://example.com/gadget", edited["notificationUrl"]!.GetValue<string>());
         Assert.AreEqual(30, edited["timeoutSeconds"]!.GetValue<int>());
-        Assert.AreEqual("Gadget price", (await GetWatch(client, id))["name"]!.GetValue<string>());
         Assert.AreEqual("https://example.com/gadget", executed!.Context.NotificationUrl);
         Assert.AreEqual(30_000, executed.TimeoutMs);
     }
@@ -698,11 +699,10 @@ public sealed class WatchesTests(TestContext testContext)
         return (await client.GetFromJsonAsync<JsonObject>($"/api/watches/{id}", testContext.CancellationToken))!;
     }
 
-    private async Task<JsonObject> PostWatchAction(HttpClient client, string id, string action)
+    private async Task PostWatchAction(HttpClient client, string id, string action)
     {
         var response = await client.PostAsync(new Uri($"/api/watches/{id}/{action}", UriKind.Relative), null, testContext.CancellationToken);
-        response.EnsureSuccessStatusCode();
-        return (await response.Content.ReadFromJsonAsync<JsonObject>(testContext.CancellationToken))!;
+        Assert.AreEqual(HttpStatusCode.NoContent, response.StatusCode);
     }
 
     private async Task<JsonObject> RunNow(HttpClient client, string id)
