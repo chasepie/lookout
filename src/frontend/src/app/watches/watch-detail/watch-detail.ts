@@ -1,6 +1,7 @@
 import { DatePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, input, linkedSignal, untracked } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormField, form, submit } from '@angular/forms/signals';
 import { Router, RouterLink } from '@angular/router';
 import { OutcomeBadge } from '../outcome-badge/outcome-badge';
@@ -9,6 +10,7 @@ import { refreshableHttpResource } from '../../shared/refreshable-http-resource'
 import { RunTiming } from '../run-timing/run-timing';
 import { ScheduleEditor } from '../../schedules/schedule-editor/schedule-editor';
 import { StatusBadge } from '../status-badge/status-badge';
+import { WatchEvents } from '../watch-events';
 import { type Run, type Watch, type WatchSettings, outcomeLabels } from '../watch.model';
 import { defaultTimeoutSeconds, maxTimeoutSeconds, nameAndNotificationUrlRules, timeoutRules } from '../watch-settings';
 import { WatchChannels } from '../watch-channels/watch-channels';
@@ -100,6 +102,14 @@ export class WatchDetail {
   constructor() {
     inject(DestroyRef).onDestroy(() => {
       this.destroyed = true;
+    });
+    // Read afresh rather than patched, as an event may overtake a read already under way.
+    inject(WatchEvents).events.pipe(takeUntilDestroyed()).subscribe((event) => {
+      if (event.type !== 'connected' && event.watchId !== this.id()) {return;}
+      this.refreshWatch();
+      if (event.type === 'connected' || (event.type === 'runFinished' && event.runId !== null)) {
+        this.latestRuns.refresh();
+      }
     });
   }
 

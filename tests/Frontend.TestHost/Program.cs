@@ -18,16 +18,29 @@ public static class Program
             Outcome = RunOutcome.Succeeded, Content = "£19.99", Details = "In stock", DurationMs = 25
         };
         var changingRuns = 0;
-        factory.Runner.OnExecute = (request, _) => Task.FromResult(request.Context.NotificationUrl switch
+        var slowRuns = 0;
+        factory.Runner.OnExecute = async (request, cancellationToken) =>
         {
-            "https://example.com/changing" => new RunnerResult
+            if (request.Context.NotificationUrl == "https://example.com/slow-changing")
             {
-                Outcome = RunOutcome.Succeeded, Content = $"£{20 - Interlocked.Increment(ref changingRuns)}", DurationMs = 25
-            },
-            "https://example.com/known-failure" => new RunnerResult { Outcome = RunOutcome.KnownFailure, Details = "Access denied", DurationMs = 25 },
-            "https://example.com/errored" => new RunnerResult { Outcome = RunOutcome.Errored, ErrorMessage = "Page unavailable", DurationMs = 25 },
-            _ => factory.Runner.DefaultResult
-        });
+                // Slow enough for a browser to see the Run in progress.
+                await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
+                return new RunnerResult
+                {
+                    Outcome = RunOutcome.Succeeded, Content = $"£{50 - Interlocked.Increment(ref slowRuns)}", DurationMs = 2000
+                };
+            }
+            return request.Context.NotificationUrl switch
+            {
+                "https://example.com/changing" => new RunnerResult
+                {
+                    Outcome = RunOutcome.Succeeded, Content = $"£{20 - Interlocked.Increment(ref changingRuns)}", DurationMs = 25
+                },
+                "https://example.com/known-failure" => new RunnerResult { Outcome = RunOutcome.KnownFailure, Details = "Access denied", DurationMs = 25 },
+                "https://example.com/errored" => new RunnerResult { Outcome = RunOutcome.Errored, ErrorMessage = "Page unavailable", DurationMs = 25 },
+                _ => factory.Runner.DefaultResult
+            };
+        };
         factory.UseKestrel(5117);
         using var client = factory.CreateClient();
         using var shutdown = new CancellationTokenSource();

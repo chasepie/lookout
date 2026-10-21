@@ -1,4 +1,5 @@
 using ChasePie.Lookout.Database;
+using ChasePie.Lookout.Backend.Events;
 using ChasePie.Lookout.Backend.Notifications;
 using ChasePie.Lookout.Backend.Runner;
 using ChasePie.Lookout.Backend.Scheduling;
@@ -35,6 +36,9 @@ public class Program
         services.AddControllers(options => options.Filters.Add<RequestForgery.ValidateTokenFilter>());
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<RunningWatches>();
+        services.AddSignalR();
+        services.AddSingleton<WatchEvents>();
+        services.AddSingleton<EventConnections>();
         services.AddScoped<RunExecutor>();
         ConfigureScheduling(services, configuration);
         ConfigureNotifications(services, configuration);
@@ -170,8 +174,10 @@ public class Program
 
         app.UseAuthentication();
         app.UseAuthorization();
+        RequestForgery.ProtectHub(app, WatchEventsHub.Path);
 
         app.MapControllers();
+        app.MapHub<WatchEventsHub>(WatchEventsHub.Path);
         app.MapHealthChecks("/health").AllowAnonymous();
         // Keep API misses in endpoint routing, including 405 responses for unsupported methods.
         app.MapFallbackToFile("{*path:nonfile:regex(^(?!api(?:/|$)).*)}", "index.html").AllowAnonymous();

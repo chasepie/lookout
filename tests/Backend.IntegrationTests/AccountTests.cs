@@ -106,7 +106,8 @@ public sealed partial class AccountTests(TestContext testContext)
         string[] anonymous = ["GET api/session", "POST api/session", "POST api/setup"];
         var endpoints = factory.Services.GetRequiredService<EndpointDataSource>().Endpoints.OfType<RouteEndpoint>()
             .Where(endpoint => endpoint.RoutePattern.RawText?.TrimStart('/').StartsWith("api/", StringComparison.Ordinal) == true)
-            .SelectMany(endpoint => endpoint.Metadata.GetMetadata<HttpMethodMetadata>()!.HttpMethods
+            // An endpoint for any method, such as the events hub's connection endpoint, is checked with GET.
+            .SelectMany(endpoint => (endpoint.Metadata.GetMetadata<HttpMethodMetadata>()?.HttpMethods ?? ["GET"])
                 .Select(method => $"{method} {endpoint.RoutePattern.RawText!.TrimStart('/')}"))
             .ToList();
         Assert.IsGreaterThan(anonymous.Length, endpoints.Count);

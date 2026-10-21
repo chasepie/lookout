@@ -1,4 +1,5 @@
 using System.Net;
+using ChasePie.Lookout.Backend.Events;
 using ChasePie.Lookout.Database;
 using ChasePie.Lookout.Model;
 using Microsoft.AspNetCore.Antiforgery;
@@ -16,6 +17,7 @@ public sealed class AccountController(
     LookoutDbContext database,
     IPasswordHasher<Account> passwordHasher,
     IAntiforgery antiforgery,
+    EventConnections eventConnections,
     TimeProvider timeProvider)
     : LookoutControllerBase
 {
@@ -96,7 +98,12 @@ public sealed class AccountController(
     [HttpDelete("session")]
     public async Task<IActionResult> Logout(CancellationToken cancellationToken)
     {
+        var sessionId = SessionCookie.SessionId(User);
         await SessionCookie.SignOutAsync(HttpContext, database, cancellationToken);
+        if (sessionId is { } id)
+        {
+            eventConnections.Close(id);
+        }
         return NoContent();
     }
 

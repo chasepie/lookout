@@ -1,12 +1,15 @@
 import type { Page } from '@playwright/test';
 
-/** Holds the first matching response until released, passing later ones straight through. */
-export async function holdFirst(page: Page, url: string | RegExp) {
+/**
+ * Holds the first matching response until released, passing later ones straight through. Naming the method keeps
+ * reads the app makes on its own, such as when its live events connect, from being held instead.
+ */
+export async function holdFirst(page: Page, url: string | RegExp, method?: string) {
   let release!: () => void;
   const released = new Promise<void>((resolve) => { release = resolve; });
   let held = false;
   await page.route(url, async (route) => {
-    if (held) {
+    if (held || (method && route.request().method() !== method)) {
       await route.continue();
       return;
     }

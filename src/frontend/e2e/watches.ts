@@ -30,6 +30,12 @@ export async function editWatch(page: Page, id: string, settings: { name: string
   expect(response.status()).toBe(204);
 }
 
+/** Pauses a Watch through the API, as another browser tab would. */
+export async function pauseWatch(page: Page, id: string) {
+  const response = await page.request.post(`/api/watches/${id}/pause`, { headers: { 'X-XSRF-TOKEN': await requestToken(page) } });
+  expect(response.status()).toBe(204);
+}
+
 /** Runs a Watch through the API the given number of times, one Run after another. */
 export async function runWatch(page: Page, id: string, times: number) {
   const headers = { 'X-XSRF-TOKEN': await requestToken(page) };

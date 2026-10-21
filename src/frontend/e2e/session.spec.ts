@@ -10,9 +10,16 @@ test('sends the user to log in when their session ends, then back to their Watch
 
   // Without its cookie the backend no longer recognises the session, as after a logout elsewhere.
   await page.context().clearCookies();
-  await page.getByRole('article', { name }).getByRole('button', { name: 'Run now' }).click();
+  // Any request reveals the ended session: running the Watch, or a read the app makes on its own, such as when its
+  // live events connect, which may get there first.
+  const logIn = page.getByRole('heading', { name: 'Log in' });
+  await expect(async () => {
+    if (!await logIn.isVisible()) {
+      await page.getByRole('article', { name }).getByRole('button', { name: 'Run now' }).click({ timeout: 1000 });
+    }
+    await expect(logIn).toBeVisible({ timeout: 1000 });
+  }).toPass();
 
-  await expect(page.getByRole('heading', { name: 'Log in' })).toBeVisible();
   await page.getByLabel('User name').fill('owner');
   await page.getByLabel('Password').fill('correct horse');
   await page.getByRole('button', { name: 'Log in' }).click();

@@ -12,7 +12,7 @@
     <p class="eyebrow">WATCH</p>
     <h1>{{ current.name }}</h1>
     <p class="status-line">
-      <app-status-badge [status]="current.status" />
+      <app-status-badge [status]="current.status" [running]="current.isRunning" />
       @if (current.failureStreak > 0) {
         <span>{{ current.failureStreak }} Known failure or Errored {{ current.failureStreak === 1 ? 'Run' : 'Runs in a row' }}</span>
       }
@@ -22,7 +22,8 @@
   <p class="notice" role="status">{{ notice() }}</p>
   @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
   <div class="actions">
-    <button type="button" class="primary" (click)="runNow()" [disabled]="busy()">{{ busy() === 'running' ? 'Running…' : 'Run now' }}</button>
+    @let runningNow = busy() === 'running' || current.isRunning;
+    <button type="button" class="primary" (click)="runNow()" [disabled]="busy() || runningNow">{{ runningNow ? 'Running…' : 'Run now' }}</button>
     <button type="button" (click)="togglePaused(current)" [disabled]="busy()">{{ current.isPaused ? 'Resume' : 'Pause' }}</button>
   </div>
   <div class="layout">
