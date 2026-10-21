@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.AspNetCore.Mvc.Infrastructure;
+using Microsoft.Extensions.Primitives;
 
 namespace ChasePie.Lookout.Backend;
 
@@ -69,7 +70,8 @@ public static class RequestForgery
                     .ExecuteAsync(context);
                 return;
             }
-            if (!negotiating && !context.Request.Query.ContainsKey("id"))
+            // The same test SignalR applies to the connection ID, which starts a new connection when it's missing or empty.
+            if (!negotiating && StringValues.IsNullOrEmpty(context.Request.Query["id"]))
             {
                 await Results
                     .Problem(

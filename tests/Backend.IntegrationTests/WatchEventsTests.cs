@@ -217,15 +217,19 @@ public sealed class WatchEventsTests(TestContext testContext)
     }
 
     [TestMethod]
-    public async Task RejectsAWebSocketThatSkipsNegotiation()
+    [DataRow("")]
+    [DataRow("?id=")]
+    [DataRow("?id")]
+    public async Task RejectsAWebSocketThatSkipsNegotiation(string query)
     {
-        // A page on another port of the same host could open one with the user's cookies, which ignore ports.
+        // A page on another port of the same host could open one with the user's cookies, which ignore ports. SignalR
+        // takes an empty connection ID, like a missing one, as a new connection.
         await using var factory = new LookoutWebApplicationFactory();
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         await using var listener = await WatchEventsListener.CreateAsync(factory, logIn: true, testContext.CancellationToken);
 
         var error = await Assert.ThrowsAsync<Exception>(() =>
-            listener.StartAsync(skipNegotiation: true, cancellationToken: testContext.CancellationToken));
+            listener.StartAsync(skipNegotiation: true, query: query, cancellationToken: testContext.CancellationToken));
 
         Assert.Contains("status code: 400", error.ToString());
     }

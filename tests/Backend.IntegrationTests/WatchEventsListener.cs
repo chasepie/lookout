@@ -86,13 +86,13 @@ public sealed class WatchEventsListener : IAsyncDisposable
     }
 
     /// <summary>Connects to the events hub, by default the way the app does.</summary>
-    public async Task StartAsync(bool sendRequestToken = true, bool skipNegotiation = false,
+    public async Task StartAsync(bool sendRequestToken = true, bool skipNegotiation = false, string query = "",
         CancellationToken cancellationToken = default)
     {
         var server = _factory.Server;
         var cookieHeader = _cookies.GetCookieHeader(server.BaseAddress);
         var connection = new HubConnectionBuilder()
-            .WithUrl(new Uri(server.BaseAddress, WatchEventsHub.Path), options =>
+            .WithUrl(new Uri(server.BaseAddress, WatchEventsHub.Path + query), options =>
             {
                 options.Transports = HttpTransportType.WebSockets;
                 options.SkipNegotiation = skipNegotiation;
