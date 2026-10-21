@@ -70,7 +70,8 @@ function parseExecuteRequest(body: unknown): ExecuteRequest {
   if (proxy !== undefined && proxy !== null && !isObject(proxy)) {
     throw new InvalidRequestError('proxy must be an object');
   }
-  if (alwaysScreenshot !== undefined && typeof alwaysScreenshot !== 'boolean') {
+  // As with proxy, a serializer may write a missing alwaysScreenshot as null
+  if (alwaysScreenshot !== undefined && alwaysScreenshot !== null && typeof alwaysScreenshot !== 'boolean') {
     throw new InvalidRequestError('alwaysScreenshot must be a boolean');
   }
   return {

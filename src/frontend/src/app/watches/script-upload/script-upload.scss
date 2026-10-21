@@ -32,6 +32,7 @@ p { line-height: 1.6; }
 }
 
 .panel { @include mixins.panel; padding: 25px; }
+.empty-state { @include mixins.empty-state; }
 
 input {
   &[type=file] { padding: 9px; font-size: 12px; }

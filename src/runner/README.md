@@ -46,7 +46,7 @@ Runs one Script and responds once it has finished. If the caller disconnects fir
 | `context` | Passed to the Script's `run` as its second argument. |
 | `timeoutMs` | 1 to 2147483647. It covers the whole execution, including starting the process and launching the browser, not just `run`. An outcome the Script reached before it stands. Past it, a Script without one is Errored, and its process gets up to 5 seconds to send a screenshot before it's killed. |
 | `proxy` | Optional. The proxy for the Script's browser context, as Playwright's `proxy` option: `server`, and optionally `username`, `password` and `bypass`. VPN Runs set this. Direct Runs leave it out or send `null`. |
-| `alwaysScreenshot` | Optional, `false` by default. Whether a `succeeded` response has a `screenshot` too. Test runs set this. |
+| `alwaysScreenshot` | Optional, `false` when left out or `null`. Whether a `succeeded` response has a `screenshot` too. Test runs set this. |
 
 A malformed request gets a `400` with `{ "error": "<what is wrong>" }`, and a body over 1 MiB a `413`. A request with an `Origin` header gets a `403`, and one whose `Content-Type` isn't `application/json` a `415`. Browsers send `Origin` with every POST, and a web page can only send JSON after a CORS preflight, which the runner never answers. So a page Browserless loads can't run a Script here, even one whose domain was rebound to the runner's address. A failure inside the runner itself gets a `500` with `{ "error": "Internal runner error" }`, and any other route a `404`.
 

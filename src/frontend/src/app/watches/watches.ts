@@ -1,6 +1,6 @@
 import { HttpClient } from '@angular/common/http';
 import { Service, inject } from '@angular/core';
-import { firstValueFrom } from 'rxjs';
+import { firstValueFrom, fromEvent, takeUntil } from 'rxjs';
 import { refreshableHttpResource } from '../shared/refreshable-http-resource';
 import { type ScheduleForm, scheduleFields } from '../schedules/schedule';
 import { Session } from '../session/session';
@@ -60,10 +60,12 @@ export class Watches {
     return firstValueFrom(this.http.post<Run>(`/api/watches/${id}/runs`, {}));
   }
 
-  testRun(id: string, script: File) {
+  /** Runs a Test run, which `stop` cancels: the backend then stops the Script and frees its run slot. */
+  testRun(id: string, script: File, stop: AbortSignal) {
     const data = new FormData();
     data.set('script', script);
-    return firstValueFrom(this.http.post<TestRun>(`/api/watches/${id}/test-runs`, data));
+    return firstValueFrom(this.http.post<TestRun>(`/api/watches/${id}/test-runs`, data)
+      .pipe(takeUntil(fromEvent(stop, 'abort'))));
   }
 
   uploadScript(id: string, script: File, keepBaseline: boolean) {

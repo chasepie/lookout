@@ -336,21 +336,20 @@ public sealed class WatchesController(
     [HttpGet("{id:guid}/script-versions")]
     public async Task<ActionResult<IReadOnlyList<ScriptVersionSummary>>> ListScriptVersions(Guid id, CancellationToken cancellationToken)
     {
-        var currentVersionId = await database.Watches
-            .Where(watch => watch.Id == id)
-            .Select(watch => new { watch.CurrentScriptVersionId })
-            .SingleOrDefaultAsync(cancellationToken);
-        if (currentVersionId is null)
-        {
-            return NotFound();
-        }
-
-        return await database.ScriptVersions.AsNoTracking()
+        // One query, so an upload committing meanwhile can't leave the list and its current version out of step.
+        var versions = await database.ScriptVersions.AsNoTracking()
             .Where(version => version.WatchId == id)
             .OrderByDescending(version => version.Number)
-            .Select(version => new ScriptVersionSummary(version.Id, version.Number, version.FileKind, version.UploadedAt,
-                version.Id == currentVersionId.CurrentScriptVersionId))
+            .Select(version => new ScriptVersionSummary(
+                Id: version.Id,
+                Number: version.Number,
+                FileKind: version.FileKind,
+                UploadedAt: version.UploadedAt,
+                IsCurrent: database.Watches.Any(watch => watch.Id == id && watch.CurrentScriptVersionId == version.Id)))
             .ToListAsync(cancellationToken);
+
+        // Every Watch has at least the Script version it was created with.
+        return versions.Count == 0 ? NotFound() : versions;
     }
 
     [HttpGet("{id:guid}/script-versions/{versionId:guid}")]

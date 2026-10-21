@@ -754,6 +754,19 @@ test('a request whose proxy is null runs without one', { timeout: 30_000 }, asyn
   expect(await response.json()).toMatchObject({ outcome: 'succeeded' });
 });
 
+test('a request whose alwaysScreenshot is null runs as if it were left out', { timeout: 30_000 }, async () => {
+  const response = await fetch(`${runnerUrl}/execute`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ...validRequest, alwaysScreenshot: null }),
+  });
+
+  expect(response.status).toBe(200);
+  const body = await response.json() as Record<string, unknown>;
+  expect(body).toMatchObject({ outcome: 'succeeded' });
+  expect(body['screenshot']).toBeUndefined();
+});
+
 test.each([
   ['no Content-Type', undefined],
   ['a text Content-Type', 'text/plain;charset=UTF-8'],

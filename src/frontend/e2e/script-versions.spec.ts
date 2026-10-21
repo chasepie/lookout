@@ -1,6 +1,6 @@
-import { expect, test } from '@playwright/test';
+import { type Page, expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
-import { createWatch, runWatch } from './watches';
+import { createWatch, runWatch, uploadScript } from './watches';
 
 const newScript = 'export default { async run(page) { return { success: true, content: await page.title() }; } };\n';
 
@@ -68,4 +68,83 @@ test('a Test run leaves the Watch as it was, and keeping the Baseline keeps its 
   await expect(page).toHaveURL(`/watches/${id}`);
   await expect(page.getByRole('list', { name: 'Script versions' }).getByRole('listitem')).toHaveCount(2);
   await expect(page.getByText('Healthy', { exact: true })).toBeVisible();
+});
+
+test('Runs of a version uploaded elsewhere show its number once the page refreshes the Watch', async ({ page }) => {
+  const id = await createWatch(page, `Uploaded elsewhere ${randomUUID()}`);
+  await page.goto(`/watches/${id}`);
+  await expect(page.getByRole('list', { name: 'Script versions' }).getByRole('listitem')).toHaveCount(1);
+
+  // Uploaded as another browser tab would, without this page knowing.
+  await uploadScript(page, id, newScript);
+  await page.getByRole('button', { name: 'Run now' }).click();
+
+  await expect(page.getByRole('list', { name: 'Run history' }).getByRole('listitem').nth(0)).toContainText('Version 2');
+  await expect(page.getByRole('list', { name: 'Script versions' }).getByRole('listitem').nth(0)).toContainText('Current');
+});
+
+test('the upload page of a missing Watch says so', async ({ page }) => {
+  await page.goto(`/watches/${randomUUID()}/script`);
+
+  await expect(page.getByRole('alert')).toHaveText('This Watch no longer exists.');
+  await expect(page.getByLabel('Script', { exact: true })).toHaveCount(0);
+});
+
+test.describe('while a Test run is in progress', () => {
+  test.afterEach(async ({ page }) => {
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
+  });
+
+  /** Holds every Test run request until the page gives up on it. */
+  async function holdTestRuns(page: Page, id: string) {
+    await page.route(`**/api/watches/${id}/test-runs`, () => new Promise<void>(() => undefined));
+  }
+
+  const chooseScript = (page: Page, name = 'price.ts') => page.getByLabel('Script', { exact: true }).setInputFiles({
+    name, mimeType: 'text/plain', buffer: Buffer.from(newScript),
+  });
+
+  const abandoned = (page: Page) => page.waitForEvent('requestfailed',
+    (request) => request.url().endsWith('/test-runs'));
+
+  test('leaving the page stops the Test run', async ({ page }) => {
+    const id = await createWatch(page, `Left mid-test ${randomUUID()}`);
+    await holdTestRuns(page, id);
+    await page.goto(`/watches/${id}/script`);
+    await chooseScript(page);
+    await expect(page.getByRole('button', { name: 'Testing…' })).toBeVisible();
+    const stopped = abandoned(page);
+
+    await page.getByRole('link', { name: 'Back to Watch' }).click();
+
+    await stopped;
+  });
+
+  test('choosing another Script stops the Test run of the last one', async ({ page }) => {
+    const id = await createWatch(page, `Replaced mid-test ${randomUUID()}`);
+    await holdTestRuns(page, id);
+    await page.goto(`/watches/${id}/script`);
+    await chooseScript(page);
+    await expect(page.getByRole('button', { name: 'Testing…' })).toBeVisible();
+    const stopped = abandoned(page);
+
+    await chooseScript(page, 'other.ts');
+
+    await stopped;
+  });
+
+  test('clearing the chosen Script stops the Test run and shows nothing in progress', async ({ page }) => {
+    const id = await createWatch(page, `Cleared mid-test ${randomUUID()}`);
+    await holdTestRuns(page, id);
+    await page.goto(`/watches/${id}/script`);
+    await chooseScript(page);
+    await expect(page.getByRole('button', { name: 'Testing…' })).toBeVisible();
+    const stopped = abandoned(page);
+
+    await page.getByLabel('Script', { exact: true }).setInputFiles([]);
+
+    await stopped;
+    await expect(page.getByRole('region', { name: 'Test run' })).toContainText('Choose a Script to try it.');
+    await expect(page.getByRole('button', { name: 'Test again' })).toBeDisabled();
+  });
 });

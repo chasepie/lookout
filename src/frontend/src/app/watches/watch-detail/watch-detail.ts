@@ -266,6 +266,8 @@ export class WatchDetail {
 
   private refreshWatch() {
     this.watch.refresh();
+    // A version uploaded elsewhere changes the current one, and Runs of it need its number.
+    this.scriptVersions.refresh();
   }
 
   private clearMessages() {

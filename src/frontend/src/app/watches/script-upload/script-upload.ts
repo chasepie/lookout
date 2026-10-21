@@ -1,5 +1,6 @@
 import { DecimalPipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, DestroyRef, inject, input, linkedSignal } from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, input, linkedSignal, untracked } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { OutcomeBadge } from '../outcome-badge/outcome-badge';
 import { problemMessage } from '../../shared/problem';
@@ -24,6 +25,10 @@ export class ScriptUpload {
   readonly id = input.required<string>();
 
   protected readonly watch = refreshableHttpResource<Watch>(() => ({ url: `/api/watches/${this.id()}` }));
+  protected readonly missing = computed(() => {
+    const error = this.watch.error();
+    return error instanceof HttpErrorResponse && error.status === 404;
+  });
   // Moving to another Watch's upload page reuses this component, so everything chosen here resets.
   protected readonly script = linkedSignal<string, File | undefined>({ source: this.id, computation: () => undefined });
   protected readonly keepBaseline = linkedSignal({ source: this.id, computation: () => false });
@@ -32,10 +37,19 @@ export class ScriptUpload {
   protected readonly saving = linkedSignal({ source: this.id, computation: () => false });
   protected readonly error = linkedSignal({ source: this.id, computation: () => '' });
   private destroyed = false;
+  /** Cancels the Test run in progress, if any. */
+  private stopTestRun = new AbortController();
 
   constructor() {
+    // A Test run nobody will see the result of is stopped, rather than left holding a run slot until its timeout:
+    // the one for another Watch, after moving to that Watch's page, or any after leaving the page.
+    effect(() => {
+      this.id();
+      untracked(() => this.stopTestRun.abort());
+    });
     inject(DestroyRef).onDestroy(() => {
       this.destroyed = true;
+      this.stopTestRun.abort();
     });
   }
 
@@ -45,16 +59,19 @@ export class ScriptUpload {
   }
 
   protected async runTest() {
+    // Only the latest Script's Test run matters, so the last one stops whether or not there's a new one to start.
+    this.stopTestRun.abort();
+    const stop = new AbortController();
+    this.stopTestRun = stop;
     const id = this.id();
     const script = this.script();
     this.testRun.set(undefined);
     this.error.set('');
+    this.testing.set(!!script);
     if (!script) {return;}
-    this.testing.set(true);
-    // A Test run of a file since replaced, or of another Watch, must not show as this one's.
-    const isCurrent = () => !this.destroyed && id === this.id() && script === this.script();
+    const isCurrent = () => !stop.signal.aborted && id === this.id();
     try {
-      const result = await this.watches.testRun(id, script);
+      const result = await this.watches.testRun(id, script, stop.signal);
       if (isCurrent()) {this.testRun.set(result);}
     } catch (error: unknown) {
       if (isCurrent()) {this.error.set(problemMessage(error, 'Could not run the Test run. Please try again.'));}

@@ -1,8 +1,10 @@
+using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 using ChasePie.Lookout.Backend.Runner;
 using ChasePie.Lookout.Model;
+using Microsoft.AspNetCore.Hosting;
 
 namespace ChasePie.Lookout.Backend.IntegrationTests;
 
@@ -229,6 +231,40 @@ public sealed class ScriptVersionsTests(TestContext testContext)
         var result = (await response.Content.ReadFromJsonAsync<JsonObject>(testContext.CancellationToken))!;
         Assert.AreEqual("errored", result["outcome"]!.GetValue<string>());
         Assert.AreEqual("Succeeded runner result did not include content.", result["errorMessage"]!.GetValue<string>());
+    }
+
+    [TestMethod]
+    public async Task ATestRunWhoseCallerGoesAwayIsStoppedAndFreesItsSlot()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        await using var host = factory.WithWebHostBuilder(builder => builder.UseSetting("Scheduling:MaxConcurrentRuns", "1"));
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var stopped = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        factory.Runner.OnExecute = async (_, token) =>
+        {
+            started.TrySetResult();
+            await using (token.Register(() => stopped.TrySetResult()))
+            {
+                await Task.Delay(Timeout.Infinite, token);
+            }
+            throw new UnreachableException();
+        };
+        using var client = await host.CreateSignedInClientAsync(testContext.CancellationToken);
+        var id = await CreateWatch(client);
+        using var caller = CancellationTokenSource.CreateLinkedTokenSource(testContext.CancellationToken);
+        var form = new MultipartFormDataContent { { new StringContent(NewScript), "script", "price.ts" } };
+        var pending = client.PostAsync(new Uri($"/api/watches/{id}/test-runs", UriKind.Relative), form, caller.Token);
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(5), testContext.CancellationToken);
+
+        await caller.CancelAsync();
+
+        await Assert.ThrowsAsync<OperationCanceledException>(async () => await pending);
+        await stopped.Task.WaitAsync(TimeSpan.FromSeconds(5), testContext.CancellationToken);
+        factory.Runner.OnExecute = null;
+        factory.Runner.DefaultResult = new RunnerResult { Outcome = RunOutcome.Succeeded, Content = "£20", DurationMs = 1 };
+        using var runNow = client.PostAsync(new Uri($"/api/watches/{id}/runs", UriKind.Relative), null, testContext.CancellationToken)
+            .WaitAsync(TimeSpan.FromSeconds(5), testContext.CancellationToken);
+        Assert.AreEqual(HttpStatusCode.OK, (await runNow).StatusCode);
     }
 
     private async Task<string> CreateWatch(HttpClient client)
