@@ -72,3 +72,15 @@ jobs:
       # These tests use local pages; examples/ contacts a real bot-detection site.
       - name: Test runner
         run: npm run test:runner
+
+  images:
+    name: Docker images
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      # What compose.yaml deploys, so an image that no longer builds fails here rather than on a homelab. Running
+      # the stack against the real Browserless is the README's manual smoke test.
+      - name: Build
+        run: docker compose build

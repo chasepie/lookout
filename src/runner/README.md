@@ -14,7 +14,12 @@ HEADLESS=true npm start -w src/runner    # headless, as the tests run it
 | Variable   | Default | Meaning |
 |------------|---------|---------|
 | `PORT`     | `3000`  | The port to listen on, 0 to 65535. `0` picks a free one. Anything else stops the runner at startup. |
-| `HEADLESS` | unset   | `true` runs Chromium headless. Otherwise it is visible, for debugging Scripts locally. |
+| `BROWSERLESS_URL` | unset | Browserless's Playwright endpoint, such as `ws://browserless:3000/chromium/playwright`, which may include a `token`. Each Script then connects to its own headless Chromium there, as in deployment (the `connect` provider). Otherwise each Script launches a local Chromium (the `launch` provider). A URL that isn't `ws://` or `wss://` stops the runner at startup. |
+| `HEADLESS` | unset   | `true` runs a launched Chromium headless. Otherwise it is visible, for debugging Scripts locally. Browserless's is always headless. |
+
+Either way, Chromium gets `--disable-blink-features=AutomationControlled`, so `navigator.webdriver` is false, and `--webrtc-ip-handling-policy=disable_non_proxied_udp`, so WebRTC can't reveal the home IP around a VPN Run's proxy. With `connect`, each browser context's user agent says `Chrome` rather than `HeadlessChrome`, which bot detection takes for a robot on its own ([the prototype's findings](../../docs/research/browser-and-vpn-prototype.md)). It's read from Browserless's Chromium, so it keeps up with upgrades. The runner's Playwright must match Browserless's at the major.minor level.
+
+In deployment, the runner runs from [`Dockerfile`](Dockerfile), which installs only `playwright` and no browser.
 
 On startup it logs `Runner listening on http://localhost:<port>`.
 
@@ -85,8 +90,9 @@ A Script's file may import only `playwright` and Node built-ins. Importing anyth
 | Limit | What happens |
 |-------|--------------|
 | `timeoutMs` | Errored with `Script timed out after <timeoutMs> ms`. |
-| 512 MB V8 heap (`--max-old-space-size`) | Errored with `Script exceeded its memory limit of 512 MB`. This limits only what V8 manages: memory outside it, such as `Buffer`s, is limited only by the runner's container. |
-| File reads | Through Node's `--permission`, a Script may read only its own temp directory, the runner's code and `node_modules`, Playwright's browsers, and the system files Playwright reads on Linux: `/etc/os-release`, to pick a Chromium build, and `/proc/version`, `/proc/sys/fs/binfmt_misc/WSLInterop` and `/run/WSL`, to tell whether it's under WSL. Those are granted even where they don't exist, since under `--permission` even checking whether a file exists throws for a path that isn't granted. It may write only to its temp directory. Anything else is Errored with Node's `ERR_ACCESS_DENIED` message. |
+| 512 MB V8 heap (`--max-old-space-size`) | Errored with `Script exceeded its memory limit of 512 MB`. This limits only what V8 manages: memory outside it, such as `Buffer`s, is limited only by the runner's container, whose `mem_limit` in `compose.yaml` allows 640 MB per concurrent Run. |
+| File reads | Through Node's `--permission`, a Script may read only its own temp directory, the runner's code and `node_modules`, and the system files Playwright reads on Linux as it's imported, to tell whether it's under WSL: `/proc/version`, `/proc/sys/fs/binfmt_misc/WSLInterop` and `/run/WSL`. With `launch`, it may also read Playwright's browsers and `/etc/os-release`, which Playwright reads to pick a Chromium build. System files are granted even where they don't exist, since under `--permission` even checking whether a file exists throws for a path that isn't granted. It may write only to its temp directory. Anything else is Errored with Node's `ERR_ACCESS_DENIED` message. |
+| Processes | With `connect`, a Script may not start one: it's Errored with Node's `ERR_ACCESS_DENIED` message. With `launch`, it may, since Playwright starts Chromium as one. |
 
 ## How an execution works
 
@@ -96,16 +102,17 @@ execute.ts          write the source to a fresh temp directory
                     fork script-process.ts with a memory limit and --permission, collecting its stdout and stderr
                     at timeoutMs without an outcome, ask it for a screenshot, then kill it
   script-process.ts   import the Script, limiting its imports, and check its default export
-                      launch Chromium (--disable-blink-features=AutomationControlled) → report its pid
+                      launch: launch Chromium → report its pid
+                      connect: connect to a Chromium in Browserless
                       run(page, context) in a new browser context, with the request's proxy
                       check the outcome → report it
-                      screenshot the page unless it Succeeded, close Chromium
+                      screenshot the page unless it Succeeded, close Chromium or the connection
                       write out its console output → report it's finished, with the screenshot, then exit
 execute.ts          kill what the Script left running, delete the temp directory → respond
 ```
 
 - **One child process per execution**, so a Script can't affect another or the runner itself. The child exits as soon as it has reported, even if the Script left a timer or socket open. It also exits if the runner goes away, so a Script that never finishes can't outlive it.
-- **Nothing a Script starts outlives its execution.** The child leads a process group of its own, which any subprocess the Script starts joins. Playwright gives Chromium a group of its own, so the child launches it with `launchServer`, the one API that tells which process it is, and reports its pid. When the child exits, or is killed at its timeout or because the caller went away, the runner kills both groups. If the runner itself goes away, the child kills them. If the runner is stopped by `SIGINT` or `SIGTERM`, it kills them first, since a Script that blocks its process can't notice the runner going. A runner killed outright with `SIGKILL` can't, and a Script that blocks its process then keeps running. A subprocess that leaves the group on purpose, as `spawn` with `detached: true` does, escapes all this, like the other limits that aren't a security boundary. This relies on POSIX process groups. On Windows, which has none, only the Script's own process is killed.
+- **Nothing a Script starts outlives its execution.** The child leads a process group of its own, which any subprocess the Script starts joins. Playwright gives Chromium a group of its own, so the child launches it with `launchServer`, the one API that tells which process it is, and reports its pid. When the child exits, or is killed at its timeout or because the caller went away, the runner kills both groups. If the runner itself goes away, the child kills them. If the runner is stopped by `SIGINT` or `SIGTERM`, it kills them first, since a Script that blocks its process can't notice the runner going. A runner killed outright with `SIGKILL` can't, and a Script that blocks its process then keeps running. A subprocess that leaves the group on purpose, as `spawn` with `detached: true` does, escapes all this, like the other limits that aren't a security boundary. This relies on POSIX process groups. On Windows, which has none, only the Script's own process is killed. With `connect`, there's no local Chromium: Browserless closes a Script's browser once its connection closes, however its process ended, and the Script can't start a subprocess. In the runner's container, a minimal init (`init: true`) is PID 1 and reaps the processes the runner kills, which Node as PID 1 wouldn't.
 - **Errors outside `run`'s own promise** count as long as `run` is in progress. That covers a throw from a timer or event listener, or a rejection the Script left unhandled. The child races `run` against them, so the error becomes the Errored message rather than a crash that loses it. Once `run` has settled they're ignored, so a wait the Script left pending can't fail the Run when the browser closes.
 - **Results travel over IPC, not stdout,** so a Script's `console.log` can't be mistaken for its result. The Script shares that IPC channel. So each execution gets a random token that the child's reports must carry back, and the child keeps its own reference to `process.send` from before the Script loads. That way a Script's own use of the channel, or of `process.send`, can't be taken for or rewrite the report. These keep a Script from interfering by mistake, not on purpose. Code in the same process can always reach the channel, but it needn't be stopped from forging its outcome, since a Script decides its own outcome anyway. The message types are in `protocol.ts`.
 - **The temp directory holds everything an execution writes.** That includes the Script file and, through the child's `TMPDIR`, Chromium's profile and Playwright's artifacts. A process killed at its timeout can't clean up after itself, so the runner deletes the whole directory.
@@ -114,11 +121,7 @@ execute.ts          kill what the Script left running, delete the temp directory
 - **A Script that runs past its timeout gets a screenshot.** The runner sends the child a `timedOut` message, and the child finishes at once with a screenshot of the Script's page. The runner words the timeout itself. A child that can't finish, as when the Script blocks its process, is killed when the 5 seconds run out.
 - **Running out of memory is told apart by how the process ends.** V8 aborts a process that reaches its heap limit with `SIGABRT`, writing `JavaScript heap out of memory` to stderr. A process that ends that way without reporting is Errored as having exceeded its memory limit, rather than as killed by `SIGABRT`. Both must hold, so a Script that only writes that message isn't taken to have run out of memory.
 - **Console output can't hold up the response.** The child waits, for up to 1 second, for its console writes to reach the runner before it finishes and exits, since writes to a pipe are asynchronous. Once it has exited, the runner waits at most 1 second more for the end of its output, so a subprocess the Script started, which may share its stdout and stderr, can't keep the execution going.
-- **The file limits are not a security boundary.** Node says its permission model isn't one. In particular, the child must be allowed to start processes, because Playwright starts Chromium as one, and a Script can use that to get around them. The runner's offline container is what contains a Script ([ADR-0003](../../docs/adr/0003-scripts-run-in-an-offline-runner-container.md)). Node checks paths as given, without resolving symlinks, so the runner gives the child its temp directory's real path, as the Script's module path is. The child doesn't get the runner's `NODE_OPTIONS`, since whatever it preloads, such as a debugger, is outside what the child may read.
-
-Still to come:
-
-- **#13:** connecting to Browserless in deployment, instead of launching a local Chromium.
+- **The file limits are not a security boundary.** Node says its permission model isn't one. In particular, with `launch` the child must be allowed to start processes, because Playwright starts Chromium as one, and a Script can use that to get around them. With `connect` it isn't allowed to, which closes that gap. The runner's offline container is what contains a Script ([ADR-0003](../../docs/adr/0003-scripts-run-in-an-offline-runner-container.md)). Node checks paths as given, without resolving symlinks, so the runner gives the child its temp directory's real path, as the Script's module path is. The child doesn't get the runner's `NODE_OPTIONS`, since whatever it preloads, such as a debugger, is outside what the child may read.
 
 ## Tests
 
@@ -130,4 +133,5 @@ npm test -w src/runner
 
 - **Temp files:** the runner gets its own `TMPDIR`, so a test can check that nothing is left behind after an execution, even one killed at its timeout.
 - **Visible-browser test:** this one starts a second runner with `HEADLESS=false`. It is skipped on Linux when there's no `DISPLAY`.
+- **`connect` tests:** these start a runner whose `BROWSERLESS_URL` is a browser server the test launches, which speaks the same protocol as Browserless, or a stand-in that records the URL the runner asks for. The real Browserless is covered by the manual smoke test in the [main README](../../README.md#smoke-test).
 - **Fixtures:** the Scripts are TypeScript, except `read-price.js`, which checks that JavaScript Scripts work.

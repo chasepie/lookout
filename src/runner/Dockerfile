@@ -1,0 +1,18 @@
+# The runner image: the runner and playwright, the only package Scripts may import (ADR-0003). It connects to
+# Browserless rather than launching a browser, so it has none. Built from the repository root (see compose.yaml).
+
+FROM node:24-slim
+ENV NODE_ENV=production
+WORKDIR /app
+COPY package-lock.json ./
+# Only playwright, at the lock file's version. Installing the runner's workspace would bring other workspaces'
+# packages along.
+RUN npm install --omit=dev --ignore-scripts --no-save --no-package-lock \
+      "playwright@$(node --print "require('./package-lock.json').packages['node_modules/playwright'].version")" \
+    && rm package-lock.json \
+    && npm cache clean --force
+COPY src/runner src/runner
+WORKDIR /app/src/runner
+USER node
+EXPOSE 3000
+CMD ["node", "index.ts"]

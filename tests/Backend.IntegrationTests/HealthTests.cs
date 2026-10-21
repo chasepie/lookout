@@ -1,5 +1,8 @@
 using System.Net;
 using ChasePie.Lookout.Database;
+using Microsoft.AspNetCore.HttpsPolicy;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -44,6 +47,21 @@ public sealed class HealthTests(TestContext testContext)
 
         Assert.AreEqual(HttpStatusCode.ServiceUnavailable, response.StatusCode);
         Assert.AreEqual("Unhealthy", await response.Content.ReadAsStringAsync(testContext.CancellationToken));
+    }
+
+    [TestMethod]
+    public async Task AnswersOverHttpEvenWhenHttpsIsConfigured()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        await using var host = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+            services.Configure<HttpsRedirectionOptions>(options => options.HttpsPort = 7443)));
+        // A health probe, such as a container's, may not follow redirects, and may count one as healthy.
+        using var client = host.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+
+        var response = await client.GetAsync(new Uri("/health", UriKind.Relative), testContext.CancellationToken);
+
+        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+        Assert.AreEqual("Healthy", await response.Content.ReadAsStringAsync(testContext.CancellationToken));
     }
 
     private static string DatabasePath(LookoutWebApplicationFactory factory)

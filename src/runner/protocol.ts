@@ -5,13 +5,20 @@ import { isObject, isOptionalString } from './guards.ts';
 
 export type ProxySettings = NonNullable<BrowserContextOptions['proxy']>;
 
+/** Where a Script's browser comes from */
+export type BrowserSettings =
+  /** A Chromium the Script's process launches itself, for local development and tests; non-headless is for debugging */
+  | { provider: 'launch'; headless: boolean }
+  /** A headless Chromium from Browserless, at its Playwright endpoint `url`, as in deployment */
+  | { provider: 'connect'; url: string };
+
 /** What the runner sends a child process: the Script to run and how to run it */
 export interface ScriptJob {
   /** A secret for this execution, which the child's reports must carry; see {@link ScriptReport} */
   token: string;
   scriptPath: string;
   context: ScriptContext;
-  headless: boolean;
+  browser: BrowserSettings;
   proxy?: ProxySettings;
 }
 
@@ -48,7 +55,7 @@ export interface Screenshot {
 export type ScriptReport =
   /**
    * Chromium's process, once launched. Playwright puts it in a process group of its own, outside the one the
-   * child leads, so the runner must kill that group as well.
+   * child leads, so the runner must kill that group as well. A child that connects to Browserless has none.
    */
   | { token: string; type: 'browser'; pid: number }
   /** The Script's outcome, sent as soon as it has one, so the screenshot that follows can't make it late */

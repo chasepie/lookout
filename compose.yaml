@@ -1,0 +1,80 @@
+# Lookout's deployment: see "Deploying" in README.md. Settings come from the environment or an .env file beside
+# this one:
+#   LOOKOUT_PORT                 the host port Lookout is served on (default 8080)
+#   LOOKOUT_TIME_ZONE            the time zone schedules use, such as Europe/London (default UTC)
+#   LOOKOUT_MAX_CONCURRENT_RUNS  how many Runs execute at once (default 2); raise the runner's mem_limit with it
+name: lookout
+
+services:
+  lookout:
+    build:
+      context: .
+      dockerfile: src/Backend/Dockerfile
+    restart: unless-stopped
+    ports:
+      - ${LOOKOUT_PORT:-8080}:8080
+    environment:
+      Runner__BaseUrl: http://runner:3000
+      Scheduling__TimeZone: ${LOOKOUT_TIME_ZONE:-}
+      Scheduling__MaxConcurrentRuns: ${LOOKOUT_MAX_CONCURRENT_RUNS:-2}
+    # The database, in the image's data directory. Nothing else mounts it.
+    volumes:
+      - lookout-data:/data
+    # internet: to be reached from the LAN and, later, to send notifications
+    networks:
+      - internal
+      - internet
+    depends_on:
+      - runner
+
+  # Runs Scripts. It reaches only Browserless and is reached only by Lookout, and has nothing mounted: no database,
+  # secrets or backend configuration (ADR-0003).
+  runner:
+    build:
+      context: .
+      dockerfile: src/runner/Dockerfile
+    restart: unless-stopped
+    environment:
+      BROWSERLESS_URL: ws://browserless:3000/chromium/playwright
+    networks:
+      - internal
+    # A minimal init as PID 1, which reaps the processes the runner kills and forwards signals to it. Node, as PID 1,
+    # would leave them as zombies.
+    init: true
+    # The container is what limits a Script's memory outside V8's heap, such as Buffers: 640 MB for each concurrent
+    # Run (a Script's 512 MB heap and Node's own) and 256 MB for the runner. Without it, a Script could take the
+    # host's memory, and the kernel's OOM killer could pick the runner, ending every Run.
+    mem_limit: 1536m
+    pids_limit: 128
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      - browserless
+
+  # Runs the browsers Scripts drive, the only part of a Run that reaches the internet
+  browserless:
+    # Its Playwright must match the runner's at the major.minor level: v2.57.1 serves Playwright 1.60 to 1.64
+    image: ghcr.io/browserless/chromium:v2.57.1
+    restart: unless-stopped
+    environment:
+      # Above the longest Run timeout, 10 minutes; its default of 30 seconds would end longer Runs
+      TIMEOUT: 660000
+      # As many browsers as Lookout runs Runs at once
+      CONCURRENT: ${LOOKOUT_MAX_CONCURRENT_RUNS:-2}
+    networks:
+      - internal
+      - internet
+
+networks:
+  # No route out, so a Script's own Node code can't reach the internet
+  internal:
+    internal: true
+  internet:
+
+volumes:
+  lookout-data:
