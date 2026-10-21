@@ -59,18 +59,23 @@ public static class RequestForgery
         app.UseWhen(context => context.Request.Path.StartsWithSegments(path), branch => branch.Use(async (context, next) =>
         {
             var negotiating = context.Request.Path.StartsWithSegments(path.Add("/negotiate"));
-            if (negotiating
-                && !await context.RequestServices.GetRequiredService<IAntiforgery>().IsRequestValidAsync(context))
+            if (negotiating && !await context.RequestServices.GetRequiredService<IAntiforgery>().IsRequestValidAsync(context))
             {
-                await Results.Problem(type: MissingTokenProblemType, statusCode: StatusCodes.Status400BadRequest,
-                    detail: "This connection is missing Lookout's request token. Reload the page and try again.")
+                await Results
+                    .Problem(
+                        type: MissingTokenProblemType,
+                        statusCode: StatusCodes.Status400BadRequest,
+                        detail: "This connection is missing Lookout's request token. Reload the page and try again.")
                     .ExecuteAsync(context);
                 return;
             }
             if (!negotiating && !context.Request.Query.ContainsKey("id"))
             {
-                await Results.Problem(statusCode: StatusCodes.Status400BadRequest,
-                    detail: "Negotiate a connection before connecting.").ExecuteAsync(context);
+                await Results
+                    .Problem(
+                        statusCode: StatusCodes.Status400BadRequest,
+                        detail: "Negotiate a connection before connecting.")
+                    .ExecuteAsync(context);
                 return;
             }
             await next(context);

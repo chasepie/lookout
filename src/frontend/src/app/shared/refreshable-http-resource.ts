@@ -21,7 +21,10 @@ export function refreshableHttpResource<T>(request: () => HttpResourceRequest | 
     return current && { ...current };
   });
   // Forgotten when the request changes, as the new request's read is fresh anyway.
-  const readAgain = linkedSignal({ source: () => JSON.stringify(request() ?? null), computation: () => false });
+  const readAgain = linkedSignal({
+    source: () => JSON.stringify(request() ?? null),
+    computation: () => false
+  });
   effect(() => {
     if (readAgain() && !resource.isLoading()) {
       untracked(() => {

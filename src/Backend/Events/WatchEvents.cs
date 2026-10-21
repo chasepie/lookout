@@ -40,8 +40,13 @@ public sealed partial class WatchEvents(IHubContext<WatchEventsHub, IWatchEvents
     {
         // Before announcing it, so the app reads the Watch as no longer Running when it reloads on this event.
         _running.TryRemove(watchId, out _);
-        return SendAsync(clients => clients.RunFinished(new RunFinishedEvent(watchId, run?.Id, run?.Outcome,
-            run?.IsChange == true, run?.IsChange == true ? run.Content : null)));
+        return SendAsync(clients => clients.RunFinished(
+            new RunFinishedEvent(
+                WatchId: watchId,
+                RunId: run?.Id,
+                Outcome: run?.Outcome,
+                IsChange: run?.IsChange == true,
+                Content: run?.IsChange == true ? run.Content : null)));
     }
 
     public Task StatusChangedAsync(Guid watchId, WatchStatus status) =>

@@ -429,10 +429,13 @@ public sealed record WatchSummary(
     /// Pending, since a Watch whose Script never Succeeded needs attention too.
     /// </summary>
     private static readonly Expression<Func<Watch, WatchStatus>> StatusProjection = watch =>
-        watch.IsPaused ? WatchStatus.Paused
-        : watch.FailureStreak > 0 ? WatchStatus.Failing
-        : watch.Baseline == null ? WatchStatus.Pending
-        : WatchStatus.Healthy;
+        watch.IsPaused
+            ? WatchStatus.Paused
+            : watch.FailureStreak > 0
+                ? WatchStatus.Failing
+                : watch.Baseline == null
+                    ? WatchStatus.Pending
+                    : WatchStatus.Healthy;
 
     /// <summary>Maps a Watch in a database query; <see cref="From"/> applies the same mapping in memory.</summary>
     public static readonly Expression<Func<Watch, WatchSummary>> Projection = WithStatus((watch, status) => new WatchSummary(
@@ -472,8 +475,10 @@ public sealed record WatchSummary(
     private static Expression<Func<Watch, WatchSummary>> WithStatus(Expression<Func<Watch, WatchStatus, WatchSummary>> shape)
     {
         var watch = shape.Parameters[0];
-        var status = new ReplaceParameter(StatusProjection.Parameters[0], watch).Visit(StatusProjection.Body);
-        return Expression.Lambda<Func<Watch, WatchSummary>>(new ReplaceParameter(shape.Parameters[1], status).Visit(shape.Body), watch);
+        var status = new ReplaceParameter(StatusProjection.Parameters[0], watch)
+            .Visit(StatusProjection.Body);
+        return Expression.Lambda<Func<Watch, WatchSummary>>(
+            new ReplaceParameter(shape.Parameters[1], status).Visit(shape.Body), watch);
     }
 
     private sealed class ReplaceParameter(ParameterExpression parameter, Expression replacement) : ExpressionVisitor
