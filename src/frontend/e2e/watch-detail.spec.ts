@@ -1,5 +1,6 @@
 import { type Page, expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
+import { holdFirst } from './hold';
 import { createWatch, editWatch, runWatch } from './watches';
 
 test('open a Watch, edit its settings, and see its Run history with a highlighted Change', async ({ page }) => {
@@ -133,10 +134,15 @@ test('the settings form shows a name changed elsewhere back to one saved here', 
   const original = `Original ${randomUUID()}`;
   const id = await createWatch(page, original);
   await page.goto(`/watches/${id}`);
+  await expect(page.getByLabel('Name', { exact: true })).toHaveValue(original);
   const renamed = `Renamed ${randomUUID()}`;
   await page.getByLabel('Name', { exact: true }).fill(renamed);
+  const reread = page.waitForResponse((response) => response.request().method() === 'GET'
+    && new URL(response.url()).pathname === `/api/watches/${id}`);
   await page.getByRole('button', { name: 'Save settings' }).click();
   await expect(page.getByRole('status')).toHaveText('Settings saved.');
+  // Another tab's changes come after this page has read back its own save.
+  await reread;
 
   await editWatch(page, id, { name: original, notificationUrl: 'https://example.com/widget', timeoutSeconds: 120 });
   await page.getByRole('button', { name: 'Pause' }).click();
@@ -152,29 +158,6 @@ test.describe('when responses arrive late', () => {
   test.afterEach(async ({ page }) => {
     await page.unrouteAll({ behavior: 'ignoreErrors' });
   });
-
-  /** Holds the first matching response until released, passing later ones straight through. */
-  async function holdFirst(page: Page, url: string | RegExp) {
-    let release!: () => void;
-    const released = new Promise<void>((resolve) => { release = resolve; });
-    let held = false;
-    await page.route(url, async (route) => {
-      if (held) {
-        await route.continue();
-        return;
-      }
-      held = true;
-      // The app may abandon the request while it is held.
-      try {
-        const response = await route.fetch();
-        await released;
-        await route.fulfill({ response });
-      } catch {
-        // Abandoned: there is no one left to answer.
-      }
-    });
-    return release;
-  }
 
   const runHistory = (page: Page) => page.getByRole('list', { name: 'Run history' }).getByRole('listitem');
 

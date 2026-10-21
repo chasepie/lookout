@@ -25,7 +25,7 @@ services:
     # The database, in the image's data directory. Nothing else mounts it.
     volumes:
       - lookout-data:/data
-    # lan: to be reached from the LAN and, later, to send notifications
+    # lan: to be reached from the LAN and to send notifications to Discord and Pushover
     networks:
       - runs
       - lan

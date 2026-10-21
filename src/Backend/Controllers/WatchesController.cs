@@ -58,6 +58,11 @@ public sealed class WatchesController(
             return Problem("Script source must not be empty.", statusCode: HttpStatusCode.BadRequest);
         }
 
+        if (await FindChannels(request.ChannelIds, cancellationToken) is not { } channels)
+        {
+            return ChannelMissing();
+        }
+
         var watch = new Watch
         {
             Name = name,
@@ -65,7 +70,8 @@ public sealed class WatchesController(
             Schedule = schedule,
             JitterMinutes = request.JitterMinutes,
             NextRunAt = schedules.NextRunAt(schedule, request.JitterMinutes),
-            NextRunTimeZone = schedules.TimeZone.Id
+            NextRunTimeZone = schedules.TimeZone.Id,
+            Channels = channels
         };
         var version = new ScriptVersion
         {
@@ -77,7 +83,15 @@ public sealed class WatchesController(
 
         await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
         database.Watches.Add(watch);
-        await database.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await database.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException) when (channels.Count > 0)
+        {
+            // A chosen Channel was deleted since it was read, failing its join row's foreign key.
+            return Problem("One of the chosen Channels was deleted while the Watch was being created.", statusCode: HttpStatusCode.Conflict);
+        }
 
         watch.CurrentScriptVersionId = version.Id;
         await database.SaveChangesAsync(cancellationToken);
@@ -220,6 +234,40 @@ public sealed class WatchesController(
         return Problem("The schedule of this Watch kept changing while it was being resumed. Please try again.", statusCode: HttpStatusCode.Conflict);
     }
 
+    [HttpPut("{id:guid}/channels")]
+    public async Task<IActionResult> ChangeChannels(Guid id, ChannelsRequest request, CancellationToken cancellationToken)
+    {
+        if (!await database.Watches.AnyAsync(watch => watch.Id == id, cancellationToken))
+        {
+            return NotFound();
+        }
+
+        if (await FindChannels(request.ChannelIds, cancellationToken) is not { } channels)
+        {
+            return ChannelMissing();
+        }
+
+        // The choice is replaced whole in a transaction that writes before anything else, so SQLite runs overlapping
+        // changes one after another and the last one wins, rather than combining them. Only the choice changes, so the
+        // Watch's Revision is left alone and a Run in progress is still recorded.
+        await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            await database.WatchChannels
+                .Where(choice => choice.WatchId == id)
+                .ExecuteDeleteAsync(cancellationToken);
+            database.WatchChannels.AddRange(channels.Select(channel => new WatchChannel { WatchId = id, ChannelId = channel.Id }));
+            await database.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            // The Watch or a chosen Channel was deleted since they were read.
+            return Problem("The Watch or one of the chosen Channels no longer exists.", statusCode: HttpStatusCode.Conflict);
+        }
+        return NoContent();
+    }
+
     [HttpGet("{id:guid}/runs")]
     public async Task<ActionResult<IReadOnlyList<Run>>> History(Guid id, CancellationToken cancellationToken,
         [FromQuery] int limit = 50, [FromQuery] long? before = null)
@@ -283,6 +331,23 @@ public sealed class WatchesController(
         }
     }
 
+    /// <summary>The chosen Channels, or null if any of them doesn't exist.</summary>
+    private async Task<List<Channel>?> FindChannels(IReadOnlyList<Guid> ids, CancellationToken cancellationToken)
+    {
+        var chosen = ids.Distinct().ToList();
+        if (chosen.Count == 0)
+        {
+            return [];
+        }
+        var channels = await database.Channels
+            .Where(channel => chosen.Contains(channel.Id))
+            .ToListAsync(cancellationToken);
+        return channels.Count == chosen.Count ? channels : null;
+    }
+
+    private ObjectResult ChannelMissing() =>
+        Problem("One of the chosen Channels no longer exists.", statusCode: HttpStatusCode.BadRequest);
+
     private ObjectResult? ValidateSettings(string name, string notificationUrl, int timeoutSeconds)
     {
         if (name.Length is < 1 or > 200)
@@ -290,8 +355,7 @@ public sealed class WatchesController(
             return Problem("Name must contain between 1 and 200 characters.", statusCode: HttpStatusCode.BadRequest);
         }
 
-        if (!Uri.TryCreate(notificationUrl, UriKind.Absolute, out var parsedUrl)
-            || parsedUrl.Scheme is not ("http" or "https") || notificationUrl.Length > 2048)
+        if (!HttpUrls.IsValid(notificationUrl))
         {
             return Problem("Notification URL must be an HTTP or HTTPS URL.", statusCode: HttpStatusCode.BadRequest);
         }
@@ -343,7 +407,8 @@ public sealed record WatchSummary(
     Run? LastRun,
     Schedule Schedule,
     int JitterMinutes,
-    DateTimeOffset? NextRunAt)
+    DateTimeOffset? NextRunAt,
+    IReadOnlyList<Guid> ChannelIds)
 {
     /// <summary>Maps a Watch in a database query; <see cref="From"/> applies the same mapping in memory.</summary>
     public static readonly Expression<Func<Watch, WatchSummary>> Projection = watch => new WatchSummary(
@@ -364,11 +429,17 @@ public sealed record WatchSummary(
         watch.Runs.OrderByDescending(run => run.Id).FirstOrDefault(),
         watch.Schedule,
         watch.JitterMinutes,
-        watch.NextRunAt);
+        watch.NextRunAt,
+        watch.Channels.Select(channel => channel.Id).ToList());
 
     private static readonly Func<Watch, WatchSummary> CompiledProjection = Projection.Compile();
 
     public static WatchSummary From(Watch watch) => CompiledProjection(watch);
+}
+
+public sealed class ChannelsRequest
+{
+    public required IReadOnlyList<Guid> ChannelIds { get; init; }
 }
 
 public sealed class EditWatchRequest
@@ -383,6 +454,7 @@ public sealed class CreateWatchRequest : ScheduleRequest
     public required string Name { get; init; }
     public required string NotificationUrl { get; init; }
     public required IFormFile Script { get; init; }
+    public List<Guid> ChannelIds { get; init; } = [];
 }
 
 public class ScheduleRequest

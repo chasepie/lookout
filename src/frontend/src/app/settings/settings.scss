@@ -1,0 +1,57 @@
+@use 'tokens';
+@use 'mixins';
+
+:host { display: block; }
+
+@include mixins.page-heading;
+@include mixins.stacked-form;
+@include mixins.messages;
+
+h2 { font-size: 19px; margin: 0; }
+h3 { font-size: 17px; margin: 0; min-width: 0; overflow-wrap: anywhere; }
+p { line-height: 1.6; }
+
+.workspace {
+  display: grid;
+  grid-template-columns: 335px minmax(0, 1fr);
+  gap: 30px;
+  align-items: start;
+
+  @include mixins.narrow { grid-template-columns: 1fr; }
+}
+
+.panel { @include mixins.panel; padding: 25px; }
+.panel > p { font-size: 14px; color: tokens.$text-muted; margin: 10px 0 25px; }
+
+// Selects match the mixin's inputs.
+select {
+  border: 1px solid tokens.$border-input;
+  border-radius: tokens.$radius-control;
+  min-width: 0;
+  width: 100%;
+  padding: 11px;
+  background: tokens.$input;
+  color: inherit;
+
+  + label { margin-top: 23px; }
+}
+
+input::placeholder { color: tokens.$text-placeholder; font-size: 12px; }
+.secret-note { margin-top: 23px; }
+
+.channel-list { display: grid; gap: 16px; }
+.channel-heading { display: flex; justify-content: space-between; align-items: center; gap: 15px; }
+.kind-badge { @include mixins.badge; }
+.channel .details { margin: 14px 0 0; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+
+button {
+  @include mixins.button;
+
+  &.primary { @include mixins.primary-button; }
+  &.danger { @include mixins.danger-button; }
+}
+
+// Primary buttons sit in rows of actions here, not at the foot of a form.
+.actions button.primary { margin-top: 0; padding: 9px 16px; }
+.empty-state { @include mixins.empty-state; padding: 35px 20px; }

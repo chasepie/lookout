@@ -1,0 +1,19 @@
+@if (channels.list.error()) {
+  <p class="error" role="alert">Could not load your Channels. <button type="button" (click)="channels.list.reload()">Try again</button></p>
+} @else if (channels.list.hasValue()) {
+  @if (channels.list.value().length) {
+    <fieldset>
+      <legend>Channels to notify</legend>
+      @for (channel of channels.list.value(); track channel.id) {
+        <label class="choice">
+          <input #box type="checkbox" [checked]="chosen().has(channel.id)" (change)="toggle(channel.id, box.checked)" />
+          <span>{{ channel.name }}</span>
+          <small>{{ kinds[channel.kind] }}</small>
+        </label>
+      }
+    </fieldset>
+    <ng-content />
+  } @else {
+    <p class="details">No Channels yet. <a routerLink="/settings">Add one in Settings</a> to be notified of Changes.</p>
+  }
+} @else { <p class="details">Loading Channels…</p> }

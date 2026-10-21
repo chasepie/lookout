@@ -1,8 +1,10 @@
+using ChasePie.Lookout.Backend.Notifications;
 using ChasePie.Lookout.Backend.Runner;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Time.Testing;
 
 namespace ChasePie.Lookout.Backend.IntegrationTests;
@@ -17,6 +19,9 @@ public sealed class LookoutWebApplicationFactory : WebApplicationFactory<Program
 {
     private readonly List<string> _databasePaths = [];
     public FakeRunnerClient Runner { get; } = new();
+    public RecordingChannels Channels { get; } = new();
+    /// <summary>Delivers notifications through the real Discord and Pushover senders instead of <see cref="Channels"/>.</summary>
+    public bool UseRealChannels { get; init; }
     public FakeTimeProvider Time { get; } = new(new DateTimeOffset(2026, 10, 19, 12, 0, 0, TimeSpan.Zero));
     /// <summary>Uses the real clock instead of <see cref="Time"/>, for a host that a browser uses interactively.</summary>
     public bool UseSystemTime { get; init; }
@@ -33,6 +38,14 @@ public sealed class LookoutWebApplicationFactory : WebApplicationFactory<Program
         {
             services.AddSingleton<IRunnerClient>(Runner);
             services.AddSingleton(UseSystemTime ? TimeProvider.System : Time);
+            if (!UseRealChannels)
+            {
+                services.RemoveAll<IChannelSender>();
+                foreach (var sender in Channels.Senders())
+                {
+                    services.AddSingleton(sender);
+                }
+            }
         });
         builder.UseSetting("ConnectionStrings:Lookout", $"Data Source={databasePath};Pooling=False");
     }

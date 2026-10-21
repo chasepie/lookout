@@ -1,0 +1,7 @@
+@use 'tokens';
+@use 'mixins';
+
+:host { display: block; }
+
+.error { color: tokens.$error; font-size: 14px; overflow-wrap: anywhere; margin: 16px 0 0; }
+button { @include mixins.button; margin-top: 20px; }

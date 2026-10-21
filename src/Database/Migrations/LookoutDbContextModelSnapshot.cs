@@ -39,6 +39,34 @@ namespace ChasePie.Lookout.Database.Migrations
                         });
                 });
 
+            modelBuilder.Entity("ChasePie.Lookout.Model.Channel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AppToken")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UserKey")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("WebhookUrl")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Channels");
+                });
+
             modelBuilder.Entity("ChasePie.Lookout.Model.Run", b =>
                 {
                     b.Property<long>("Id")
@@ -143,6 +171,9 @@ namespace ChasePie.Lookout.Database.Migrations
                     b.Property<int>("FailureStreak")
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("FailureStreakNotified")
+                        .HasColumnType("INTEGER");
+
                     b.Property<bool>("IsPaused")
                         .HasColumnType("INTEGER");
 
@@ -203,6 +234,21 @@ namespace ChasePie.Lookout.Database.Migrations
                     b.ToTable("Watches");
                 });
 
+            modelBuilder.Entity("ChasePie.Lookout.Model.WatchChannel", b =>
+                {
+                    b.Property<Guid>("WatchId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("ChannelId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("WatchId", "ChannelId");
+
+                    b.HasIndex("ChannelId");
+
+                    b.ToTable("WatchChannels");
+                });
+
             modelBuilder.Entity("Microsoft.AspNetCore.DataProtection.EntityFrameworkCore.DataProtectionKey", b =>
                 {
                     b.Property<int>("Id")
@@ -261,6 +307,21 @@ namespace ChasePie.Lookout.Database.Migrations
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("CurrentScriptVersion");
+                });
+
+            modelBuilder.Entity("ChasePie.Lookout.Model.WatchChannel", b =>
+                {
+                    b.HasOne("ChasePie.Lookout.Model.Channel", null)
+                        .WithMany()
+                        .HasForeignKey("ChannelId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ChasePie.Lookout.Model.Watch", null)
+                        .WithMany()
+                        .HasForeignKey("WatchId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("ChasePie.Lookout.Model.Watch", b =>

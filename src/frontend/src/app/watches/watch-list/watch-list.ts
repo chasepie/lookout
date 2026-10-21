@@ -2,6 +2,8 @@ import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { FormField, apply, form, submit } from '@angular/forms/signals';
 import { RouterLink } from '@angular/router';
+import { ChannelChoices } from '../../channels/channel-choices/channel-choices';
+import { Channels } from '../../channels/channels';
 import { OutcomeBadge } from '../outcome-badge/outcome-badge';
 import { problemMessage } from '../../shared/problem';
 import { RunTiming } from '../run-timing/run-timing';
@@ -15,19 +17,21 @@ import { Watches } from '../watches';
 
 @Component({
   selector: 'app-watch-list',
-  imports: [DatePipe, FormField, OutcomeBadge, RouterLink, RunTiming, ScheduleEditor, SchedulePicker, StatusBadge],
+  imports: [ChannelChoices, DatePipe, FormField, OutcomeBadge, RouterLink, RunTiming, ScheduleEditor, SchedulePicker, StatusBadge],
   templateUrl: './watch-list.html',
   styleUrl: './watch-list.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class WatchList {
   protected readonly watches = inject(Watches);
+  private readonly channels = inject(Channels);
   protected readonly model = signal({ name: '', notificationUrl: '', schedule: defaultSchedule() });
   protected readonly watchForm = form(this.model, (fields) => {
     nameAndNotificationUrlRules(fields);
     apply(fields.schedule, scheduleSchema);
   });
   protected readonly script = signal<File | undefined>(undefined);
+  protected readonly channelIds = signal<ReadonlySet<string>>(new Set());
   protected readonly error = signal('');
   protected readonly notice = signal('');
   protected readonly running = signal(new Set<string>());
@@ -56,9 +60,10 @@ export class WatchList {
       this.notice.set('');
       try {
         const { name, notificationUrl, schedule } = this.model();
-        await this.watches.create(name, notificationUrl, schedule, script);
+        await this.watches.create(name, notificationUrl, schedule, script, this.channels.stillListed(this.channelIds()));
         this.watchForm().reset({ name: '', notificationUrl: '', schedule: defaultSchedule() });
         this.script.set(undefined);
+        this.channelIds.set(new Set());
         input.value = '';
         this.notice.set('Watch created. It runs on its schedule, or you can run it now.');
         this.watches.list.refresh();

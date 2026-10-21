@@ -11,6 +11,7 @@ import { ScheduleEditor } from '../../schedules/schedule-editor/schedule-editor'
 import { StatusBadge } from '../status-badge/status-badge';
 import { type Run, type Watch, type WatchSettings, outcomeLabels } from '../watch.model';
 import { defaultTimeoutSeconds, maxTimeoutSeconds, nameAndNotificationUrlRules, timeoutRules } from '../watch-settings';
+import { WatchChannels } from '../watch-channels/watch-channels';
 import { Watches } from '../watches';
 
 const historyPageSize = 50;
@@ -28,7 +29,7 @@ const noOlderRuns: OlderRuns = { runs: [], ended: false, loading: false };
 
 @Component({
   selector: 'app-watch-detail',
-  imports: [DatePipe, FormField, OutcomeBadge, RouterLink, RunTiming, ScheduleEditor, StatusBadge],
+  imports: [DatePipe, FormField, OutcomeBadge, RouterLink, RunTiming, ScheduleEditor, StatusBadge, WatchChannels],
   templateUrl: './watch-detail.html',
   styleUrl: './watch-detail.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -127,6 +128,12 @@ export class WatchDetail {
     this.clearMessages();
     this.notice.set('Schedule saved.');
     // The editor has already saved; read the Watch afresh rather than trusting its response.
+    this.refreshWatch();
+  }
+
+  protected channelsSaved() {
+    this.clearMessages();
+    this.notice.set('Channels saved.');
     this.refreshWatch();
   }
 

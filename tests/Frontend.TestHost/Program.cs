@@ -9,7 +9,10 @@ public static class Program
     public static async Task Main()
     {
         // Real time, so the browser shows next Runs relative to now; no flow waits the 3 minutes a scheduled Run needs.
-        await using var factory = new LookoutWebApplicationFactory { UseSystemTime = true };
+        // Channels deliver for real, so a test can receive a notification at its own endpoint. Pushover's go to a local
+        // port nothing listens on (the discard port), so no test reaches the internet.
+        Environment.SetEnvironmentVariable("Notifications__PushoverBaseUrl", "http://127.0.0.1:9/");
+        await using var factory = new LookoutWebApplicationFactory { UseSystemTime = true, UseRealChannels = true };
         factory.Runner.DefaultResult = new RunnerResult
         {
             Outcome = RunOutcome.Succeeded, Content = "£19.99", Details = "In stock", DurationMs = 25

@@ -1,0 +1,24 @@
+@use 'tokens';
+@use 'mixins';
+
+:host { display: block; }
+
+@include mixins.messages;
+
+fieldset { display: grid; gap: 12px; border: 0; padding: 0; margin: 0; min-width: 0; }
+legend { font-size: 13px; font-weight: 650; padding: 0; margin-bottom: 14px; }
+.details { margin: 0; }
+
+.choice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 650;
+
+  span { min-width: 0; overflow-wrap: anywhere; }
+  small { margin-left: auto; font-weight: 400; }
+  input { accent-color: tokens.$primary; width: 16px; height: 16px; margin: 0; }
+}
+
+button { @include mixins.button; }

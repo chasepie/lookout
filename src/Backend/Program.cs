@@ -1,4 +1,5 @@
 using ChasePie.Lookout.Database;
+using ChasePie.Lookout.Backend.Notifications;
 using ChasePie.Lookout.Backend.Runner;
 using ChasePie.Lookout.Backend.Scheduling;
 using ChasePie.Lookout.Model;
@@ -36,12 +37,8 @@ public class Program
         services.AddSingleton<RunningWatches>();
         services.AddScoped<RunExecutor>();
         ConfigureScheduling(services, configuration);
-        var runnerUrl = configuration["Runner:BaseUrl"] ?? "http://localhost:3000";
-        if (!Uri.TryCreate(runnerUrl.TrimEnd('/') + "/", UriKind.Absolute, out var runnerBaseAddress)
-            || runnerBaseAddress.Scheme is not ("http" or "https"))
-        {
-            throw new InvalidOperationException($"Runner:BaseUrl must be an absolute HTTP or HTTPS URL, not '{runnerUrl}'");
-        }
+        ConfigureNotifications(services, configuration);
+        var runnerBaseAddress = HttpUrls.ConfiguredBaseAddress(configuration, "Runner:BaseUrl", "http://localhost:3000");
         services.AddHttpClient<IRunnerClient, HttpRunnerClient>(client =>
         {
             client.BaseAddress = runnerBaseAddress;
@@ -111,6 +108,27 @@ public class Program
         }
         services.AddSingleton(_ => new RunSlots(maxConcurrentRuns));
         services.AddHostedService<Scheduler>();
+    }
+
+    private static void ConfigureNotifications(IServiceCollection services, ConfigurationManager configuration)
+    {
+        var pushoverBaseAddress = HttpUrls.ConfiguredBaseAddress(configuration, "Notifications:PushoverBaseUrl",
+            PushoverSender.DefaultBaseUrl);
+
+        // A sender's request URL or body holds its Channel's secrets, so its requests are never logged. A notification
+        // is sent while its Run holds a slot, so a Channel's service that doesn't answer is given up on soon.
+        var sendTimeout = TimeSpan.FromSeconds(10);
+        services.AddHttpClient(nameof(DiscordSender), client => client.Timeout = sendTimeout).RemoveAllLoggers();
+        services.AddHttpClient(nameof(PushoverSender), client =>
+        {
+            client.BaseAddress = pushoverBaseAddress;
+            client.Timeout = sendTimeout;
+        }).RemoveAllLoggers();
+        services.AddTransient<IChannelSender>(provider =>
+            new DiscordSender(provider.GetRequiredService<IHttpClientFactory>().CreateClient(nameof(DiscordSender))));
+        services.AddTransient<IChannelSender>(provider =>
+            new PushoverSender(provider.GetRequiredService<IHttpClientFactory>().CreateClient(nameof(PushoverSender))));
+        services.AddScoped<NotificationDispatcher>();
     }
 
     private static void MigrateDatabase(WebApplication app)
