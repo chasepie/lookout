@@ -20,6 +20,8 @@ export interface ScriptJob {
   context: ScriptContext;
   browser: BrowserSettings;
   proxy?: ProxySettings;
+  /** Whether to screenshot the Script's page even when it Succeeds, as a Test run shows */
+  alwaysScreenshot: boolean;
 }
 
 /**

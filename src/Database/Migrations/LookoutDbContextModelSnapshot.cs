@@ -123,8 +123,14 @@ namespace ChasePie.Lookout.Database.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("Number")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Source")
                         .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("UploadedAt")
                         .HasColumnType("TEXT");
 
                     b.Property<Guid>("WatchId")
@@ -132,7 +138,8 @@ namespace ChasePie.Lookout.Database.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("WatchId");
+                    b.HasIndex("WatchId", "Number")
+                        .IsUnique();
 
                     b.ToTable("ScriptVersions");
                 });

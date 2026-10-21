@@ -93,5 +93,9 @@ public class LookoutDbContext(DbContextOptions<LookoutDbContext> options) : DbCo
 
         modelBuilder.Entity<Run>()
             .HasIndex(run => new { run.WatchId, run.Id });
+
+        modelBuilder.Entity<ScriptVersion>()
+            .HasIndex(version => new { version.WatchId, version.Number })
+            .IsUnique();
     }
 }

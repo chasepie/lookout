@@ -59,7 +59,7 @@ function parseExecuteRequest(body: unknown): ExecuteRequest {
   if (!isObject(body)) {
     throw new InvalidRequestError('Request body must be a JSON object');
   }
-  const { source, fileKind, context, timeoutMs, proxy } = body;
+  const { source, fileKind, context, timeoutMs, proxy, alwaysScreenshot } = body;
   if (!isFileKind(fileKind)) {
     throw new InvalidRequestError(`fileKind must be ${fileKinds.map((kind) => `'${kind}'`).join(' or ')}`);
   }
@@ -70,6 +70,9 @@ function parseExecuteRequest(body: unknown): ExecuteRequest {
   if (proxy !== undefined && proxy !== null && !isObject(proxy)) {
     throw new InvalidRequestError('proxy must be an object');
   }
+  if (alwaysScreenshot !== undefined && typeof alwaysScreenshot !== 'boolean') {
+    throw new InvalidRequestError('alwaysScreenshot must be a boolean');
+  }
   return {
     source: requireString(source, 'source'),
     fileKind,
@@ -77,6 +80,7 @@ function parseExecuteRequest(body: unknown): ExecuteRequest {
       notificationUrl: requireString(isObject(context) ? context['notificationUrl'] : undefined, 'context.notificationUrl'),
     },
     timeoutMs,
+    alwaysScreenshot: alwaysScreenshot ?? false,
     ...(isObject(proxy) && {
       proxy: {
         server: requireString(proxy['server'], 'proxy.server'),

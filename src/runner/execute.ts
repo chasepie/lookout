@@ -37,9 +37,14 @@ export interface ExecuteRequest {
   timeoutMs: number;
   /** The proxy a VPN Run's browser goes through; direct Runs have none */
   proxy?: ProxySettings;
+  /** Whether to screenshot the Script's page even when it Succeeds, as a Test run shows */
+  alwaysScreenshot: boolean;
 }
 
-/** What a Script's process left to debug it by: what it wrote to stdout and stderr and, unless it Succeeded, a screenshot */
+/**
+ * What a Script's process left to debug it by: what it wrote to stdout and stderr and, unless it Succeeded or the
+ * caller always wants one, a screenshot
+ */
 type DebugOutput = Screenshot & { consoleOutput: string };
 
 /** The outcome, with how long the execution took and what to debug it by */
@@ -319,7 +324,8 @@ const runScriptProcess = (
       clearTimeout(killTimer);
       clearTimeout(drainTimer);
       const result = outcome ?? unreportedResult(code, exitSignal);
-      resolve({ ...result, ...(result.outcome !== 'succeeded' && screenshot), consoleOutput: consoleOutput() });
+      const keepsScreenshot = job.alwaysScreenshot || result.outcome !== 'succeeded';
+      resolve({ ...result, ...(keepsScreenshot && screenshot), consoleOutput: consoleOutput() });
     });
     child.send(job);
   });
@@ -349,6 +355,7 @@ export async function execute(
       context: request.context,
       browser: config.browser,
       ...(request.proxy && { proxy: request.proxy }),
+      alwaysScreenshot: request.alwaysScreenshot,
     };
     const execArgv = [
       `--max-old-space-size=${memoryLimitMb}`,

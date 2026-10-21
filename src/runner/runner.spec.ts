@@ -149,6 +149,7 @@ interface ExecuteOptions {
   notificationUrl?: string;
   timeoutMs?: number;
   proxy?: ProxySettings;
+  alwaysScreenshot?: boolean;
 }
 
 /**
@@ -165,6 +166,7 @@ async function executeTimed(fixture: string, options: ExecuteOptions = {}, url =
       context: { notificationUrl: options.notificationUrl ?? `${pagesUrl}/in-stock` },
       timeoutMs: options.timeoutMs ?? 20_000,
       proxy: options.proxy,
+      alwaysScreenshot: options.alwaysScreenshot,
     }),
   });
   expect(response.status).toBe(200);
@@ -246,6 +248,13 @@ test('a Script that Succeeds comes without a screenshot', { timeout: 30_000 }, a
 
   expect(result).toMatchObject({ outcome: 'succeeded' });
   expect(screenshot).toBeUndefined();
+});
+
+test('a Script that Succeeds comes with a screenshot of its page when the caller always wants one', { timeout: 30_000 }, async () => {
+  const { result, screenshot } = await executeTimed('read-price.ts', { alwaysScreenshot: true });
+
+  expect(result).toEqual({ outcome: 'succeeded', content: '£20.00' });
+  expect(isPng(screenshot)).toBe(true);
 });
 
 test('a Script that fails before it has a page comes without a screenshot', { timeout: 30_000 }, async () => {
