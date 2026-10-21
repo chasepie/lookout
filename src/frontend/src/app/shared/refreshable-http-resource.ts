@@ -1,5 +1,5 @@
 import { type HttpResourceRef, type HttpResourceRequest, httpResource } from '@angular/common/http';
-import { effect, signal, untracked } from '@angular/core';
+import { effect, linkedSignal, signal, untracked } from '@angular/core';
 
 /** An httpResource that can be read afresh at any time. */
 export interface RefreshableHttpResource<T> extends HttpResourceRef<T> {
@@ -20,7 +20,8 @@ export function refreshableHttpResource<T>(request: () => HttpResourceRequest | 
     const current = request();
     return current && { ...current };
   });
-  const readAgain = signal(false);
+  // Forgotten when the request changes, as the new request's read is fresh anyway.
+  const readAgain = linkedSignal({ source: () => JSON.stringify(request() ?? null), computation: () => false });
   effect(() => {
     if (readAgain() && !resource.isLoading()) {
       untracked(() => {

@@ -41,3 +41,34 @@ test('see a Watch\'s status change when it is paused elsewhere', async ({ page }
 
   await expect(card.getByText('Paused', { exact: true })).toBeVisible();
 });
+
+test('older Runs on screen stay when another Run finishes', async ({ page }) => {
+  const id = await createWatch(page, `Long history ${randomUUID()}`);
+  await runWatch(page, id, 51);
+  await page.goto(`/watches/${id}`);
+  const runs = page.getByRole('list', { name: 'Run history' }).getByRole('listitem');
+  await page.getByRole('button', { name: 'Show older Runs' }).click();
+  await expect(runs).toHaveCount(51);
+
+  await runWatch(page, id, 1);
+
+  await expect(runs).toHaveCount(52);
+});
+
+test('the page stays when live events drop while the backend is unreachable', async ({ page }) => {
+  const name = `Restarting backend ${randomUUID()}`;
+  await createWatch(page, name);
+  // Every connection, whichever transport it falls back to, fails at once, as when the backend restarts.
+  await page.routeWebSocket(/\/api\/events/, (socket) => socket.close());
+  await page.route(/\/api\/events\?id=/, (route) => route.abort('connectionrefused'));
+  await page.goto('/');
+  await expect(page.getByRole('article', { name })).toBeVisible();
+
+  await page.route('**/api/session', (route) => route.abort('connectionrefused'));
+  await page.waitForEvent('requestfailed', (request) => request.url().endsWith('/api/session'));
+  // Nothing signals a page that must not be replaced, so give it time to be.
+  await page.waitForTimeout(300);
+
+  await expect(page.getByRole('heading', { name: 'Could not reach Lookout' })).toHaveCount(0);
+  await expect(page.getByRole('article', { name })).toBeVisible();
+});

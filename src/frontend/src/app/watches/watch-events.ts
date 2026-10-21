@@ -1,8 +1,9 @@
-import { HttpXsrfTokenExtractor } from '@angular/common/http';
+import { HttpClient, HttpXsrfTokenExtractor } from '@angular/common/http';
 import { Service, effect, inject } from '@angular/core';
 import { HubConnectionBuilder, LogLevel } from '@microsoft/signalr';
-import { Subject } from 'rxjs';
+import { Subject, firstValueFrom } from 'rxjs';
 import { Session } from '../session/session';
+import type { SessionStatus } from '../session/session.model';
 import type { RunOutcome, WatchStatus } from './watch.model';
 
 export interface RunStarted { watchId: string; startedAt: string }
@@ -34,6 +35,7 @@ const maxRetryDelayMs = 30_000;
 /** Listens to Lookout's events while logged in, reconnecting whenever the connection drops. */
 @Service()
 export class WatchEvents {
+  private readonly http = inject(HttpClient);
   private readonly session = inject(Session);
   private readonly requestToken = inject(HttpXsrfTokenExtractor);
   private readonly subject = new Subject<WatchEvent>();
@@ -73,10 +75,22 @@ export class WatchEvents {
         stopped.removeEventListener('abort', stop);
       }
       if (stopped.aborted) {return;}
-      // The connection can drop or be refused because the session ended, such as on logout elsewhere. Reading the
-      // session finds out, and issues a fresh request token for the next attempt.
-      this.session.status.reload();
       await delay(Math.min(maxRetryDelayMs, 1000 * 2 ** failures), stopped);
+      if (!stopped.aborted) {await this.checkSession();}
+    }
+  }
+
+  /**
+   * Checks the session the connection dropped or was refused under, which may have ended, such as on logout
+   * elsewhere, and issues a fresh request token for the next attempt. Only a session that has ended reloads the app's
+   * own status, which stops this listener; a backend that's restarting mustn't take the page down.
+   */
+  private async checkSession() {
+    try {
+      const { userName } = await firstValueFrom(this.http.get<SessionStatus>('/api/session'));
+      if (!userName) {this.session.status.reload();}
+    } catch {
+      // Unreachable for now; the next attempt tries again.
     }
   }
 }

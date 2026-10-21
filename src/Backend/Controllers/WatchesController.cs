@@ -424,19 +424,24 @@ public sealed record WatchSummary(
     DateTimeOffset? NextRunAt,
     IReadOnlyList<Guid> ChannelIds)
 {
+    /// <summary>
+    /// A Watch's status, as an expression rather than a method, so EF translates it to SQL. A failure streak outranks
+    /// Pending, since a Watch whose Script never Succeeded needs attention too.
+    /// </summary>
+    private static readonly Expression<Func<Watch, WatchStatus>> StatusProjection = watch =>
+        watch.IsPaused ? WatchStatus.Paused
+        : watch.FailureStreak > 0 ? WatchStatus.Failing
+        : watch.Baseline == null ? WatchStatus.Pending
+        : WatchStatus.Healthy;
+
     /// <summary>Maps a Watch in a database query; <see cref="From"/> applies the same mapping in memory.</summary>
-    public static readonly Expression<Func<Watch, WatchSummary>> Projection = watch => new WatchSummary(
+    public static readonly Expression<Func<Watch, WatchSummary>> Projection = WithStatus((watch, status) => new WatchSummary(
         watch.Id,
         watch.Name,
         watch.NotificationUrl,
         watch.CurrentScriptVersionId,
         watch.Baseline,
-        // Inline rather than a method call, so EF translates it to SQL. A failure streak outranks Pending, since a
-        // Watch whose Script never Succeeded needs attention too.
-        Status: watch.IsPaused ? WatchStatus.Paused
-            : watch.FailureStreak > 0 ? WatchStatus.Failing
-            : watch.Baseline == null ? WatchStatus.Pending
-            : WatchStatus.Healthy,
+        status,
         watch.IsPaused,
         watch.FailureStreak,
         watch.TimeoutSeconds,
@@ -444,23 +449,37 @@ public sealed record WatchSummary(
         watch.Schedule,
         watch.JitterMinutes,
         watch.NextRunAt,
-        watch.Channels.Select(channel => channel.Id).ToList());
+        watch.Channels.Select(channel => channel.Id).ToList()));
 
     /// <summary>Whether the Watch is Running, which is shown alongside its <see cref="Status"/>.</summary>
     public bool IsRunning { get; init; }
 
     private static readonly Func<Watch, WatchSummary> CompiledProjection = Projection.Compile();
+    private static readonly Func<Watch, WatchStatus> CompiledStatus = StatusProjection.Compile();
 
     public static WatchSummary From(Watch watch) => CompiledProjection(watch);
 
-    public static WatchStatus StatusOf(Watch watch) => From(watch).Status;
+    public static WatchStatus StatusOf(Watch watch) => CompiledStatus(watch);
 
     /// <summary>The Watch's status as stored, or null if it doesn't exist.</summary>
     public static Task<WatchStatus?> StatusAsync(IQueryable<Watch> watches, Guid id, CancellationToken cancellationToken) =>
         watches.Where(watch => watch.Id == id)
-            .Select(Projection)
-            .Select(watch => (WatchStatus?)watch.Status)
+            .Select(StatusProjection)
+            .Select(status => (WatchStatus?)status)
             .SingleOrDefaultAsync(cancellationToken);
+
+    /// <summary>Puts <see cref="StatusProjection"/> in the shape's status, so EF translates the whole projection.</summary>
+    private static Expression<Func<Watch, WatchSummary>> WithStatus(Expression<Func<Watch, WatchStatus, WatchSummary>> shape)
+    {
+        var watch = shape.Parameters[0];
+        var status = new ReplaceParameter(StatusProjection.Parameters[0], watch).Visit(StatusProjection.Body);
+        return Expression.Lambda<Func<Watch, WatchSummary>>(new ReplaceParameter(shape.Parameters[1], status).Visit(shape.Body), watch);
+    }
+
+    private sealed class ReplaceParameter(ParameterExpression parameter, Expression replacement) : ExpressionVisitor
+    {
+        protected override Expression VisitParameter(ParameterExpression node) => node == parameter ? replacement : node;
+    }
 }
 
 public sealed class ChannelsRequest

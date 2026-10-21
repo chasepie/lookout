@@ -22,8 +22,7 @@
   <p class="notice" role="status">{{ notice() }}</p>
   @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
   <div class="actions">
-    @let runningNow = busy() === 'running' || current.isRunning;
-    <button type="button" class="primary" (click)="runNow()" [disabled]="busy() || runningNow">{{ runningNow ? 'Running…' : 'Run now' }}</button>
+    <button type="button" class="primary" (click)="runNow()" [disabled]="busy() || current.isRunning">{{ busy() === 'running' || current.isRunning ? 'Running…' : 'Run now' }}</button>
     <button type="button" (click)="togglePaused(current)" [disabled]="busy()">{{ current.isPaused ? 'Resume' : 'Pause' }}</button>
   </div>
   <div class="layout">
