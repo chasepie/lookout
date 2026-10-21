@@ -83,7 +83,7 @@ const playwrightSystemFiles = ['/proc/version', '/proc/sys/fs/binfmt_misc/WSLInt
 /** The OS's name, which Playwright reads on Linux to tell which build of Chromium to launch */
 const osReleaseFile = '/etc/os-release';
 
-let launchPermissions: Promise<string[]> | undefined;
+let cachedLaunchPermissionArgs: Promise<string[]> | undefined;
 
 /**
  * What a Script's process needs on top to launch Chromium: reading the browsers and the OS's name, and starting
@@ -91,7 +91,7 @@ let launchPermissions: Promise<string[]> | undefined;
  * that outlives it, so a process that connects to Browserless doesn't get it. Worked out once, on the first launch.
  */
 const launchPermissionArgs = () =>
-  launchPermissions ??= findBrowsersDirectory().then((browsersDirectory) => [
+  cachedLaunchPermissionArgs ??= findBrowsersDirectory().then((browsersDirectory) => [
     ...[browsersDirectory, osReleaseFile].map((path) => `--allow-fs-read=${path}`),
     '--allow-child-process',
     // Node warns about that allowance on every start, which would end up in every Script's console output

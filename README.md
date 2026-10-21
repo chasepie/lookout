@@ -97,7 +97,8 @@ Then open `http://<host>:8080` and set up the account. To upgrade, pull the late
 | --- | --- | --- |
 | `LOOKOUT_PORT` | `8080` | The host port Lookout is served on |
 | `LOOKOUT_TIME_ZONE` | UTC | The time zone schedules use, such as `Europe/London` |
-| `LOOKOUT_MAX_CONCURRENT_RUNS` | `2` | How many Runs execute at once, and how many browsers Browserless runs at once. Raising it needs a higher `mem_limit` for `runner`, which allows 640 MB per Run |
+| `LOOKOUT_MAX_CONCURRENT_RUNS` | `2` | How many Runs execute at once, and how many browsers Browserless runs at once. Raise `LOOKOUT_RUNNER_MEMORY` with it |
+| `LOOKOUT_RUNNER_MEMORY` | `1536m` | The runner's memory limit: 640 MB per concurrent Run, plus 256 MB for the runner itself |
 
 Lookout serves plain HTTP and is meant to be reached only from your local network ([ADR-0002](docs/adr/0002-designed-for-lan-only-homelab-deployment.md)). For HTTPS, put your own reverse proxy in front of it. Read ADR-0002 before exposing it to the internet: Lookout isn't hardened for that, and the ADR lists what it would take.
 
@@ -131,4 +132,11 @@ The automated tests don't cover the real Browserless stack, so check a deploymen
    docker compose exec runner node -e "fetch('https://example.com').then(() => console.log('reached'), (e) => console.log('fetch failed:', e.cause?.code))"
    ```
 
-6. Check that a Script can run past Browserless's default timeout. Add `await page.waitForTimeout(45_000);` after `page.goto` in the Script, create a Watch with it and choose **Run now**. The Run Succeeds after about 45 seconds.
+6. Check that the runner has nothing mounted. This prints `[]`:
+
+   ```sh
+   docker inspect "$(docker compose ps -q runner)" --format '{{json .Mounts}}'
+   ```
+
+7. Check that a Script can run past Browserless's default timeout. Add `await page.waitForTimeout(45_000);` after `page.goto` in the Script, create a Watch with it and choose **Run now**. The Run Succeeds after about 45 seconds.
+8. Check that killed Scripts don't linger. Change the Script's wait to `await new Promise(() => {});`, so it never finishes, and choose **Run now** a few times. Each Run is Errored once its timeout passes. Afterwards, `docker compose top runner` lists only `docker-init` and `node index.ts`, with no `<defunct>` (zombie) process.

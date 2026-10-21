@@ -2,7 +2,8 @@
 # this one:
 #   LOOKOUT_PORT                 the host port Lookout is served on (default 8080)
 #   LOOKOUT_TIME_ZONE            the time zone schedules use, such as Europe/London (default UTC)
-#   LOOKOUT_MAX_CONCURRENT_RUNS  how many Runs execute at once (default 2); raise the runner's mem_limit with it
+#   LOOKOUT_MAX_CONCURRENT_RUNS  how many Runs execute at once (default 2); raise LOOKOUT_RUNNER_MEMORY with it
+#   LOOKOUT_RUNNER_MEMORY        the runner's memory limit (default 1536m): 640m per concurrent Run, plus 256m
 name: lookout
 
 services:
@@ -44,7 +45,7 @@ services:
     # The container is what limits a Script's memory outside V8's heap, such as Buffers: 640 MB for each concurrent
     # Run (a Script's 512 MB heap and Node's own) and 256 MB for the runner. Without it, a Script could take the
     # host's memory, and the kernel's OOM killer could pick the runner, ending every Run.
-    mem_limit: 1536m
+    mem_limit: ${LOOKOUT_RUNNER_MEMORY:-1536m}
     pids_limit: 128
     read_only: true
     tmpfs:

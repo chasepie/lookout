@@ -90,7 +90,7 @@ A Script's file may import only `playwright` and Node built-ins. Importing anyth
 | Limit | What happens |
 |-------|--------------|
 | `timeoutMs` | Errored with `Script timed out after <timeoutMs> ms`. |
-| 512 MB V8 heap (`--max-old-space-size`) | Errored with `Script exceeded its memory limit of 512 MB`. This limits only what V8 manages: memory outside it, such as `Buffer`s, is limited only by the runner's container, whose `mem_limit` in `compose.yaml` allows 640 MB per concurrent Run. |
+| 512 MB V8 heap (`--max-old-space-size`) | Errored with `Script exceeded its memory limit of 512 MB`. This limits only what V8 manages: memory outside it, such as `Buffer`s, is limited only by the runner's container (`LOOKOUT_RUNNER_MEMORY` in the [main README](../../README.md#deploying)). |
 | File reads | Through Node's `--permission`, a Script may read only its own temp directory, the runner's code and `node_modules`, and the system files Playwright reads on Linux as it's imported, to tell whether it's under WSL: `/proc/version`, `/proc/sys/fs/binfmt_misc/WSLInterop` and `/run/WSL`. With `launch`, it may also read Playwright's browsers and `/etc/os-release`, which Playwright reads to pick a Chromium build. System files are granted even where they don't exist, since under `--permission` even checking whether a file exists throws for a path that isn't granted. It may write only to its temp directory. Anything else is Errored with Node's `ERR_ACCESS_DENIED` message. |
 | Processes | With `connect`, a Script may not start one: it's Errored with Node's `ERR_ACCESS_DENIED` message. With `launch`, it may, since Playwright starts Chromium as one. |
 

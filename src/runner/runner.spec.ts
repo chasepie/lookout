@@ -752,13 +752,19 @@ test('a request body over 1 MiB is rejected as too large', { timeout: 30_000 }, 
   expect(await execute('read-price.ts')).toMatchObject({ outcome: 'succeeded' });
 });
 
+const portError = 'PORT must be an integer from 0 to 65535';
+const browserlessUrlError = 'BROWSERLESS_URL must be a ws:// or wss:// URL';
+
 test.each([
-  ['empty', ''],
-  ['not a number', 'http'],
-  ['out of range', '70000'],
-])('a runner whose PORT is %s refuses to start', { timeout: 30_000 }, async (_, port) => {
+  ['a PORT that is empty', { PORT: '' }, portError],
+  ['a PORT that is not a number', { PORT: 'http' }, portError],
+  ['a PORT that is out of range', { PORT: '70000' }, portError],
+  ['a BROWSERLESS_URL that is not a URL', { BROWSERLESS_URL: 'browserless:3000' }, browserlessUrlError],
+  ['a BROWSERLESS_URL that is not a WebSocket URL', { BROWSERLESS_URL: 'http://browserless:3000/chromium/playwright' },
+    browserlessUrlError],
+])('a runner with %s refuses to start', { timeout: 30_000 }, async (_, env, error) => {
   const badRunner = spawn(process.execPath, [runnerPath], {
-    env: { ...process.env, PORT: port },
+    env: { ...process.env, PORT: '0', ...env },
     stdio: ['ignore', 'pipe', 'pipe'],
     // A runner that starts anyway is killed, rather than left listening
     timeout: 5_000,
@@ -771,28 +777,7 @@ test.each([
   const [code] = await once(badRunner, 'exit') as [number | null];
 
   expect(code).toBe(1);
-  expect(stderr).toContain('PORT must be an integer from 0 to 65535');
-});
-
-test.each([
-  ['not a URL', 'browserless:3000'],
-  ['not a WebSocket URL', 'http://browserless:3000/chromium/playwright'],
-])('a runner whose BROWSERLESS_URL is %s refuses to start', { timeout: 30_000 }, async (_, browserlessUrl) => {
-  const badRunner = spawn(process.execPath, [runnerPath], {
-    env: { ...process.env, PORT: '0', BROWSERLESS_URL: browserlessUrl },
-    stdio: ['ignore', 'pipe', 'pipe'],
-    // A runner that starts anyway is killed, rather than left listening
-    timeout: 5_000,
-  });
-  let stderr = '';
-  badRunner.stderr.on('data', (chunk) => {
-    stderr += String(chunk);
-  });
-
-  const [code] = await once(badRunner, 'exit') as [number | null];
-
-  expect(code).toBe(1);
-  expect(stderr).toContain('BROWSERLESS_URL must be a ws:// or wss:// URL');
+  expect(stderr).toContain(error);
 });
 
 const validRequest = {
