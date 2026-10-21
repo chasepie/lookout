@@ -2,7 +2,8 @@ import { expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { type IncomingMessage, createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { createWatch } from './watches';
+import { holdFirst } from './hold';
+import { createChannel, createWatch } from './watches';
 
 // For Channels no test sends to: a local port nothing listens on (the discard port), so nothing reaches Discord.
 const unreachableWebhook = 'http://127.0.0.1:9/api/webhooks/1/token';
@@ -129,4 +130,41 @@ test('choose which Channels a Watch notifies, and see the choice kept after a re
   await page.reload();
   await expect(channels.getByLabel(phone)).toBeChecked();
   await expect(channels.getByLabel(server)).not.toBeChecked();
+});
+
+test.describe('when responses arrive late', () => {
+  test.afterEach(async ({ page }) => {
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
+  });
+
+  for (const late of ['the save', 'the Watch read after it'] as const) {
+    test(`Channel choices made while ${late} is pending are kept`, async ({ page }) => {
+      const phone = `Phone ${randomUUID()}`;
+      const server = `Deals server ${randomUUID()}`;
+      await createChannel(page, phone);
+      await createChannel(page, server);
+      const id = await createWatch(page, `Late Channels ${randomUUID()}`);
+      await page.goto(`/watches/${id}`);
+      const channels = page.getByRole('region', { name: 'Channels' });
+      await expect(channels.getByLabel(phone)).not.toBeChecked();
+      const release = await holdFirst(page, late === 'the save' ? `**/api/watches/${id}/channels` : `**/api/watches/${id}`);
+
+      await channels.getByLabel(phone).check();
+      await channels.getByRole('button', { name: 'Save Channels' }).click();
+      if (late === 'the save') {
+        await expect(channels.getByRole('button', { name: 'Saving…' })).toBeVisible();
+      } else {
+        await expect(page.getByRole('status')).toHaveText('Channels saved.');
+      }
+      await channels.getByLabel(server).check();
+      const reread = page.waitForResponse((response) => response.request().method() === 'GET'
+        && new URL(response.url()).pathname === `/api/watches/${id}`);
+      release();
+      await reread;
+
+      await expect(page.getByRole('status')).toHaveText('Channels saved.');
+      await expect(channels.getByLabel(phone)).toBeChecked();
+      await expect(channels.getByLabel(server)).toBeChecked();
+    });
+  }
 });

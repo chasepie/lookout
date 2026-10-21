@@ -3,7 +3,11 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json.Nodes;
 using ChasePie.Lookout.Backend.Runner;
+using ChasePie.Lookout.Database;
 using ChasePie.Lookout.Model;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace ChasePie.Lookout.Backend.IntegrationTests;
 
@@ -278,6 +282,59 @@ public sealed class NotificationsTests(TestContext testContext)
         Assert.AreSequenceEqual([server], updated!["channelIds"]!.AsArray().Select(id => id!.GetValue<string>()));
         var channels = await client.GetFromJsonAsync<JsonArray>("/api/channels", testContext.CancellationToken);
         Assert.AreSequenceEqual(["Deals server"], channels!.Select(channel => channel!["name"]!.GetValue<string>()));
+    }
+
+    [TestMethod]
+    public async Task OverlappingChangesToAWatchsChannelsNeverCombine()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        var interceptor = new HoldFirstWriteInterceptor("WatchChannels");
+        await using var host = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+            services.ConfigureDbContext<LookoutDbContext>(options => options.AddInterceptors(interceptor))));
+        using var client = await host.CreateSignedInClientAsync(testContext.CancellationToken);
+        var phone = await CreateChannel(client, "Phone");
+        var server = await CreateChannel(client, "Deals server");
+        var watch = await CreateWatch(client);
+
+        var first = client.PutAsJsonAsync($"/api/watches/{watch}/channels", new { channelIds = new[] { phone } },
+            testContext.CancellationToken);
+        await interceptor.FirstHeld.Task.WaitAsync(TimeSpan.FromSeconds(10), testContext.CancellationToken);
+        var second = client.PutAsJsonAsync($"/api/watches/{watch}/channels", new { channelIds = new[] { server } },
+            testContext.CancellationToken);
+        // The second change either reaches its own write or waits behind the first, which is then let go.
+        await Task.WhenAny(interceptor.OtherArrived.Task, Task.Delay(500, testContext.CancellationToken));
+        interceptor.Release();
+        var responses = await Task.WhenAll(first, second);
+
+        var saved = (await client.GetFromJsonAsync<JsonObject>($"/api/watches/{watch}", testContext.CancellationToken))!
+            ["channelIds"]!.AsArray().Select(id => id!.GetValue<string>()).ToList();
+        var succeeded = responses.Count(response => response.StatusCode == HttpStatusCode.NoContent);
+        Assert.IsGreaterThanOrEqualTo(1, succeeded, "At least one of the changes is saved.");
+        Assert.HasCount(1, saved, $"Saved {string.Join(", ", saved)}, a combination of the two changes.");
+    }
+
+    [TestMethod]
+    public async Task ChangingAWatchsChannelsWhileItRunsKeepsTheRunAndNotifiesTheNewChoice()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        factory.Runner.Results.Enqueue(Succeeded("£20"));
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
+        var phone = await CreateChannel(client, "Phone");
+        var server = await CreateChannel(client, "Deals server");
+        var watch = await CreateWatch(client);
+        await SetChannels(client, watch, phone);
+        await RunNow(client, watch);
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finished = new TaskCompletionSource<RunnerResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        factory.Runner.OnExecute = (_, _) => { started.TrySetResult(); return finished.Task; };
+        var run = client.PostAsync(new Uri($"/api/watches/{watch}/runs", UriKind.Relative), null, testContext.CancellationToken);
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(10), testContext.CancellationToken);
+
+        await SetChannels(client, watch, server);
+        finished.SetResult(Succeeded("£19"));
+
+        Assert.AreEqual(HttpStatusCode.OK, (await run).StatusCode);
+        Assert.AreEqual("Deals server", factory.Channels.Sent.Single().ChannelName);
     }
 
     [TestMethod]

@@ -18,21 +18,6 @@ namespace ChasePie.Lookout.Database.Migrations
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.13");
 
-            modelBuilder.Entity("ChannelWatch", b =>
-                {
-                    b.Property<Guid>("ChannelsId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("WatchesId")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("ChannelsId", "WatchesId");
-
-                    b.HasIndex("WatchesId");
-
-                    b.ToTable("ChannelWatch");
-                });
-
             modelBuilder.Entity("ChasePie.Lookout.Model.Account", b =>
                 {
                     b.Property<int>("Id")
@@ -249,6 +234,21 @@ namespace ChasePie.Lookout.Database.Migrations
                     b.ToTable("Watches");
                 });
 
+            modelBuilder.Entity("ChasePie.Lookout.Model.WatchChannel", b =>
+                {
+                    b.Property<Guid>("WatchId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("ChannelId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("WatchId", "ChannelId");
+
+                    b.HasIndex("ChannelId");
+
+                    b.ToTable("WatchChannels");
+                });
+
             modelBuilder.Entity("Microsoft.AspNetCore.DataProtection.EntityFrameworkCore.DataProtectionKey", b =>
                 {
                     b.Property<int>("Id")
@@ -264,21 +264,6 @@ namespace ChasePie.Lookout.Database.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("DataProtectionKeys");
-                });
-
-            modelBuilder.Entity("ChannelWatch", b =>
-                {
-                    b.HasOne("ChasePie.Lookout.Model.Channel", null)
-                        .WithMany()
-                        .HasForeignKey("ChannelsId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("ChasePie.Lookout.Model.Watch", null)
-                        .WithMany()
-                        .HasForeignKey("WatchesId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
                 });
 
             modelBuilder.Entity("ChasePie.Lookout.Model.Run", b =>
@@ -322,6 +307,21 @@ namespace ChasePie.Lookout.Database.Migrations
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("CurrentScriptVersion");
+                });
+
+            modelBuilder.Entity("ChasePie.Lookout.Model.WatchChannel", b =>
+                {
+                    b.HasOne("ChasePie.Lookout.Model.Channel", null)
+                        .WithMany()
+                        .HasForeignKey("ChannelId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ChasePie.Lookout.Model.Watch", null)
+                        .WithMany()
+                        .HasForeignKey("WatchId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("ChasePie.Lookout.Model.Watch", b =>

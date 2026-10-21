@@ -39,40 +39,40 @@ namespace ChasePie.Lookout.Database.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "ChannelWatch",
+                name: "WatchChannels",
                 columns: table => new
                 {
-                    ChannelsId = table.Column<Guid>(type: "TEXT", nullable: false),
-                    WatchesId = table.Column<Guid>(type: "TEXT", nullable: false)
+                    WatchId = table.Column<Guid>(type: "TEXT", nullable: false),
+                    ChannelId = table.Column<Guid>(type: "TEXT", nullable: false)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_ChannelWatch", x => new { x.ChannelsId, x.WatchesId });
+                    table.PrimaryKey("PK_WatchChannels", x => new { x.WatchId, x.ChannelId });
                     table.ForeignKey(
-                        name: "FK_ChannelWatch_Channels_ChannelsId",
-                        column: x => x.ChannelsId,
+                        name: "FK_WatchChannels_Channels_ChannelId",
+                        column: x => x.ChannelId,
                         principalTable: "Channels",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                     table.ForeignKey(
-                        name: "FK_ChannelWatch_Watches_WatchesId",
-                        column: x => x.WatchesId,
+                        name: "FK_WatchChannels_Watches_WatchId",
+                        column: x => x.WatchId,
                         principalTable: "Watches",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                 });
 
             migrationBuilder.CreateIndex(
-                name: "IX_ChannelWatch_WatchesId",
-                table: "ChannelWatch",
-                column: "WatchesId");
+                name: "IX_WatchChannels_ChannelId",
+                table: "WatchChannels",
+                column: "ChannelId");
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropTable(
-                name: "ChannelWatch");
+                name: "WatchChannels");
 
             migrationBuilder.DropTable(
                 name: "Channels");

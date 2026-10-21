@@ -237,10 +237,7 @@ public sealed class WatchesController(
     [HttpPut("{id:guid}/channels")]
     public async Task<IActionResult> ChangeChannels(Guid id, ChannelsRequest request, CancellationToken cancellationToken)
     {
-        var watch = await database.Watches
-            .Include(watch => watch.Channels)
-            .SingleOrDefaultAsync(watch => watch.Id == id, cancellationToken);
-        if (watch is null)
+        if (!await database.Watches.AnyAsync(watch => watch.Id == id, cancellationToken))
         {
             return NotFound();
         }
@@ -250,15 +247,18 @@ public sealed class WatchesController(
             return ChannelMissing();
         }
 
-        // Only the join rows change, so the Watch's Revision is left alone and a Run in progress is still recorded.
-        watch.Channels.Clear();
-        foreach (var channel in channels)
-        {
-            watch.Channels.Add(channel);
-        }
+        // The choice is replaced whole in a transaction that writes before anything else, so SQLite runs overlapping
+        // changes one after another and the last one wins, rather than combining them. Only the choice changes, so the
+        // Watch's Revision is left alone and a Run in progress is still recorded.
+        await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
         try
         {
+            await database.WatchChannels
+                .Where(choice => choice.WatchId == id)
+                .ExecuteDeleteAsync(cancellationToken);
+            database.WatchChannels.AddRange(channels.Select(channel => new WatchChannel { WatchId = id, ChannelId = channel.Id }));
             await database.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
         }
         catch (DbUpdateException)
         {

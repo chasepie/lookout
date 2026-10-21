@@ -38,3 +38,13 @@ export async function runWatch(page: Page, id: string, times: number) {
     expect(response.status()).toBe(200);
   }
 }
+
+/** Creates a Discord Channel through the API, posting to a local port nothing listens on, and returns its ID. */
+export async function createChannel(page: Page, name: string) {
+  const created = await page.request.post('/api/channels', {
+    headers: { 'X-XSRF-TOKEN': await requestToken(page) },
+    data: { name, kind: 'discord', webhookUrl: 'http://127.0.0.1:9/api/webhooks/1/token' },
+  });
+  expect(created.status()).toBe(201);
+  return ((await created.json()) as { id: string }).id;
+}
