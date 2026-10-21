@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 import { type FieldTree, FormField } from '@angular/forms/signals';
-import type { ScheduleForm } from './schedule';
+import type { ScheduleForm } from '../schedule';
 
 /** Chooses when a Watch runs: every N units, daily at a time, or a cron expression, plus optional jitter. */
 @Component({

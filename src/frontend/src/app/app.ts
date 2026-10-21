@@ -1,9 +1,9 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { RouterLink, RouterOutlet } from '@angular/router';
-import { LoginForm } from './login-form';
-import { problemMessage } from './problem';
-import { Session } from './session';
-import { SetupForm } from './setup-form';
+import { LoginForm } from './session/login-form/login-form';
+import { problemMessage } from './shared/problem';
+import { Session } from './session/session';
+import { SetupForm } from './session/setup-form/setup-form';
 
 @Component({
   selector: 'app-root',

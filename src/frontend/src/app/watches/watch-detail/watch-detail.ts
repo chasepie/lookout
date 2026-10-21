@@ -3,15 +3,15 @@ import { HttpErrorResponse, httpResource } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, inject, input, linkedSignal, signal, untracked } from '@angular/core';
 import { FormField, form, submit } from '@angular/forms/signals';
 import { Router, RouterLink } from '@angular/router';
-import { OutcomeBadge } from './outcome-badge';
-import { problemMessage } from './problem';
-import { refresh } from './refresh';
-import { RunTiming } from './run-timing';
-import { ScheduleEditor } from './schedule-editor';
-import { StatusBadge } from './status-badge';
-import { type Run, type Watch, type WatchSettings, outcomeLabels } from './watch.model';
-import { defaultTimeoutSeconds, maxTimeoutSeconds, nameAndNotificationUrlRules, timeoutRules } from './watch-settings';
-import { Watches } from './watches';
+import { OutcomeBadge } from '../outcome-badge/outcome-badge';
+import { problemMessage } from '../../shared/problem';
+import { refresh } from '../../shared/refresh';
+import { RunTiming } from '../run-timing/run-timing';
+import { ScheduleEditor } from '../../schedules/schedule-editor/schedule-editor';
+import { StatusBadge } from '../status-badge/status-badge';
+import { type Run, type Watch, type WatchSettings, outcomeLabels } from '../watch.model';
+import { defaultTimeoutSeconds, maxTimeoutSeconds, nameAndNotificationUrlRules, timeoutRules } from '../watch-settings';
+import { Watches } from '../watches';
 
 const historyPageSize = 50;
 

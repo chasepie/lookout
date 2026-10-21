@@ -1,13 +1,13 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { FormField, form, required, submit } from '@angular/forms/signals';
-import { problemMessage } from './problem';
-import { Session } from './session';
+import { problemMessage } from '../../shared/problem';
+import { Session } from '../session';
 
 @Component({
   selector: 'app-login-form',
   imports: [FormField],
   templateUrl: './login-form.html',
-  styleUrl: './account-form.scss',
+  styleUrl: '../account-form.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class LoginForm {

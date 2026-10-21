@@ -1,9 +1,9 @@
 import { HttpClient, httpResource } from '@angular/common/http';
 import { Service, inject, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
-import { refresh } from './refresh';
-import { type ScheduleForm, scheduleFields } from './schedule';
-import { Session } from './session';
+import { refresh } from '../shared/refresh';
+import { type ScheduleForm, scheduleFields } from '../schedules/schedule';
+import { Session } from '../session/session';
 import type { Run, Watch, WatchSettings } from './watch.model';
 
 @Service()

@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, input } from '@angular/core';
-import { type WatchStatus, statusLabels } from './watch.model';
+import { type WatchStatus, statusLabels } from '../watch.model';
 
 /** A Watch's status, as a badge coloured by the status. */
 @Component({

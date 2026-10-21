@@ -2,16 +2,16 @@ import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { FormField, apply, form, submit } from '@angular/forms/signals';
 import { RouterLink } from '@angular/router';
-import { OutcomeBadge } from './outcome-badge';
-import { problemMessage } from './problem';
-import { RunTiming } from './run-timing';
-import { defaultSchedule, scheduleSchema } from './schedule';
-import { ScheduleEditor } from './schedule-editor';
-import { SchedulePicker } from './schedule-picker';
-import { StatusBadge } from './status-badge';
-import { type Watch, outcomeLabels } from './watch.model';
-import { nameAndNotificationUrlRules } from './watch-settings';
-import { Watches } from './watches';
+import { OutcomeBadge } from '../outcome-badge/outcome-badge';
+import { problemMessage } from '../../shared/problem';
+import { RunTiming } from '../run-timing/run-timing';
+import { defaultSchedule, scheduleSchema } from '../../schedules/schedule';
+import { ScheduleEditor } from '../../schedules/schedule-editor/schedule-editor';
+import { SchedulePicker } from '../../schedules/schedule-picker/schedule-picker';
+import { StatusBadge } from '../status-badge/status-badge';
+import { type Watch, outcomeLabels } from '../watch.model';
+import { nameAndNotificationUrlRules } from '../watch-settings';
+import { Watches } from '../watches';
 
 @Component({
   selector: 'app-watch-list',

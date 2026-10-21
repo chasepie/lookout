@@ -2,8 +2,8 @@ import { provideHttpClient, withInterceptors, withXsrfConfiguration } from '@ang
 import { type ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/core';
 import { provideRouter, withComponentInputBinding } from '@angular/router';
 import { routes } from './app.routes';
-import { freshRequestToken } from './request-token';
-import { sessionEnded } from './session';
+import { freshRequestToken } from './session/request-token';
+import { sessionEnded } from './session/session';
 
 export const appConfig: ApplicationConfig = {
   providers: [

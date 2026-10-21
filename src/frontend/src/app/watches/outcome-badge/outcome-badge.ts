@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, input } from '@angular/core';
-import { type RunOutcome, outcomeLabels } from './watch.model';
+import { type RunOutcome, outcomeLabels } from '../watch.model';
 
 /** A Run's outcome, as a badge coloured by whether it Succeeded. Its content prefixes the outcome. */
 @Component({

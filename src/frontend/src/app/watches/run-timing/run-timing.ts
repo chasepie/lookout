@@ -1,6 +1,6 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, input } from '@angular/core';
-import type { Run } from './watch.model';
+import type { Run } from '../watch.model';
 
 /** When a Run finished and how long it took. */
 @Component({

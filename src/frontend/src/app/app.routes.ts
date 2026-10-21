@@ -1,6 +1,6 @@
 import type { Routes } from '@angular/router';
-import { WatchDetail } from './watch-detail';
-import { WatchList } from './watch-list';
+import { WatchDetail } from './watches/watch-detail/watch-detail';
+import { WatchList } from './watches/watch-list/watch-list';
 
 export const routes: Routes = [
   { path: '', component: WatchList, title: 'Watches · Lookout' },
