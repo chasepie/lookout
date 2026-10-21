@@ -28,13 +28,17 @@ export class WatchChannels {
       if (previous?.source.id !== watch.id) {
         return new Set(watch.channelIds);
       }
-      const submitted = this.submitted;
-      if (submitted?.id === watch.id && sameIds(submitted.channelIds, watch.channelIds)) {
-        // Consumed once, so a later change elsewhere back to this same choice is shown.
-        this.submitted = undefined;
+      // A read that brings no change, such as one from before the save, keeps unsaved edits.
+      if (sameIds(previous.source.channelIds, watch.channelIds)) {
         return previous.value;
       }
-      return sameIds(previous.source.channelIds, watch.channelIds) ? previous.value : new Set(watch.channelIds);
+      // The first change to arrive answers the save, and is consumed so it can't match a later change elsewhere.
+      // This component's own choice keeps the edits made since; anyone else's replaces them.
+      const submitted = this.submitted;
+      this.submitted = undefined;
+      return submitted?.id === watch.id && sameIds(submitted.channelIds, watch.channelIds)
+        ? previous.value
+        : new Set(watch.channelIds);
     },
   });
   protected readonly saving = signal(false);

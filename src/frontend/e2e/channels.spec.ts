@@ -1,12 +1,21 @@
-import { expect, test } from '@playwright/test';
+import { type Page, expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { type IncomingMessage, createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { holdFirst } from './hold';
-import { createChannel, createWatch } from './watches';
+import { changeChannels, createChannel, createWatch } from './watches';
 
 // For Channels no test sends to: a local port nothing listens on (the discard port), so nothing reaches Discord.
 const unreachableWebhook = 'http://127.0.0.1:9/api/webhooks/1/token';
+
+/**
+ * Waits for Settings to list its Channels. Its form is bound by then, so it keeps what is typed: until its first
+ * render, the form writes its empty model over anything typed into it.
+ */
+async function settingsLoaded(page: Page) {
+  const channels = page.getByRole('region', { name: 'Channels' });
+  await expect(channels.getByRole('article').or(channels.getByText('No Channels yet.')).first()).toBeVisible();
+}
 
 interface ReceivedRequest { path: string; body: unknown }
 
@@ -33,6 +42,7 @@ test('configure a Discord Channel and send it a test notification', async ({ pag
     const name = `Deals server ${randomUUID()}`;
     await page.goto('/');
     await page.getByRole('link', { name: 'Settings', exact: true }).click();
+    await settingsLoaded(page);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Settings');
 
     await page.getByLabel('Name', { exact: true }).fill(name);
@@ -61,6 +71,7 @@ test('configure a Discord Channel and send it a test notification', async ({ pag
 test('add a Pushover Channel, see why its test notification failed, and delete it', async ({ page }) => {
   const name = `Phone ${randomUUID()}`;
   await page.goto('/settings');
+  await settingsLoaded(page);
 
   await page.getByLabel('Kind').selectOption('Pushover');
   await page.getByLabel('Name', { exact: true }).fill(name);
@@ -88,6 +99,7 @@ test('create a Watch that notifies a Channel', async ({ page }) => {
   const channel = `Phone ${randomUUID()}`;
   const watch = `Notifying from the start ${randomUUID()}`;
   await page.goto('/settings');
+  await settingsLoaded(page);
   await page.getByLabel('Name', { exact: true }).fill(channel);
   await page.getByLabel('Webhook URL').fill(unreachableWebhook);
   await page.getByRole('button', { name: 'Add Channel' }).click();
@@ -113,6 +125,7 @@ test('choose which Channels a Watch notifies, and see the choice kept after a re
   const phone = `Phone ${randomUUID()}`;
   const server = `Deals server ${randomUUID()}`;
   await page.goto('/settings');
+  await settingsLoaded(page);
   for (const name of [phone, server]) {
     await page.getByLabel('Name', { exact: true }).fill(name);
     await page.getByLabel('Webhook URL').fill(unreachableWebhook);
@@ -167,4 +180,36 @@ test.describe('when responses arrive late', () => {
       await expect(channels.getByLabel(server)).toBeChecked();
     });
   }
+
+  test('a choice changed elsewhere after a save is shown, however it changes next', async ({ page }) => {
+    const phone = `Phone ${randomUUID()}`;
+    const server = `Deals server ${randomUUID()}`;
+    const phoneId = await createChannel(page, phone);
+    const serverId = await createChannel(page, server);
+    const id = await createWatch(page, `Changed elsewhere ${randomUUID()}`);
+    await page.goto(`/watches/${id}`);
+    const channels = page.getByRole('region', { name: 'Channels' });
+    await expect(channels.getByLabel(phone)).not.toBeChecked();
+    const release = await holdFirst(page, `**/api/watches/${id}/channels`);
+
+    // Another tab clears the choice after this page's save, before this page reads it back.
+    await channels.getByLabel(phone).check();
+    await channels.getByRole('button', { name: 'Save Channels' }).click();
+    await expect(channels.getByRole('button', { name: 'Saving…' })).toBeVisible();
+    await changeChannels(page, id, []);
+    const reread = page.waitForResponse((response) => response.request().method() === 'GET'
+      && new URL(response.url()).pathname === `/api/watches/${id}`);
+    release();
+    await reread;
+
+    await changeChannels(page, id, [serverId]);
+    await page.getByRole('button', { name: 'Pause' }).click();
+    await expect(channels.getByLabel(server)).toBeChecked();
+    await expect(channels.getByLabel(phone)).not.toBeChecked();
+    // Back to the choice this page saved, which must not be mistaken for its save arriving.
+    await changeChannels(page, id, [phoneId]);
+    await page.getByRole('button', { name: 'Resume' }).click();
+    await expect(channels.getByLabel(phone)).toBeChecked();
+    await expect(channels.getByLabel(server)).not.toBeChecked();
+  });
 });

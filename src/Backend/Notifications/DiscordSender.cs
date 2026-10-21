@@ -16,9 +16,9 @@ public sealed class DiscordSender(HttpClient client) : IChannelSender
     public async Task SendAsync(Channel channel, Notification notification, CancellationToken cancellationToken)
     {
         var embed = new Embed(
-                Title: Notification.Fit(notification.Title, MaxTitleLength),
-                Description: Notification.Fit(notification.Message, MaxDescriptionLength),
-                Url: notification.Url);
+            Title: Notification.Fit(notification.Title, MaxTitleLength),
+            Description: Notification.Fit(notification.Message, MaxDescriptionLength),
+            Url: notification.Url);
 
         var message = new WebhookMessage(
             Username: "Lookout",

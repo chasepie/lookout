@@ -48,3 +48,12 @@ export async function createChannel(page: Page, name: string) {
   expect(created.status()).toBe(201);
   return ((await created.json()) as { id: string }).id;
 }
+
+/** Changes which Channels a Watch notifies through the API, as another browser tab would. */
+export async function changeChannels(page: Page, id: string, channelIds: string[]) {
+  const response = await page.request.put(`/api/watches/${id}/channels`, {
+    headers: { 'X-XSRF-TOKEN': await requestToken(page) },
+    data: { channelIds },
+  });
+  expect(response.status()).toBe(204);
+}
