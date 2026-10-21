@@ -41,6 +41,8 @@
   > span {
     @include mixins.narrow { display: none; }
   }
+
+  > a { color: tokens.$button-text; font-weight: 650; }
 }
 
 main {

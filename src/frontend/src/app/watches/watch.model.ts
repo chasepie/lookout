@@ -36,6 +36,7 @@ export interface Watch {
   schedule: Schedule;
   jitterMinutes: number;
   nextRunAt: string | null;
+  channelIds: string[];
 }
 
 export interface WatchSettings {

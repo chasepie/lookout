@@ -220,6 +220,44 @@ public sealed class WatchesController(
         return Problem("The schedule of this Watch kept changing while it was being resumed. Please try again.", statusCode: HttpStatusCode.Conflict);
     }
 
+    [HttpPut("{id:guid}/channels")]
+    public async Task<IActionResult> ChangeChannels(Guid id, ChannelsRequest request, CancellationToken cancellationToken)
+    {
+        var watch = await database.Watches
+            .Include(watch => watch.Channels)
+            .SingleOrDefaultAsync(watch => watch.Id == id, cancellationToken);
+        if (watch is null)
+        {
+            return NotFound();
+        }
+
+        var chosen = request.ChannelIds.Distinct().ToList();
+        var channels = await database.Channels
+            .Where(channel => chosen.Contains(channel.Id))
+            .ToListAsync(cancellationToken);
+        if (channels.Count != chosen.Count)
+        {
+            return Problem("One of the chosen Channels no longer exists.", statusCode: HttpStatusCode.BadRequest);
+        }
+
+        // Only the join rows change, so the Watch's Revision is left alone and a Run in progress is still recorded.
+        watch.Channels.Clear();
+        foreach (var channel in channels)
+        {
+            watch.Channels.Add(channel);
+        }
+        try
+        {
+            await database.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            // The Watch or a chosen Channel was deleted since they were read.
+            return Problem("The Watch or one of the chosen Channels no longer exists.", statusCode: HttpStatusCode.Conflict);
+        }
+        return NoContent();
+    }
+
     [HttpGet("{id:guid}/runs")]
     public async Task<ActionResult<IReadOnlyList<Run>>> History(Guid id, CancellationToken cancellationToken,
         [FromQuery] int limit = 50, [FromQuery] long? before = null)
@@ -343,7 +381,8 @@ public sealed record WatchSummary(
     Run? LastRun,
     Schedule Schedule,
     int JitterMinutes,
-    DateTimeOffset? NextRunAt)
+    DateTimeOffset? NextRunAt,
+    IReadOnlyList<Guid> ChannelIds)
 {
     /// <summary>Maps a Watch in a database query; <see cref="From"/> applies the same mapping in memory.</summary>
     public static readonly Expression<Func<Watch, WatchSummary>> Projection = watch => new WatchSummary(
@@ -364,11 +403,17 @@ public sealed record WatchSummary(
         watch.Runs.OrderByDescending(run => run.Id).FirstOrDefault(),
         watch.Schedule,
         watch.JitterMinutes,
-        watch.NextRunAt);
+        watch.NextRunAt,
+        watch.Channels.Select(channel => channel.Id).ToList());
 
     private static readonly Func<Watch, WatchSummary> CompiledProjection = Projection.Compile();
 
     public static WatchSummary From(Watch watch) => CompiledProjection(watch);
+}
+
+public sealed class ChannelsRequest
+{
+    public required IReadOnlyList<Guid> ChannelIds { get; init; }
 }
 
 public sealed class EditWatchRequest

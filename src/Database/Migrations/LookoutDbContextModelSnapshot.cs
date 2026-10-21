@@ -18,6 +18,21 @@ namespace ChasePie.Lookout.Database.Migrations
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.13");
 
+            modelBuilder.Entity("ChannelWatch", b =>
+                {
+                    b.Property<Guid>("ChannelsId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("WatchesId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("ChannelsId", "WatchesId");
+
+                    b.HasIndex("WatchesId");
+
+                    b.ToTable("ChannelWatch");
+                });
+
             modelBuilder.Entity("ChasePie.Lookout.Model.Account", b =>
                 {
                     b.Property<int>("Id")
@@ -37,6 +52,34 @@ namespace ChasePie.Lookout.Database.Migrations
                         {
                             t.HasCheckConstraint("CK_Accounts_Singleton", "Id = 1");
                         });
+                });
+
+            modelBuilder.Entity("ChasePie.Lookout.Model.Channel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AppToken")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UserKey")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("WebhookUrl")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Channels");
                 });
 
             modelBuilder.Entity("ChasePie.Lookout.Model.Run", b =>
@@ -143,6 +186,9 @@ namespace ChasePie.Lookout.Database.Migrations
                     b.Property<int>("FailureStreak")
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("FailureStreakNotified")
+                        .HasColumnType("INTEGER");
+
                     b.Property<bool>("IsPaused")
                         .HasColumnType("INTEGER");
 
@@ -218,6 +264,21 @@ namespace ChasePie.Lookout.Database.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("DataProtectionKeys");
+                });
+
+            modelBuilder.Entity("ChannelWatch", b =>
+                {
+                    b.HasOne("ChasePie.Lookout.Model.Channel", null)
+                        .WithMany()
+                        .HasForeignKey("ChannelsId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ChasePie.Lookout.Model.Watch", null)
+                        .WithMany()
+                        .HasForeignKey("WatchesId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("ChasePie.Lookout.Model.Run", b =>

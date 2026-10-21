@@ -26,6 +26,10 @@ public sealed class Watch
     public DateTimeOffset? LastScheduledRunAt { get; set; }
     /// <summary>Advanced by every recorded Run, so a Run evaluated against a stale Baseline can't be saved.</summary>
     public long Revision { get; set; }
+    /// <summary>Whether the current failure streak has notified, so its end notifies that the Watch recovered.</summary>
+    public bool FailureStreakNotified { get; set; }
+    /// <summary>The Channels this Watch notifies.</summary>
+    public ICollection<Channel> Channels { get; set; } = [];
     public ICollection<ScriptVersion> ScriptVersions { get; set; } = [];
     public ICollection<Run> Runs { get; set; } = [];
 }

@@ -1,3 +1,4 @@
+using ChasePie.Lookout.Backend.Notifications;
 using ChasePie.Lookout.Backend.Runner;
 using ChasePie.Lookout.Database;
 using ChasePie.Lookout.Model;
@@ -19,10 +20,10 @@ public enum RunExecutionStatus
 public sealed record RunExecution(RunExecutionStatus Status, Run? Run = null);
 
 /// <summary>
-/// Executes a Watch's current Script and records the Run, for both scheduled and on-demand Runs.
+/// Executes a Watch's current Script, records the Run and sends its notifications, for both scheduled and on-demand Runs.
 /// Callers admit the Run first through <see cref="RunningWatches"/> and <see cref="RunSlots"/>.
 /// </summary>
-public sealed class RunExecutor(LookoutDbContext database, IRunnerClient runner, TimeProvider timeProvider)
+public sealed class RunExecutor(LookoutDbContext database, IRunnerClient runner, Notifier notifier, TimeProvider timeProvider)
 {
     public async Task<RunExecution> ExecuteAsync(Guid watchId, CancellationToken cancellationToken)
     {
@@ -48,8 +49,7 @@ public sealed class RunExecutor(LookoutDbContext database, IRunnerClient runner,
             TimeoutMs: watch.TimeoutSeconds * 1000);
         var result = await runner.ExecuteAsync(runRequest, cancellationToken);
 
-        var evaluation = RunEvaluation.Evaluate(watch.Baseline, watch.FailureStreak, result.Outcome, result.Content,
-            result.ErrorMessage);
+        var evaluation = RunEvaluation.Evaluate(watch, result.Outcome, result.Content, result.Details, result.ErrorMessage);
         var run = new Run
         {
             WatchId = watchId,
@@ -65,6 +65,7 @@ public sealed class RunExecutor(LookoutDbContext database, IRunnerClient runner,
         };
         watch.Baseline = evaluation.Baseline;
         watch.FailureStreak = evaluation.FailureStreak;
+        watch.FailureStreakNotified = evaluation.FailureStreakNotified;
         watch.Revision++;
         database.Runs.Add(run);
 
@@ -87,6 +88,8 @@ public sealed class RunExecutor(LookoutDbContext database, IRunnerClient runner,
             throw;
         }
 
+        // Like the save, notifications of a finished Run still go out if shutdown started; senders time out by themselves.
+        await notifier.NotifyAsync(watchId, evaluation.Notifications, CancellationToken.None);
         return new RunExecution(RunExecutionStatus.Recorded, run);
     }
 }

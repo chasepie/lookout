@@ -1,7 +1,11 @@
 <header class="site-header">
   <a class="brand" routerLink="/" aria-label="Lookout home"><span class="brand-mark" aria-hidden="true">◉</span> Lookout</a>
   @if (session.userName(); as userName) {
-    <span class="account"><span>Logged in as {{ userName }}</span> <button type="button" (click)="logOut()">Log out</button></span>
+    <span class="account">
+      <a routerLink="/settings">Settings</a>
+      <span>Logged in as {{ userName }}</span>
+      <button type="button" (click)="logOut()">Log out</button>
+    </span>
   } @else {
     <span class="tagline">Keep an eye on what matters.</span>
   }

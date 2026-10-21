@@ -15,6 +15,7 @@ public class LookoutDbContext(DbContextOptions<LookoutDbContext> options) : DbCo
     public DbSet<Watch> Watches => Set<Watch>();
     public DbSet<ScriptVersion> ScriptVersions => Set<ScriptVersion>();
     public DbSet<Run> Runs => Set<Run>();
+    public DbSet<Channel> Channels => Set<Channel>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -40,6 +41,14 @@ public class LookoutDbContext(DbContextOptions<LookoutDbContext> options) : DbCo
             .HasMany(watch => watch.Runs)
             .WithOne()
             .HasForeignKey(run => run.WatchId);
+
+        modelBuilder.Entity<Watch>()
+            .HasMany(watch => watch.Channels)
+            .WithMany(channel => channel.Watches);
+
+        modelBuilder.Entity<Channel>()
+            .Property(channel => channel.Kind)
+            .HasConversion<string>();
 
         modelBuilder.Entity<Run>()
             .HasOne<ScriptVersion>()

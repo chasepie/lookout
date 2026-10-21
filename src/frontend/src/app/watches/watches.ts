@@ -33,6 +33,10 @@ export class Watches {
     return firstValueFrom(this.http.put<void>(`/api/watches/${id}`, settings));
   }
 
+  changeChannels(id: string, channelIds: string[]) {
+    return firstValueFrom(this.http.put<void>(`/api/watches/${id}/channels`, { channelIds }));
+  }
+
   pause(id: string) {
     return firstValueFrom(this.http.post<void>(`/api/watches/${id}/pause`, {}));
   }
