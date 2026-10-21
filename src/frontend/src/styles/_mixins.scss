@@ -93,21 +93,13 @@
   }
 }
 
-/// A short label, coloured by the outcome and status classes from badge-colours.
+/// A short label, as Run outcomes, Watch statuses and Changes show.
 @mixin badge {
   font-size: 11px;
   padding: 5px 9px;
   border-radius: 5px;
   background: tokens.$badge-surface;
   white-space: nowrap;
-}
-
-/// Colours for Run outcomes (success, failure) and Watch statuses (status-*), as badges show them.
-@mixin badge-colours {
-  .success, .status-healthy { color: tokens.$success; background: tokens.$success-surface; }
-  .failure, .status-failing { color: tokens.$failure; background: tokens.$failure-surface; }
-  .status-pending { color: tokens.$text-muted; background: tokens.$badge-surface; }
-  .status-paused { color: tokens.$paused; background: tokens.$paused-surface; }
 }
 
 /// A page's eyebrow, heading and introduction.

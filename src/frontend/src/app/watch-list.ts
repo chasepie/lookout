@@ -1,18 +1,21 @@
-import { DatePipe, DecimalPipe } from '@angular/common';
+import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { FormField, apply, form, submit } from '@angular/forms/signals';
 import { RouterLink } from '@angular/router';
+import { OutcomeBadge } from './outcome-badge';
 import { problemMessage } from './problem';
+import { RunTiming } from './run-timing';
 import { defaultSchedule, scheduleSchema } from './schedule';
 import { ScheduleEditor } from './schedule-editor';
 import { SchedulePicker } from './schedule-picker';
-import { type Watch, outcomeLabels, statusLabels } from './watch.model';
+import { StatusBadge } from './status-badge';
+import { type Watch, outcomeLabels } from './watch.model';
 import { nameAndNotificationUrlRules } from './watch-settings';
 import { Watches } from './watches';
 
 @Component({
   selector: 'app-watch-list',
-  imports: [DatePipe, DecimalPipe, FormField, RouterLink, ScheduleEditor, SchedulePicker],
+  imports: [DatePipe, FormField, OutcomeBadge, RouterLink, RunTiming, ScheduleEditor, SchedulePicker, StatusBadge],
   templateUrl: './watch-list.html',
   styleUrl: './watch-list.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -31,7 +34,11 @@ export class WatchList {
   /** The Watch whose schedule is being edited, if any. */
   protected readonly editingSchedule = signal<string | undefined>(undefined);
   protected readonly outcomes = outcomeLabels;
-  protected readonly statuses = statusLabels;
+
+  constructor() {
+    // Runs, including scheduled ones, and changes made on a Watch's page happen while the list isn't on screen.
+    this.watches.refreshList();
+  }
 
   protected selectScript(input: HTMLInputElement) {
     this.script.set(input.files?.[0]);
@@ -54,7 +61,7 @@ export class WatchList {
         this.script.set(undefined);
         input.value = '';
         this.notice.set('Watch created. It runs on its schedule, or you can run it now.');
-        this.watches.list.reload();
+        this.watches.refreshList();
       } catch (error: unknown) {
         this.error.set(problemMessage(error, 'Could not create the Watch. Check the fields and try again.'));
       }
@@ -65,7 +72,7 @@ export class WatchList {
     this.editingSchedule.set(undefined);
     this.error.set('');
     this.notice.set(`Schedule of ${name} saved.`);
-    this.watches.list.reload();
+    this.watches.refreshList();
   }
 
   protected async runNow({ id, name }: Watch) {
@@ -76,7 +83,7 @@ export class WatchList {
       const run = await this.watches.runNow(id);
       // Announced through the status region; the reloaded list itself isn't live, so cards aren't re-read.
       this.notice.set(`Run of ${name} finished: ${this.outcomes[run.outcome]}.`);
-      this.watches.list.reload();
+      this.watches.refreshList();
     } catch (error: unknown) {
       this.error.set(problemMessage(error, 'Could not run the Watch. Please try again.'));
     } finally {

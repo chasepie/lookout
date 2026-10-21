@@ -1,0 +1,6 @@
+@use 'tokens';
+@use 'mixins';
+
+:host { @include mixins.badge; }
+:host(.success) { color: tokens.$success; background: tokens.$success-surface; }
+:host(.failure) { color: tokens.$failure; background: tokens.$failure-surface; }

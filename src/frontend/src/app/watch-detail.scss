@@ -5,7 +5,6 @@
 
 @include mixins.page-heading;
 @include mixins.stacked-form;
-@include mixins.badge-colours;
 
 h2 { font-size: 19px; margin: 0; }
 p { line-height: 1.6; }
@@ -50,8 +49,7 @@ button {
 .panel { @include mixins.panel; padding: 25px; }
 .panel h2 { margin-bottom: 18px; }
 .danger-zone p { font-size: 14px; color: tokens.$text-muted; margin-top: 0; }
-.badge { @include mixins.badge; }
-.change-badge { color: white; background: tokens.$positive; font-weight: 650; }
+.change-badge { @include mixins.badge; color: white; background: tokens.$positive; font-weight: 650; }
 
 .runs { list-style: none; margin: 0 0 16px; padding: 0; display: grid; gap: 10px; }
 

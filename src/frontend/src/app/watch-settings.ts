@@ -1,4 +1,4 @@
-import { type SchemaPathTree, max, maxLength, min, pattern, required } from '@angular/forms/signals';
+import { type SchemaPathTree, max, maxLength, min, pattern, required, validate } from '@angular/forms/signals';
 
 /** The backend's timeout limits for a Watch's Runs */
 export const defaultTimeoutSeconds = 120;
@@ -15,7 +15,12 @@ export function nameAndNotificationUrlRules(fields: SchemaPathTree<{ name: strin
 }
 
 export function timeoutRules(timeoutSeconds: SchemaPathTree<number>) {
-  required(timeoutSeconds);
-  min(timeoutSeconds, 1);
-  max(timeoutSeconds, maxTimeoutSeconds);
+  const message = `Enter a whole number of seconds between 1 and ${maxTimeoutSeconds}.`;
+  required(timeoutSeconds, { message });
+  min(timeoutSeconds, 1, { message });
+  max(timeoutSeconds, maxTimeoutSeconds, { message });
+  // min and max pass a fractional number, which the backend can't read as whole seconds.
+  validate(timeoutSeconds, (field) => Number.isInteger(field.value())
+    ? undefined
+    : { kind: 'wholeSeconds', message });
 }

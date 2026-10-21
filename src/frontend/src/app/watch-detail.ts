@@ -1,11 +1,15 @@
-import { DatePipe, DecimalPipe } from '@angular/common';
-import { HttpErrorResponse, type HttpResourceRef, httpResource } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, type WritableSignal, computed, inject, input, linkedSignal, signal } from '@angular/core';
+import { DatePipe } from '@angular/common';
+import { HttpErrorResponse, httpResource } from '@angular/common/http';
+import { ChangeDetectionStrategy, Component, computed, inject, input, linkedSignal, signal, untracked } from '@angular/core';
 import { FormField, form, submit } from '@angular/forms/signals';
 import { Router, RouterLink } from '@angular/router';
+import { OutcomeBadge } from './outcome-badge';
 import { problemMessage } from './problem';
+import { refresh } from './refresh';
+import { RunTiming } from './run-timing';
 import { ScheduleEditor } from './schedule-editor';
-import { type Run, type Watch, type WatchSettings, outcomeLabels, statusLabels } from './watch.model';
+import { StatusBadge } from './status-badge';
+import { type Run, type Watch, type WatchSettings, outcomeLabels } from './watch.model';
 import { defaultTimeoutSeconds, maxTimeoutSeconds, nameAndNotificationUrlRules, timeoutRules } from './watch-settings';
 import { Watches } from './watches';
 
@@ -24,7 +28,7 @@ const noOlderRuns: OlderRuns = { runs: [], ended: false, loading: false };
 
 @Component({
   selector: 'app-watch-detail',
-  imports: [DatePipe, DecimalPipe, FormField, RouterLink, ScheduleEditor],
+  imports: [DatePipe, FormField, OutcomeBadge, RouterLink, RunTiming, ScheduleEditor, StatusBadge],
   templateUrl: './watch-detail.html',
   styleUrl: './watch-detail.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -66,9 +70,20 @@ export class WatchDetail {
     const watch = this.watch.value();
     return { name: watch.name, notificationUrl: watch.notificationUrl, timeoutSeconds: watch.timeoutSeconds };
   }, { equal: sameSettings });
+  // The settings this page is saving or last saved, whose arrival must not discard edits typed meanwhile.
+  private submitted: { id: string; settings: WatchSettings } | undefined;
   // Follows the saved settings, so pausing or running the Watch doesn't discard unsaved edits.
-  protected readonly model = linkedSignal<WatchSettings>(
-    () => this.savedSettings() ?? { name: '', notificationUrl: '', timeoutSeconds: defaultTimeoutSeconds });
+  protected readonly model = linkedSignal<WatchSettings | undefined, WatchSettings>({
+    source: this.savedSettings,
+    computation: (saved, previous) => {
+      const submitted = this.submitted;
+      // Settings shown before (not the placeholder while loading) carry the edits worth keeping.
+      if (previous?.source && saved && submitted?.id === untracked(this.id) && sameSettings(saved, submitted.settings)) {
+        return previous.value;
+      }
+      return saved ?? { name: '', notificationUrl: '', timeoutSeconds: defaultTimeoutSeconds };
+    },
+  });
   protected readonly settingsForm = form(this.model, (fields) => {
     nameAndNotificationUrlRules(fields);
     timeoutRules(fields.timeoutSeconds);
@@ -81,17 +96,19 @@ export class WatchDetail {
   protected readonly error = linkedSignal({ source: this.id, computation: () => '' });
   protected readonly notice = linkedSignal({ source: this.id, computation: () => '' });
   protected readonly outcomes = outcomeLabels;
-  protected readonly statuses = statusLabels;
 
   protected async save() {
     const id = this.id();
     await submit(this.settingsForm, async () => {
       this.clearMessages();
+      const settings = this.model();
+      this.submitted = { id, settings };
       try {
-        await this.watches.edit(id, this.model());
+        await this.watches.edit(id, settings);
         if (id !== this.id()) {return;}
         this.notice.set('Settings saved.');
       } catch (error: unknown) {
+        this.submitted = undefined;
         if (id === this.id()) {
           this.error.set(problemMessage(error, 'Could not save the settings. Check the fields and try again.'));
         }
@@ -184,22 +201,11 @@ export class WatchDetail {
 
   private refreshWatch() {
     refresh(this.watch, this.watchReads);
-    this.watches.list.reload();
   }
 
   private clearMessages() {
     this.error.set('');
     this.notice.set('');
-  }
-}
-
-/**
- * Reads a resource again. reload() declines while the resource is still loading its first value, which may predate
- * the change, so then this restarts the read instead.
- */
-function refresh(resource: HttpResourceRef<unknown>, reads: WritableSignal<number>) {
-  if (!resource.reload()) {
-    reads.update((count) => count + 1);
   }
 }
 

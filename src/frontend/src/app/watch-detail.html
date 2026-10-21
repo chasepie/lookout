@@ -12,7 +12,7 @@
     <p class="eyebrow">WATCH</p>
     <h1>{{ current.name }}</h1>
     <p class="status-line">
-      <span class="badge" [class]="'status-' + current.status">{{ statuses[current.status] }}</span>
+      <app-status-badge [status]="current.status" />
       @if (current.failureStreak > 0) {
         <span>{{ current.failureStreak }} Known failure or Errored {{ current.failureStreak === 1 ? 'Run' : 'Runs in a row' }}</span>
       }
@@ -42,10 +42,10 @@
             <small class="error">Enter a valid HTTP or HTTPS URL.</small>
           }
           <label for="timeout">Timeout (seconds)</label>
-          <input id="timeout" type="number" [formField]="settingsForm.timeoutSeconds" aria-describedby="timeout-help" />
+          <input id="timeout" type="number" step="1" [formField]="settingsForm.timeoutSeconds" aria-describedby="timeout-help" />
           <small id="timeout-help">How long a Run may take before it is stopped, up to {{ maxTimeoutSeconds }} seconds.</small>
-          @if (settingsForm.timeoutSeconds().touched() && settingsForm.timeoutSeconds().invalid()) {
-            <small class="error">Enter a timeout between 1 and {{ maxTimeoutSeconds }} seconds.</small>
+          @if (settingsForm.timeoutSeconds().touched() && settingsForm.timeoutSeconds().errors()[0]; as error) {
+            <small class="error">{{ error.message }}</small>
           }
           <button class="primary" type="submit" [disabled]="settingsForm().submitting() || settingsForm().invalid()">
             {{ settingsForm().submitting() ? 'Saving…' : 'Save settings' }}
@@ -89,9 +89,9 @@
             @for (run of runs(); track run.id) {
               <li class="run" [class.is-change]="run.isChange">
                 <div class="run-heading">
-                  <span class="badge" [class.success]="run.outcome === 'succeeded'" [class.failure]="run.outcome !== 'succeeded'">{{ outcomes[run.outcome] }}</span>
-                  @if (run.isChange) { <span class="badge change-badge">Change</span> }
-                  <small><time [attr.datetime]="run.finishedAt">{{ run.finishedAt | date:'medium' }}</time> · {{ run.durationMs / 1000 | number:'1.0-2' }}s</small>
+                  <app-outcome-badge [outcome]="run.outcome" />
+                  @if (run.isChange) { <span class="change-badge">Change</span> }
+                  <small><app-run-timing [run]="run" /></small>
                 </div>
                 @if (run.content !== null) {
                   <p class="content">{{ run.content === '' ? '(Empty content)' : run.content }}</p>

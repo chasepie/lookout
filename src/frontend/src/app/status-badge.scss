@@ -1,0 +1,8 @@
+@use 'tokens';
+@use 'mixins';
+
+:host { @include mixins.badge; }
+:host(.status-healthy) { color: tokens.$success; background: tokens.$success-surface; }
+:host(.status-failing) { color: tokens.$failure; background: tokens.$failure-surface; }
+:host(.status-pending) { color: tokens.$text-muted; }
+:host(.status-paused) { color: tokens.$paused; background: tokens.$paused-surface; }
