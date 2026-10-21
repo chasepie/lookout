@@ -15,12 +15,17 @@ public sealed class DiscordSender(HttpClient client) : IChannelSender
 
     public async Task SendAsync(Channel channel, Notification notification, CancellationToken cancellationToken)
     {
+        var embed = new Embed(
+                Title: Notification.Fit(notification.Title, MaxTitleLength),
+                Description: Notification.Fit(notification.Message, MaxDescriptionLength),
+                Url: notification.Url);
+
         var message = new WebhookMessage(
             Username: "Lookout",
-            Embeds: [new Embed(Notification.Fit(notification.Title, MaxTitleLength),
-                Notification.Fit(notification.Message, MaxDescriptionLength), notification.Url)],
+            Embeds: [embed],
             // Content from a page could mention @everyone or a role; nobody should be pinged by it.
             AllowedMentions: new AllowedMentions([]));
+
         using var response = await client.PostAsJsonAsync(channel.WebhookUrl, message, cancellationToken);
         await ChannelResponses.EnsureAcceptedAsync(response, "Discord", body =>
             body.TryGetProperty("message", out var reason) && reason.ValueKind == JsonValueKind.String ? reason.GetString() : null,

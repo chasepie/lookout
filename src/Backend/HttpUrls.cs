@@ -8,7 +8,9 @@ public static class HttpUrls
 
     /// <summary>Whether the user gave an absolute HTTP or HTTPS URL of at most <see cref="MaxLength"/> characters.</summary>
     public static bool IsValid(string url) =>
-        url.Length <= MaxLength && Uri.TryCreate(url, UriKind.Absolute, out var parsed) && parsed.Scheme is "http" or "https";
+        url.Length <= MaxLength
+        && Uri.TryCreate(url, UriKind.Absolute, out var parsed)
+        && parsed.Scheme is "http" or "https";
 
     /// <summary>
     /// The base address configured as <paramref name="key"/>, or <paramref name="defaultUrl"/>, ending in a slash so

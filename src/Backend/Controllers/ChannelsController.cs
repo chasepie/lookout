@@ -51,7 +51,8 @@ public sealed partial class ChannelsController(LookoutDbContext database, Notifi
     [HttpPost("{id:guid}/test")]
     public async Task<IActionResult> SendTest(Guid id, CancellationToken cancellationToken)
     {
-        var channel = await database.Channels.AsNoTracking().SingleOrDefaultAsync(channel => channel.Id == id, cancellationToken);
+        var channel = await database.Channels.AsNoTracking()
+            .SingleOrDefaultAsync(channel => channel.Id == id, cancellationToken);
         if (channel is null)
         {
             return NotFound();
