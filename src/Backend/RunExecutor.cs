@@ -106,7 +106,12 @@ public sealed partial class RunExecutor(
         RunnerResult result;
         if (vpnStatus?.RefusalOf("VPN Run") is { } refusal)
         {
-            result = new RunnerResult { Outcome = RunOutcome.Errored, ErrorMessage = refusal, DurationMs = 0 };
+            result = new RunnerResult
+            {
+                Outcome = RunOutcome.Errored,
+                ErrorMessage = refusal,
+                DurationMs = 0
+            };
         }
         else
         {
@@ -250,7 +255,8 @@ public sealed partial class RunExecutor(
         runSlots.Release();
         try
         {
-            while (status is { Connected: false, Misconfigured: false } && deadline - timeProvider.GetUtcNow() is var remaining
+            while (status is { Connected: false, Misconfigured: false }
+                && deadline - timeProvider.GetUtcNow() is var remaining
                 && remaining > TimeSpan.Zero)
             {
                 await Task.Delay(VpnCheckInterval < remaining ? VpnCheckInterval : remaining, timeProvider, cancellationToken);

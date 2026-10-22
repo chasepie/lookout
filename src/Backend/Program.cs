@@ -127,8 +127,10 @@ public class Program
         {
             throw new InvalidOperationException($"Vpn:ProxyUrl must be only a scheme, host and port, such as http://gluetun:8888, not '{configuration["Vpn:ProxyUrl"]}'");
         }
-        var proxy = new ProxySettings(proxyAddress.GetLeftPart(UriPartial.Authority),
-            NullIfEmpty(configuration["Vpn:ProxyUsername"]), NullIfEmpty(configuration["Vpn:ProxyPassword"]));
+        var proxy = new ProxySettings(
+            Server: proxyAddress.GetLeftPart(UriPartial.Authority),
+            Username: NullIfEmpty(configuration["Vpn:ProxyUsername"]),
+            Password: NullIfEmpty(configuration["Vpn:ProxyPassword"]));
         services.AddSingleton(new GluetunSettings(apiKey, proxy));
         services.AddHttpClient<IVpnRotator, GluetunVpnRotator>(client =>
         {

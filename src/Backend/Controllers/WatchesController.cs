@@ -413,8 +413,14 @@ public sealed class WatchesController(
             var vpnStatus = watch.UsesVpn ? await vpn.GetStatusAsync(stopping.Token) : null;
             if (vpnStatus?.RefusalOf("Test run") is { } refusal)
             {
-                return new TestRun(RunOutcome.Errored, Content: null, Details: null, ErrorMessage: refusal, DurationMs: 0,
-                    Screenshot: null, ConsoleOutput: null);
+                return new TestRun(
+                    Outcome: RunOutcome.Errored,
+                    Content: null,
+                    Details: null,
+                    ErrorMessage: refusal,
+                    DurationMs: 0,
+                    Screenshot: null,
+                    ConsoleOutput: null);
             }
             result = await runner.ExecuteAsync(new RunnerRequest(
                 Source: script.Source,
