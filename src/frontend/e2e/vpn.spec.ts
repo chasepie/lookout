@@ -52,9 +52,13 @@ test('see the VPN rotate to a new exit IP after a Known failure, without reloadi
   const vpn = page.getByRole('region', { name: 'VPN' });
   await expect(vpn).toContainText('Connected');
   const exitBefore = (await vpn.getByText(exitIp).textContent())!;
+  let statusReads = 0;
+  page.on('request', (request) => { if (new URL(request.url()).pathname === '/api/vpn') {statusReads++;} });
 
   await runWatch(page, id, 1);
 
   await expect(vpn.getByText(exitIp)).not.toHaveText(exitBefore);
   await expect(vpn).toContainText('Connected');
+  // The pushed status is shown as it is, without reading gluetun again
+  expect(statusReads).toBe(0);
 });

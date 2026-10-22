@@ -14,9 +14,11 @@ export class VpnStatus {
   protected readonly status = refreshableHttpResource<Vpn>(() => ({ url: '/api/vpn' }));
 
   constructor() {
-    // Read afresh rather than taken from the event, as an event may overtake a read already under way.
+    // Taken from the event, as reading the status reads gluetun again. Only reconnecting, which may have missed some,
+    // reads it afresh.
     inject(WatchEvents).events.pipe(takeUntilDestroyed()).subscribe((event) => {
-      if (event.type === 'vpnStatusChanged' || event.type === 'connected') {this.status.refresh();}
+      if (event.type === 'vpnStatusChanged') {this.status.set(event.vpn);}
+      if (event.type === 'connected') {this.status.refresh();}
     });
   }
 }
