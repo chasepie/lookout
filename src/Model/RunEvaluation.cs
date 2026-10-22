@@ -74,8 +74,8 @@ public sealed record RunEvaluation(
     /// The outcome a Run records for a runner's result, which Test runs show too: a Succeeded result without content is
     /// Errored, since there is nothing to compare with the Baseline.
     /// </summary>
-    public static (RunOutcome Outcome, string? ErrorMessage) RecordedOutcome(RunOutcome outcome, string? content,
-        string? errorMessage) =>
+    public static (RunOutcome Outcome, string? ErrorMessage) RecordedOutcome(
+        RunOutcome outcome, string? content, string? errorMessage) =>
         outcome == RunOutcome.Succeeded && content is null
             ? (RunOutcome.Errored, "Succeeded runner result did not include content.")
             : (outcome, errorMessage);

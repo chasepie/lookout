@@ -280,7 +280,9 @@ public sealed class WatchesController(
 
     [HttpPost("{id:guid}/script-versions")]
     [RequestSizeLimit(128 * 1024)]
-    public async Task<ActionResult<ScriptVersionSummary>> UploadScript(Guid id, [FromForm] UploadScriptRequest request,
+    public async Task<ActionResult<ScriptVersionSummary>> UploadScript(
+        Guid id,
+        [FromForm] UploadScriptRequest request,
         CancellationToken cancellationToken)
     {
         var (script, scriptProblem) = await ReadScriptAsync(request.Script, cancellationToken);
@@ -530,7 +532,8 @@ public sealed class WatchesController(
     }
 
     /// <summary>Reads an uploaded Script, or explains why it can't be used.</summary>
-    private async Task<(UploadedScript? Script, ObjectResult? Problem)> ReadScriptAsync(IFormFile file,
+    private async Task<(UploadedScript? Script, ObjectResult? Problem)> ReadScriptAsync(
+        IFormFile file,
         CancellationToken cancellationToken)
     {
         var fileKind = Path.GetExtension(file.FileName).ToLowerInvariant();
