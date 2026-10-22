@@ -122,6 +122,11 @@ public class Program
         {
             throw new InvalidOperationException("Vpn:ProxyUrl must not contain credentials; set Vpn:ProxyUsername and Vpn:ProxyPassword instead");
         }
+        // A proxy is a host and port; ConfiguredBaseAddress adds the trailing slash.
+        if (proxyAddress.AbsolutePath != "/" || proxyAddress.Query != "")
+        {
+            throw new InvalidOperationException($"Vpn:ProxyUrl must be only a scheme, host and port, such as http://gluetun:8888, not '{configuration["Vpn:ProxyUrl"]}'");
+        }
         var proxy = new ProxySettings(proxyAddress.GetLeftPart(UriPartial.Authority),
             NullIfEmpty(configuration["Vpn:ProxyUsername"]), NullIfEmpty(configuration["Vpn:ProxyPassword"]));
         services.AddSingleton(new GluetunSettings(apiKey, proxy));

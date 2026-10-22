@@ -400,22 +400,6 @@ public sealed class WatchesController(
             return NotFound();
         }
 
-        // Fails closed like a Run, but at once rather than waiting for the VPN, as the user is waiting for the result.
-        var vpnStatus = watch.UsesVpn ? await vpn.GetStatusAsync(cancellationToken) : null;
-        if (vpnStatus is { Connected: false })
-        {
-            return new TestRun(
-                Outcome: RunOutcome.Errored,
-                Content: null,
-                Details: null,
-                ErrorMessage: vpnStatus.Enabled
-                    ? "The VPN is not connected, so this Test run was not started."
-                    : "No VPN is configured, so this Test run was not started.",
-                DurationMs: 0,
-                Screenshot: null,
-                ConsoleOutput: null);
-        }
-
         // A Test run takes a slot like any Run, since it uses the browser too, but it isn't one of the Watch's Runs: it
         // doesn't make the Watch Running, and its result is neither evaluated against the Baseline nor recorded.
         // Leaving the page cancels the request, which stops the Script.
@@ -424,6 +408,14 @@ public sealed class WatchesController(
         RunnerResult result;
         try
         {
+            // Checked once the slot is taken, which can be minutes later. It fails closed like a Run, but at once
+            // rather than waiting for the VPN, as the user is waiting for the result.
+            var vpnStatus = watch.UsesVpn ? await vpn.GetStatusAsync(stopping.Token) : null;
+            if (vpnStatus?.RefusalOf("Test run") is { } refusal)
+            {
+                return new TestRun(RunOutcome.Errored, Content: null, Details: null, ErrorMessage: refusal, DurationMs: 0,
+                    Screenshot: null, ConsoleOutput: null);
+            }
             result = await runner.ExecuteAsync(new RunnerRequest(
                 Source: script.Source,
                 FileKind: script.FileKind,

@@ -1,13 +1,7 @@
 using System.Collections.Concurrent;
 using ChasePie.Lookout.Backend.Runner;
 using ChasePie.Lookout.Backend.Vpn;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Hosting.Server;
-using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 
 namespace ChasePie.Lookout.Backend.IntegrationTests;
 
@@ -17,15 +11,17 @@ namespace ChasePie.Lookout.Backend.IntegrationTests;
 /// </summary>
 public sealed class FakeGluetun : IAsyncDisposable
 {
-    private readonly WebApplication _app;
+    private readonly FakeHttpServer _server;
+    private readonly string _apiKey;
+    private int _failingStarts;
 
-    private FakeGluetun(WebApplication app, Uri address)
+    private FakeGluetun(FakeHttpServer server, string apiKey)
     {
-        _app = app;
-        Address = address;
+        _server = server;
+        _apiKey = apiKey;
     }
 
-    public Uri Address { get; }
+    public Uri Address => _server.BaseAddress;
     public string VpnStatus { get; set; } = "running";
     public string PublicIp { get; set; } =
         """{"public_ip":"198.51.100.23","region":"Florida","country":"United States","city":"Miami","timezone":"America/New_York"}""";
@@ -33,6 +29,12 @@ public sealed class FakeGluetun : IAsyncDisposable
     public bool DropsPublicIpResponse { get; set; }
     public TimeSpan VpnStatusDelay { get; set; }
     public TimeSpan PublicIpDelay { get; set; }
+    /// <summary>How many of the next requests to start the VPN fail with HTTP 500.</summary>
+    public int FailingStarts
+    {
+        get => Volatile.Read(ref _failingStarts);
+        set => Volatile.Write(ref _failingStarts, value);
+    }
     /// <summary>Each authenticated change requested, as its method, path and body.</summary>
     public ConcurrentQueue<string> Changes { get; } = new();
 
@@ -42,51 +44,53 @@ public sealed class FakeGluetun : IAsyncDisposable
 
     public static async Task<FakeGluetun> StartAsync(string apiKey)
     {
-        var builder = WebApplication.CreateSlimBuilder();
-        builder.WebHost.UseSetting(WebHostDefaults.ServerUrlsKey, "http://127.0.0.1:0");
-        builder.Logging.ClearProviders();
-        var app = builder.Build();
-        FakeGluetun? gluetun = null;
-        app.Use(async (context, next) =>
-        {
-            if (context.Request.Headers["X-API-Key"] != apiKey)
-            {
-                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-                return;
-            }
-            await next(context);
-        });
-        app.MapGet("/v1/vpn/status", async (HttpContext context) =>
-        {
-            await Task.Delay(gluetun!.VpnStatusDelay, context.RequestAborted);
-            return Results.Text($$"""{"status":"{{gluetun.VpnStatus}}"}""", "application/json");
-        });
-        app.MapPut("/v1/vpn/status", async (HttpRequest request) =>
-        {
-            using var reader = new StreamReader(request.Body);
-            gluetun!.Changes.Enqueue($"PUT /v1/vpn/status {await reader.ReadToEndAsync()}");
-            return Results.Text("""{"outcome":"stopped"}""", "application/json");
-        });
-        app.MapGet("/v1/publicip/ip", async (HttpContext context) =>
-        {
-            await Task.Delay(gluetun!.PublicIpDelay, context.RequestAborted);
-            context.Response.ContentType = "application/json";
-            if (gluetun.DropsPublicIpResponse)
-            {
-                context.Response.ContentLength = 1000;
-                await context.Response.WriteAsync("""{"public_ip":""", context.RequestAborted);
-                await context.Response.Body.FlushAsync(context.RequestAborted);
-                context.Abort();
-                return;
-            }
-            await context.Response.WriteAsync(gluetun.PublicIp, context.RequestAborted);
-        });
-        await app.StartAsync();
-        var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!
-            .Addresses.Single();
-        gluetun = new FakeGluetun(app, new Uri(address));
+        var server = await FakeHttpServer.StartAsync(CancellationToken.None);
+        var gluetun = new FakeGluetun(server, apiKey);
+        server.Respond = gluetun.RespondAsync;
         return gluetun;
     }
 
-    public async ValueTask DisposeAsync() => await _app.DisposeAsync();
+    private async Task RespondAsync(HttpContext context)
+    {
+        if (context.Request.Headers["X-API-Key"] != _apiKey)
+        {
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            return;
+        }
+        context.Response.ContentType = "application/json";
+        switch (context.Request.Method, context.Request.Path.Value)
+        {
+            case ("GET", "/v1/vpn/status"):
+                await Task.Delay(VpnStatusDelay, context.RequestAborted);
+                await context.Response.WriteAsync($$"""{"status":"{{VpnStatus}}"}""", context.RequestAborted);
+                break;
+            case ("PUT", "/v1/vpn/status"):
+                var change = $"PUT /v1/vpn/status {FakeHttpServer.RequestOf(context).Body}";
+                Changes.Enqueue(change);
+                if (change.Contains("running", StringComparison.Ordinal) && Interlocked.Decrement(ref _failingStarts) >= 0)
+                {
+                    context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+                    return;
+                }
+                await context.Response.WriteAsync("""{"outcome":"stopped"}""", context.RequestAborted);
+                break;
+            case ("GET", "/v1/publicip/ip"):
+                await Task.Delay(PublicIpDelay, context.RequestAborted);
+                if (DropsPublicIpResponse)
+                {
+                    context.Response.ContentLength = 1000;
+                    await context.Response.WriteAsync("""{"public_ip":""", context.RequestAborted);
+                    await context.Response.Body.FlushAsync(context.RequestAborted);
+                    context.Abort();
+                    return;
+                }
+                await context.Response.WriteAsync(PublicIp, context.RequestAborted);
+                break;
+            default:
+                context.Response.StatusCode = StatusCodes.Status404NotFound;
+                break;
+        }
+    }
+
+    public async ValueTask DisposeAsync() => await _server.DisposeAsync();
 }

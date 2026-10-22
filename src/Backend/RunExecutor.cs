@@ -26,13 +26,15 @@ public sealed record RunExecution(RunExecutionStatus Status, Run? Run = null);
 
 /// <summary>
 /// Executes a Watch's current Script, records the Run and sends its notifications, for both scheduled and on-demand Runs.
-/// Callers admit the Run first through <see cref="RunningWatches"/> and <see cref="RunSlots"/>.
+/// Callers admit the Run first through <see cref="RunningWatches"/> and <see cref="RunSlots"/>; a VPN Run gives its slot
+/// back while it waits for the VPN, and takes one again before it returns.
 /// Announces the Run's start and finish, and any change of the Watch's status, through <see cref="WatchEvents"/>.
 /// </summary>
 public sealed partial class RunExecutor(
     LookoutDbContext database,
     IRunnerClient runner,
     IVpnRotator vpn,
+    RunSlots runSlots,
     NotificationDispatcher notifications,
     WatchEvents events,
     TimeProvider timeProvider,
@@ -102,17 +104,9 @@ public sealed partial class RunExecutor(
         // Only a connected VPN has an exit and a proxy, so a refused Run records neither.
         var vpnStatus = watch.UsesVpn ? await WaitForVpnAsync(cancellationToken) : null;
         RunnerResult result;
-        if (vpnStatus is { Connected: false })
+        if (vpnStatus?.RefusalOf("VPN Run") is { } refusal)
         {
-            // Fail closed: without the VPN the Run would go out from the home IP, or hang until its timeout.
-            result = new RunnerResult
-            {
-                Outcome = RunOutcome.Errored,
-                ErrorMessage = vpnStatus.Enabled
-                    ? $"The VPN did not connect within {VpnConnectWait.TotalMinutes:0} minutes, so this VPN Run was not started. {vpnStatus.Error}".TrimEnd()
-                    : "No VPN is configured, so this VPN Run was not started.",
-                DurationMs = 0
-            };
+            result = new RunnerResult { Outcome = RunOutcome.Errored, ErrorMessage = refusal, DurationMs = 0 };
         }
         else
         {
@@ -238,16 +232,57 @@ public sealed partial class RunExecutor(
     [LoggerMessage(LogLevel.Warning, "Could not drop older debug output of Watch {WatchId}.")]
     private static partial void LogTrimFailed(ILogger logger, Exception error, Guid watchId);
 
-    /// <summary>The VPN's status once it's connected, or as it last was if it doesn't connect in time or isn't configured.</summary>
+    /// <summary>
+    /// The VPN's status once it's connected, or as it last was if it doesn't connect in time. A VPN that isn't
+    /// configured, or can't connect until its setup is fixed, isn't waited for.
+    /// </summary>
     private async Task<VpnStatus> WaitForVpnAsync(CancellationToken cancellationToken)
     {
         var deadline = timeProvider.GetUtcNow() + VpnConnectWait;
         var status = await vpn.GetStatusAsync(cancellationToken);
-        while (status is { Enabled: true, Connected: false } && timeProvider.GetUtcNow() < deadline)
+        if (status is not { Enabled: true, Connected: false, Misconfigured: false })
         {
-            await Task.Delay(VpnCheckInterval, timeProvider, cancellationToken);
-            status = await vpn.GetStatusAsync(cancellationToken);
+            return status;
+        }
+
+        // The caller holds a Run slot, which waiting mustn't: VPN Runs waiting on a VPN that's down would stop every
+        // other Run.
+        runSlots.Release();
+        try
+        {
+            while (status is { Connected: false, Misconfigured: false } && deadline - timeProvider.GetUtcNow() is var remaining
+                && remaining > TimeSpan.Zero)
+            {
+                await Task.Delay(VpnCheckInterval < remaining ? VpnCheckInterval : remaining, timeProvider, cancellationToken);
+                status = await ReadVpnStatusByAsync(deadline, status, cancellationToken);
+            }
+        }
+        finally
+        {
+            // The caller releases the slot once the Run is recorded, so it's taken back even when stopping. Every other
+            // Run is then stopping too, so one frees up soon.
+            await runSlots.WaitAsync(CancellationToken.None);
         }
         return status;
+    }
+
+    /// <summary>Reads the VPN's status, or keeps <paramref name="last"/> if gluetun hasn't answered by <paramref name="deadline"/>.</summary>
+    private async Task<VpnStatus> ReadVpnStatusByAsync(DateTimeOffset deadline, VpnStatus last, CancellationToken cancellationToken)
+    {
+        var left = deadline - timeProvider.GetUtcNow();
+        if (left <= TimeSpan.Zero)
+        {
+            return last;
+        }
+        using var pastDeadline = new CancellationTokenSource(left, timeProvider);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, pastDeadline.Token);
+        try
+        {
+            return await vpn.GetStatusAsync(linked.Token);
+        }
+        catch (OperationCanceledException) when (pastDeadline.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            return last;
+        }
     }
 }

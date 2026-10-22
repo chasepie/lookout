@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 using ChasePie.Lookout.Backend.Runner;
 using ChasePie.Lookout.Backend.Vpn;
 using ChasePie.Lookout.Model;
+using Microsoft.AspNetCore.Hosting;
 
 namespace ChasePie.Lookout.Backend.IntegrationTests;
 
@@ -121,11 +122,54 @@ public sealed class VpnRunsTests(TestContext testContext)
         Assert.AreEqual(0, executions);
         Assert.AreEqual("errored", run["outcome"]!.GetValue<string>());
         Assert.AreEqual(
-            "The VPN did not connect within 2 minutes, so this VPN Run was not started. gluetun's control server returned HTTP 500.",
+            "The VPN is not connected, so this VPN Run was not started. gluetun's control server returned HTTP 500.",
             run["errorMessage"]!.GetValue<string>());
         Assert.AreEqual(TimeSpan.FromMinutes(2),
             run["finishedAt"]!.GetValue<DateTimeOffset>() - run["startedAt"]!.GetValue<DateTimeOffset>());
         Assert.IsNull(run["vpnExitIp"]);
+    }
+
+    [TestMethod]
+    public async Task AVpnRunIsRefusedAtOnceWhenTheVpnIsMisconfigured()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        factory.Vpn.Status = VpnStatus.MisconfiguredBecause("gluetun refused Lookout's API key (HTTP 401).");
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
+        var watch = await CreateWatch(client, usesVpn: true);
+
+        // Without fake time moving on, a Run that waited for the VPN would never finish
+        var run = await RunNow(client, watch["id"]!.GetValue<string>())
+            .WaitAsync(TimeSpan.FromSeconds(10), testContext.CancellationToken);
+
+        Assert.AreEqual(1, factory.Vpn.StatusReads);
+        Assert.AreEqual("errored", run["outcome"]!.GetValue<string>());
+        Assert.AreEqual(
+            "The VPN is not connected, so this VPN Run was not started. gluetun refused Lookout's API key (HTTP 401).",
+            run["errorMessage"]!.GetValue<string>());
+    }
+
+    [TestMethod]
+    public async Task OtherRunsTakeTheRunSlotOfAVpnRunWaitingForTheVpn()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        await using var host = factory.WithWebHostBuilder(builder => builder.UseSetting("Scheduling:MaxConcurrentRuns", "1"));
+        factory.Vpn.Status = VpnStatus.Disconnected();
+        factory.Runner.DefaultResult = new RunnerResult { Outcome = RunOutcome.Succeeded, Content = "£20", DurationMs = 1 };
+        using var client = await host.CreateSignedInClientAsync(testContext.CancellationToken);
+        var vpnWatch = await CreateWatch(client, usesVpn: true);
+        var directWatch = await CreateWatch(client, usesVpn: false);
+
+        var waiting = RunNow(client, vpnWatch["id"]!.GetValue<string>());
+        await AdvanceUntil(factory, () => factory.Vpn.StatusReads >= 1);
+        // Without fake time moving on, the VPN Run is still waiting
+        var direct = await RunNow(client, directWatch["id"]!.GetValue<string>())
+            .WaitAsync(TimeSpan.FromSeconds(10), testContext.CancellationToken);
+        factory.Vpn.Status = VpnStatus.ConnectedThrough(new ProxySettings("http://gluetun:8888"), "203.0.113.7", "New York");
+        var vpnRun = await AdvanceUntilDone(factory, waiting);
+
+        Assert.AreEqual("succeeded", direct["outcome"]!.GetValue<string>());
+        Assert.AreEqual("succeeded", vpnRun["outcome"]!.GetValue<string>());
+        Assert.AreEqual("203.0.113.7", vpnRun["vpnExitIp"]!.GetValue<string>());
     }
 
     [TestMethod]
@@ -169,6 +213,41 @@ public sealed class VpnRunsTests(TestContext testContext)
         Assert.AreEqual(1, factory.Vpn.StatusReads);
         Assert.AreEqual("errored", testRun["outcome"]!.GetValue<string>());
         Assert.AreEqual(errorMessage, testRun["errorMessage"]!.GetValue<string>());
+    }
+
+    [TestMethod]
+    public async Task AVpnWatchsTestRunChecksTheVpnOnceItHasARunSlot()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        await using var host = factory.WithWebHostBuilder(builder => builder.UseSetting("Scheduling:MaxConcurrentRuns", "1"));
+        var slotHeld = new TaskCompletionSource();
+        var releaseSlot = new TaskCompletionSource();
+        var executions = 0;
+        factory.Runner.OnExecute = async (_, _) =>
+        {
+            if (Interlocked.Increment(ref executions) == 1)
+            {
+                slotHeld.SetResult();
+                await releaseSlot.Task;
+            }
+            return new RunnerResult { Outcome = RunOutcome.Succeeded, Content = "£20", DurationMs = 1 };
+        };
+        using var client = await host.CreateSignedInClientAsync(testContext.CancellationToken);
+        var directWatch = await CreateWatch(client, usesVpn: false);
+        var vpnWatch = await CreateWatch(client, usesVpn: true);
+
+        var holding = RunNow(client, directWatch["id"]!.GetValue<string>());
+        await slotHeld.Task.WaitAsync(testContext.CancellationToken);
+        var testing = TestRun(client, vpnWatch["id"]!.GetValue<string>());
+        // Long enough for a Test run that checked the VPN before waiting for the slot to have done so already
+        await Task.Delay(300, testContext.CancellationToken);
+        factory.Vpn.Status = VpnStatus.Disconnected();
+        releaseSlot.SetResult();
+        await holding;
+        var testRun = await testing;
+
+        Assert.AreEqual(1, executions);
+        Assert.AreEqual("The VPN is not connected, so this Test run was not started.", testRun["errorMessage"]!.GetValue<string>());
     }
 
     [TestMethod]

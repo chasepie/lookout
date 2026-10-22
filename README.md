@@ -49,7 +49,7 @@ On first launch, Lookout asks you to set up its single local account; after that
 
 Each Watch reports a status. Paused means the user stopped its scheduled Runs; Run now still works. Otherwise Failing means it is in a streak of Known failure or Errored Runs, which the next Succeeded Run ends. This applies even before its first Succeeded Run. Pending means it has no Baseline yet, and Healthy that its latest Run Succeeded. Pausing keeps the Baseline and clears the next Run; resuming schedules the next Run from now and keeps the failure streak, so a Watch that was Failing stays Failing until a Run Succeeds. A Run that was in progress when the Watch was deleted is not recorded. Deleting a Watch deletes its Script versions and Run history.
 
-Each Watch chooses whether its Runs go through the VPN. A VPN Run's browser uses gluetun's HTTP proxy, and the Run records the exit IP it went out through and the region that IP is in, such as `Florida`, as gluetun's IP lookup reports it. That's not necessarily the name of the PIA region gluetun picked. A Direct Run uses a plain browser on the same Browserless, from your own IP. A VPN Run is never sent from your own IP instead. If the VPN isn't connected, the Run waits up to 2 minutes for it, as gluetun takes a minute or two to connect after it starts. If it still isn't connected, or no VPN is configured, the Run is refused: it's recorded as Errored without running its Script. Without a VPN, everything else works as before.
+Each Watch chooses whether its Runs go through the VPN. A VPN Run's browser uses gluetun's HTTP proxy, and the Run records the exit IP it went out through and the region that IP is in, such as `Florida`, as gluetun's IP lookup reports it. That's not necessarily the name of the PIA region gluetun picked. A Direct Run uses a plain browser on the same Browserless, from your own IP. A VPN Run is never sent from your own IP instead. If the VPN isn't connected, the Run waits up to 2 minutes for it, as gluetun takes a minute or two to connect after it starts, and other Runs can go ahead meanwhile. If it still isn't connected, or no VPN is configured, or gluetun refuses Lookout's key, the Run is refused: it's recorded as Errored without running its Script, saying why the VPN isn't connected. Without a VPN, everything else works as before.
 
 The initial API is:
 
@@ -214,7 +214,7 @@ With the VPN set up, also check that VPN Runs leave from the VPN's exit and dire
 
 3. Choose **Run now**. The Run's content is the exit IP it records in its history, and it differs from your own IP (`curl https://api.ipify.org` from the host).
 4. Turn off **Send Runs through the VPN**, save, and choose **Run now** again. The Run's content is your own IP, and it records no VPN exit.
-5. Stop gluetun (`docker compose stop gluetun`) and choose **Run now** with the VPN turned back on. After 2 minutes, the Run is Errored, saying the VPN did not connect. Start gluetun again afterwards.
+5. Stop gluetun (`docker compose stop gluetun`) and choose **Run now** with the VPN turned back on. After 2 minutes, the Run is Errored, saying the VPN is not connected. Start gluetun again afterwards.
 6. Check that pages can't reach Lookout through gluetun's proxy, which connects from inside gluetun. This prints `unreachable` for each of Lookout's addresses:
 
    ```sh

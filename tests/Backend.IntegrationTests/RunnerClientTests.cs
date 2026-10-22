@@ -1,13 +1,11 @@
 using System.Diagnostics;
 using System.Net;
 using System.Text;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Extensions;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using ChasePie.Lookout.Backend.Runner;
 using ChasePie.Lookout.Model;
 
@@ -127,7 +125,7 @@ public sealed class RunnerClientTests(TestContext testContext)
     [DataRow(null, null, DisplayName = "Without credentials")]
     public async Task ARunWithProxySettingsGoesThroughTheProxyWithTheRealRunner(string? username, string? password)
     {
-        await using var proxy = await StartProxyAsync(username, password);
+        await using var proxy = await StartProxyAsync(username, password, testContext.CancellationToken);
         await WithRealRunner(async (runner, cancellationToken) =>
         {
             var result = await runner.ExecuteAsync(new RunnerRequest("""
@@ -139,7 +137,7 @@ public sealed class RunnerClientTests(TestContext testContext)
                   }
                 };
                 """, "ts", new ScriptContext("http://shop.lookout.test/widget"),
-                Proxy: new ProxySettings(proxy.Urls.Single(), username, password)), cancellationToken);
+                Proxy: new ProxySettings(proxy.BaseAddress.GetLeftPart(UriPartial.Authority), username, password)), cancellationToken);
 
             Assert.AreEqual(RunOutcome.Succeeded, result.Outcome, result.ErrorMessage);
             Assert.AreEqual("Proxied http://shop.lookout.test/widget", result.Content);
@@ -150,14 +148,11 @@ public sealed class RunnerClientTests(TestContext testContext)
     /// An HTTP proxy that answers every request itself, naming the URL it was asked for. Given credentials, it
     /// answers only requests that carry them.
     /// </summary>
-    private static async Task<WebApplication> StartProxyAsync(string? username, string? password)
+    private static async Task<FakeHttpServer> StartProxyAsync(string? username, string? password, CancellationToken cancellationToken)
     {
-        var builder = WebApplication.CreateSlimBuilder();
-        builder.WebHost.UseSetting(WebHostDefaults.ServerUrlsKey, "http://127.0.0.1:0");
-        builder.Logging.ClearProviders();
-        var proxy = builder.Build();
+        var proxy = await FakeHttpServer.StartAsync(cancellationToken);
         var expected = username is null ? null : $"Basic {Convert.ToBase64String(Encoding.UTF8.GetBytes($"{username}:{password}"))}";
-        proxy.Run(async context =>
+        proxy.Respond = async context =>
         {
             if (expected is not null && context.Request.Headers.ProxyAuthorization != expected)
             {
@@ -167,8 +162,7 @@ public sealed class RunnerClientTests(TestContext testContext)
             }
             context.Response.ContentType = "text/html; charset=utf-8";
             await context.Response.WriteAsync($"<p>Proxied {context.Request.GetDisplayUrl()}</p>");
-        });
-        await proxy.StartAsync();
+        };
         return proxy;
     }
 

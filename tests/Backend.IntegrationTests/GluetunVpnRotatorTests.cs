@@ -20,10 +20,10 @@ public sealed class GluetunVpnRotatorTests(TestContext testContext)
     }
 
     [TestMethod]
-    [DataRow("running", "", DisplayName = "Running before its tunnel is up, which gluetun reports with no public IP")]
-    [DataRow("stopped", "198.51.100.23", DisplayName = "Stopped")]
-    [DataRow("crashed", "198.51.100.23", DisplayName = "Crashed")]
-    public async Task IsDisconnectedUnlessTheVpnIsRunningWithAPublicIp(string vpnStatus, string publicIp)
+    [DataRow("running", "", "gluetun is connecting the VPN.", DisplayName = "Running before its tunnel is up, which gluetun reports with no public IP")]
+    [DataRow("stopped", "198.51.100.23", "gluetun's VPN is stopped.", DisplayName = "Stopped")]
+    [DataRow("crashed", "198.51.100.23", "gluetun's VPN crashed. gluetun's logs say why.", DisplayName = "Crashed")]
+    public async Task SaysWhyTheVpnIsDisconnectedUnlessItIsRunningWithAPublicIp(string vpnStatus, string publicIp, string error)
     {
         await using var gluetun = await FakeGluetun.StartAsync(ApiKey);
         gluetun.VpnStatus = vpnStatus;
@@ -32,11 +32,11 @@ public sealed class GluetunVpnRotatorTests(TestContext testContext)
 
         var status = await rotator.GetStatusAsync(testContext.CancellationToken);
 
-        Assert.AreEqual(VpnStatus.Disconnected(), status);
+        Assert.AreEqual(VpnStatus.Disconnected(error), status);
     }
 
     [TestMethod]
-    public async Task IsDisconnectedWhenGluetunRefusesTheApiKey()
+    public async Task IsMisconfiguredWhenGluetunRefusesTheApiKey()
     {
         await using var gluetun = await FakeGluetun.StartAsync(ApiKey);
         var rotator = gluetun.CreateRotator("wrong-key");
@@ -44,7 +44,7 @@ public sealed class GluetunVpnRotatorTests(TestContext testContext)
         var status = await rotator.GetStatusAsync(testContext.CancellationToken);
 
         Assert.AreEqual(
-            VpnStatus.Disconnected("gluetun refused Lookout's API key (HTTP 401). Check that Vpn:ApiKey matches gluetun's."),
+            VpnStatus.MisconfiguredBecause("gluetun refused Lookout's API key (HTTP 401). Check that Vpn:ApiKey matches gluetun's."),
             status);
     }
 
@@ -78,6 +78,37 @@ public sealed class GluetunVpnRotatorTests(TestContext testContext)
         Assert.AreSequenceEqual(
             ["""PUT /v1/vpn/status {"status":"stopped"}""", """PUT /v1/vpn/status {"status":"running"}"""],
             gluetun.Changes.ToList());
+    }
+
+    [TestMethod]
+    public async Task RetriesStartingTheVpnSoARotationDoesNotLeaveItStopped()
+    {
+        await using var gluetun = await FakeGluetun.StartAsync(ApiKey);
+        gluetun.FailingStarts = 2;
+        var rotator = gluetun.CreateRotator(ApiKey);
+
+        await rotator.RotateAsync(testContext.CancellationToken);
+
+        Assert.AreSequenceEqual(
+            [
+                """PUT /v1/vpn/status {"status":"stopped"}""",
+                """PUT /v1/vpn/status {"status":"running"}""",
+                """PUT /v1/vpn/status {"status":"running"}""",
+                """PUT /v1/vpn/status {"status":"running"}"""
+            ],
+            gluetun.Changes.ToList());
+    }
+
+    [TestMethod]
+    public async Task ARotationFailsWhenGluetunWontStartTheVpnInThreeAttempts()
+    {
+        await using var gluetun = await FakeGluetun.StartAsync(ApiKey);
+        gluetun.FailingStarts = 3;
+        var rotator = gluetun.CreateRotator(ApiKey);
+
+        await Assert.ThrowsExactlyAsync<HttpRequestException>(() => rotator.RotateAsync(testContext.CancellationToken));
+
+        Assert.HasCount(4, gluetun.Changes);
     }
 
     [TestMethod]

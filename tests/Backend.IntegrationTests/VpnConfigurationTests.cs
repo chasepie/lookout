@@ -57,6 +57,7 @@ public sealed class VpnConfigurationTests(TestContext testContext)
     [DataRow("Vpn:ControlUrl", "gluetun:8000")]
     [DataRow("Vpn:ProxyUrl", "not a URL")]
     [DataRow("Vpn:ProxyUrl", "http://lookout:secret@gluetun:8888", DisplayName = "Credentials in the proxy URL, which Chromium won't use")]
+    [DataRow("Vpn:ProxyUrl", "http://gluetun:8888/vpn", DisplayName = "A path in the proxy URL, which a proxy can't have")]
     [DataRow("Vpn:ApiKey", "ab\"c", DisplayName = "An API key that would break gluetun's TOML")]
     [DataRow("Vpn:ApiKey", "a b", DisplayName = "An API key with a space")]
     public async Task RefusesToStartWithInvalidVpnSettings(string key, string value)
