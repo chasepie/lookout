@@ -261,23 +261,14 @@ public sealed partial class RunExecutor(
         VpnStatus? status = null;
         while (true)
         {
-            // Started before the status is read, so the exit it records is the one it goes through.
-            if (rotation.TryStartVpnRun() is { } vpnRun)
+            var (vpnRun, started) = await rotation.TryStartVpnRunAsync(cancellationToken);
+            if (vpnRun is not null)
             {
-                try
-                {
-                    status = await vpn.GetStatusAsync(cancellationToken);
-                }
-                catch
-                {
-                    vpnRun.Dispose();
-                    throw;
-                }
-                if (status.Connected)
-                {
-                    return (status, vpnRun);
-                }
-                vpnRun.Dispose();
+                return (started!, vpnRun);
+            }
+            if (started is not null)
+            {
+                status = started;
                 if (status is not { Enabled: true, Misconfigured: false } || timeProvider.GetUtcNow() >= deadline)
                 {
                     return (status, null);

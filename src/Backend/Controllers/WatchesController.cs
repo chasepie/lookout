@@ -18,7 +18,6 @@ public sealed class WatchesController(
     LookoutDbContext database,
     RunExecutor runExecutor,
     IRunnerClient runner,
-    IVpnRotator vpn,
     VpnRotation rotation,
     WatchSchedules schedules,
     RunningWatches runningWatches,
@@ -416,12 +415,11 @@ public sealed class WatchesController(
             VpnStatus? vpnStatus = null;
             if (watch.UsesVpn)
             {
-                vpnRun = rotation.TryStartVpnRun();
-                if (vpnRun is null)
+                (vpnRun, vpnStatus) = await rotation.TryStartVpnRunAsync(stopping.Token);
+                if (vpnStatus is null)
                 {
                     return RefusedTestRun("The VPN is rotating to a new exit IP, so this Test run was not started. Try again in a minute.");
                 }
-                vpnStatus = await vpn.GetStatusAsync(stopping.Token);
             }
             if (vpnStatus?.RefusalOf("Test run") is { } refusal)
             {

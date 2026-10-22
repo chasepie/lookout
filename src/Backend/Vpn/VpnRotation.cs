@@ -85,18 +85,37 @@ public sealed partial class VpnRotation(
     private Task _refresh = Task.CompletedTask;
 
     /// <summary>
-    /// Starts a VPN Run, which a Rotation then waits for until the lease is disposed, or nothing during a Rotation.
+    /// Starts a VPN Run, or a VPN Test run, if the VPN lets it. During a Rotation there's neither a lease nor a status.
+    /// Otherwise the status is read once the lease is taken, so a Rotation can't change the exit it gives before the
+    /// Run goes through it, and the lease, which a Rotation waits for until it's disposed, comes only with a connected
+    /// VPN.
     /// </summary>
-    public VpnRunLease? TryStartVpnRun()
+    public async Task<(VpnRunLease? Lease, VpnStatus? Status)> TryStartVpnRunAsync(CancellationToken cancellationToken)
     {
+        VpnRunLease lease;
         lock (_lock)
         {
             if (_rotating is not null)
             {
-                return null;
+                return (null, null);
             }
             _vpnRuns++;
-            return new VpnRunLease(this, _rotationsStarted);
+            lease = new VpnRunLease(this, _rotationsStarted);
+        }
+        try
+        {
+            var status = await vpn.GetStatusAsync(cancellationToken);
+            if (status.Connected)
+            {
+                return (lease, status);
+            }
+            lease.Dispose();
+            return (null, status);
+        }
+        catch
+        {
+            lease.Dispose();
+            throw;
         }
     }
 
