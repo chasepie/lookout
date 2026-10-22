@@ -104,7 +104,9 @@ public sealed partial class RunExecutor(
     {
         var watchId = watch.Id;
         // Only a connected VPN has an exit and a proxy, so a refused Run records neither.
-        (VpnStatus? vpnStatus, VpnRunLease? vpnRun) = watch.UsesVpn ? await StartVpnRunAsync(cancellationToken) : (null, null);
+        (VpnStatus? vpnStatus, VpnRunLease? vpnRun) = watch.UsesVpn
+            ? await StartVpnRunAsync(cancellationToken)
+            : (null, null);
         RunnerResult result;
         using (vpnRun)
         {
@@ -326,7 +328,9 @@ public sealed partial class RunExecutor(
             {
                 return status;
             }
-            await Task.Delay(VpnCheckInterval < remaining ? VpnCheckInterval : remaining, timeProvider, cancellationToken);
+
+            var delay = VpnCheckInterval < remaining ? VpnCheckInterval : remaining;
+            await Task.Delay(delay, timeProvider, cancellationToken);
             status = await ReadVpnStatusByAsync(deadline, status, cancellationToken);
         }
     }

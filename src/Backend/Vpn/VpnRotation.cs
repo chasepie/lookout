@@ -233,7 +233,9 @@ public sealed partial class VpnRotation(
         {
             await using var scope = scopes.CreateAsyncScope();
             var database = scope.ServiceProvider.GetRequiredService<LookoutDbContext>();
-            var refreshedAt = await database.Settings.Select(settings => settings.VpnServerListRefreshedAt).SingleAsync(stoppingToken);
+            var refreshedAt = await database.Settings
+                .Select(settings => settings.VpnServerListRefreshedAt)
+                .SingleAsync(stoppingToken);
             var now = timeProvider.GetUtcNow();
             if (now - refreshedAt < ServerListRefreshPeriod)
             {

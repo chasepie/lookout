@@ -19,7 +19,10 @@ public sealed record GluetunSettings(string ApiKey, ProxySettings Proxy)
 /// The VPN, through gluetun's control server, whose client's base address is that server (ADR-0004).
 /// </summary>
 /// <param name="proxiedExitIp">Finds the exit IP through the proxy when gluetun's own lookup of it fails.</param>
-public sealed class GluetunVpnRotator(HttpClient client, GluetunSettings settings, ProxiedExitIp proxiedExitIp,
+public sealed class GluetunVpnRotator(
+    HttpClient client,
+    GluetunSettings settings,
+    ProxiedExitIp proxiedExitIp,
     TimeProvider timeProvider) : IVpnRotator
 {
     public async Task<VpnStatus> GetStatusAsync(CancellationToken cancellationToken)

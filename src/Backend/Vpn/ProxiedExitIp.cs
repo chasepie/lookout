@@ -60,14 +60,17 @@ public sealed class ProxiedExitIp(Func<IRunnerClient> runner, TimeProvider timeP
             }
             _lastCheckAt = now;
         }
+
         try
         {
-            var result = await runner().ExecuteAsync(new RunnerRequest(
-                Source: CheckSource,
-                FileKind: "ts",
-                Context: new ScriptContext(EchoUrl),
-                TimeoutMs: (int)CheckAfter.TotalMilliseconds / 2,
-                Proxy: proxy), cancellationToken);
+            var result = await runner().ExecuteAsync(
+                new RunnerRequest(
+                    Source: CheckSource,
+                    FileKind: "ts",
+                    Context: new ScriptContext(EchoUrl),
+                    TimeoutMs: (int)CheckAfter.TotalMilliseconds / 2,
+                    Proxy: proxy),
+                cancellationToken);
             return result.Outcome == RunOutcome.Succeeded && IPAddress.TryParse(result.Content?.Trim(), out var ip)
                 ? ip.ToString()
                 : null;
