@@ -103,7 +103,7 @@ On a host with Docker Compose, from a clone of this repository:
 docker compose up -d --build
 ```
 
-Then open `http://<host>:8080` and set up the account. To upgrade, pull the latest code and run the same command again. To back up, copy the `lookout-data` volume. Settings go in the environment or a `.env` file beside `compose.yaml`:
+Then open `http://<host>:8080` and set up the account. To upgrade, pull the latest code and run the same command again. To back up, copy the `lookout-data` volume. Settings go in the environment or a `.env` file beside `compose.yaml`. To start one, copy [`example.env`](example.env), which lists them all with their defaults, to `.env`:
 
 | Variable | Default | Meaning |
 | --- | --- | --- |

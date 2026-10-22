@@ -1,5 +1,5 @@
 # Lookout's deployment: see "Deploying" in README.md. Settings come from the environment or an .env file beside
-# this one:
+# this one, which example.env shows how to write:
 #   LOOKOUT_PORT                 the host port Lookout is served on (default 8080)
 #   LOOKOUT_TIME_ZONE            the time zone schedules use, such as Europe/London (default UTC)
 #   LOOKOUT_MAX_CONCURRENT_RUNS  how many Runs execute at once (default 2); raise the memory limits with it
