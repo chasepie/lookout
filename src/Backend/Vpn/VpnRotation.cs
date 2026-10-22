@@ -3,7 +3,8 @@ using ChasePie.Lookout.Backend.Events;
 namespace ChasePie.Lookout.Backend.Vpn;
 
 /// <summary>
-/// Rotates the VPN to a new exit IP every 10–15 minutes, or early after a Known failure (ADR-0004). A VPN Run holds a
+/// Rotates the VPN to a new exit IP every 10–15 minutes, or early after a Known failure, and at startup if it hasn't
+/// connected within <see cref="StartupWait"/> (ADR-0004). A VPN Run holds a
 /// <see cref="VpnRunLease"/> while it uses the VPN. No VPN Run starts during a Rotation, which waits for those in
 /// progress to finish before it rotates. Direct Runs carry on throughout. Pushes the VPN's status through
 /// <see cref="WatchEvents"/> as each Rotation starts and ends, and checks it every 30 seconds in between, pushing it
@@ -32,6 +33,12 @@ public sealed partial class VpnRotation(IVpnRotator vpn, WatchEvents events, Tim
     /// doesn't answer.
     /// </summary>
     public static readonly TimeSpan GiveUpAfter = TimeSpan.FromMinutes(2);
+
+    /// <summary>
+    /// How long after startup a VPN that hasn't connected gets a Rotation, as gluetun may be stuck on a dead server,
+    /// which it takes about 35 seconds to leave by itself.
+    /// </summary>
+    public static readonly TimeSpan StartupWait = TimeSpan.FromSeconds(15);
 
     /// <summary>How soon after a Rotation a Known failure can bring on another.</summary>
     public static readonly TimeSpan EarlyRotationGap = TimeSpan.FromMinutes(3);
@@ -130,7 +137,10 @@ public sealed partial class VpnRotation(IVpnRotator vpn, WatchEvents events, Tim
     {
         try
         {
-            var timedAt = timeProvider.GetUtcNow() + Interval();
+            // The first timed Rotation is the check at startup, which only rotates a VPN that hasn't connected. With no
+            // exit IP before it, any exit IP then completes it.
+            var timedAt = timeProvider.GetUtcNow() + StartupWait;
+            var atStartup = true;
             while (true)
             {
                 if (!await SleepUntilDueAsync(timedAt, stoppingToken))
@@ -139,13 +149,19 @@ public sealed partial class VpnRotation(IVpnRotator vpn, WatchEvents events, Tim
                 }
                 try
                 {
-                    await RotateAsync(stoppingToken);
+                    bool early;
+                    lock (_lock)
+                    {
+                        early = _earlyRotationRequested;
+                    }
+                    await RotateAsync(stoppingToken, onlyIfDisconnected: atStartup && !early);
                 }
                 catch (Exception error) when (!stoppingToken.IsCancellationRequested)
                 {
                     LogRotationFailed(logger, error);
                 }
                 timedAt = timeProvider.GetUtcNow() + Interval();
+                atStartup = false;
             }
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -245,12 +261,12 @@ public sealed partial class VpnRotation(IVpnRotator vpn, WatchEvents events, Tim
         return first == slept;
     }
 
-    private async Task RotateAsync(CancellationToken stoppingToken)
+    private async Task RotateAsync(CancellationToken stoppingToken, bool onlyIfDisconnected = false)
     {
         // Read first, so a VPN that isn't there to rotate doesn't hold up VPN Runs, which are refused anyway. A VPN Run
         // that starts meanwhile is waited for like any other.
         var before = await vpn.GetStatusAsync(stoppingToken);
-        if (before is not { Enabled: true, Misconfigured: false })
+        if (before is not { Enabled: true, Misconfigured: false } || (onlyIfDisconnected && before.Connected))
         {
             return;
         }

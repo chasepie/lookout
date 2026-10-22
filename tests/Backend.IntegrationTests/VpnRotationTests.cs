@@ -35,6 +35,34 @@ public sealed class VpnRotationTests(TestContext testContext)
     }
 
     [TestMethod]
+    public async Task RotatesWhenTheVpnHasNotConnectedFifteenSecondsAfterStartup()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        factory.Vpn.Status = VpnStatus.Disconnected("gluetun is connecting the VPN.");
+        DateTimeOffset? rotatedAt = null;
+        factory.Vpn.OnRotate = () =>
+        {
+            rotatedAt ??= factory.Time.GetUtcNow();
+            // gluetun connects to the server it picks on the attempt
+            factory.Vpn.Status = VpnStatus.ConnectedThrough(new ProxySettings("http://gluetun:8888"), "203.0.113.7", "New York");
+        };
+        var startedAt = factory.Time.GetUtcNow();
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
+        await using var listener = await WatchEventsListener.ConnectAsync(factory, testContext.CancellationToken);
+
+        await AdvanceUntil(factory, () => factory.Vpn.Rotations == 1);
+        var rotated = await listener.NextVpnStatusAsync(testContext.CancellationToken);
+        rotated = await listener.NextVpnStatusAsync(testContext.CancellationToken);
+
+        Assert.IsGreaterThanOrEqualTo(TimeSpan.FromSeconds(15), rotatedAt!.Value - startedAt);
+        Assert.IsLessThanOrEqualTo(TimeSpan.FromSeconds(17), rotatedAt.Value - startedAt);
+        // Any exit IP will do, as there was none before
+        Assert.AreEqual("203.0.113.7", rotated.GetProperty("exitIp").GetString());
+        Assert.IsFalse(rotated.GetProperty("rotating").GetBoolean());
+        Assert.AreEqual(1, factory.Vpn.Rotations);
+    }
+
+    [TestMethod]
     public async Task ARotationWaitsForVpnRunsInProgress()
     {
         await using var factory = new LookoutWebApplicationFactory();

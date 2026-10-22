@@ -107,7 +107,7 @@ public sealed class VpnRunsTests(TestContext testContext)
     public async Task AVpnRunIsRefusedAsErroredWhenTheVpnDoesNotConnectWithinTwoMinutes()
     {
         await using var factory = new LookoutWebApplicationFactory();
-        factory.Vpn.Status = VpnStatus.Disconnected("gluetun's control server returned HTTP 500.");
+        var startedAt = factory.Time.GetUtcNow();
         var executions = 0;
         factory.Runner.OnExecute = (_, _) =>
         {
@@ -116,6 +116,9 @@ public sealed class VpnRunsTests(TestContext testContext)
         };
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         var watch = await CreateWatch(client, usesVpn: true);
+        // Past the check at startup, which would otherwise rotate the VPN for not having connected
+        await AdvanceUntil(factory, () => factory.Time.GetUtcNow() - startedAt > VpnRotation.StartupWait);
+        factory.Vpn.Status = VpnStatus.Disconnected("gluetun's control server returned HTTP 500.");
 
         var run = await AdvanceUntilDone(factory, RunNow(client, watch["id"]!.GetValue<string>()));
 
