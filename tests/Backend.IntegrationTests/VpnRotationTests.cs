@@ -274,6 +274,28 @@ public sealed class VpnRotationTests(TestContext testContext)
     }
 
     [TestMethod]
+    public async Task AnEarlyRotationThatTheVpnRulesOutIsDropped()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        factory.Runner.DefaultResult = KnownFailure;
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
+        var watch = await CreateWatch(client, usesVpn: true);
+        await RunNow(client, watch);
+        await Eventually(() => factory.Vpn.Rotations == 1);
+        // Asks for another, which waits until 3 minutes after the first
+        await RunNow(client, watch);
+
+        factory.Vpn.Status = VpnStatus.MisconfiguredBecause("gluetun refused Lookout's API key (HTTP 401).");
+        await Advance(factory, TimeSpan.FromMinutes(3) + TimeSpan.FromSeconds(10));
+        var reads = factory.Vpn.StatusReads;
+        // Without fake time moving on, nothing should read the VPN's status
+        await Task.Delay(300, testContext.CancellationToken);
+
+        Assert.AreEqual(reads, factory.Vpn.StatusReads);
+        Assert.AreEqual(1, factory.Vpn.Rotations);
+    }
+
+    [TestMethod]
     public async Task AKnownFailureOnADirectRunDoesNotRotate()
     {
         await using var factory = new LookoutWebApplicationFactory();

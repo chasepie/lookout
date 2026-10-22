@@ -313,6 +313,11 @@ public sealed partial class VpnRotation(
 
     private async Task RotateAsync(CancellationToken stoppingToken, bool onlyIfDisconnected = false)
     {
+        // Answered even if the VPN rules this Rotation out, which would otherwise leave the request due at once forever.
+        lock (_lock)
+        {
+            _earlyRotationRequested = false;
+        }
         // Read first, so a VPN that isn't there to rotate doesn't hold up VPN Runs, which are refused anyway. A VPN Run
         // that starts meanwhile is waited for like any other.
         var before = await vpn.GetStatusAsync(stoppingToken);
@@ -325,7 +330,6 @@ public sealed partial class VpnRotation(
         {
             rotating = _rotating = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             _rotationsStarted++;
-            _earlyRotationRequested = false;
         }
         VpnStatus? after = null;
         try
