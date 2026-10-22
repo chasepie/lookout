@@ -38,9 +38,17 @@ public sealed class FakeGluetun : IAsyncDisposable
     /// <summary>Each authenticated change requested, as its method, path and body.</summary>
     public ConcurrentQueue<string> Changes { get; } = new();
 
-    public GluetunVpnRotator CreateRotator(string apiKey) =>
-        new(new HttpClient { BaseAddress = Address }, new GluetunSettings(apiKey, new ProxySettings("http://gluetun:8888")),
-            TimeProvider.System);
+    /// <summary>
+    /// A rotator for gluetun with Lookout's key, or another, whose checks through the proxy go to
+    /// <paramref name="runner"/>, or fail without one.
+    /// </summary>
+    public GluetunVpnRotator CreateRotator(string apiKey, TimeProvider? timeProvider = null, IRunnerClient? runner = null)
+    {
+        timeProvider ??= TimeProvider.System;
+        runner ??= new FakeRunnerClient();
+        return new(new HttpClient { BaseAddress = Address }, new GluetunSettings(apiKey, new ProxySettings("http://gluetun:8888")),
+            new ProxiedExitIp(() => runner, timeProvider), timeProvider);
+    }
 
     public static async Task<FakeGluetun> StartAsync(string apiKey)
     {

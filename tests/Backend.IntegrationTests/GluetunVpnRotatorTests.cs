@@ -1,5 +1,8 @@
+using System.Collections.Concurrent;
 using ChasePie.Lookout.Backend.Runner;
 using ChasePie.Lookout.Backend.Vpn;
+using ChasePie.Lookout.Model;
+using Microsoft.Extensions.Time.Testing;
 
 namespace ChasePie.Lookout.Backend.IntegrationTests;
 
@@ -36,6 +39,70 @@ public sealed class GluetunVpnRotatorTests(TestContext testContext)
     }
 
     [TestMethod]
+    public async Task CountsAnExitIpFetchedThroughTheProxyWhenGluetunHasHadNoneForTenSeconds()
+    {
+        await using var gluetun = await FakeGluetun.StartAsync(ApiKey);
+        // gluetun's own lookup of its public IP failed, though the tunnel is up
+        gluetun.PublicIp = """{"public_ip":""}""";
+        var time = new FakeTimeProvider();
+        var checks = new ConcurrentQueue<RunnerRequest>();
+        var runner = new FakeRunnerClient
+        {
+            OnExecute = (request, _) =>
+            {
+                checks.Enqueue(request);
+                return Task.FromResult(new RunnerResult { Outcome = RunOutcome.Succeeded, Content = "198.51.100.50\n", DurationMs = 1 });
+            }
+        };
+        var rotator = gluetun.CreateRotator(ApiKey, time, runner);
+
+        var first = await rotator.GetStatusAsync(testContext.CancellationToken);
+        time.Advance(TimeSpan.FromSeconds(9));
+        var beforeTenSeconds = await rotator.GetStatusAsync(testContext.CancellationToken);
+        time.Advance(TimeSpan.FromSeconds(1));
+        var afterTenSeconds = await rotator.GetStatusAsync(testContext.CancellationToken);
+
+        Assert.AreEqual(VpnStatus.Disconnected("gluetun is connecting the VPN."), first);
+        Assert.AreEqual(VpnStatus.Disconnected("gluetun is connecting the VPN."), beforeTenSeconds);
+        // gluetun's lookup gives the region, which the proxy's doesn't
+        Assert.AreEqual(VpnStatus.ConnectedThrough(new ProxySettings("http://gluetun:8888"), "198.51.100.50", null), afterTenSeconds);
+        Assert.AreEqual(new ProxySettings("http://gluetun:8888"), checks.Single().Proxy);
+    }
+
+    [TestMethod]
+    [DataRow(RunOutcome.Errored, null, DisplayName = "The page didn't load, as the tunnel is down")]
+    [DataRow(RunOutcome.Succeeded, "<html>Rate limited</html>", DisplayName = "The page wasn't an IP")]
+    public async Task ChecksThroughTheProxyAtMostEveryTenSecondsUntilOneFindsAnExitIp(RunOutcome outcome, string? content)
+    {
+        await using var gluetun = await FakeGluetun.StartAsync(ApiKey);
+        gluetun.PublicIp = """{"public_ip":""}""";
+        var time = new FakeTimeProvider();
+        var checks = 0;
+        var runner = new FakeRunnerClient
+        {
+            OnExecute = (_, _) =>
+            {
+                Interlocked.Increment(ref checks);
+                return Task.FromResult(new RunnerResult { Outcome = outcome, Content = content, DurationMs = 1 });
+            }
+        };
+        var rotator = gluetun.CreateRotator(ApiKey, time, runner);
+
+        await rotator.GetStatusAsync(testContext.CancellationToken);
+        time.Advance(TimeSpan.FromSeconds(10));
+        var failed = await rotator.GetStatusAsync(testContext.CancellationToken);
+        time.Advance(TimeSpan.FromSeconds(9));
+        await rotator.GetStatusAsync(testContext.CancellationToken);
+        var checksWithinTenSeconds = checks;
+        time.Advance(TimeSpan.FromSeconds(1));
+        await rotator.GetStatusAsync(testContext.CancellationToken);
+
+        Assert.AreEqual(VpnStatus.Disconnected("gluetun is connecting the VPN."), failed);
+        Assert.AreEqual(1, checksWithinTenSeconds);
+        Assert.AreEqual(2, checks);
+    }
+
+    [TestMethod]
     public async Task IsMisconfiguredWhenGluetunRefusesTheApiKey()
     {
         await using var gluetun = await FakeGluetun.StartAsync(ApiKey);
@@ -58,7 +125,7 @@ public sealed class GluetunVpnRotatorTests(TestContext testContext)
         }
         using var http = new HttpClient { BaseAddress = address };
         var rotator = new GluetunVpnRotator(http, new GluetunSettings(ApiKey, new ProxySettings("http://gluetun:8888")),
-            TimeProvider.System);
+            new ProxiedExitIp(() => new FakeRunnerClient(), TimeProvider.System), TimeProvider.System);
 
         var status = await rotator.GetStatusAsync(testContext.CancellationToken);
 
@@ -164,7 +231,7 @@ public sealed class GluetunVpnRotatorTests(TestContext testContext)
         using var http = new HttpClient { BaseAddress = gluetun.Address };
         var rotator = new GluetunVpnRotator(http,
             new GluetunSettings(ApiKey, new ProxySettings("http://gluetun:8888")) { StatusTimeout = TimeSpan.FromMilliseconds(600) },
-            TimeProvider.System);
+            new ProxiedExitIp(() => new FakeRunnerClient(), TimeProvider.System), TimeProvider.System);
 
         var status = await rotator.GetStatusAsync(testContext.CancellationToken);
 

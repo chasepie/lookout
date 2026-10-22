@@ -134,6 +134,8 @@ public class Program
             Username: NullIfEmpty(configuration["Vpn:ProxyUsername"]),
             Password: NullIfEmpty(configuration["Vpn:ProxyPassword"]));
         services.AddSingleton(new GluetunSettings(apiKey, proxy));
+        services.AddSingleton(provider => new ProxiedExitIp(
+            provider.GetRequiredService<IRunnerClient>, provider.GetRequiredService<TimeProvider>()));
         services.AddHttpClient<IVpnRotator, GluetunVpnRotator>(client =>
         {
             client.BaseAddress = controlAddress;

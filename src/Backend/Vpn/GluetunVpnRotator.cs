@@ -18,7 +18,9 @@ public sealed record GluetunSettings(string ApiKey, ProxySettings Proxy)
 /// <summary>
 /// The VPN, through gluetun's control server, whose client's base address is that server (ADR-0004).
 /// </summary>
-public sealed class GluetunVpnRotator(HttpClient client, GluetunSettings settings, TimeProvider timeProvider) : IVpnRotator
+/// <param name="proxiedExitIp">Finds the exit IP through the proxy when gluetun's own lookup of it fails.</param>
+public sealed class GluetunVpnRotator(HttpClient client, GluetunSettings settings, ProxiedExitIp proxiedExitIp,
+    TimeProvider timeProvider) : IVpnRotator
 {
     public async Task<VpnStatus> GetStatusAsync(CancellationToken cancellationToken)
     {
@@ -34,16 +36,22 @@ public sealed class GluetunVpnRotator(HttpClient client, GluetunSettings setting
                 case "running":
                     break;
                 case "crashed":
+                    proxiedExitIp.NotNeeded();
                     return VpnStatus.Disconnected("gluetun's VPN crashed. gluetun's logs say why.");
                 case var status:
+                    proxiedExitIp.NotNeeded();
                     return VpnStatus.Disconnected($"gluetun's VPN is {status ?? "in an unknown state"}.");
             }
-            // gluetun clears its public IP whenever the VPN stops or restarts, and has none until the tunnel is up.
+            // gluetun clears its public IP whenever the VPN stops or restarts, and has none until the tunnel is up, or
+            // if its lookup of it fails, when one found through the proxy counts.
             var exit = await GetAsync<PublicIp>("v1/publicip/ip", linked.Token);
             if (string.IsNullOrEmpty(exit?.Ip))
             {
-                return VpnStatus.Disconnected("gluetun is connecting the VPN.");
+                return await proxiedExitIp.CheckAsync(settings.Proxy, linked.Token) is { } proxiedIp
+                    ? VpnStatus.ConnectedThrough(settings.Proxy, proxiedIp, region: null)
+                    : VpnStatus.Disconnected("gluetun is connecting the VPN.");
             }
+            proxiedExitIp.NotNeeded();
             return VpnStatus.ConnectedThrough(
                 proxy: settings.Proxy,
                 exitIp: exit.Ip,
