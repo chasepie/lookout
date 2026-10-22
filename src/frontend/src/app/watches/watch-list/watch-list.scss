@@ -48,6 +48,8 @@ button {
 
 .watch-heading {
   h2 { min-width: 0; overflow-wrap: anywhere; }
+  .badges { display: flex; align-items: center; gap: 6px; }
+  .vpn-badge { @include mixins.badge; color: tokens.$text-label; font-weight: 650; }
 
   a {
     text-decoration: none;

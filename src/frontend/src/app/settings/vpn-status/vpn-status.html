@@ -1,0 +1,29 @@
+<section class="panel" aria-labelledby="vpn-heading">
+  <div class="panel-heading">
+    <h2 id="vpn-heading">VPN</h2>
+    <button type="button" (click)="status.refresh()" [disabled]="status.isLoading()">{{ status.isLoading() ? 'Checking…' : 'Check again' }}</button>
+  </div>
+  @if (status.error()) {
+    <p class="error" role="alert">Could not read the VPN's status. Please try again.</p>
+  } @else if (status.hasValue()) {
+    @let vpn = status.value();
+    @if (!vpn.enabled) {
+      <p class="details">No VPN is configured. Watches that send their Runs through the VPN are refused until one is. See the README to set up gluetun with PIA.</p>
+    } @else {
+      <dl>
+        <dt>Status</dt>
+        <dd><span class="state" [class.connected]="vpn.connected">{{ vpn.connected ? 'Connected' : 'Not connected' }}</span></dd>
+        @if (vpn.connected) {
+          <dt>Region</dt>
+          <dd>{{ vpn.region ?? 'Unknown' }}</dd>
+          <dt>Exit IP</dt>
+          <dd>{{ vpn.exitIp }}</dd>
+        }
+      </dl>
+      @if (!vpn.connected) {
+        <p class="details">VPN Runs are refused until it connects.</p>
+      }
+      @if (vpn.error) { <p class="error">{{ vpn.error }}</p> }
+    }
+  } @else { <p>Checking the VPN…</p> }
+</section>

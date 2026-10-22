@@ -3,6 +3,7 @@ using ChasePie.Lookout.Backend.Events;
 using ChasePie.Lookout.Backend.Notifications;
 using ChasePie.Lookout.Backend.Runner;
 using ChasePie.Lookout.Backend.Scheduling;
+using ChasePie.Lookout.Backend.Vpn;
 using ChasePie.Lookout.Model;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
@@ -50,6 +51,7 @@ public class Program
             // HttpRunnerClient sets each request's deadline from its Script timeout.
             client.Timeout = Timeout.InfiniteTimeSpan;
         });
+        ConfigureVpn(services, configuration);
         services.AddOpenApi();
 
         services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme).AddCookie(SessionCookie.Configure);
@@ -94,6 +96,43 @@ public class Program
         connection.DataSource = Path.GetFullPath(connection.DataSource, dataDirectory);
         Directory.CreateDirectory(Path.GetDirectoryName(connection.DataSource)!);
         return connection.ConnectionString;
+    }
+
+    /// <summary>
+    /// gluetun, when Vpn:ApiKey is set: its control server requires a key on every route Lookout uses (ADR-0004).
+    /// Without one, the VPN is disabled and VPN Runs are refused.
+    /// </summary>
+    private static void ConfigureVpn(IServiceCollection services, ConfigurationManager configuration)
+    {
+        var apiKey = configuration["Vpn:ApiKey"];
+        if (string.IsNullOrEmpty(apiKey))
+        {
+            services.AddSingleton<IVpnRotator, DisabledVpnRotator>();
+            return;
+        }
+        // Deployment writes the key into gluetun's TOML auth file, where quotes or backslashes would change it.
+        if (!apiKey.All(character => char.IsAsciiLetterOrDigit(character) || character is '-' or '_'))
+        {
+            throw new InvalidOperationException("Vpn:ApiKey must contain only letters, digits, '-' and '_', such as from openssl rand -hex 32");
+        }
+        var controlAddress = HttpUrls.ConfiguredBaseAddress(configuration, "Vpn:ControlUrl", "http://gluetun-control:8000");
+        var proxyAddress = HttpUrls.ConfiguredBaseAddress(configuration, "Vpn:ProxyUrl", "http://gluetun:8888");
+        // Chromium doesn't use credentials written into the proxy's address.
+        if (proxyAddress.UserInfo != "")
+        {
+            throw new InvalidOperationException("Vpn:ProxyUrl must not contain credentials; set Vpn:ProxyUsername and Vpn:ProxyPassword instead");
+        }
+        var proxy = new ProxySettings(proxyAddress.GetLeftPart(UriPartial.Authority),
+            NullIfEmpty(configuration["Vpn:ProxyUsername"]), NullIfEmpty(configuration["Vpn:ProxyPassword"]));
+        services.AddSingleton(new GluetunSettings(apiKey, proxy));
+        services.AddHttpClient<IVpnRotator, GluetunVpnRotator>(client =>
+        {
+            client.BaseAddress = controlAddress;
+            // Reading the status has a shorter deadline of its own (GluetunSettings.StatusTimeout); this bounds a Rotation.
+            client.Timeout = TimeSpan.FromSeconds(30);
+        });
+
+        static string? NullIfEmpty(string? value) => string.IsNullOrEmpty(value) ? null : value;
     }
 
     private static void ConfigureScheduling(IServiceCollection services, ConfigurationManager configuration)

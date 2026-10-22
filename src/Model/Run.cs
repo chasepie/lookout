@@ -26,4 +26,8 @@ public sealed class Run
     public DateTimeOffset StartedAt { get; set; }
     public DateTimeOffset FinishedAt { get; set; }
     public bool IsChange { get; set; }
+    /// <summary>For a VPN Run, the region of the exit it went through; direct Runs have none.</summary>
+    public string? VpnRegion { get; set; }
+    /// <summary>For a VPN Run, the exit IP it went through; direct Runs have none.</summary>
+    public string? VpnExitIp { get; set; }
 }

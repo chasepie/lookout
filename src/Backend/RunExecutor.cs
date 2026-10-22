@@ -2,6 +2,7 @@ using ChasePie.Lookout.Backend.Controllers;
 using ChasePie.Lookout.Backend.Events;
 using ChasePie.Lookout.Backend.Notifications;
 using ChasePie.Lookout.Backend.Runner;
+using ChasePie.Lookout.Backend.Vpn;
 using ChasePie.Lookout.Database;
 using ChasePie.Lookout.Model;
 using Microsoft.EntityFrameworkCore;
@@ -31,11 +32,20 @@ public sealed record RunExecution(RunExecutionStatus Status, Run? Run = null);
 public sealed partial class RunExecutor(
     LookoutDbContext database,
     IRunnerClient runner,
+    IVpnRotator vpn,
     NotificationDispatcher notifications,
     WatchEvents events,
     TimeProvider timeProvider,
     ILogger<RunExecutor> logger)
 {
+    /// <summary>
+    /// How long a VPN Run waits for the VPN to connect before it's refused. gluetun takes a minute or two to connect
+    /// after it starts, longer for each dead server it picks, so Runs that come due just after a deploy wait for it.
+    /// </summary>
+    public static readonly TimeSpan VpnConnectWait = TimeSpan.FromMinutes(2);
+
+    private static readonly TimeSpan VpnCheckInterval = TimeSpan.FromSeconds(5);
+
     public async Task<RunExecution> ExecuteAsync(Guid watchId, CancellationToken cancellationToken)
     {
         var watch = await database.Watches
@@ -89,12 +99,31 @@ public sealed partial class RunExecutor(
         ScriptVersion script, DateTimeOffset startedAt, CancellationToken cancellationToken)
     {
         var watchId = watch.Id;
-        var runRequest = new RunnerRequest(
-            Source: script.Source,
-            FileKind: script.FileKind,
-            Context: new ScriptContext(watch.NotificationUrl),
-            TimeoutMs: watch.TimeoutSeconds * 1000);
-        var result = await runner.ExecuteAsync(runRequest, cancellationToken);
+        // Only a connected VPN has an exit and a proxy, so a refused Run records neither.
+        var vpnStatus = watch.UsesVpn ? await WaitForVpnAsync(cancellationToken) : null;
+        RunnerResult result;
+        if (vpnStatus is { Connected: false })
+        {
+            // Fail closed: without the VPN the Run would go out from the home IP, or hang until its timeout.
+            result = new RunnerResult
+            {
+                Outcome = RunOutcome.Errored,
+                ErrorMessage = vpnStatus.Enabled
+                    ? $"The VPN did not connect within {VpnConnectWait.TotalMinutes:0} minutes, so this VPN Run was not started. {vpnStatus.Error}".TrimEnd()
+                    : "No VPN is configured, so this VPN Run was not started.",
+                DurationMs = 0
+            };
+        }
+        else
+        {
+            var runRequest = new RunnerRequest(
+                Source: script.Source,
+                FileKind: script.FileKind,
+                Context: new ScriptContext(watch.NotificationUrl),
+                TimeoutMs: watch.TimeoutSeconds * 1000,
+                Proxy: vpnStatus?.Proxy);
+            result = await runner.ExecuteAsync(runRequest, cancellationToken);
+        }
 
         var evaluation = RunEvaluation.Evaluate(watch, result.Outcome, result.Content, result.Details, result.ErrorMessage);
         var run = new Run
@@ -108,7 +137,9 @@ public sealed partial class RunExecutor(
             DurationMs = result.DurationMs,
             StartedAt = startedAt,
             FinishedAt = timeProvider.GetUtcNow(),
-            IsChange = evaluation.IsChange
+            IsChange = evaluation.IsChange,
+            VpnRegion = vpnStatus?.Region,
+            VpnExitIp = vpnStatus?.ExitIp
         };
         watch.Baseline = evaluation.Baseline;
         watch.FailureStreak = evaluation.FailureStreak;
@@ -206,4 +237,17 @@ public sealed partial class RunExecutor(
 
     [LoggerMessage(LogLevel.Warning, "Could not drop older debug output of Watch {WatchId}.")]
     private static partial void LogTrimFailed(ILogger logger, Exception error, Guid watchId);
+
+    /// <summary>The VPN's status once it's connected, or as it last was if it doesn't connect in time or isn't configured.</summary>
+    private async Task<VpnStatus> WaitForVpnAsync(CancellationToken cancellationToken)
+    {
+        var deadline = timeProvider.GetUtcNow() + VpnConnectWait;
+        var status = await vpn.GetStatusAsync(cancellationToken);
+        while (status is { Enabled: true, Connected: false } && timeProvider.GetUtcNow() < deadline)
+        {
+            await Task.Delay(VpnCheckInterval, timeProvider, cancellationToken);
+            status = await vpn.GetStatusAsync(cancellationToken);
+        }
+        return status;
+    }
 }

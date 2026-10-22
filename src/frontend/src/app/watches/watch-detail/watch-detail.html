@@ -47,6 +47,8 @@
           @if (settingsForm.timeoutSeconds().touched() && settingsForm.timeoutSeconds().errors()[0]; as error) {
             <small class="error">{{ error.message }}</small>
           }
+          <label class="checkbox"><input type="checkbox" [formField]="settingsForm.usesVpn" aria-describedby="vpn-help" /> Send Runs through the VPN</label>
+          <small id="vpn-help">Runs go out from the VPN's exit IP rather than your own.</small>
           <button class="primary" type="submit" [disabled]="settingsForm().submitting() || settingsForm().invalid()">
             {{ settingsForm().submitting() ? 'Saving…' : 'Save settings' }}
           </button>
@@ -132,6 +134,9 @@
                 }
                 @if (run.details) { <p class="details">{{ run.details }}</p> }
                 @if (run.errorMessage) { <p class="error">{{ run.errorMessage }}</p> }
+                @if (run.vpnExitIp) {
+                  <p class="details">Through the VPN: {{ run.vpnRegion ? run.vpnRegion + ', ' : '' }}{{ run.vpnExitIp }}</p>
+                }
                 @if (run.outcome !== 'succeeded') { <app-run-debug-output [watchId]="id()" [runId]="run.id" /> }
               </li>
             }

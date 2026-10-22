@@ -22,6 +22,9 @@ export interface Run {
   startedAt: string;
   finishedAt: string;
   isChange: boolean;
+  /** For a VPN Run, the region and IP of the VPN exit it went through; direct Runs have none. */
+  vpnRegion: string | null;
+  vpnExitIp: string | null;
 }
 
 /** How many of a Watch's most recent Known failure and Errored Runs keep their debug output */
@@ -42,6 +45,7 @@ export interface Watch {
   /** Whether a Run is in progress, shown alongside the status. */
   isRunning: boolean;
   isPaused: boolean;
+  usesVpn: boolean;
   failureStreak: number;
   timeoutSeconds: number;
   lastRun: Run | null;
@@ -80,4 +84,5 @@ export interface WatchSettings {
   name: string;
   notificationUrl: string;
   timeoutSeconds: number;
+  usesVpn: boolean;
 }

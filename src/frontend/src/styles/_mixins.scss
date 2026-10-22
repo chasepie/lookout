@@ -51,6 +51,16 @@
     }
   }
 
+  // A checkbox sits inside its label, beside the text.
+  label.checkbox {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 23px;
+
+    input { width: auto; margin: 0; }
+  }
+
   small {
     font-size: 12px;
     line-height: 1.5;

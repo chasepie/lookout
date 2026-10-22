@@ -1,5 +1,6 @@
 using ChasePie.Lookout.Backend.Notifications;
 using ChasePie.Lookout.Backend.Runner;
+using ChasePie.Lookout.Backend.Vpn;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -22,9 +23,12 @@ public sealed class LookoutWebApplicationFactory : WebApplicationFactory<Program
     public RecordingChannels Channels { get; } = new();
     /// <summary>Delivers notifications through the real Discord and Pushover senders instead of <see cref="Channels"/>.</summary>
     public bool UseRealChannels { get; init; }
+    public FakeVpnRotator Vpn { get; } = new();
     public FakeTimeProvider Time { get; } = new(new DateTimeOffset(2026, 10, 19, 12, 0, 0, TimeSpan.Zero));
     /// <summary>Uses the real clock instead of <see cref="Time"/>, for a host that a browser uses interactively.</summary>
     public bool UseSystemTime { get; init; }
+    /// <summary>Uses the VPN rotator Lookout's configuration chooses instead of <see cref="Vpn"/>.</summary>
+    public bool UseConfiguredVpn { get; init; }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -37,6 +41,10 @@ public sealed class LookoutWebApplicationFactory : WebApplicationFactory<Program
         builder.ConfigureTestServices(services =>
         {
             services.AddSingleton<IRunnerClient>(Runner);
+            if (!UseConfiguredVpn)
+            {
+                services.AddSingleton<IVpnRotator>(Vpn);
+            }
             services.AddSingleton(UseSystemTime ? TimeProvider.System : Time);
             if (!UseRealChannels)
             {

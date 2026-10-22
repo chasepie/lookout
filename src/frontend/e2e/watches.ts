@@ -22,7 +22,8 @@ export async function createWatch(page: Page, name: string, notificationUrl = 'h
 }
 
 /** Edits a Watch's settings through the API, as another browser tab would. */
-export async function editWatch(page: Page, id: string, settings: { name: string; notificationUrl: string; timeoutSeconds: number }) {
+export async function editWatch(page: Page, id: string,
+  settings: { name: string; notificationUrl: string; timeoutSeconds: number; usesVpn: boolean }) {
   const response = await page.request.put(`/api/watches/${id}`, {
     headers: { 'X-XSRF-TOKEN': await requestToken(page) },
     data: settings,

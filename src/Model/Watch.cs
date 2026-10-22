@@ -12,6 +12,8 @@ public sealed class Watch
     public int FailureStreak { get; set; }
     /// <summary>Whether the user has stopped the Watch's scheduled Runs. Run now still works.</summary>
     public bool IsPaused { get; set; }
+    /// <summary>Whether the Watch's Runs go through the VPN rather than direct.</summary>
+    public bool UsesVpn { get; set; }
     public int TimeoutSeconds { get; set; } = DefaultTimeoutSeconds;
     public const int DefaultTimeoutSeconds = 120;
     public const int MaxTimeoutSeconds = 600;

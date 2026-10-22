@@ -5,15 +5,16 @@ import { type Channel, type NewChannel, channelKindLabels } from '../channels/ch
 import { Channels } from '../channels/channels';
 import { problemMessage } from '../shared/problem';
 import { RetentionSettings } from './retention-settings/retention-settings';
+import { VpnStatus } from './vpn-status/vpn-status';
 
 type ChannelAction = 'testing' | 'deleting';
 
 const emptyChannel = (): NewChannel => ({ kind: 'discord', name: '', webhookUrl: '', userKey: '', appToken: '' });
 
-/** Lookout's settings: the Channels Watches can notify, and how long Runs are kept. */
+/** Lookout's settings: the Channels Watches can notify, how long Runs are kept, and the VPN's status. */
 @Component({
   selector: 'app-settings',
-  imports: [FormField, KeyValuePipe, RetentionSettings],
+  imports: [FormField, KeyValuePipe, RetentionSettings, VpnStatus],
   templateUrl: './settings.html',
   styleUrl: './settings.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

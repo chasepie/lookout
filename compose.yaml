@@ -6,8 +6,16 @@
 #   LOOKOUT_RUNNER_MEMORY        the runner's memory limit (default 1536m): 640m per concurrent Run, plus 256m
 #   LOOKOUT_BROWSERLESS_MEMORY   Browserless's memory limit (default 3g): about 1.5g per concurrent Run
 #
+# The VPN is optional (see "VPN" in README.md). To use it, set COMPOSE_PROFILES=vpn and:
+#   LOOKOUT_VPN_API_KEY          the key Lookout uses for gluetun's control server: letters, digits, '-' and '_' only,
+#                                such as from openssl rand -hex 32
+#   PIA_USER, PIA_PASSWORD       your Private Internet Access login
+#   LOOKOUT_VPN_REGIONS          the PIA regions gluetun picks from (default: eight in the US)
+#
 # Each pair of services that talk shares a network of its own, so Browserless's Chromium, which loads whatever pages
-# Scripts visit, can't reach Lookout. It can reach the runner, which refuses requests from web pages.
+# Scripts visit, can't reach Lookout. It can reach the runner, which refuses requests from web pages. gluetun's proxy
+# forwards to every network gluetun is on, so gluetun and Lookout share none: Lookout reaches gluetun's control server
+# through a relay.
 name: lookout
 
 services:
@@ -22,6 +30,10 @@ services:
       Runner__BaseUrl: http://runner:3000
       Scheduling__TimeZone: ${LOOKOUT_TIME_ZONE:-}
       Scheduling__MaxConcurrentRuns: ${LOOKOUT_MAX_CONCURRENT_RUNS:-2}
+      # Without a key, the VPN is disabled and VPN Runs are refused
+      Vpn__ApiKey: ${LOOKOUT_VPN_API_KEY:-}
+      Vpn__ControlUrl: http://gluetun-control:8000
+      Vpn__ProxyUrl: http://gluetun:8888
     # The database, in the image's data directory. Nothing else mounts it.
     volumes:
       - lookout-data:/data
@@ -29,6 +41,7 @@ services:
     networks:
       - runs
       - lan
+      - vpn-control
     # Runs that start before Browserless is ready would be Errored
     depends_on:
       runner:
@@ -77,6 +90,7 @@ services:
       CONCURRENT: ${LOOKOUT_MAX_CONCURRENT_RUNS:-2}
     networks:
       - browsers
+      - vpn-proxy
       - internet
     # The pages it renders aren't Lookout's to vouch for; one that leaks memory mustn't take the host's
     mem_limit: ${LOOKOUT_BROWSERLESS_MEMORY:-3g}
@@ -86,6 +100,64 @@ services:
       start_period: 30s
       start_interval: 1s
 
+  # The VPN that VPN Runs go through, as an HTTP proxy for their browser contexts (ADR-0004). Only with the vpn profile.
+  gluetun:
+    # v3.40 and later require authentication on the control server
+    image: qmcgaw/gluetun:v3.41.3
+    profiles:
+      - vpn
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      VPN_SERVICE_PROVIDER: private internet access
+      VPN_TYPE: openvpn
+      OPENVPN_USER: ${PIA_USER:-}
+      OPENVPN_PASSWORD: ${PIA_PASSWORD:-}
+      OPENVPN_PROTOCOL: tcp
+      # gluetun picks a server at random from these regions each time it connects. Kept to the US: another country's
+      # exit changes what retailers serve, which would show up as false Changes.
+      SERVER_REGIONS: ${LOOKOUT_VPN_REGIONS:-US East,US New York,US Florida,US California,US Chicago,US Texas,US Washington DC,US Atlanta}
+      # About one server in five is dead; these make OpenVPN give up on one, so gluetun picks another, rather than
+      # retrying it forever
+      OPENVPN_FLAGS: --connect-retry-max 1 --connect-timeout 10
+      HTTPPROXY: on
+      # Otherwise plain-HTTP requests carry Browserless's address
+      HTTPPROXY_STEALTH: on
+      # PIA's server list goes stale; more often than every 360 hours risks PIA blocking the updater
+      UPDATER_PERIOD: 360h
+    # The refreshed server list
+    volumes:
+      - gluetun-data:/gluetun
+    configs:
+      - source: gluetun-auth
+        target: /gluetun/auth/config.toml
+    networks:
+      - gluetun-control
+      - vpn-proxy
+      - internet
+
+  # Relays Lookout's requests to gluetun's control server. A page loaded through gluetun's proxy can reach this relay,
+  # which leads only back to gluetun's control server and its API key, but not Lookout.
+  gluetun-control:
+    image: alpine/socat:1.8.1.1
+    profiles:
+      - vpn
+    restart: unless-stopped
+    command: ["TCP-LISTEN:8000,fork,reuseaddr", "TCP:gluetun:8000"]
+    networks:
+      - vpn-control
+      - gluetun-control
+    user: 65534:65534
+    read_only: true
+    mem_limit: 64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
 networks:
   # Lookout and the runner. No route out, so a Script's own Node code can't reach the internet.
   runs:
@@ -93,8 +165,29 @@ networks:
   # The runner and Browserless, with no route out either
   browsers:
     internal: true
+  # Lookout and the relay to gluetun's control server, with no route out
+  vpn-control:
+    internal: true
+  # The relay and gluetun, with no route out but through the VPN
+  gluetun-control:
+    internal: true
+  # Browserless and gluetun's proxy, with no route out but through the VPN
+  vpn-proxy:
+    internal: true
   lan:
   internet:
 
 volumes:
   lookout-data:
+  gluetun-data:
+
+configs:
+  # Lookout's key for gluetun's control server, for only the routes it uses: the VPN's status, which it changes to
+  # rotate, and the exit IP. Other routes refuse every request. gluetun refuses to start without a key.
+  gluetun-auth:
+    content: |
+      [[roles]]
+      name = "lookout"
+      routes = ["GET /v1/vpn/status", "PUT /v1/vpn/status", "GET /v1/publicip/ip"]
+      auth = "apikey"
+      apikey = "${LOOKOUT_VPN_API_KEY:-}"

@@ -1,0 +1,25 @@
+@use 'tokens';
+@use 'mixins';
+
+:host { display: block; }
+
+@include mixins.messages;
+
+h2 { font-size: 19px; margin: 0; }
+p { line-height: 1.6; }
+button { @include mixins.button; }
+
+.panel { @include mixins.panel; padding: 25px; }
+.panel-heading { display: flex; justify-content: space-between; align-items: center; gap: 15px; margin-bottom: 18px; }
+
+dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 10px 24px; margin: 0; font-size: 14px; }
+dt { color: tokens.$text-muted; font-weight: 650; }
+dd { margin: 0; overflow-wrap: anywhere; }
+
+.state {
+  @include mixins.badge;
+  color: tokens.$failure;
+  background: tokens.$failure-surface;
+
+  &.connected { color: tokens.$success; background: tokens.$success-surface; }
+}
