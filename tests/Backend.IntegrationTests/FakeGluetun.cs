@@ -42,11 +42,13 @@ public sealed class FakeGluetun : IAsyncDisposable
     /// A rotator for gluetun with Lookout's key, or another, whose checks through the proxy go to
     /// <paramref name="runner"/>, or fail without one.
     /// </summary>
-    public GluetunVpnRotator CreateRotator(string apiKey, TimeProvider? timeProvider = null, IRunnerClient? runner = null)
+    public GluetunVpnRotator CreateRotator(string apiKey, TimeProvider? timeProvider = null, IRunnerClient? runner = null,
+        TimeSpan? statusTimeout = null)
     {
         timeProvider ??= TimeProvider.System;
         runner ??= new FakeRunnerClient();
-        return new(new HttpClient { BaseAddress = Address }, new GluetunSettings(apiKey, new ProxySettings("http://gluetun:8888")),
+        var settings = new GluetunSettings(apiKey, new ProxySettings("http://gluetun:8888"));
+        return new(new HttpClient { BaseAddress = Address }, statusTimeout is { } timeout ? settings with { StatusTimeout = timeout } : settings,
             new ProxiedExitIp(() => runner, timeProvider), timeProvider);
     }
 

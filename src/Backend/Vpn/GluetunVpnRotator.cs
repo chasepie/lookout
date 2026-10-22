@@ -39,10 +39,10 @@ public sealed class GluetunVpnRotator(
                 case "running":
                     break;
                 case "crashed":
-                    proxiedExitIp.NotNeeded();
+                    proxiedExitIp.Forget();
                     return VpnStatus.Disconnected("gluetun's VPN crashed. gluetun's logs say why.");
                 case var status:
-                    proxiedExitIp.NotNeeded();
+                    proxiedExitIp.Forget();
                     return VpnStatus.Disconnected($"gluetun's VPN is {status ?? "in an unknown state"}.");
             }
             // gluetun clears its public IP whenever the VPN stops or restarts, and has none until the tunnel is up, or
@@ -50,11 +50,12 @@ public sealed class GluetunVpnRotator(
             var exit = await GetAsync<PublicIp>("v1/publicip/ip", linked.Token);
             if (string.IsNullOrEmpty(exit?.Ip))
             {
-                return await proxiedExitIp.CheckAsync(settings.Proxy, linked.Token) is { } proxiedIp
+                // Not held to the deadline for reading gluetun: Browserless takes longer, and other reads share it.
+                return await proxiedExitIp.CheckAsync(settings.Proxy, cancellationToken) is { } proxiedIp
                     ? VpnStatus.ConnectedThrough(settings.Proxy, proxiedIp, region: null)
                     : VpnStatus.Disconnected("gluetun is connecting the VPN.");
             }
-            proxiedExitIp.NotNeeded();
+            proxiedExitIp.Forget();
             return VpnStatus.ConnectedThrough(
                 proxy: settings.Proxy,
                 exitIp: exit.Ip,
@@ -83,6 +84,8 @@ public sealed class GluetunVpnRotator(
 
     public async Task RotateAsync(CancellationToken cancellationToken)
     {
+        // The old exit is going, and the new tunnel needs time for gluetun to find its exit before a check is worth it.
+        proxiedExitIp.Forget();
         await PutVpnStatusAsync("stopped", cancellationToken);
         // gluetun picks a random server among its SERVER_REGIONS each time it starts the VPN. Once it's stopped, nothing
         // else starts it again, so this goes ahead even if the caller gives up, and tries more than once.

@@ -61,17 +61,82 @@ public sealed class GluetunVpnRotatorTests(TestContext testContext)
         var beforeTenSeconds = await rotator.GetStatusAsync(testContext.CancellationToken);
         time.Advance(TimeSpan.FromSeconds(1));
         var afterTenSeconds = await rotator.GetStatusAsync(testContext.CancellationToken);
+        time.Advance(TimeSpan.FromSeconds(9));
+        var nineSecondsAfterTheCheck = await rotator.GetStatusAsync(testContext.CancellationToken);
 
         Assert.AreEqual(VpnStatus.Disconnected("gluetun is connecting the VPN."), first);
         Assert.AreEqual(VpnStatus.Disconnected("gluetun is connecting the VPN."), beforeTenSeconds);
         // gluetun's lookup gives the region, which the proxy's doesn't
-        Assert.AreEqual(VpnStatus.ConnectedThrough(new ProxySettings("http://gluetun:8888"), "198.51.100.50", null), afterTenSeconds);
+        var connected = VpnStatus.ConnectedThrough(new ProxySettings("http://gluetun:8888"), "198.51.100.50", null);
+        Assert.AreEqual(connected, afterTenSeconds);
+        // Every read until the next check sees the exit the check found
+        Assert.AreEqual(connected, nineSecondsAfterTheCheck);
         Assert.AreEqual(new ProxySettings("http://gluetun:8888"), checks.Single().Proxy);
+    }
+
+    [TestMethod]
+    public async Task ACheckThroughTheProxyIsNotHeldToTheStatusDeadline()
+    {
+        await using var gluetun = await FakeGluetun.StartAsync(ApiKey);
+        gluetun.PublicIp = """{"public_ip":""}""";
+        var time = new FakeTimeProvider();
+        var runner = new FakeRunnerClient
+        {
+            OnExecute = (_, cancellationToken) =>
+            {
+                // Browserless takes longer to start a session than gluetun's deadline allows
+                time.Advance(TimeSpan.FromSeconds(3));
+                cancellationToken.ThrowIfCancellationRequested();
+                return Task.FromResult(new RunnerResult { Outcome = RunOutcome.Succeeded, Content = "198.51.100.50", DurationMs = 3000 });
+            }
+        };
+        var rotator = gluetun.CreateRotator(ApiKey, time, runner, statusTimeout: TimeSpan.FromSeconds(2));
+
+        await rotator.GetStatusAsync(testContext.CancellationToken);
+        time.Advance(TimeSpan.FromSeconds(10));
+        var status = await rotator.GetStatusAsync(testContext.CancellationToken);
+
+        Assert.AreEqual(VpnStatus.ConnectedThrough(new ProxySettings("http://gluetun:8888"), "198.51.100.50", null), status);
+    }
+
+    [TestMethod]
+    public async Task ARotationForgetsTheExitFoundThroughTheProxy()
+    {
+        await using var gluetun = await FakeGluetun.StartAsync(ApiKey);
+        gluetun.PublicIp = """{"public_ip":""}""";
+        var time = new FakeTimeProvider();
+        var checks = 0;
+        var runner = new FakeRunnerClient
+        {
+            OnExecute = (_, _) =>
+            {
+                Interlocked.Increment(ref checks);
+                return Task.FromResult(new RunnerResult { Outcome = RunOutcome.Succeeded, Content = "198.51.100.50", DurationMs = 1 });
+            }
+        };
+        var rotator = gluetun.CreateRotator(ApiKey, time, runner);
+        await rotator.GetStatusAsync(testContext.CancellationToken);
+        time.Advance(TimeSpan.FromSeconds(10));
+        await rotator.GetStatusAsync(testContext.CancellationToken);
+        // Long enough since that check for another to be due
+        time.Advance(TimeSpan.FromSeconds(10));
+
+        await rotator.RotateAsync(testContext.CancellationToken);
+        var justAfter = await rotator.GetStatusAsync(testContext.CancellationToken);
+        time.Advance(TimeSpan.FromSeconds(9));
+        await rotator.GetStatusAsync(testContext.CancellationToken);
+        var checksWithinTenSeconds = checks;
+
+        // The old exit is gone, and the new tunnel gets 10 seconds for gluetun to find its exit before a check
+        Assert.AreEqual(VpnStatus.Disconnected("gluetun is connecting the VPN."), justAfter);
+        Assert.AreEqual(1, checksWithinTenSeconds);
     }
 
     [TestMethod]
     [DataRow(RunOutcome.Errored, null, DisplayName = "The page didn't load, as the tunnel is down")]
     [DataRow(RunOutcome.Succeeded, "<html>Rate limited</html>", DisplayName = "The page wasn't an IP")]
+    [DataRow(RunOutcome.Succeeded, "429", DisplayName = "The page was a number, which IPAddress would read as an IPv4 address")]
+    [DataRow(RunOutcome.Succeeded, "1.2.3", DisplayName = "The page was a short dotted number")]
     public async Task ChecksThroughTheProxyAtMostEveryTenSecondsUntilOneFindsAnExitIp(RunOutcome outcome, string? content)
     {
         await using var gluetun = await FakeGluetun.StartAsync(ApiKey);
