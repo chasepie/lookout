@@ -133,10 +133,10 @@ public sealed class RunExecutor(
             }
             if (exception is DbUpdateConcurrencyException)
             {
-                var re = new RunExecution(current.CurrentScriptVersionId == script.Id
+                var status = current.CurrentScriptVersionId == script.Id
                     ? RunExecutionStatus.Superseded
-                    : RunExecutionStatus.ScriptReplaced);
-                return (re, []);
+                    : RunExecutionStatus.ScriptReplaced;
+                return (new RunExecution(status), []);
             }
             throw;
         }
