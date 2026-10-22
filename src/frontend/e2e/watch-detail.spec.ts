@@ -144,10 +144,10 @@ test('the settings form shows a name changed elsewhere back to one saved here', 
   // Another tab's changes come after this page has read back its own save.
   await reread;
 
-  await editWatch(page, id, { name: original, notificationUrl: 'https://example.com/widget', timeoutSeconds: 120 });
+  await editWatch(page, id, { name: original, notificationUrl: 'https://example.com/widget', timeoutSeconds: 120, usesVpn: false });
   await page.getByRole('button', { name: 'Pause' }).click();
   await expect(page.getByLabel('Name', { exact: true })).toHaveValue(original);
-  await editWatch(page, id, { name: renamed, notificationUrl: 'https://example.com/widget', timeoutSeconds: 120 });
+  await editWatch(page, id, { name: renamed, notificationUrl: 'https://example.com/widget', timeoutSeconds: 120, usesVpn: false });
   await page.getByRole('button', { name: 'Resume' }).click();
 
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(renamed);

@@ -101,6 +101,12 @@ namespace ChasePie.Lookout.Database.Migrations
                     b.Property<DateTimeOffset>("StartedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("VpnExitIp")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("VpnRegion")
+                        .HasColumnType("TEXT");
+
                     b.Property<Guid>("WatchId")
                         .HasColumnType("TEXT");
 
@@ -243,6 +249,9 @@ namespace ChasePie.Lookout.Database.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<int>("TimeoutSeconds")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("UsesVpn")
                         .HasColumnType("INTEGER");
 
                     b.ComplexProperty(typeof(Dictionary<string, object>), "Schedule", "ChasePie.Lookout.Model.Watch.Schedule#Schedule", b1 =>

@@ -290,7 +290,7 @@ public sealed class WatchesTests(TestContext testContext)
         Assert.AreEqual(120, created["timeoutSeconds"]!.GetValue<int>());
 
         var response = await client.PutAsJsonAsync($"/api/watches/{id}",
-            new { name = " Gadget price ", notificationUrl = " https://example.com/gadget ", timeoutSeconds = 30 },
+            new { name = " Gadget price ", notificationUrl = " https://example.com/gadget ", timeoutSeconds = 30, usesVpn = false },
             testContext.CancellationToken);
         await RunNow(client, id);
 
@@ -315,7 +315,7 @@ public sealed class WatchesTests(TestContext testContext)
         var created = await CreateWatch(client);
         var id = created["id"]!.GetValue<string>();
 
-        var response = await client.PutAsJsonAsync($"/api/watches/{id}", new { name, notificationUrl, timeoutSeconds },
+        var response = await client.PutAsJsonAsync($"/api/watches/{id}", new { name, notificationUrl, timeoutSeconds, usesVpn = false },
             testContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode);
@@ -329,7 +329,7 @@ public sealed class WatchesTests(TestContext testContext)
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
 
         var response = await client.PutAsJsonAsync($"/api/watches/{Guid.NewGuid()}",
-            new { name = "Widget", notificationUrl = "https://example.com", timeoutSeconds = 120 }, testContext.CancellationToken);
+            new { name = "Widget", notificationUrl = "https://example.com", timeoutSeconds = 120, usesVpn = false }, testContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.NotFound, response.StatusCode);
     }

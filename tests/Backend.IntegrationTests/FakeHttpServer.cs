@@ -27,6 +27,9 @@ public sealed class FakeHttpServer : IAsyncDisposable
     };
     public Uri BaseAddress { get; private set; } = null!;
 
+    /// <summary>The request <see cref="Respond"/> is answering, as recorded, since its body has already been read.</summary>
+    public static ReceivedRequest RequestOf(HttpContext context) => (ReceivedRequest)context.Items[typeof(ReceivedRequest)]!;
+
     public static async Task<FakeHttpServer> StartAsync(CancellationToken cancellationToken)
     {
         var builder = WebApplication.CreateSlimBuilder();
@@ -38,8 +41,10 @@ public sealed class FakeHttpServer : IAsyncDisposable
         {
             using var reader = new StreamReader(context.Request.Body);
             var body = await reader.ReadToEndAsync(context.RequestAborted);
-            server.Requests.Enqueue(new ReceivedRequest(context.Request.Method,
-                context.Request.Path + context.Request.QueryString, context.Request.ContentType, body));
+            var received = new ReceivedRequest(context.Request.Method,
+                context.Request.Path + context.Request.QueryString, context.Request.ContentType, body);
+            server.Requests.Enqueue(received);
+            context.Items[typeof(ReceivedRequest)] = received;
             await server.Respond(context);
         });
         await app.StartAsync(cancellationToken);

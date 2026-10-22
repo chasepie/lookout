@@ -1,6 +1,9 @@
 using System.Diagnostics;
 using System.Net;
+using System.Text;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Extensions;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using ChasePie.Lookout.Backend.Runner;
@@ -95,6 +98,77 @@ public sealed class RunnerClientTests(TestContext testContext)
     [TestMethod]
     public async Task ExecutesTypeScriptThroughTheRealRunnerAndReturnsItsScreenshotAndConsoleOutput()
     {
+        await WithRealRunner(async (runner, cancellationToken) =>
+        {
+            var result = await runner.ExecuteAsync(new RunnerRequest("""
+                import type { Page } from 'playwright';
+                export default {
+                  async run(page: Page, context: { notificationUrl: string }) {
+                    await page.setContent('<p>£19.99</p>');
+                    console.log('Reading the price');
+                    return { success: true, content: await page.locator('p').innerText(), details: context.notificationUrl };
+                  }
+                };
+                """, "ts", new ScriptContext("https://example.com/widget"), AlwaysScreenshot: true), cancellationToken);
+
+            Assert.AreEqual(RunOutcome.Succeeded, result.Outcome, result.ErrorMessage);
+            Assert.AreEqual("£19.99", result.Content);
+            Assert.AreEqual("https://example.com/widget", result.Details);
+            Assert.IsGreaterThan(0, result.DurationMs);
+            Assert.AreEqual("Reading the price\n", result.ConsoleOutput);
+            Assert.IsTrue(Convert.FromBase64String(result.Screenshot!).AsSpan().StartsWith((byte[])[0x89, 0x50, 0x4E, 0x47]));
+        });
+    }
+
+    [TestMethod]
+    [DataRow("lookout", "secret", DisplayName = "With credentials")]
+    [DataRow(null, null, DisplayName = "Without credentials")]
+    public async Task ARunWithProxySettingsGoesThroughTheProxyWithTheRealRunner(string? username, string? password)
+    {
+        await using var proxy = await StartProxyAsync(username, password, testContext.CancellationToken);
+        await WithRealRunner(async (runner, cancellationToken) =>
+        {
+            var result = await runner.ExecuteAsync(new RunnerRequest("""
+                import type { Page } from 'playwright';
+                export default {
+                  async run(page: Page, context: { notificationUrl: string }) {
+                    await page.goto(context.notificationUrl);
+                    return { success: true, content: await page.locator('p').innerText() };
+                  }
+                };
+                """, "ts", new ScriptContext("http://shop.lookout.test/widget"),
+                Proxy: new ProxySettings(proxy.BaseAddress.GetLeftPart(UriPartial.Authority), username, password)), cancellationToken);
+
+            Assert.AreEqual(RunOutcome.Succeeded, result.Outcome, result.ErrorMessage);
+            Assert.AreEqual("Proxied http://shop.lookout.test/widget", result.Content);
+        });
+    }
+
+    /// <summary>
+    /// An HTTP proxy that answers every request itself, naming the URL it was asked for. Given credentials, it
+    /// answers only requests that carry them.
+    /// </summary>
+    private static async Task<FakeHttpServer> StartProxyAsync(string? username, string? password, CancellationToken cancellationToken)
+    {
+        var proxy = await FakeHttpServer.StartAsync(cancellationToken);
+        var expected = username is null ? null : $"Basic {Convert.ToBase64String(Encoding.UTF8.GetBytes($"{username}:{password}"))}";
+        proxy.Respond = async context =>
+        {
+            if (expected is not null && context.Request.Headers.ProxyAuthorization != expected)
+            {
+                context.Response.StatusCode = StatusCodes.Status407ProxyAuthenticationRequired;
+                context.Response.Headers.ProxyAuthenticate = "Basic realm=\"proxy\"";
+                return;
+            }
+            context.Response.ContentType = "text/html; charset=utf-8";
+            await context.Response.WriteAsync($"<p>Proxied {context.Request.GetDisplayUrl()}</p>");
+        };
+        return proxy;
+    }
+
+    /// <summary>Starts the real runner, which launches a local headless Chromium for each Script, and calls it through Lookout's client.</summary>
+    private async Task WithRealRunner(Func<HttpRunnerClient, CancellationToken, Task> test)
+    {
         var start = new ProcessStartInfo("node") { RedirectStandardOutput = true, UseShellExecute = false };
         start.ArgumentList.Add(Path.Combine(RepositoryRoot.Find(), "src/runner/index.ts"));
         start.Environment["PORT"] = "0";
@@ -108,25 +182,7 @@ public sealed class RunnerClientTests(TestContext testContext)
             Assert.IsNotNull(line);
             var address = new Uri(line["Runner listening on ".Length..]);
             using var http = new HttpClient { BaseAddress = address };
-            var runner = new HttpRunnerClient(http, TimeProvider.System);
-
-            var result = await runner.ExecuteAsync(new RunnerRequest("""
-                import type { Page } from 'playwright';
-                export default {
-                  async run(page: Page, context: { notificationUrl: string }) {
-                    await page.setContent('<p>£19.99</p>');
-                    console.log('Reading the price');
-                    return { success: true, content: await page.locator('p').innerText(), details: context.notificationUrl };
-                  }
-                };
-                """, "ts", new ScriptContext("https://example.com/widget"), AlwaysScreenshot: true), timeout.Token);
-
-            Assert.AreEqual(RunOutcome.Succeeded, result.Outcome, result.ErrorMessage);
-            Assert.AreEqual("£19.99", result.Content);
-            Assert.AreEqual("https://example.com/widget", result.Details);
-            Assert.IsGreaterThan(0, result.DurationMs);
-            Assert.AreEqual("Reading the price\n", result.ConsoleOutput);
-            Assert.IsTrue(Convert.FromBase64String(result.Screenshot!).AsSpan().StartsWith((byte[])[0x89, 0x50, 0x4E, 0x47]));
+            await test(new HttpRunnerClient(http, TimeProvider.System), timeout.Token);
         }
         finally
         {

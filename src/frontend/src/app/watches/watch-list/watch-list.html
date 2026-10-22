@@ -25,6 +25,8 @@
       <input #scriptInput id="script" type="file" accept=".ts,.js" (change)="selectScript(scriptInput)" aria-describedby="script-help" required />
       <small id="script-help">Upload a TypeScript or JavaScript file, up to 64 KiB.</small>
       <app-schedule-picker [schedule]="watchForm.schedule" />
+      <label class="checkbox"><input type="checkbox" [formField]="watchForm.usesVpn" aria-describedby="vpn-help" /> Send Runs through the VPN</label>
+      <small id="vpn-help">Runs go out from the VPN's exit IP rather than your own.</small>
       <app-channel-choices class="channel-choices" [(chosen)]="channelIds" />
       <button class="primary" type="submit" [disabled]="watchForm().submitting() || watchForm().invalid() || !script()">
         {{ watchForm().submitting() ? 'Creating…' : 'Create Watch' }}
@@ -42,7 +44,10 @@
         <article class="watch-card" [attr.aria-label]="watch.name" [attr.aria-busy]="running().has(watch.id)">
           <div class="watch-heading">
             <h2><a [routerLink]="['/watches', watch.id]">{{ watch.name }}</a></h2>
-            <app-status-badge [status]="watch.status" [running]="watch.isRunning" />
+            <div class="badges">
+              @if (watch.usesVpn) { <span class="vpn-badge" title="Runs go through the VPN">VPN</span> }
+              <app-status-badge [status]="watch.status" [running]="watch.isRunning" />
+            </div>
           </div>
           <a class="page-link" [href]="watch.notificationUrl" target="_blank" rel="noopener noreferrer">Open page <span aria-hidden="true">↗</span></a>
           <p class="eyebrow content-label">LATEST CONTENT</p>

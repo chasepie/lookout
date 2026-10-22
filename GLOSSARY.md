@@ -28,6 +28,14 @@ _Avoid_: Target URL, Watch URL
 One execution of a Watch, whether scheduled or on demand, recorded in the Watch's history.
 _Avoid_: Scrape, Check, Execution
 
+**VPN Run**:
+A Run of a Watch that uses the VPN, whose browser goes out through the VPN's exit IP. It records the region and exit IP it went through, and is refused unless the VPN is connected.
+_Avoid_: Proxied Run
+
+**Direct Run**:
+A Run of a Watch that doesn't use the VPN, whose browser goes out from the homelab's own IP.
+_Avoid_: Plain Run, Non-VPN Run
+
 **Test run**:
 An execution of a Script to show its result to the user. It is not recorded in the Watch's history and never affects its Baseline.
 _Avoid_: Dry run, Preview

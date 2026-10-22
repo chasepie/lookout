@@ -89,7 +89,9 @@ export class WatchDetail {
   private readonly savedSettings = computed<WatchSettings | undefined>(() => {
     if (!this.watch.hasValue()) {return undefined;}
     const watch = this.watch.value();
-    return { name: watch.name, notificationUrl: watch.notificationUrl, timeoutSeconds: watch.timeoutSeconds };
+    return {
+      name: watch.name, notificationUrl: watch.notificationUrl, timeoutSeconds: watch.timeoutSeconds, usesVpn: watch.usesVpn,
+    };
   }, { equal: sameSettings });
   // The settings this page is saving, as the backend will store them, until they arrive back. Their arrival must not
   // discard edits typed meanwhile.
@@ -105,7 +107,7 @@ export class WatchDetail {
         this.submitted = undefined;
         return previous.value;
       }
-      return saved ?? { name: '', notificationUrl: '', timeoutSeconds: defaultTimeoutSeconds };
+      return saved ?? { name: '', notificationUrl: '', timeoutSeconds: defaultTimeoutSeconds, usesVpn: false };
     },
   });
   protected readonly settingsForm = form(this.model, (fields) => {
@@ -290,5 +292,5 @@ function trimmed(settings: WatchSettings): WatchSettings {
 
 function sameSettings(a: WatchSettings | undefined, b: WatchSettings | undefined): boolean {
   return a === b || (!!a && !!b && a.name === b.name && a.notificationUrl === b.notificationUrl
-    && a.timeoutSeconds === b.timeoutSeconds);
+    && a.timeoutSeconds === b.timeoutSeconds && a.usesVpn === b.usesVpn);
 }

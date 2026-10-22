@@ -20,7 +20,7 @@ npm start -w src/runner
 dotnet run --project src/Backend --no-launch-profile --urls http://localhost:5280
 ```
 
-Open <http://localhost:5280>. The backend serves the Angular build and API from the same origin and applies database migrations on startup. Its database is `lookout.db` in the backend's content root, `src/Backend`, when started this way. Set `Storage__DataDirectory` to keep it in another directory, or `ConnectionStrings__Lookout` to choose another SQLite connection string, whose relative path is resolved against that directory (a `file:` URI is used as given). A database the Development environment creates starts with one example Watch, which runs `examples/bot-detection.ts` against browserscan.net every hour; other environments start empty. Set `Runner__BaseUrl` to change the runner address (default `http://localhost:3000`). Schedules use the host's time zone; set `Scheduling__TimeZone` (such as `Europe/London`) to choose another. `Scheduling__MaxConcurrentRuns` limits how many Runs execute at once (default 2). Set `HEADLESS=true` when starting the runner to hide Chromium.
+Open <http://localhost:5280>. The backend serves the Angular build and API from the same origin and applies database migrations on startup. Its database is `lookout.db` in the backend's content root, `src/Backend`, when started this way. Set `Storage__DataDirectory` to keep it in another directory, or `ConnectionStrings__Lookout` to choose another SQLite connection string, whose relative path is resolved against that directory (a `file:` URI is used as given). A database the Development environment creates starts with one example Watch, which runs `examples/bot-detection.ts` against browserscan.net every hour; other environments start empty. Set `Runner__BaseUrl` to change the runner address (default `http://localhost:3000`). Schedules use the host's time zone; set `Scheduling__TimeZone` (such as `Europe/London`) to choose another. `Scheduling__MaxConcurrentRuns` limits how many Runs execute at once (default 2). Set `HEADLESS=true` when starting the runner to hide Chromium. The VPN is disabled unless `Vpn__ApiKey` is set; see [VPN](#vpn).
 
 When an HTTPS endpoint is configured (including the `https` launch profile), HTTP requests redirect to it, except those to `/health`, so health probes can check over HTTP. The HTTP-only command above continues to serve HTTP. A runner base URL may include a path prefix, such as `http://proxy/runner/`.
 
@@ -49,6 +49,8 @@ On first launch, Lookout asks you to set up its single local account; after that
 
 Each Watch reports a status. Paused means the user stopped its scheduled Runs; Run now still works. Otherwise Failing means it is in a streak of Known failure or Errored Runs, which the next Succeeded Run ends. This applies even before its first Succeeded Run. Pending means it has no Baseline yet, and Healthy that its latest Run Succeeded. Pausing keeps the Baseline and clears the next Run; resuming schedules the next Run from now and keeps the failure streak, so a Watch that was Failing stays Failing until a Run Succeeds. A Run that was in progress when the Watch was deleted is not recorded. Deleting a Watch deletes its Script versions and Run history.
 
+Each Watch chooses whether its Runs go through the VPN. A VPN Run's browser uses gluetun's HTTP proxy, and the Run records the exit IP it went out through and the region that IP is in, such as `Florida`, as gluetun's IP lookup reports it. That's not necessarily the name of the PIA region gluetun picked. A Direct Run uses a plain browser on the same Browserless, from your own IP. A VPN Run is never sent from your own IP instead. If the VPN isn't connected, the Run waits up to 2 minutes for it, as gluetun takes a minute or two to connect after it starts, and other Runs can go ahead meanwhile. If it still isn't connected, or no VPN is configured, or gluetun refuses Lookout's key, the Run is refused: it's recorded as Errored without running its Script, saying why the VPN isn't connected. Without a VPN, everything else works as before.
+
 The initial API is:
 
 | Method | Path | Behavior |
@@ -57,20 +59,21 @@ The initial API is:
 | POST | `/api/setup` | Create the account from JSON `userName` and `password` (8+ characters) and log in; HTTP 409 once the account exists |
 | POST | `/api/session` | Log in with JSON `userName` and `password`; HTTP 401 for wrong credentials |
 | DELETE | `/api/session` | Log out, ending the session |
-| POST | `/api/watches` | Create a Watch atomically with multipart fields `name`, `notificationUrl`, file `script`, and a schedule: `scheduleKind` (`interval` with `every` and `unit` of `minutes`, `hours` or `days`; `daily` with `timeOfDay`; or `cron` with a five-field `cron`) and optional `jitterMinutes` (0–60). Schedules that run more than once every 3 minutes are rejected |
-| GET | `/api/watches` | List Watches with their Baseline (the latest successful content), status, failure streak, timeout, last Run, schedule and `nextRunAt` |
+| POST | `/api/watches` | Create a Watch atomically with multipart fields `name`, `notificationUrl`, file `script`, optional `usesVpn` (`true` or `false`, the default), and a schedule: `scheduleKind` (`interval` with `every` and `unit` of `minutes`, `hours` or `days`; `daily` with `timeOfDay`; or `cron` with a five-field `cron`) and optional `jitterMinutes` (0–60). Schedules that run more than once every 3 minutes are rejected |
+| GET | `/api/watches` | List Watches with their Baseline (the latest successful content), status, failure streak, `usesVpn`, timeout, last Run, schedule and `nextRunAt` |
 | GET | `/api/watches/{id}` | Read one Watch, in the same shape as the list |
-| PUT | `/api/watches/{id}` | Edit a Watch's settings with JSON `{ name, notificationUrl, timeoutSeconds }` |
+| PUT | `/api/watches/{id}` | Edit a Watch's settings with JSON `{ name, notificationUrl, timeoutSeconds, usesVpn }`, all required |
 | DELETE | `/api/watches/{id}` | Delete a Watch with its Script versions and Run history |
 | POST | `/api/watches/{id}/pause` | Pause a Watch's scheduled Runs, keeping its Baseline and clearing its next Run |
 | POST | `/api/watches/{id}/resume` | Resume a paused Watch, scheduling its next Run from now |
 | PUT | `/api/watches/{id}/schedule` | Change a Watch's schedule and jitter, with the same fields as a JSON body, and schedule its next Run from now |
 | POST | `/api/watches/{id}/runs` | Execute and record a Run; respond when it completes |
-| GET | `/api/watches/{id}/runs` | Read Run history, newest first, including `isChange` and `scriptVersionId`; defaults to 50 Runs, with `limit=1..100` and `before=<Run ID>` for older pages |
+| GET | `/api/watches/{id}/runs` | Read Run history, newest first, including `isChange` and `scriptVersionId`, and `vpnRegion` and `vpnExitIp` for VPN Runs; defaults to 50 Runs, with `limit=1..100` and `before=<Run ID>` for older pages |
 | POST | `/api/watches/{id}/script-versions` | Save multipart file `script` as the Watch's current Script version, resetting its Baseline and failure streak unless `keepBaseline` is `true` |
 | GET | `/api/watches/{id}/script-versions` | List the Watch's Script versions, newest first, with `number`, `fileKind`, `uploadedAt` and `isCurrent` |
 | GET | `/api/watches/{id}/script-versions/{versionId}` | Read one Script version, including its `source` |
-| POST | `/api/watches/{id}/test-runs` | Execute multipart file `script` once as a Test run, with the Watch's Notification URL and timeout, and return its outcome, content, details, error message, duration, console output and screenshot without recording anything |
+| POST | `/api/watches/{id}/test-runs` | Execute multipart file `script` once as a Test run, with the Watch's Notification URL and timeout, and return its outcome, content, details, error message, duration, console output and screenshot without recording anything. A VPN Watch's Test run goes through the VPN, and is refused at once if the VPN isn't connected |
+| GET | `/api/vpn` | Report the VPN's status: whether one is configured (`enabled`), `connected`, its `region` and `exitIp`, and an `error` if gluetun couldn't be read |
 | GET | `/health` | Check the migrated database |
 
 Run the complete local test suite:
@@ -85,11 +88,12 @@ npm test
 
 ## Deploying
 
-Lookout deploys to a homelab with one Docker Compose file, [`compose.yaml`](compose.yaml), which runs three services:
+Lookout deploys to a homelab with one Docker Compose file, [`compose.yaml`](compose.yaml), which runs three services, and two more for the [VPN](#vpn):
 
 - **`lookout`:** the backend, serving the Angular app on port 8080. Its database is on the `lookout-data` volume, mounted at `/data`, the image's data directory. Nothing else mounts it.
 - **`runner`:** runs Scripts. It's attached only to internal networks with no route to the internet, so a Script's own Node code can't reach it, and it has nothing mounted: no database, secrets or backend configuration ([ADR-0003](docs/adr/0003-scripts-run-in-an-offline-runner-container.md)). Its container limits a Script's memory outside V8's heap.
 - **`browserless`:** runs the headless Chromium each Script drives. It shares an internal network with the runner, and has one with internet access: it's the only part of a Run that reaches the internet.
+- **`gluetun`:** optional, in the `vpn` profile. The VPN that VPN Runs go through, as an HTTP proxy that Browserless reaches over an internal network of their own. Its proxy forwards to any network gluetun is on, so gluetun shares none with Lookout. Instead, **`gluetun-control`**, a relay, carries Lookout's requests to gluetun's control server, and a page loaded through the proxy can follow it only back to that server, which needs Lookout's key.
 
 Each pair of services that talk shares a network of its own, so Browserless's Chromium, which loads whatever pages Scripts visit, can't reach Lookout. It can reach the runner, which refuses requests from web pages.
 
@@ -99,7 +103,7 @@ On a host with Docker Compose, from a clone of this repository:
 docker compose up -d --build
 ```
 
-Then open `http://<host>:8080` and set up the account. To upgrade, pull the latest code and run the same command again. To back up, copy the `lookout-data` volume. Settings go in the environment or a `.env` file beside `compose.yaml`:
+Then open `http://<host>:8080` and set up the account. To upgrade, pull the latest code and run the same command again. To back up, copy the `lookout-data` volume. Settings go in the environment or a `.env` file beside `compose.yaml`. To start one, copy [`example.env`](example.env), which lists them all with their defaults, to `.env`:
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
@@ -108,12 +112,53 @@ Then open `http://<host>:8080` and set up the account. To upgrade, pull the late
 | `LOOKOUT_MAX_CONCURRENT_RUNS` | `2` | How many Runs execute at once, and how many browsers Browserless runs at once. Raise the two memory limits with it |
 | `LOOKOUT_RUNNER_MEMORY` | `1536m` | The runner's memory limit: 640 MB per concurrent Run, plus 256 MB for the runner itself |
 | `LOOKOUT_BROWSERLESS_MEMORY` | `3g` | Browserless's memory limit: about 1.5 GB per concurrent Run |
+| `COMPOSE_PROFILES` | unset | `vpn` runs gluetun and its relay |
+| `LOOKOUT_VPN_API_KEY` | unset | The key Lookout uses for gluetun's control server: letters, digits, `-` and `_` only. Without it, the VPN is disabled |
+| `PIA_USER`, `PIA_PASSWORD` | unset | Your Private Internet Access login |
+| `LOOKOUT_VPN_REGIONS` | eight US regions | The PIA regions gluetun picks a server from, comma-separated |
 
 Lookout serves plain HTTP and is meant to be reached only from your local network ([ADR-0002](docs/adr/0002-designed-for-lan-only-homelab-deployment.md)). For HTTPS, put your own reverse proxy in front of it, sending `X-Forwarded-Proto`, as Caddy, nginx and Traefik setups usually do. Lookout then treats requests that came over HTTPS as such, and marks its cookies `Secure` for them. The proxy must also pass WebSocket upgrades through to `/api/events`, which pushes Runs and status changes to the app as they happen. Caddy and Traefik do this by default; nginx needs the `Upgrade` and `Connection` headers forwarded. Read ADR-0002 before exposing it to the internet: Lookout isn't hardened for that, and the ADR lists what it would take.
 
 Browserless's `TIMEOUT` is set to 11 minutes, above the longest Run timeout, since its default of 30 seconds would end longer Runs. The runner's `playwright` must match Browserless's Playwright at the major.minor level: `ghcr.io/browserless/chromium:v2.57.1` serves Playwright 1.60 to 1.64, and the runner has 1.64. Upgrade them together.
 
 **Licence:** Lookout is MIT-licensed. Browserless, which it runs as a separate container from Browserless's own image, is licensed under the SSPL or a commercial licence, and is free for non-commercial use. Check [Browserless's terms](https://github.com/browserless/browserless) before using Lookout commercially.
+
+### VPN
+
+VPN Runs go through [gluetun](https://github.com/qdm12/gluetun) connected to [Private Internet Access](https://www.privateinternetaccess.com/) (PIA) over OpenVPN ([ADR-0004](docs/adr/0004-gluetun-for-vpn-rotation.md)). Lookout works fully without it: leave it out, and Watches that use the VPN have their Runs refused.
+
+To set it up:
+
+1. Find your PIA login for OpenVPN: the username (`p` followed by digits) and password you sign in to PIA's apps with.
+2. Generate a key for Lookout to use with gluetun's control server. It may contain only letters, digits, `-` and `_`, and Lookout refuses to start with any other key:
+
+   ```sh
+   openssl rand -hex 32
+   ```
+
+3. Add these to the `.env` file beside `compose.yaml`:
+
+   ```sh
+   COMPOSE_PROFILES=vpn
+   LOOKOUT_VPN_API_KEY=<the key>
+   PIA_USER=<your PIA username>
+   PIA_PASSWORD=<your PIA password>
+   ```
+
+4. Run `docker compose up -d`. The host needs `/dev/net/tun`, which gluetun opens with the `NET_ADMIN` capability.
+5. Open **Settings** in Lookout. Once gluetun has connected, which can take a minute or two, the VPN shows as Connected, with its region and exit IP.
+
+Each time gluetun connects, it picks a server at random from the regions in `LOOKOUT_VPN_REGIONS`, by default `US East`, `US New York`, `US Florida`, `US California`, `US Chicago`, `US Texas`, `US Washington DC` and `US Atlanta`. Keep them in one country: an exit in another changes what retailers serve, which shows up as false Changes. Region names are gluetun's, such as `US Seattle`; see its [PIA server list](https://github.com/qdm12/gluetun/blob/v3.41.3/internal/storage/servers.json).
+
+gluetun is pinned to v3.41.3, the version the prototype tested, and later than v3.40, which made its control server require authentication. Lookout's key opens only the routes it uses. With an HTTP proxy, WebRTC could reveal your own IP, so every browser is launched with `--webrtc-ip-handling-policy=disable_non_proxied_udp`, and `HTTPPROXY_STEALTH` keeps gluetun from passing Browserless's address on. Requests through the proxy fail rather than leak while the tunnel is down.
+
+gluetun refreshes PIA's server list into the `gluetun-data` volume every 360 hours, starting 360 hours after it first starts. Until then, it picks from the list bundled with its image, in which more servers are dead, so connecting can take longer. Each dead server costs about 35 seconds before gluetun picks another.
+
+Outside Docker, the backend reads the same settings:
+- `Vpn__ApiKey`.
+- `Vpn__ControlUrl`, by default `http://gluetun-control:8000`, the relay.
+- `Vpn__ProxyUrl`, by default `http://gluetun:8888`, the address Browserless reaches gluetun's proxy at.
+- `Vpn__ProxyUsername` and `Vpn__ProxyPassword`, if gluetun's proxy has `HTTPPROXY_USER` and `HTTPPROXY_PASSWORD` set. They can't be written into `Vpn__ProxyUrl`, as Chromium wouldn't use them.
 
 ### Smoke test
 
@@ -150,3 +195,30 @@ The automated tests don't cover the real Browserless stack, so check a deploymen
 7. Check that a Script can run past Browserless's default timeout. Add `await page.waitForTimeout(45_000);` after `page.goto` in the Script, create a Watch with it and choose **Run now**. The Run Succeeds after about 45 seconds.
 8. Check that killed Scripts don't linger. Change the Script's wait to `await new Promise(() => {});`, so it never finishes, and choose **Run now** a few times. Each Run is Errored once its timeout passes. Afterwards, `docker compose top runner` lists only `docker-init` and `node index.ts`, with no `<defunct>` (zombie) process.
 9. Check that Lookout can reach your Channels. In **Settings**, add a Discord Channel with a webhook URL (or a Pushover Channel), and choose **Send test**. The test notification arrives.
+
+With the VPN set up, also check that VPN Runs leave from the VPN's exit and direct Runs from your own IP:
+
+1. Settings shows the VPN as Connected, with a region and exit IP.
+2. Create a Watch with the Notification URL `https://api.ipify.org/` and this Script, saved as `ip.ts`, and turn on **Send Runs through the VPN**:
+
+   ```ts
+   import type { LookoutScript } from '@chasepie/lookout-scripting';
+
+   export default {
+     async run(page, context) {
+       await page.goto(context.notificationUrl);
+       return { success: true, content: await page.locator('body').innerText() };
+     },
+   } satisfies LookoutScript;
+   ```
+
+3. Choose **Run now**. The Run's content is the exit IP it records in its history, and it differs from your own IP (`curl https://api.ipify.org` from the host).
+4. Turn off **Send Runs through the VPN**, save, and choose **Run now** again. The Run's content is your own IP, and it records no VPN exit.
+5. Stop gluetun (`docker compose stop gluetun`) and choose **Run now** with the VPN turned back on. After 2 minutes, the Run is Errored, saying the VPN is not connected. Start gluetun again afterwards.
+6. Check that pages can't reach Lookout through gluetun's proxy, which connects from inside gluetun. This prints `unreachable` for each of Lookout's addresses:
+
+   ```sh
+   for ip in $(docker inspect "$(docker compose ps -q lookout)" --format '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}'); do
+     docker compose exec gluetun wget -q -O /dev/null -T 5 -t 1 "http://$ip:8080/health" && echo "reached $ip" || echo "unreachable $ip"
+   done
+   ```

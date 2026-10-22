@@ -27,7 +27,7 @@ import { Watches } from '../watches';
 export class WatchList {
   protected readonly watches = inject(Watches);
   private readonly channels = inject(Channels);
-  protected readonly model = signal({ name: '', notificationUrl: '', schedule: defaultSchedule() });
+  protected readonly model = signal({ name: '', notificationUrl: '', usesVpn: false, schedule: defaultSchedule() });
   protected readonly watchForm = form(this.model, (fields) => {
     nameAndNotificationUrlRules(fields);
     apply(fields.schedule, scheduleSchema);
@@ -64,9 +64,10 @@ export class WatchList {
       this.error.set('');
       this.notice.set('');
       try {
-        const { name, notificationUrl, schedule } = this.model();
-        await this.watches.create(name, notificationUrl, schedule, script, this.channels.stillListed(this.channelIds()));
-        this.watchForm().reset({ name: '', notificationUrl: '', schedule: defaultSchedule() });
+        const { name, notificationUrl, usesVpn, schedule } = this.model();
+        await this.watches.create(name, notificationUrl, usesVpn, schedule, script,
+          this.channels.stillListed(this.channelIds()));
+        this.watchForm().reset({ name: '', notificationUrl: '', usesVpn: false, schedule: defaultSchedule() });
         this.script.set(undefined);
         this.channelIds.set(new Set());
         input.value = '';

@@ -4,6 +4,7 @@ using ChasePie.Lookout.Database;
 using ChasePie.Lookout.Backend.Events;
 using ChasePie.Lookout.Backend.Runner;
 using ChasePie.Lookout.Backend.Scheduling;
+using ChasePie.Lookout.Backend.Vpn;
 using ChasePie.Lookout.Model;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -17,6 +18,7 @@ public sealed class WatchesController(
     LookoutDbContext database,
     RunExecutor runExecutor,
     IRunnerClient runner,
+    IVpnRotator vpn,
     WatchSchedules schedules,
     RunningWatches runningWatches,
     RunSlots runSlots,
@@ -67,6 +69,7 @@ public sealed class WatchesController(
             Name = name,
             NotificationUrl = notificationUrl,
             Schedule = schedule,
+            UsesVpn = request.UsesVpn,
             JitterMinutes = request.JitterMinutes,
             NextRunAt = schedules.NextRunAt(schedule, request.JitterMinutes),
             NextRunTimeZone = schedules.TimeZone.Id,
@@ -168,7 +171,8 @@ public sealed class WatchesController(
             .ExecuteUpdateAsync(setters => setters
                 .SetProperty(watch => watch.Name, name)
                 .SetProperty(watch => watch.NotificationUrl, notificationUrl)
-                .SetProperty(watch => watch.TimeoutSeconds, request.TimeoutSeconds), cancellationToken);
+                .SetProperty(watch => watch.TimeoutSeconds, request.TimeoutSeconds)
+                .SetProperty(watch => watch.UsesVpn, request.UsesVpn), cancellationToken);
         return updated == 0 ? NotFound() : NoContent();
     }
 
@@ -389,7 +393,7 @@ public sealed class WatchesController(
 
         var watch = await database.Watches.AsNoTracking()
             .Where(watch => watch.Id == id)
-            .Select(watch => new { watch.NotificationUrl, watch.TimeoutSeconds })
+            .Select(watch => new { watch.NotificationUrl, watch.TimeoutSeconds, watch.UsesVpn })
             .SingleOrDefaultAsync(cancellationToken);
         if (watch is null)
         {
@@ -404,12 +408,27 @@ public sealed class WatchesController(
         RunnerResult result;
         try
         {
+            // Checked once the slot is taken, which can be minutes later. It fails closed like a Run, but at once
+            // rather than waiting for the VPN, as the user is waiting for the result.
+            var vpnStatus = watch.UsesVpn ? await vpn.GetStatusAsync(stopping.Token) : null;
+            if (vpnStatus?.RefusalOf("Test run") is { } refusal)
+            {
+                return new TestRun(
+                    Outcome: RunOutcome.Errored,
+                    Content: null,
+                    Details: null,
+                    ErrorMessage: refusal,
+                    DurationMs: 0,
+                    Screenshot: null,
+                    ConsoleOutput: null);
+            }
             result = await runner.ExecuteAsync(new RunnerRequest(
                 Source: script.Source,
                 FileKind: script.FileKind,
                 Context: new ScriptContext(watch.NotificationUrl),
                 TimeoutMs: watch.TimeoutSeconds * 1000,
-                AlwaysScreenshot: true), stopping.Token);
+                AlwaysScreenshot: true,
+                Proxy: vpnStatus?.Proxy), stopping.Token);
         }
         finally
         {
@@ -617,6 +636,7 @@ public sealed record WatchSummary(
     string? Baseline,
     WatchStatus Status,
     bool IsPaused,
+    bool UsesVpn,
     int FailureStreak,
     int TimeoutSeconds,
     Run? LastRun,
@@ -647,6 +667,7 @@ public sealed record WatchSummary(
         watch.Baseline,
         status,
         watch.IsPaused,
+        watch.UsesVpn,
         watch.FailureStreak,
         watch.TimeoutSeconds,
         watch.Runs.OrderByDescending(run => run.Id).FirstOrDefault(),
@@ -700,6 +721,8 @@ public sealed class EditWatchRequest
     public required string Name { get; init; }
     public required string NotificationUrl { get; init; }
     public required int TimeoutSeconds { get; init; }
+    /// <summary>Required, so a client that leaves it out can't send a VPN Watch's Runs from the home IP.</summary>
+    public required bool UsesVpn { get; init; }
 }
 
 public sealed record ScriptVersionSummary(Guid Id, int Number, string FileKind, DateTimeOffset UploadedAt, bool IsCurrent);
@@ -735,6 +758,8 @@ public sealed class CreateWatchRequest : ScheduleRequest
     public required string NotificationUrl { get; init; }
     public required IFormFile Script { get; init; }
     public List<Guid> ChannelIds { get; init; } = [];
+    /// <summary>Whether the Watch's Runs go through the VPN rather than direct.</summary>
+    public bool UsesVpn { get; init; }
 }
 
 public class ScheduleRequest
