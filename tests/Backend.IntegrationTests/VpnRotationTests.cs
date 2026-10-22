@@ -65,6 +65,33 @@ public sealed class VpnRotationTests(TestContext testContext)
     }
 
     [TestMethod]
+    public async Task TimesTheCheckAtStartupFromWhenGluetunFirstAnswers()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        // Lookout started before gluetun, whose control server isn't up yet
+        factory.Vpn.Status = VpnStatus.Unreachable("Could not reach gluetun's control server: Connection refused");
+        DateTimeOffset? rotatedAt = null;
+        factory.Vpn.OnRotate = () =>
+        {
+            rotatedAt ??= factory.Time.GetUtcNow();
+            factory.Vpn.Status = VpnStatus.ConnectedThrough(new ProxySettings("http://gluetun:8888"), "203.0.113.7", "New York");
+        };
+        var startedAt = factory.Time.GetUtcNow();
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
+
+        await AdvanceUntil(factory, () => factory.Time.GetUtcNow() - startedAt >= TimeSpan.FromSeconds(40));
+        var rotationsBeforeGluetunAnswered = factory.Vpn.Rotations;
+        var answeredAt = factory.Time.GetUtcNow();
+        factory.Vpn.Status = VpnStatus.Disconnected("gluetun is connecting the VPN.");
+        await AdvanceUntil(factory, () => factory.Vpn.Rotations == 1);
+
+        Assert.AreEqual(0, rotationsBeforeGluetunAnswered);
+        // Checked every 15 seconds, so up to 15 seconds late
+        Assert.IsGreaterThanOrEqualTo(TimeSpan.FromSeconds(15), rotatedAt!.Value - answeredAt);
+        Assert.IsLessThanOrEqualTo(TimeSpan.FromSeconds(32), rotatedAt.Value - answeredAt);
+    }
+
+    [TestMethod]
     public async Task ARotationWaitsForVpnRunsInProgress()
     {
         await using var factory = new LookoutWebApplicationFactory();

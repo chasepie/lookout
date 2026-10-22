@@ -69,13 +69,15 @@ public sealed class GluetunVpnRotator(
         // Anything but the caller cancelling means gluetun can't be read, which leaves VPN Runs refused.
         catch (Exception error) when (!cancellationToken.IsCancellationRequested)
         {
-            return VpnStatus.Disconnected(error switch
+            return error switch
             {
-                _ when timeout.IsCancellationRequested =>
-                    $"gluetun's control server did not respond within {settings.StatusTimeout.TotalSeconds:0.#} seconds.",
-                HttpRequestException { StatusCode: { } status } => $"gluetun's control server returned HTTP {(int)status}.",
-                _ => $"Could not reach gluetun's control server: {error.Message}"
-            });
+                _ when timeout.IsCancellationRequested => VpnStatus.Unreachable(
+                    $"gluetun's control server did not respond within {settings.StatusTimeout.TotalSeconds:0.#} seconds."),
+                // gluetun answered, though not as it should
+                HttpRequestException { StatusCode: { } status } =>
+                    VpnStatus.Disconnected($"gluetun's control server returned HTTP {(int)status}."),
+                _ => VpnStatus.Unreachable($"Could not reach gluetun's control server: {error.Message}")
+            };
         }
     }
 

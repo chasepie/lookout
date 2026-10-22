@@ -6,7 +6,7 @@ namespace ChasePie.Lookout.Backend.Vpn;
 
 /// <summary>
 /// Rotates the VPN to a new exit IP every 10–15 minutes, or early after a Known failure, and at startup if it hasn't
-/// connected within <see cref="StartupWait"/> (ADR-0004). A VPN Run holds a
+/// connected within <see cref="StartupWait"/> of gluetun first answering (ADR-0004). A VPN Run holds a
 /// <see cref="VpnRunLease"/> while it uses the VPN. No VPN Run starts during a Rotation, which waits for those in
 /// progress to finish before it rotates. Direct Runs carry on throughout. Pushes the VPN's status through
 /// <see cref="WatchEvents"/> as each Rotation starts and ends, and checks it every 30 seconds in between, pushing it
@@ -42,8 +42,8 @@ public sealed partial class VpnRotation(
     public static readonly TimeSpan GiveUpAfter = TimeSpan.FromMinutes(2);
 
     /// <summary>
-    /// How long after startup a VPN that hasn't connected gets a Rotation, as gluetun may be stuck on a dead server,
-    /// which it takes about 35 seconds to leave by itself.
+    /// How long after gluetun first answers at startup a VPN that hasn't connected gets a Rotation, as gluetun may be
+    /// stuck on a dead server, which it takes about 35 seconds to leave by itself. Also how often it's checked.
     /// </summary>
     public static readonly TimeSpan StartupWait = TimeSpan.FromSeconds(15);
 
@@ -152,10 +152,12 @@ public sealed partial class VpnRotation(
     {
         try
         {
-            // The first timed Rotation is the check at startup, which only rotates a VPN that hasn't connected. With no
-            // exit IP before it, any exit IP then completes it.
-            var timedAt = timeProvider.GetUtcNow() + StartupWait;
+            // At startup, checks every StartupWait whether the VPN has connected, and rotates it once gluetun has
+            // answered for that long without connecting. Before gluetun answers, such as when Lookout starts first,
+            // there's nothing to rotate. With no exit IP before it, any exit IP then completes the Rotation.
+            var timedAt = timeProvider.GetUtcNow();
             var atStartup = true;
+            DateTimeOffset? reachedAt = null;
             while (true)
             {
                 if (!await SleepUntilDueAsync(timedAt, stoppingToken))
@@ -169,7 +171,25 @@ public sealed partial class VpnRotation(
                     {
                         early = _earlyRotationRequested;
                     }
-                    await RotateAsync(stoppingToken, onlyIfDisconnected: atStartup && !early);
+                    if (atStartup && !early)
+                    {
+                        var status = await vpn.GetStatusAsync(stoppingToken);
+                        if (status is { Enabled: true, Misconfigured: false, Connected: false })
+                        {
+                            var now = timeProvider.GetUtcNow();
+                            reachedAt ??= status.Reached ? now : null;
+                            if (reachedAt is null || now - reachedAt < StartupWait)
+                            {
+                                timedAt = (reachedAt ?? now) + StartupWait;
+                                continue;
+                            }
+                            await RotateAsync(stoppingToken, onlyIfDisconnected: true);
+                        }
+                    }
+                    else
+                    {
+                        await RotateAsync(stoppingToken);
+                    }
                 }
                 catch (Exception error) when (!stoppingToken.IsCancellationRequested)
                 {

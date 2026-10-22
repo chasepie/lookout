@@ -196,6 +196,7 @@ public sealed class GluetunVpnRotatorTests(TestContext testContext)
 
         Assert.IsFalse(status.Connected);
         Assert.IsTrue(status.Enabled);
+        Assert.IsFalse(status.Reached);
         Assert.StartsWith("Could not reach gluetun's control server: ", status.Error!);
     }
 
@@ -300,6 +301,6 @@ public sealed class GluetunVpnRotatorTests(TestContext testContext)
 
         var status = await rotator.GetStatusAsync(testContext.CancellationToken);
 
-        Assert.AreEqual(VpnStatus.Disconnected("gluetun's control server did not respond within 0.6 seconds."), status);
+        Assert.AreEqual(VpnStatus.Unreachable("gluetun's control server did not respond within 0.6 seconds."), status);
     }
 }
