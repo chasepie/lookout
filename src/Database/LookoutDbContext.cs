@@ -17,6 +17,8 @@ public class LookoutDbContext(DbContextOptions<LookoutDbContext> options) : DbCo
     public DbSet<Run> Runs => Set<Run>();
     public DbSet<Channel> Channels => Set<Channel>();
     public DbSet<WatchChannel> WatchChannels => Set<WatchChannel>();
+    public DbSet<RunDebugOutput> RunDebugOutputs => Set<RunDebugOutput>();
+    public DbSet<Settings> Settings => Set<Settings>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -97,5 +99,23 @@ public class LookoutDbContext(DbContextOptions<LookoutDbContext> options) : DbCo
         modelBuilder.Entity<ScriptVersion>()
             .HasIndex(version => new { version.WatchId, version.Number })
             .IsUnique();
+
+        modelBuilder.Entity<Run>()
+            // Retention prunes by it.
+            .HasIndex(run => run.FinishedAt);
+
+        modelBuilder.Entity<RunDebugOutput>(debugOutput =>
+        {
+            debugOutput.HasKey(item => item.RunId);
+            debugOutput.HasOne(item => item.Run).WithOne().HasForeignKey<RunDebugOutput>(item => item.RunId);
+        });
+
+        modelBuilder.Entity<Settings>(settings =>
+        {
+            settings.Property(item => item.Id).ValueGeneratedNever();
+            // The DebugOutputAndRetention migration inserts the only row, rather than seed data here, which later
+            // migrations would reset to the current defaults, overwriting the user's settings.
+            settings.ToTable(table => table.HasCheckConstraint("CK_Settings_Singleton", $"Id = {ChasePie.Lookout.Model.Settings.SingletonId}"));
+        });
     }
 }

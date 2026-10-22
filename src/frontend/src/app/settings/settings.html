@@ -1,7 +1,7 @@
 <div class="page-heading">
   <p class="eyebrow">LOOKOUT</p>
   <h1>Settings</h1>
-  <p>Choose where Lookout tells you about Changes and Watches that need attention.</p>
+  <p>Choose where Lookout tells you about Changes and Watches that need attention, and how long it keeps their Run history.</p>
 </div>
 <p class="notice" role="status">{{ notice() }}</p>
 @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
@@ -79,4 +79,7 @@
       }
     } @else { <p>Loading Channels…</p> }
   </section>
+</div>
+<div class="workspace more-settings">
+  <app-retention-settings (saveSucceeded)="showNotice($event)" (saveFailed)="showError($event)" />
 </div>

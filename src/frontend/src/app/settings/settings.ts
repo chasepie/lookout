@@ -4,15 +4,16 @@ import { FormField, form, hidden, maxLength, pattern, required, submit } from '@
 import { type Channel, type NewChannel, channelKindLabels } from '../channels/channel.model';
 import { Channels } from '../channels/channels';
 import { problemMessage } from '../shared/problem';
+import { RetentionSettings } from './retention-settings/retention-settings';
 
 type ChannelAction = 'testing' | 'deleting';
 
 const emptyChannel = (): NewChannel => ({ kind: 'discord', name: '', webhookUrl: '', userKey: '', appToken: '' });
 
-/** Lookout's settings: the Channels Watches can notify. */
+/** Lookout's settings: the Channels Watches can notify, and how long Runs are kept. */
 @Component({
   selector: 'app-settings',
-  imports: [FormField, KeyValuePipe],
+  imports: [FormField, KeyValuePipe, RetentionSettings],
   templateUrl: './settings.html',
   styleUrl: './settings.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -89,6 +90,16 @@ export class Settings {
         return next;
       });
     }
+  }
+
+  protected showNotice(message: string) {
+    this.clearMessages();
+    this.notice.set(message);
+  }
+
+  protected showError(message: string) {
+    this.clearMessages();
+    this.error.set(message);
   }
 
   private clearMessages() {

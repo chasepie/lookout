@@ -450,6 +450,29 @@ public sealed class WatchesController(
             .ToListAsync(cancellationToken);
     }
 
+    /// <summary>A Known failure or Errored Run's console output, and whether it has a screenshot, while it is one that keeps them.</summary>
+    [HttpGet("{id:guid}/runs/{runId:long}/debug-output")]
+    public async Task<ActionResult<DebugOutputSummary>> DebugOutput(Guid id, long runId, CancellationToken cancellationToken)
+    {
+        var debugOutput = await DebugOutputOf(id, runId)
+            .Select(item => new DebugOutputSummary(item.ConsoleOutput, item.Screenshot != null))
+            .SingleOrDefaultAsync(cancellationToken);
+        return debugOutput is null ? NotFound() : debugOutput;
+    }
+
+    [HttpGet("{id:guid}/runs/{runId:long}/screenshot")]
+    public async Task<IActionResult> Screenshot(Guid id, long runId, CancellationToken cancellationToken)
+    {
+        var screenshot = await DebugOutputOf(id, runId)
+            .Select(item => item.Screenshot)
+            .SingleOrDefaultAsync(cancellationToken);
+        return screenshot is null ? NotFound() : File(screenshot, "image/png");
+    }
+
+    private IQueryable<RunDebugOutput> DebugOutputOf(Guid watchId, long runId) =>
+        database.RunDebugOutputs.AsNoTracking()
+            .Where(item => item.RunId == runId && item.Run!.WatchId == watchId);
+
     [HttpPost("{id:guid}/runs")]
     public async Task<ActionResult<Run>> RunNow(Guid id)
     {
@@ -663,6 +686,8 @@ public sealed class ChannelsRequest
 {
     public required IReadOnlyList<Guid> ChannelIds { get; init; }
 }
+
+public sealed record DebugOutputSummary(string? ConsoleOutput, bool HasScreenshot);
 
 public sealed class EditWatchRequest
 {

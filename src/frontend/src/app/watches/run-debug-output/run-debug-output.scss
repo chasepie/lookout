@@ -1,0 +1,32 @@
+@use 'tokens';
+@use 'mixins';
+
+:host { display: block; margin-top: 10px; }
+
+@include mixins.messages;
+
+button { @include mixins.button; padding: 6px 12px; font-size: 12px; }
+.details, .error { margin: 0; }
+
+.debug-output { display: grid; gap: 10px; margin-top: 12px; }
+h3 { font-size: 13px; margin: 0; }
+
+.screenshot {
+  display: block;
+  width: 100%;
+  border: 1px solid tokens.$border-run;
+  border-radius: 8px;
+}
+
+.console {
+  margin: 0;
+  padding: 12px;
+  max-height: 320px;
+  overflow: auto;
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: tokens.$input;
+  border: 1px solid tokens.$border-run;
+  border-radius: 8px;
+}

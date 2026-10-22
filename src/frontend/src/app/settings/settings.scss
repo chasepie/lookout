@@ -20,6 +20,9 @@ p { line-height: 1.6; }
   @include mixins.narrow { grid-template-columns: 1fr; }
 }
 
+// Further settings line up under the Channel form.
+.more-settings { margin-top: 30px; }
+
 .panel { @include mixins.panel; padding: 25px; }
 .panel > p { font-size: 14px; color: tokens.$text-muted; margin: 10px 0 25px; }
 

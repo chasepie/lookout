@@ -132,6 +132,7 @@
                 }
                 @if (run.details) { <p class="details">{{ run.details }}</p> }
                 @if (run.errorMessage) { <p class="error">{{ run.errorMessage }}</p> }
+                @if (run.outcome !== 'succeeded') { <app-run-debug-output [watchId]="id()" [runId]="run.id" /> }
               </li>
             }
           </ol>
