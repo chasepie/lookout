@@ -155,7 +155,7 @@ Lookout rotates the VPN to a new exit IP every 10 to 15 minutes, so a site a Wat
 1. stops VPN Runs from starting. Those that come due wait, and start once it's done.
 2. waits for VPN Runs in progress to finish, for up to 10 minutes, the longest Run timeout.
 3. asks gluetun to reconnect, which picks another server from `LOOKOUT_VPN_REGIONS`.
-4. waits until gluetun reports an exit IP different from the one before. gluetun can pick the same exit again, or a dead server, so after 15 seconds without a new IP it asks again, and gives up after 8 attempts.
+4. waits until gluetun reports an exit IP different from the one before. gluetun can pick the same exit again, or a dead server, so after 15 seconds without a new IP it asks again, and gives up after 2 minutes.
 
 Direct Runs carry on throughout. A VPN Watch's Test run asked for during a Rotation is refused at once, rather than kept waiting. **Settings** shows the VPN as Rotating while one is under way, and its new exit IP afterwards, without reloading.
 

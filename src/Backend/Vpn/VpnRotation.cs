@@ -26,10 +26,11 @@ public sealed partial class VpnRotation(IVpnRotator vpn, WatchEvents events, Tim
     public static readonly TimeSpan AttemptWait = TimeSpan.FromSeconds(15);
 
     /// <summary>
-    /// How many attempts a Rotation makes before it gives up, which lets VPN Runs start again. They're then refused
-    /// unless the VPN connects soon.
+    /// How long a Rotation keeps making attempts before it gives up, which lets VPN Runs start again. They're then
+    /// refused unless the VPN connects. A time rather than a count of attempts, as each can take minutes when gluetun
+    /// doesn't answer.
     /// </summary>
-    public const int MaxAttempts = 8;
+    public static readonly TimeSpan GiveUpAfter = TimeSpan.FromMinutes(2);
 
     /// <summary>How soon after a Rotation a Known failure can bring on another.</summary>
     public static readonly TimeSpan EarlyRotationGap = TimeSpan.FromMinutes(3);
@@ -170,6 +171,13 @@ public sealed partial class VpnRotation(IVpnRotator vpn, WatchEvents events, Tim
 
     private async Task RotateAsync(CancellationToken stoppingToken)
     {
+        // Read first, so a VPN that isn't there to rotate doesn't hold up VPN Runs, which are refused anyway. A VPN Run
+        // that starts meanwhile is waited for like any other.
+        var before = await vpn.GetStatusAsync(stoppingToken);
+        if (before is not { Enabled: true, Misconfigured: false })
+        {
+            return;
+        }
         TaskCompletionSource rotating;
         lock (_lock)
         {
@@ -178,19 +186,11 @@ public sealed partial class VpnRotation(IVpnRotator vpn, WatchEvents events, Tim
             _earlyRotationRequested = false;
         }
         VpnStatus? after = null;
-        var announced = false;
         try
         {
-            // Read first, so a VPN that isn't there to rotate doesn't hold up VPN Runs, which are refused anyway.
-            var before = await vpn.GetStatusAsync(stoppingToken);
-            if (before is not { Enabled: true, Misconfigured: false })
-            {
-                return;
-            }
             await events.VpnStatusChangedAsync(before.WhileRotating());
-            announced = true;
             await DrainAsync(stoppingToken);
-            after = await ReconnectAsync(before.ExitIp, stoppingToken);
+            after = await RotateUntilNewExitAsync(before.ExitIp, stoppingToken);
         }
         finally
         {
@@ -202,7 +202,7 @@ public sealed partial class VpnRotation(IVpnRotator vpn, WatchEvents events, Tim
             }
             rotating.SetResult();
             // Only stopping leaves no status after a Rotation, and then there's no one left to tell.
-            if (announced && after is not null)
+            if (after is not null)
             {
                 await events.VpnStatusChangedAsync(after);
             }
@@ -231,13 +231,17 @@ public sealed partial class VpnRotation(IVpnRotator vpn, WatchEvents events, Tim
 
     /// <summary>
     /// Makes attempts until the VPN connects with an exit IP other than <paramref name="notedIp"/>, the one before the
-    /// first attempt, as gluetun may pick the same exit again or a dead server (ADR-0004).
+    /// first attempt, as gluetun may pick the same exit again or a dead server (ADR-0004). Returns the VPN's status
+    /// then, or when it gives up.
     /// </summary>
-    private async Task<VpnStatus> ReconnectAsync(string? notedIp, CancellationToken stoppingToken)
+    private async Task<VpnStatus> RotateUntilNewExitAsync(string? notedIp, CancellationToken stoppingToken)
     {
-        VpnStatus status = VpnStatus.Disconnected();
-        for (var attempt = 1; attempt <= MaxAttempts; attempt++)
+        var giveUpAt = timeProvider.GetUtcNow() + GiveUpAfter;
+        var status = VpnStatus.Disconnected();
+        var attempt = 0;
+        while (timeProvider.GetUtcNow() < giveUpAt)
         {
+            attempt++;
             try
             {
                 await vpn.RotateAsync(stoppingToken);
@@ -269,7 +273,7 @@ public sealed partial class VpnRotation(IVpnRotator vpn, WatchEvents events, Tim
                 await Task.Delay(StatusCheckInterval < remaining ? StatusCheckInterval : remaining, timeProvider, stoppingToken);
             }
         }
-        LogGaveUp(logger, MaxAttempts, status.Error);
+        LogGaveUp(logger, attempt, status.Error);
         return status;
     }
 
