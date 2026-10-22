@@ -6,7 +6,8 @@ namespace ChasePie.Lookout.Backend.Vpn;
 /// Rotates the VPN to a new exit IP every 10–15 minutes, or early after a Known failure (ADR-0004). A VPN Run holds a
 /// <see cref="VpnRunLease"/> while it uses the VPN. No VPN Run starts during a Rotation, which waits for those in
 /// progress to finish before it rotates. Direct Runs carry on throughout. Pushes the VPN's status through
-/// <see cref="WatchEvents"/> as each Rotation starts and ends.
+/// <see cref="WatchEvents"/> as each Rotation starts and ends, and checks it every 30 seconds in between, pushing it
+/// when it has changed.
 /// </summary>
 public sealed partial class VpnRotation(IVpnRotator vpn, WatchEvents events, TimeProvider timeProvider, ILogger<VpnRotation> logger)
     : BackgroundService
@@ -35,6 +36,9 @@ public sealed partial class VpnRotation(IVpnRotator vpn, WatchEvents events, Tim
     /// <summary>How soon after a Rotation a Known failure can bring on another.</summary>
     public static readonly TimeSpan EarlyRotationGap = TimeSpan.FromMinutes(3);
 
+    /// <summary>How often the VPN's status is checked between Rotations, for the app to show changes such as a drop.</summary>
+    public static readonly TimeSpan StatusWatchInterval = TimeSpan.FromSeconds(30);
+
     private static readonly TimeSpan StatusCheckInterval = TimeSpan.FromSeconds(1);
 
     private readonly Lock _lock = new();
@@ -49,6 +53,11 @@ public sealed partial class VpnRotation(IVpnRotator vpn, WatchEvents events, Tim
     private bool _earlyRotationRequested;
     /// <summary>Completes when an early Rotation is requested, waking the timer.</summary>
     private TaskCompletionSource _earlyRotationWake = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    /// <summary>Taken to push the VPN's status, so pushes go out one at a time and in order.</summary>
+    private readonly SemaphoreSlim _pushing = new(1, 1);
+    /// <summary>The status the app last had pushed, or read at startup, compared without its error's wording.</summary>
+    private (bool Enabled, bool Connected, bool Rotating, string? Region, string? ExitIp)? _lastPushed;
+    private long _pushes;
 
     /// <summary>
     /// Starts a VPN Run, which a Rotation then waits for until the lease is disposed, or nothing during a Rotation.
@@ -114,7 +123,10 @@ public sealed partial class VpnRotation(IVpnRotator vpn, WatchEvents events, Tim
         }
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override Task ExecuteAsync(CancellationToken stoppingToken) =>
+        Task.WhenAll(RotateOnTimeAsync(stoppingToken), WatchStatusAsync(stoppingToken));
+
+    private async Task RotateOnTimeAsync(CancellationToken stoppingToken)
     {
         try
         {
@@ -139,6 +151,70 @@ public sealed partial class VpnRotation(IVpnRotator vpn, WatchEvents events, Tim
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
             // Lookout is stopping.
+        }
+    }
+
+    /// <summary>
+    /// Checks the VPN's status every <see cref="StatusWatchInterval"/>, pushing it when it has changed since the last
+    /// push. The first check only notes it, as the app reads the status when it opens. A Rotation pushes for itself.
+    /// </summary>
+    private async Task WatchStatusAsync(CancellationToken stoppingToken)
+    {
+        using var timer = new PeriodicTimer(StatusWatchInterval, timeProvider);
+        try
+        {
+            while (await timer.WaitForNextTickAsync(stoppingToken))
+            {
+                long pushesBefore;
+                lock (_lock)
+                {
+                    if (_rotating is not null)
+                    {
+                        continue;
+                    }
+                    pushesBefore = _pushes;
+                }
+                var status = await vpn.GetStatusAsync(stoppingToken);
+                // A push since the read began, such as a Rotation's, is newer than this read.
+                await PushAsync(status, onlyIfChanged: true, unlessPushedSince: pushesBefore);
+            }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            // Lookout is stopping.
+        }
+    }
+
+    /// <summary>
+    /// Pushes <paramref name="status"/> to the app. A check of the status pushes it only if it has changed, and if
+    /// nothing else has been pushed since the check began.
+    /// </summary>
+    private async Task PushAsync(VpnStatus status, bool onlyIfChanged = false, long? unlessPushedSince = null)
+    {
+        await _pushing.WaitAsync(CancellationToken.None);
+        try
+        {
+            var shown = (status.Enabled, status.Connected, status.Rotating, status.Region, status.ExitIp);
+            lock (_lock)
+            {
+                if (unlessPushedSince is { } pushes && (pushes != _pushes || _rotating is not null))
+                {
+                    return;
+                }
+                var first = _lastPushed is null;
+                var unchanged = _lastPushed == shown;
+                _lastPushed = shown;
+                if (onlyIfChanged && (first || unchanged))
+                {
+                    return;
+                }
+                _pushes++;
+            }
+            await events.VpnStatusChangedAsync(status);
+        }
+        finally
+        {
+            _pushing.Release();
         }
     }
 
@@ -188,7 +264,7 @@ public sealed partial class VpnRotation(IVpnRotator vpn, WatchEvents events, Tim
         VpnStatus? after = null;
         try
         {
-            await events.VpnStatusChangedAsync(before.WhileRotating());
+            await PushAsync(before.WhileRotating());
             await DrainAsync(stoppingToken);
             after = await RotateUntilNewExitAsync(before.ExitIp, stoppingToken);
         }
@@ -204,7 +280,7 @@ public sealed partial class VpnRotation(IVpnRotator vpn, WatchEvents events, Tim
             // Only stopping leaves no status after a Rotation, and then there's no one left to tell.
             if (after is not null)
             {
-                await events.VpnStatusChangedAsync(after);
+                await PushAsync(after);
             }
         }
     }
@@ -280,6 +356,12 @@ public sealed partial class VpnRotation(IVpnRotator vpn, WatchEvents events, Tim
     /// <summary>A random time between Rotations, so they don't fall on a pattern a site could spot.</summary>
     private static TimeSpan Interval() =>
         MinInterval + (MaxInterval - MinInterval) * Random.Shared.NextDouble();
+
+    public override void Dispose()
+    {
+        base.Dispose();
+        _pushing.Dispose();
+    }
 
     [LoggerMessage(LogLevel.Warning, "Attempt {Attempt} at rotating the VPN failed.")]
     private static partial void LogAttemptFailed(ILogger logger, Exception error, int attempt);

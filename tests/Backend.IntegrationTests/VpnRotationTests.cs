@@ -326,6 +326,31 @@ public sealed class VpnRotationTests(TestContext testContext)
     }
 
     [TestMethod]
+    public async Task PushesChangesInTheVpnStatusBetweenRotationsWithinThirtySeconds()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
+        await using var listener = await WatchEventsListener.ConnectAsync(factory, testContext.CancellationToken);
+
+        await Advance(factory, TimeSpan.FromSeconds(30));
+        factory.Vpn.Status = VpnStatus.Disconnected("gluetun's VPN crashed. gluetun's logs say why.");
+        await Advance(factory, TimeSpan.FromSeconds(30));
+        var disconnected = await listener.NextVpnStatusAsync(testContext.CancellationToken);
+        await Advance(factory, TimeSpan.FromSeconds(60));
+        factory.Vpn.Status = VpnStatus.ConnectedThrough(new ProxySettings("http://gluetun:8888"), "198.51.100.4", "Chicago");
+        await Advance(factory, TimeSpan.FromSeconds(30));
+        var reconnected = await listener.NextVpnStatusAsync(testContext.CancellationToken);
+
+        // Nothing for the unchanged status in between, or before the first change
+        Assert.AreEqual(
+            """{"enabled":true,"connected":false,"rotating":false,"region":null,"exitIp":null,"error":"gluetun's VPN crashed. gluetun's logs say why."}""",
+            disconnected.GetRawText());
+        Assert.AreEqual(
+            """{"enabled":true,"connected":true,"rotating":false,"region":"Chicago","exitIp":"198.51.100.4","error":null}""",
+            reconnected.GetRawText());
+    }
+
+    [TestMethod]
     public async Task DoesNotRotateOrPushWithoutAVpn()
     {
         await using var factory = new LookoutWebApplicationFactory();

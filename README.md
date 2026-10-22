@@ -157,7 +157,7 @@ Lookout rotates the VPN to a new exit IP every 10 to 15 minutes, so a site a Wat
 3. asks gluetun to reconnect, which picks another server from `LOOKOUT_VPN_REGIONS`.
 4. waits until gluetun reports an exit IP different from the one before. gluetun can pick the same exit again, or a dead server, so after 15 seconds without a new IP it asks again, and gives up after 2 minutes.
 
-Direct Runs carry on throughout. A VPN Watch's Test run asked for during a Rotation is refused at once, rather than kept waiting. **Settings** shows the VPN as Rotating while one is under way, and its new exit IP afterwards, without reloading.
+Direct Runs carry on throughout. A VPN Watch's Test run asked for during a Rotation is refused at once, rather than kept waiting. **Settings** shows the VPN as Rotating while one is under way, and its new exit IP afterwards, without reloading. Between Rotations, Lookout checks gluetun every 30 seconds, so Settings also shows within 30 seconds when the VPN drops or reconnects.
 
 gluetun is pinned to v3.41.3, the version the prototype tested, and later than v3.40, which made its control server require authentication. Lookout's key opens only the routes it uses. With an HTTP proxy, WebRTC could reveal your own IP, so every browser is launched with `--webrtc-ip-handling-policy=disable_non_proxied_udp`, and `HTTPPROXY_STEALTH` keeps gluetun from passing Browserless's address on. Requests through the proxy fail rather than leak while the tunnel is down.
 
