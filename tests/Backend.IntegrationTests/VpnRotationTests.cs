@@ -481,6 +481,58 @@ public sealed class VpnRotationTests(TestContext testContext)
         }
     }
 
+    [TestMethod]
+    public async Task ARefreshThatFailsIsTriedAgainAtTheNextStart()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        factory.Vpn.OnRefreshServerList = () => Task.FromResult(false);
+        var databasePath = Path.Combine(Path.GetTempPath(), $"lookout-test-{Guid.NewGuid():N}.db");
+        try
+        {
+            await using (var first = SharingDatabase(factory, databasePath))
+            {
+                using var client = await first.CreateSignedInClientAsync(testContext.CancellationToken);
+                await Advance(factory, TimeSpan.FromSeconds(30));
+                await Eventually(() => factory.Vpn.ServerListRefreshes == 1);
+            }
+
+            factory.Vpn.OnRefreshServerList = null;
+            factory.Time.Advance(TimeSpan.FromHours(1));
+            await using (var second = SharingDatabase(factory, databasePath))
+            {
+                using var client = second.CreateClient();
+                await Advance(factory, TimeSpan.FromSeconds(30));
+                await Eventually(() => factory.Vpn.ServerListRefreshes == 2);
+            }
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    [TestMethod]
+    public async Task ARotationWaitsForTheServerListRefreshInProgress()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        var refreshing = new TaskCompletionSource<bool>();
+        factory.Vpn.OnRefreshServerList = () => refreshing.Task;
+        factory.Runner.DefaultResult = KnownFailure;
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
+        var watch = await CreateWatch(client, usesVpn: true);
+        await Advance(factory, TimeSpan.FromSeconds(30));
+        await Eventually(() => factory.Vpn.ServerListRefreshes == 1);
+
+        // Asks for an early Rotation, which would otherwise come at once
+        await RunNow(client, watch);
+        await Advance(factory, TimeSpan.FromMinutes(1));
+        var rotationsWhileRefreshing = factory.Vpn.Rotations;
+        refreshing.SetResult(true);
+        await Eventually(() => factory.Vpn.Rotations == 1);
+
+        Assert.AreEqual(0, rotationsWhileRefreshing);
+    }
+
     private static WebApplicationFactory<Program> SharingDatabase(LookoutWebApplicationFactory factory, string databasePath) =>
         factory.WithWebHostBuilder(builder =>
             builder.UseSetting("ConnectionStrings:Lookout", $"Data Source={databasePath};Pooling=False"));

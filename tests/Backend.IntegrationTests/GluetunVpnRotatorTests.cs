@@ -90,7 +90,7 @@ public sealed class GluetunVpnRotatorTests(TestContext testContext)
                 return Task.FromResult(new RunnerResult { Outcome = RunOutcome.Succeeded, Content = "198.51.100.50", DurationMs = 3000 });
             }
         };
-        var rotator = gluetun.CreateRotator(ApiKey, time, runner, statusTimeout: TimeSpan.FromSeconds(2));
+        var rotator = gluetun.CreateRotator(ApiKey, time, runner, settings => settings with { StatusTimeout = TimeSpan.FromSeconds(2) });
 
         await rotator.GetStatusAsync(testContext.CancellationToken);
         time.Advance(TimeSpan.FromSeconds(10));
@@ -255,15 +255,48 @@ public sealed class GluetunVpnRotatorTests(TestContext testContext)
     }
 
     [TestMethod]
-    public async Task RefreshesTheServerListThroughGluetunsUpdater()
+    public async Task RefreshesTheServerListThroughGluetunsUpdaterAndWaitsForItToComplete()
     {
         await using var gluetun = await FakeGluetun.StartAsync(ApiKey);
-        var rotator = gluetun.CreateRotator(ApiKey);
+        gluetun.UpdaterGoesThrough("running", "running", "completed");
+        var rotator = gluetun.CreateRotator(ApiKey, configure: QuickUpdaterChecks);
 
-        await rotator.RefreshServerListAsync(testContext.CancellationToken);
+        var completed = await rotator.RefreshServerListAsync(testContext.CancellationToken);
 
+        Assert.IsTrue(completed);
         Assert.AreSequenceEqual(["""PUT /v1/updater/status {"status":"running"}"""], gluetun.Changes.ToList());
+        Assert.AreEqual(0, gluetun.UpdaterStatusesLeft);
     }
+
+    [TestMethod]
+    [DataRow("crashed")]
+    [DataRow("stopped")]
+    public async Task ARefreshTheUpdaterDoesNotCompleteFails(string ended)
+    {
+        await using var gluetun = await FakeGluetun.StartAsync(ApiKey);
+        gluetun.UpdaterGoesThrough("running", ended);
+        var rotator = gluetun.CreateRotator(ApiKey, configure: QuickUpdaterChecks);
+
+        var completed = await rotator.RefreshServerListAsync(testContext.CancellationToken);
+
+        Assert.IsFalse(completed);
+    }
+
+    [TestMethod]
+    public async Task ARefreshThatRunsTooLongFails()
+    {
+        await using var gluetun = await FakeGluetun.StartAsync(ApiKey);
+        gluetun.UpdaterGoesThrough("running");
+        var rotator = gluetun.CreateRotator(ApiKey,
+            configure: settings => QuickUpdaterChecks(settings) with { UpdaterTimeout = TimeSpan.FromMilliseconds(300) });
+
+        var completed = await rotator.RefreshServerListAsync(testContext.CancellationToken);
+
+        Assert.IsFalse(completed);
+    }
+
+    private static GluetunSettings QuickUpdaterChecks(GluetunSettings settings) =>
+        settings with { UpdaterCheckInterval = TimeSpan.FromMilliseconds(20) };
 
     [TestMethod]
     public async Task ARefreshGluetunRefusesFails()

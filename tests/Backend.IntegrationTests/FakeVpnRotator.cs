@@ -40,9 +40,12 @@ public sealed class FakeVpnRotator : IVpnRotator
         return Task.CompletedTask;
     }
 
-    public Task RefreshServerListAsync(CancellationToken cancellationToken)
+    /// <summary>Called on each refresh of the server list, after it's counted. Without it, each refresh completes at once.</summary>
+    public Func<Task<bool>>? OnRefreshServerList { get; set; }
+
+    public Task<bool> RefreshServerListAsync(CancellationToken cancellationToken)
     {
         Interlocked.Increment(ref _serverListRefreshes);
-        return Task.CompletedTask;
+        return OnRefreshServerList?.Invoke() ?? Task.FromResult(true);
     }
 }

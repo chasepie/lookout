@@ -80,6 +80,9 @@ public sealed partial class VpnRotation(
     private long _pushes;
     /// <summary>Whether this run of Lookout has seen the VPN connect, and so considered refreshing its servers.</summary>
     private bool _seenConnected;
+    /// <summary>Completes when the refresh of the VPN's servers in progress, if any, ends.</summary>
+    private TaskCompletionSource? _refreshing;
+    private Task _refresh = Task.CompletedTask;
 
     /// <summary>
     /// Starts a VPN Run, which a Rotation then waits for until the lease is disposed, or nothing during a Rotation.
@@ -228,8 +231,7 @@ public sealed partial class VpnRotation(
                 var status = await vpn.GetStatusAsync(stoppingToken);
                 if (status.Connected && !_seenConnected)
                 {
-                    _seenConnected = true;
-                    await RefreshServerListIfDueAsync(stoppingToken);
+                    StartServerListRefresh(stoppingToken);
                 }
                 // A push since the read began, such as a Rotation's, is newer than this read.
                 await PushAsync(status, onlyIfChanged: true, unlessPushedSince: pushesBefore);
@@ -239,13 +241,50 @@ public sealed partial class VpnRotation(
         {
             // Lookout is stopping.
         }
+        await _refresh;
+    }
+
+    /// <summary>
+    /// Starts refreshing the VPN's list of servers, if due, alongside checking its status, unless a Rotation started
+    /// since the status was read, when the next check tries again. Rotations wait for it, as stopping the VPN would
+    /// fail it.
+    /// </summary>
+    private void StartServerListRefresh(CancellationToken stoppingToken)
+    {
+        TaskCompletionSource refreshing;
+        lock (_lock)
+        {
+            if (_rotating is not null)
+            {
+                return;
+            }
+            _seenConnected = true;
+            refreshing = _refreshing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
+        _refresh = RefreshAsync();
+
+        async Task RefreshAsync()
+        {
+            try
+            {
+                await RefreshServerListIfDueAsync(stoppingToken);
+            }
+            finally
+            {
+                lock (_lock)
+                {
+                    _refreshing = null;
+                }
+                refreshing.SetResult();
+            }
+        }
     }
 
     /// <summary>
     /// Has the VPN refresh its list of servers, unless Lookout last had that done within
     /// <see cref="ServerListRefreshPeriod"/>. gluetun's bundled list goes stale, and gluetun's own refresh only comes a
     /// full period after it starts (ADR-0004). A failure is only logged, as gluetun refreshes by itself eventually, and
-    /// trying again soon would only fail again, such as when its control-server role lacks the route.
+    /// trying again soon would likely fail again, such as when its control-server role lacks the routes.
     /// </summary>
     private async Task RefreshServerListIfDueAsync(CancellationToken stoppingToken)
     {
@@ -261,7 +300,12 @@ public sealed partial class VpnRotation(
             {
                 return;
             }
-            await vpn.RefreshServerListAsync(stoppingToken);
+            // Recorded only once it completes, so one that fails is tried again when Lookout next starts.
+            if (!await vpn.RefreshServerListAsync(stoppingToken))
+            {
+                LogServerListRefreshIncomplete(logger);
+                return;
+            }
             await database.Settings.ExecuteUpdateAsync(setters => setters
                 .SetProperty(settings => settings.VpnServerListRefreshedAt, now), stoppingToken);
         }
@@ -334,10 +378,13 @@ public sealed partial class VpnRotation(
     private async Task RotateAsync(CancellationToken stoppingToken, bool onlyIfDisconnected = false)
     {
         // Answered even if the VPN rules this Rotation out, which would otherwise leave the request due at once forever.
+        Task refreshed;
         lock (_lock)
         {
             _earlyRotationRequested = false;
+            refreshed = _refreshing?.Task ?? Task.CompletedTask;
         }
+        await refreshed.WaitAsync(stoppingToken);
         // Read first, so a VPN that isn't there to rotate doesn't hold up VPN Runs, which are refused anyway. A VPN Run
         // that starts meanwhile is waited for like any other.
         var before = await vpn.GetStatusAsync(stoppingToken);
@@ -459,7 +506,10 @@ public sealed partial class VpnRotation(
     [LoggerMessage(LogLevel.Warning, "Gave up rotating the VPN after {Attempts} attempts without a new exit IP. {Error}")]
     private static partial void LogGaveUp(ILogger logger, int attempts, string? error);
 
-    [LoggerMessage(LogLevel.Warning, "Could not have the VPN refresh its list of servers. If gluetun refused it (HTTP 401), check that compose.yaml's gluetun-auth role includes PUT /v1/updater/status.")]
+    [LoggerMessage(LogLevel.Warning, "The VPN's refresh of its list of servers did not complete. gluetun's logs say why.")]
+    private static partial void LogServerListRefreshIncomplete(ILogger logger);
+
+    [LoggerMessage(LogLevel.Warning, "Could not have the VPN refresh its list of servers. If gluetun refused it (HTTP 401), check that compose.yaml's gluetun-auth role includes GET and PUT /v1/updater/status.")]
     private static partial void LogServerListRefreshFailed(ILogger logger, Exception error);
 
     [LoggerMessage(LogLevel.Error, "Could not rotate the VPN.")]

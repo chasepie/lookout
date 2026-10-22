@@ -13,6 +13,12 @@ public sealed record GluetunSettings(string ApiKey, ProxySettings Proxy)
     /// unresponsive gluetun mustn't hold one up long.
     /// </summary>
     public TimeSpan StatusTimeout { get; init; } = TimeSpan.FromSeconds(10);
+
+    /// <summary>How often a refresh of the server list checks whether gluetun's updater has finished.</summary>
+    public TimeSpan UpdaterCheckInterval { get; init; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>How long a refresh of the server list waits for gluetun's updater, which took about a minute in testing.</summary>
+    public TimeSpan UpdaterTimeout { get; init; } = TimeSpan.FromMinutes(5);
 }
 
 /// <summary>
@@ -107,10 +113,35 @@ public sealed class GluetunVpnRotator(
 
     /// <summary>
     /// Runs gluetun's updater, which fetches the servers through the VPN, unlike its update command, which would go out
-    /// from the home IP (ADR-0004).
+    /// from the home IP (ADR-0004). It runs in the background, so this waits for its status to say it completed.
     /// </summary>
-    public Task RefreshServerListAsync(CancellationToken cancellationToken) =>
-        PutStatusAsync("v1/updater/status", "running", cancellationToken);
+    public async Task<bool> RefreshServerListAsync(CancellationToken cancellationToken)
+    {
+        using var timeout = new CancellationTokenSource(settings.UpdaterTimeout, timeProvider);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeout.Token);
+        try
+        {
+            await PutStatusAsync("v1/updater/status", "running", linked.Token);
+            while (true)
+            {
+                await Task.Delay(settings.UpdaterCheckInterval, timeProvider, linked.Token);
+                switch ((await GetAsync<VpnState>("v1/updater/status", linked.Token))?.Status)
+                {
+                    case "running":
+                        continue;
+                    case "completed":
+                        return true;
+                    // Crashed, or stopped by something else
+                    default:
+                        return false;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (timeout.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            return false;
+        }
+    }
 
     private Task PutVpnStatusAsync(string status, CancellationToken cancellationToken) =>
         PutStatusAsync("v1/vpn/status", status, cancellationToken);

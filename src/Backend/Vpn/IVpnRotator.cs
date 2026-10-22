@@ -18,9 +18,10 @@ public interface IVpnRotator
     Task RotateAsync(CancellationToken cancellationToken);
 
     /// <summary>
-    /// Starts refreshing the list of servers the VPN picks from, through the VPN, without waiting for it to finish.
+    /// Refreshes the list of servers the VPN picks from, through the VPN, and waits for it to finish. Returns whether
+    /// it completed.
     /// </summary>
-    Task RefreshServerListAsync(CancellationToken cancellationToken);
+    Task<bool> RefreshServerListAsync(CancellationToken cancellationToken);
 }
 
 /// <summary>The VPN's state. Only a connected VPN has a proxy, so a VPN Run can't go through one that isn't.</summary>
@@ -79,6 +80,6 @@ public sealed class DisabledVpnRotator : IVpnRotator
     public Task RotateAsync(CancellationToken cancellationToken) =>
         Task.FromException(new InvalidOperationException("Lookout has no VPN configured to rotate."));
 
-    public Task RefreshServerListAsync(CancellationToken cancellationToken) =>
-        Task.FromException(new InvalidOperationException("Lookout has no VPN configured to refresh."));
+    public Task<bool> RefreshServerListAsync(CancellationToken cancellationToken) =>
+        Task.FromException<bool>(new InvalidOperationException("Lookout has no VPN configured to refresh."));
 }
