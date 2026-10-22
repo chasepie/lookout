@@ -8,13 +8,13 @@ async function requestToken(page: Page) {
 }
 
 /** Creates a Watch through the API with the page's login, sending the request token the app would, and returns its ID. */
-export async function createWatch(page: Page, name: string, notificationUrl = 'https://example.com/widget') {
+export async function createWatch(page: Page, name: string, notificationUrl = 'https://example.com/widget', usesVpn = false) {
   const created = await page.request.post('/api/watches', {
     headers: { 'X-XSRF-TOKEN': await requestToken(page) },
     multipart: {
       name, notificationUrl,
       script: { name: 'price.ts', mimeType: 'text/plain', buffer: Buffer.from('export default {}') },
-      scheduleKind: 'interval', every: '1', unit: 'hours',
+      scheduleKind: 'interval', every: '1', unit: 'hours', usesVpn: String(usesVpn),
     },
   });
   expect(created.status()).toBe(201);

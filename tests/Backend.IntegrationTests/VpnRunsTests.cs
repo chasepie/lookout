@@ -93,8 +93,9 @@ public sealed class VpnRunsTests(TestContext testContext)
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         var watch = await CreateWatch(client, usesVpn: true);
 
+        var readsBefore = factory.Vpn.StatusReads;
         var running = RunNow(client, watch["id"]!.GetValue<string>());
-        await AdvanceUntil(factory, () => factory.Vpn.StatusReads >= 2);
+        await AdvanceUntil(factory, () => factory.Vpn.StatusReads - readsBefore >= 2);
         factory.Vpn.Status = VpnStatus.ConnectedThrough(new ProxySettings("http://gluetun:8888"), "203.0.113.7", "New York");
         var run = await AdvanceUntilDone(factory, running);
 
@@ -107,7 +108,7 @@ public sealed class VpnRunsTests(TestContext testContext)
     public async Task AVpnRunIsRefusedAsErroredWhenTheVpnDoesNotConnectWithinTwoMinutes()
     {
         await using var factory = new LookoutWebApplicationFactory();
-        factory.Vpn.Status = VpnStatus.Disconnected("gluetun's control server returned HTTP 500.");
+        var startedAt = factory.Time.GetUtcNow();
         var executions = 0;
         factory.Runner.OnExecute = (_, _) =>
         {
@@ -116,6 +117,9 @@ public sealed class VpnRunsTests(TestContext testContext)
         };
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         var watch = await CreateWatch(client, usesVpn: true);
+        // Past the check at startup, which would otherwise rotate the VPN for not having connected
+        await AdvanceUntil(factory, () => factory.Time.GetUtcNow() - startedAt > VpnRotation.StartupWait);
+        factory.Vpn.Status = VpnStatus.Disconnected("gluetun's control server returned HTTP 500.");
 
         var run = await AdvanceUntilDone(factory, RunNow(client, watch["id"]!.GetValue<string>()));
 
@@ -124,8 +128,10 @@ public sealed class VpnRunsTests(TestContext testContext)
         Assert.AreEqual(
             "The VPN is not connected, so this VPN Run was not started. gluetun's control server returned HTTP 500.",
             run["errorMessage"]!.GetValue<string>());
-        Assert.AreEqual(TimeSpan.FromMinutes(2),
-            run["finishedAt"]!.GetValue<DateTimeOffset>() - run["startedAt"]!.GetValue<DateTimeOffset>());
+        // Fake time moves on in steps of a second while the Run records itself, so it may finish a step or two later
+        var waited = run["finishedAt"]!.GetValue<DateTimeOffset>() - run["startedAt"]!.GetValue<DateTimeOffset>();
+        Assert.IsGreaterThanOrEqualTo(TimeSpan.FromMinutes(2), waited);
+        Assert.IsLessThanOrEqualTo(TimeSpan.FromMinutes(2) + TimeSpan.FromSeconds(5), waited);
         Assert.IsNull(run["vpnExitIp"]);
     }
 
@@ -137,11 +143,13 @@ public sealed class VpnRunsTests(TestContext testContext)
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         var watch = await CreateWatch(client, usesVpn: true);
 
+        var readsBefore = factory.Vpn.StatusReads;
+
         // Without fake time moving on, a Run that waited for the VPN would never finish
         var run = await RunNow(client, watch["id"]!.GetValue<string>())
             .WaitAsync(TimeSpan.FromSeconds(10), testContext.CancellationToken);
 
-        Assert.AreEqual(1, factory.Vpn.StatusReads);
+        Assert.AreEqual(1, factory.Vpn.StatusReads - readsBefore);
         Assert.AreEqual("errored", run["outcome"]!.GetValue<string>());
         Assert.AreEqual(
             "The VPN is not connected, so this VPN Run was not started. gluetun refused Lookout's API key (HTTP 401).",
@@ -159,8 +167,9 @@ public sealed class VpnRunsTests(TestContext testContext)
         var vpnWatch = await CreateWatch(client, usesVpn: true);
         var directWatch = await CreateWatch(client, usesVpn: false);
 
+        var readsBefore = factory.Vpn.StatusReads;
         var waiting = RunNow(client, vpnWatch["id"]!.GetValue<string>());
-        await AdvanceUntil(factory, () => factory.Vpn.StatusReads >= 1);
+        await AdvanceUntil(factory, () => factory.Vpn.StatusReads - readsBefore >= 1);
         // Without fake time moving on, the VPN Run is still waiting
         var direct = await RunNow(client, directWatch["id"]!.GetValue<string>())
             .WaitAsync(TimeSpan.FromSeconds(10), testContext.CancellationToken);
@@ -206,11 +215,12 @@ public sealed class VpnRunsTests(TestContext testContext)
         };
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         var watch = await CreateWatch(client, usesVpn: true);
+        var readsBefore = factory.Vpn.StatusReads;
 
         var testRun = await TestRun(client, watch["id"]!.GetValue<string>());
 
         Assert.AreEqual(0, executions);
-        Assert.AreEqual(1, factory.Vpn.StatusReads);
+        Assert.AreEqual(1, factory.Vpn.StatusReads - readsBefore);
         Assert.AreEqual("errored", testRun["outcome"]!.GetValue<string>());
         Assert.AreEqual(errorMessage, testRun["errorMessage"]!.GetValue<string>());
     }
@@ -352,10 +362,10 @@ public sealed class VpnRunsTests(TestContext testContext)
         var disconnected = await client.GetFromJsonAsync<JsonObject>("/api/vpn", testContext.CancellationToken);
 
         Assert.AreEqual(
-            """{"enabled":true,"connected":true,"region":"New York","exitIp":"203.0.113.7","error":null}""",
+            """{"enabled":true,"connected":true,"rotating":false,"region":"New York","exitIp":"203.0.113.7","error":null}""",
             connected!.ToJsonString());
         Assert.AreEqual(
-            """{"enabled":true,"connected":false,"region":null,"exitIp":null,"error":"gluetun refused the API key (HTTP 401)."}""",
+            """{"enabled":true,"connected":false,"rotating":false,"region":null,"exitIp":null,"error":"gluetun refused the API key (HTTP 401)."}""",
             disconnected!.ToJsonString());
     }
 

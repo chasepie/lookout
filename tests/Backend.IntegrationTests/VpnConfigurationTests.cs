@@ -47,7 +47,7 @@ public sealed class VpnConfigurationTests(TestContext testContext)
         var run = await RunVpnWatch(client);
 
         Assert.AreEqual(
-            """{"enabled":true,"connected":true,"region":"Florida","exitIp":"198.51.100.23","error":null}""",
+            """{"enabled":true,"connected":true,"rotating":false,"region":"Florida","exitIp":"198.51.100.23","error":null}""",
             status!.ToJsonString());
         Assert.AreEqual(new ProxySettings("http://vpn-proxy:3128", "lookout", "secret"), executed!.Proxy);
         Assert.AreEqual("198.51.100.23", run["vpnExitIp"]!.GetValue<string>());

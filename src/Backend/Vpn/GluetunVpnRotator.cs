@@ -13,12 +13,23 @@ public sealed record GluetunSettings(string ApiKey, ProxySettings Proxy)
     /// unresponsive gluetun mustn't hold one up long.
     /// </summary>
     public TimeSpan StatusTimeout { get; init; } = TimeSpan.FromSeconds(10);
+
+    /// <summary>How often a refresh of the server list checks whether gluetun's updater has finished.</summary>
+    public TimeSpan UpdaterCheckInterval { get; init; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>How long a refresh of the server list waits for gluetun's updater, which took about a minute in testing.</summary>
+    public TimeSpan UpdaterTimeout { get; init; } = TimeSpan.FromMinutes(5);
 }
 
 /// <summary>
 /// The VPN, through gluetun's control server, whose client's base address is that server (ADR-0004).
 /// </summary>
-public sealed class GluetunVpnRotator(HttpClient client, GluetunSettings settings, TimeProvider timeProvider) : IVpnRotator
+/// <param name="proxiedExitIp">Finds the exit IP through the proxy when gluetun's own lookup of it fails.</param>
+public sealed class GluetunVpnRotator(
+    HttpClient client,
+    GluetunSettings settings,
+    ProxiedExitIp proxiedExitIp,
+    TimeProvider timeProvider) : IVpnRotator
 {
     public async Task<VpnStatus> GetStatusAsync(CancellationToken cancellationToken)
     {
@@ -34,16 +45,23 @@ public sealed class GluetunVpnRotator(HttpClient client, GluetunSettings setting
                 case "running":
                     break;
                 case "crashed":
+                    proxiedExitIp.Forget();
                     return VpnStatus.Disconnected("gluetun's VPN crashed. gluetun's logs say why.");
                 case var status:
+                    proxiedExitIp.Forget();
                     return VpnStatus.Disconnected($"gluetun's VPN is {status ?? "in an unknown state"}.");
             }
-            // gluetun clears its public IP whenever the VPN stops or restarts, and has none until the tunnel is up.
+            // gluetun clears its public IP whenever the VPN stops or restarts, and has none until the tunnel is up, or
+            // if its lookup of it fails, when one found through the proxy counts.
             var exit = await GetAsync<PublicIp>("v1/publicip/ip", linked.Token);
             if (string.IsNullOrEmpty(exit?.Ip))
             {
-                return VpnStatus.Disconnected("gluetun is connecting the VPN.");
+                // Not held to the deadline for reading gluetun: Browserless takes longer, and other reads share it.
+                return await proxiedExitIp.CheckAsync(settings.Proxy, cancellationToken) is { } proxiedIp
+                    ? VpnStatus.ConnectedThrough(settings.Proxy, proxiedIp, region: null)
+                    : VpnStatus.Disconnected("gluetun is connecting the VPN.");
             }
+            proxiedExitIp.Forget();
             return VpnStatus.ConnectedThrough(
                 proxy: settings.Proxy,
                 exitIp: exit.Ip,
@@ -57,13 +75,15 @@ public sealed class GluetunVpnRotator(HttpClient client, GluetunSettings setting
         // Anything but the caller cancelling means gluetun can't be read, which leaves VPN Runs refused.
         catch (Exception error) when (!cancellationToken.IsCancellationRequested)
         {
-            return VpnStatus.Disconnected(error switch
+            return error switch
             {
-                _ when timeout.IsCancellationRequested =>
-                    $"gluetun's control server did not respond within {settings.StatusTimeout.TotalSeconds:0.#} seconds.",
-                HttpRequestException { StatusCode: { } status } => $"gluetun's control server returned HTTP {(int)status}.",
-                _ => $"Could not reach gluetun's control server: {error.Message}"
-            });
+                _ when timeout.IsCancellationRequested => VpnStatus.Unreachable(
+                    $"gluetun's control server did not respond within {settings.StatusTimeout.TotalSeconds:0.#} seconds."),
+                // gluetun answered, though not as it should
+                HttpRequestException { StatusCode: { } status } =>
+                    VpnStatus.Disconnected($"gluetun's control server returned HTTP {(int)status}."),
+                _ => VpnStatus.Unreachable($"Could not reach gluetun's control server: {error.Message}")
+            };
         }
     }
 
@@ -72,6 +92,8 @@ public sealed class GluetunVpnRotator(HttpClient client, GluetunSettings setting
 
     public async Task RotateAsync(CancellationToken cancellationToken)
     {
+        // The old exit is going, and the new tunnel needs time for gluetun to find its exit before a check is worth it.
+        proxiedExitIp.Forget();
         await PutVpnStatusAsync("stopped", cancellationToken);
         // gluetun picks a random server among its SERVER_REGIONS each time it starts the VPN. Once it's stopped, nothing
         // else starts it again, so this goes ahead even if the caller gives up, and tries more than once.
@@ -89,9 +111,44 @@ public sealed class GluetunVpnRotator(HttpClient client, GluetunSettings setting
         }
     }
 
-    private async Task PutVpnStatusAsync(string status, CancellationToken cancellationToken)
+    /// <summary>
+    /// Runs gluetun's updater, which fetches the servers through the VPN, unlike its update command, which would go out
+    /// from the home IP (ADR-0004). It runs in the background, so this waits for its status to say it completed.
+    /// </summary>
+    public async Task<bool> RefreshServerListAsync(CancellationToken cancellationToken)
     {
-        using var request = Request(HttpMethod.Put, "v1/vpn/status");
+        using var timeout = new CancellationTokenSource(settings.UpdaterTimeout, timeProvider);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeout.Token);
+        try
+        {
+            await PutStatusAsync("v1/updater/status", "running", linked.Token);
+            while (true)
+            {
+                await Task.Delay(settings.UpdaterCheckInterval, timeProvider, linked.Token);
+                switch ((await GetAsync<VpnState>("v1/updater/status", linked.Token))?.Status)
+                {
+                    case "running":
+                        continue;
+                    case "completed":
+                        return true;
+                    // Crashed, or stopped by something else
+                    default:
+                        return false;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (timeout.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            return false;
+        }
+    }
+
+    private Task PutVpnStatusAsync(string status, CancellationToken cancellationToken) =>
+        PutStatusAsync("v1/vpn/status", status, cancellationToken);
+
+    private async Task PutStatusAsync(string path, string status, CancellationToken cancellationToken)
+    {
+        using var request = Request(HttpMethod.Put, path);
         request.Content = JsonContent.Create(new { status });
         using var response = await client.SendAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();

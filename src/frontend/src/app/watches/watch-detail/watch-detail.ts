@@ -129,7 +129,7 @@ export class WatchDetail {
     });
     // Read afresh rather than patched, as an event may overtake a read already under way.
     inject(WatchEvents).events.pipe(takeUntilDestroyed()).subscribe((event) => {
-      if (event.type !== 'connected' && event.watchId !== this.id()) {return;}
+      if (event.type === 'vpnStatusChanged' || (event.type !== 'connected' && event.watchId !== this.id())) {return;}
       this.refreshWatch();
       if (event.type === 'connected' || (event.type === 'runFinished' && event.runId !== null)) {
         this.latestRuns.refresh();

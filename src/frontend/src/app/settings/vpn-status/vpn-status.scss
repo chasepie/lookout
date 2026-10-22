@@ -22,4 +22,5 @@ dd { margin: 0; overflow-wrap: anywhere; }
   background: tokens.$failure-surface;
 
   &.connected { color: tokens.$success; background: tokens.$success-surface; }
+  &.rotating { color: tokens.$paused; background: tokens.$paused-surface; }
 }

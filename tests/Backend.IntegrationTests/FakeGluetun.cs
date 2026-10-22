@@ -35,12 +35,29 @@ public sealed class FakeGluetun : IAsyncDisposable
         get => Volatile.Read(ref _failingStarts);
         set => Volatile.Write(ref _failingStarts, value);
     }
+    private ConcurrentQueue<string> _updaterStatuses = new(["completed"]);
+
+    /// <summary>Has the updater's status read as each of these in turn, the last staying once reached.</summary>
+    public void UpdaterGoesThrough(params string[] statuses) => _updaterStatuses = new(statuses);
+
+    /// <summary>How many of the updater's statuses are still to be read before the last.</summary>
+    public int UpdaterStatusesLeft => _updaterStatuses.Count - 1;
     /// <summary>Each authenticated change requested, as its method, path and body.</summary>
     public ConcurrentQueue<string> Changes { get; } = new();
 
-    public GluetunVpnRotator CreateRotator(string apiKey) =>
-        new(new HttpClient { BaseAddress = Address }, new GluetunSettings(apiKey, new ProxySettings("http://gluetun:8888")),
-            TimeProvider.System);
+    /// <summary>
+    /// A rotator for gluetun with Lookout's key, or another, whose checks through the proxy go to
+    /// <paramref name="runner"/>, or fail without one.
+    /// </summary>
+    public GluetunVpnRotator CreateRotator(string apiKey, TimeProvider? timeProvider = null, IRunnerClient? runner = null,
+        Func<GluetunSettings, GluetunSettings>? configure = null)
+    {
+        timeProvider ??= TimeProvider.System;
+        runner ??= new FakeRunnerClient();
+        var settings = new GluetunSettings(apiKey, new ProxySettings("http://gluetun:8888"));
+        return new(new HttpClient { BaseAddress = Address }, configure?.Invoke(settings) ?? settings,
+            new ProxiedExitIp(() => runner, timeProvider), timeProvider);
+    }
 
     public static async Task<FakeGluetun> StartAsync(string apiKey)
     {
@@ -73,6 +90,14 @@ public sealed class FakeGluetun : IAsyncDisposable
                     return;
                 }
                 await context.Response.WriteAsync("""{"outcome":"stopped"}""", context.RequestAborted);
+                break;
+            case ("GET", "/v1/updater/status"):
+                var updater = _updaterStatuses.Count > 1 && _updaterStatuses.TryDequeue(out var next) ? next : _updaterStatuses.Last();
+                await context.Response.WriteAsync($$"""{"status":"{{updater}}"}""", context.RequestAborted);
+                break;
+            case ("PUT", "/v1/updater/status"):
+                Changes.Enqueue($"PUT /v1/updater/status {FakeHttpServer.RequestOf(context).Body}");
+                await context.Response.WriteAsync("""{"outcome":"running"}""", context.RequestAborted);
                 break;
             case ("GET", "/v1/publicip/ip"):
                 await Task.Delay(PublicIpDelay, context.RequestAborted);

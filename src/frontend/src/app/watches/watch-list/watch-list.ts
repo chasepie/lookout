@@ -46,7 +46,9 @@ export class WatchList {
     this.watches.list.refresh();
     // While it is, every event changes some Watch on it; the list is read afresh rather than patched, as an event may
     // overtake a read already under way.
-    inject(WatchEvents).events.pipe(takeUntilDestroyed()).subscribe(() => this.watches.list.refresh());
+    inject(WatchEvents).events.pipe(takeUntilDestroyed()).subscribe((event) => {
+      if (event.type !== 'vpnStatusChanged') {this.watches.list.refresh();}
+    });
   }
 
   protected selectScript(input: HTMLInputElement) {

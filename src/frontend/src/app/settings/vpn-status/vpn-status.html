@@ -12,7 +12,13 @@
     } @else {
       <dl>
         <dt>Status</dt>
-        <dd><span class="state" [class.connected]="vpn.connected">{{ vpn.connected ? 'Connected' : 'Not connected' }}</span></dd>
+        <dd>
+          @if (vpn.rotating) {
+            <span class="state rotating">Rotating</span>
+          } @else {
+            <span class="state" [class.connected]="vpn.connected">{{ vpn.connected ? 'Connected' : 'Not connected' }}</span>
+          }
+        </dd>
         @if (vpn.connected) {
           <dt>Region</dt>
           <dd>{{ vpn.region ?? 'Unknown' }}</dd>
@@ -20,7 +26,9 @@
           <dd>{{ vpn.exitIp }}</dd>
         }
       </dl>
-      @if (!vpn.connected) {
+      @if (vpn.rotating) {
+        <p class="details">Switching to a new exit IP. VPN Runs wait until it's done.</p>
+      } @else if (!vpn.connected) {
         <p class="details">VPN Runs are refused until it connects.</p>
       }
       @if (vpn.error) { <p class="error">{{ vpn.error }}</p> }

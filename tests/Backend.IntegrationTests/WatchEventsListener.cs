@@ -29,6 +29,8 @@ public sealed class WatchEventsListener : IAsyncDisposable
     private readonly WebApplicationFactory<Program> _factory;
     private readonly CookieContainer _cookies = new();
     private readonly Channel<WatchEvent> _events = Channel.CreateUnbounded<WatchEvent>();
+    /// <summary>The VPN's events, kept apart as a Rotation can push them at any time fake time moves on.</summary>
+    private readonly Channel<JsonElement> _vpnEvents = Channel.CreateUnbounded<JsonElement>();
     private readonly TaskCompletionSource _closed = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private HubConnection? _connection;
 
@@ -116,6 +118,7 @@ public sealed class WatchEventsListener : IAsyncDisposable
         {
             connection.On<JsonElement>(name, payload => _events.Writer.TryWrite(new WatchEvent(name, payload)));
         }
+        connection.On<JsonElement>(nameof(IWatchEventsClient.VpnStatusChanged), payload => _vpnEvents.Writer.TryWrite(payload));
         connection.Closed += _ =>
         {
             _closed.TrySetResult();
@@ -137,6 +140,10 @@ public sealed class WatchEventsListener : IAsyncDisposable
     }
 
     public async Task<WatchEvent> NextAsync(CancellationToken cancellationToken) => (await NextAsync(1, cancellationToken))[0];
+
+    /// <summary>The next VPN status pushed to this listener.</summary>
+    public async Task<JsonElement> NextVpnStatusAsync(CancellationToken cancellationToken) =>
+        await _vpnEvents.Reader.ReadAsync(cancellationToken).AsTask().WaitAsync(EventTimeout, cancellationToken);
 
     public async ValueTask DisposeAsync()
     {

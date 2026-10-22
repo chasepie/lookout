@@ -18,7 +18,7 @@ public sealed class WatchesController(
     LookoutDbContext database,
     RunExecutor runExecutor,
     IRunnerClient runner,
-    IVpnRotator vpn,
+    VpnRotation rotation,
     WatchSchedules schedules,
     RunningWatches runningWatches,
     RunSlots runSlots,
@@ -406,21 +406,24 @@ public sealed class WatchesController(
         using var stopping = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, applicationLifetime.ApplicationStopping);
         await runSlots.WaitAsync(stopping.Token);
         RunnerResult result;
+        VpnRunLease? vpnRun = null;
         try
         {
             // Checked once the slot is taken, which can be minutes later. It fails closed like a Run, but at once
-            // rather than waiting for the VPN, as the user is waiting for the result.
-            var vpnStatus = watch.UsesVpn ? await vpn.GetStatusAsync(stopping.Token) : null;
+            // rather than waiting for the VPN, as the user is waiting for the result. A Rotation waits for it like a
+            // VPN Run, so its browser isn't left with a connection through the old exit.
+            VpnStatus? vpnStatus = null;
+            if (watch.UsesVpn)
+            {
+                (vpnRun, vpnStatus) = await rotation.TryStartVpnRunAsync(stopping.Token);
+                if (vpnStatus is null)
+                {
+                    return RefusedTestRun("The VPN is rotating to a new exit IP, so this Test run was not started. Try again in a minute.");
+                }
+            }
             if (vpnStatus?.RefusalOf("Test run") is { } refusal)
             {
-                return new TestRun(
-                    Outcome: RunOutcome.Errored,
-                    Content: null,
-                    Details: null,
-                    ErrorMessage: refusal,
-                    DurationMs: 0,
-                    Screenshot: null,
-                    ConsoleOutput: null);
+                return RefusedTestRun(refusal);
             }
             result = await runner.ExecuteAsync(new RunnerRequest(
                 Source: script.Source,
@@ -432,6 +435,7 @@ public sealed class WatchesController(
         }
         finally
         {
+            vpnRun?.Dispose();
             runSlots.Release();
         }
 
@@ -446,6 +450,15 @@ public sealed class WatchesController(
             Screenshot: result.Screenshot,
             ConsoleOutput: result.ConsoleOutput);
     }
+
+    private static TestRun RefusedTestRun(string errorMessage) => new(
+        Outcome: RunOutcome.Errored,
+        Content: null,
+        Details: null,
+        ErrorMessage: errorMessage,
+        DurationMs: 0,
+        Screenshot: null,
+        ConsoleOutput: null);
 
     [HttpGet("{id:guid}/runs")]
     public async Task<ActionResult<IReadOnlyList<Run>>> History(Guid id, CancellationToken cancellationToken,
