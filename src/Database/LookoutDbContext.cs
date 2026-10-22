@@ -115,7 +115,7 @@ public class LookoutDbContext(DbContextOptions<LookoutDbContext> options) : DbCo
             settings.Property(item => item.Id).ValueGeneratedNever();
             // The DebugOutputAndRetention migration inserts the only row, rather than seed data here, which later
             // migrations would reset to the current defaults, overwriting the user's settings.
-            settings.ToTable(table => table.HasCheckConstraint("CK_Settings_Singleton", $"Id = {ChasePie.Lookout.Model.Settings.SingletonId}"));
+            settings.ToTable(table => table.HasCheckConstraint("CK_Settings_Singleton", $"Id = {Lookout.Model.Settings.SingletonId}"));
         });
     }
 }
