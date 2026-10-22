@@ -39,6 +39,9 @@ public sealed class DebugOutputTests(TestContext testContext)
         Assert.IsTrue(debugOutput["hasScreenshot"]!.GetValue<bool>());
         Assert.AreEqual(HttpStatusCode.OK, screenshot.StatusCode);
         Assert.AreEqual("image/png", screenshot.Content.Headers.ContentType?.MediaType);
+        // A Run's screenshot never changes, so the browser needn't download it again.
+        Assert.IsTrue(screenshot.Headers.CacheControl?.Private);
+        Assert.Contains("immutable", screenshot.Headers.CacheControl!.Extensions.Select(extension => extension.Name));
         Assert.AreSequenceEqual(Png, await screenshot.Content.ReadAsByteArrayAsync(testContext.CancellationToken));
     }
 

@@ -27,8 +27,14 @@ public sealed class SettingsController(LookoutDbContext database) : LookoutContr
                 statusCode: HttpStatusCode.BadRequest);
         }
 
-        await database.Settings.ExecuteUpdateAsync(setters => setters
+        var updated = await database.Settings.ExecuteUpdateAsync(setters => setters
             .SetProperty(settings => settings.RetentionDays, request.RetentionDays), cancellationToken);
+        // Migrations create the only row, so a database without one isn't Lookout's, and nothing could be saved.
+        if (updated != 1)
+        {
+            return Problem("Lookout's settings are missing from its database, so they could not be saved.",
+                statusCode: HttpStatusCode.InternalServerError);
+        }
         return new SettingsResponse(request.RetentionDays);
     }
 }

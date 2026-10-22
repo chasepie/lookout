@@ -20,8 +20,8 @@ export class RunDebugOutput {
   // A screenshot can be large, so a Run's debug output is read only when it is first opened.
   protected readonly debugOutput = httpResource<DebugOutput>(() => (this.opened() ? `${this.url()}/debug-output` : undefined));
   protected readonly screenshotUrl = computed(() => `${this.url()}/screenshot`);
-  // The screenshot can be dropped between reading the debug output and loading the image.
-  protected readonly screenshotMissing = signal(false);
+  // The image can fail to load, such as when the screenshot was dropped since the debug output was read.
+  protected readonly screenshotFailed = signal(false);
   protected readonly missing = computed(() => {
     const error = this.debugOutput.error();
     return error instanceof HttpErrorResponse && error.status === 404;
@@ -31,5 +31,7 @@ export class RunDebugOutput {
   protected toggle() {
     this.opened.set(true);
     this.open.set(!this.open());
+    // Opening it again tries the screenshot again.
+    this.screenshotFailed.set(false);
   }
 }

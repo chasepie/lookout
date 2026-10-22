@@ -8,11 +8,11 @@
     } @else if (debugOutput.hasValue()) {
       @let output = debugOutput.value();
       @if (output.hasScreenshot) {
-        @if (screenshotMissing()) {
-          <p class="details">The screenshot is no longer available.</p>
+        @if (screenshotFailed()) {
+          <p class="error" role="alert">Could not load the screenshot. It may have been dropped since. <button type="button" (click)="screenshotFailed.set(false)">Try again</button></p>
         } @else {
           <a [href]="screenshotUrl()" target="_blank" rel="noopener">
-            <img class="screenshot" [src]="screenshotUrl()" alt="Screenshot of the Script's page when the Run ended" (error)="screenshotMissing.set(true)" />
+            <img class="screenshot" [src]="screenshotUrl()" alt="Screenshot of the Script's page when the Run ended" (error)="screenshotFailed.set(true)" />
           </a>
         }
       }

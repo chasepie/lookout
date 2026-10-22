@@ -47,12 +47,14 @@ export class RetentionSettings {
   protected async save() {
     await submit(this.retentionForm, async () => {
       try {
-        await firstValueFrom(this.http.put<LookoutSettings>('/api/settings', this.model()));
+        // The response is the settings as saved, so a read afterwards can't fail and hide the form that just saved.
+        this.settings.set(await firstValueFrom(this.http.put<LookoutSettings>('/api/settings', this.model())));
         this.saveSucceeded.emit('Run history settings saved.');
       } catch (error: unknown) {
         this.saveFailed.emit(problemMessage(error, 'Could not save the Run history settings. Please try again.'));
+        // Show what is saved, which may have changed elsewhere.
+        this.settings.refresh();
       }
-      this.settings.refresh();
     });
   }
 }

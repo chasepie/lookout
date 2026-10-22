@@ -466,7 +466,13 @@ public sealed class WatchesController(
         var screenshot = await DebugOutputOf(id, runId)
             .Select(item => item.Screenshot)
             .SingleOrDefaultAsync(cancellationToken);
-        return screenshot is null ? NotFound() : File(screenshot, "image/png");
+        if (screenshot is null)
+        {
+            return NotFound();
+        }
+        // A Run's screenshot never changes, so reopening its debug output needn't download it again.
+        Response.Headers.CacheControl = "private, max-age=31536000, immutable";
+        return File(screenshot, "image/png");
     }
 
     private IQueryable<RunDebugOutput> DebugOutputOf(Guid watchId, long runId) =>

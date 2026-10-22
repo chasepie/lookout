@@ -29,6 +29,24 @@ test('open an Errored Run and see its screenshot and console output', async ({ p
   expect(debugOutputReads).toBe(1);
 });
 
+test('a screenshot that fails to load can be tried again', async ({ page }) => {
+  const id = await createWatch(page, `Errored price ${randomUUID()}`, 'https://example.com/errored');
+  await runWatch(page, id, 1);
+  await page.route('**/screenshot', (route) => route.fulfill({ status: 503 }));
+  await page.goto(`/watches/${id}`);
+
+  const run = page.getByRole('list', { name: 'Run history' }).getByRole('listitem').first();
+  await run.getByRole('button', { name: 'Show debug output' }).click();
+  await expect(run.getByRole('alert')).toContainText('Could not load the screenshot.');
+  await expect(run.locator('pre.console')).toContainText('Timed out waiting for .price');
+
+  await page.unroute('**/screenshot');
+  await run.getByRole('button', { name: 'Try again' }).click();
+  const screenshot = run.getByRole('img', { name: 'Screenshot of the Script\'s page when the Run ended' });
+  await expect.poll(() => screenshot.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(8);
+  await expect(run.getByRole('alert')).toHaveCount(0);
+});
+
 test('a Known failure Run without debug output explains why', async ({ page }) => {
   const id = await createWatch(page, `Blocked price ${randomUUID()}`, 'https://example.com/known-failure');
   await runWatch(page, id, 1);
