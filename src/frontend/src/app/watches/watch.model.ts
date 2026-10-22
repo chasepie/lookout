@@ -24,6 +24,15 @@ export interface Run {
   isChange: boolean;
 }
 
+/** How many of a Watch's most recent Known failure and Errored Runs keep their debug output */
+export const debugOutputKeptPerWatch = 20;
+
+/** What a Known failure or Errored Run left to debug it by; its screenshot is served separately */
+export interface DebugOutput {
+  consoleOutput: string | null;
+  hasScreenshot: boolean;
+}
+
 export interface Watch {
   id: string;
   name: string;

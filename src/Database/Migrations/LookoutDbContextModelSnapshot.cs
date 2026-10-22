@@ -106,11 +106,29 @@ namespace ChasePie.Lookout.Database.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("FinishedAt");
+
                     b.HasIndex("ScriptVersionId");
 
                     b.HasIndex("WatchId", "Id");
 
                     b.ToTable("Runs");
+                });
+
+            modelBuilder.Entity("ChasePie.Lookout.Model.RunDebugOutput", b =>
+                {
+                    b.Property<long>("RunId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ConsoleOutput")
+                        .HasColumnType("TEXT");
+
+                    b.Property<byte[]>("Screenshot")
+                        .HasColumnType("BLOB");
+
+                    b.HasKey("RunId");
+
+                    b.ToTable("RunDebugOutputs");
                 });
 
             modelBuilder.Entity("ChasePie.Lookout.Model.ScriptVersion", b =>
@@ -161,6 +179,22 @@ namespace ChasePie.Lookout.Database.Migrations
                     b.HasIndex("AccountId");
 
                     b.ToTable("Sessions");
+                });
+
+            modelBuilder.Entity("ChasePie.Lookout.Model.Settings", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("RetentionDays")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_Settings_Singleton", "Id = 1");
+                        });
                 });
 
             modelBuilder.Entity("ChasePie.Lookout.Model.Watch", b =>
@@ -286,6 +320,17 @@ namespace ChasePie.Lookout.Database.Migrations
                         .HasForeignKey("WatchId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("ChasePie.Lookout.Model.RunDebugOutput", b =>
+                {
+                    b.HasOne("ChasePie.Lookout.Model.Run", "Run")
+                        .WithOne()
+                        .HasForeignKey("ChasePie.Lookout.Model.RunDebugOutput", "RunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Run");
                 });
 
             modelBuilder.Entity("ChasePie.Lookout.Model.ScriptVersion", b =>

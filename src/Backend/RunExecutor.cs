@@ -28,12 +28,13 @@ public sealed record RunExecution(RunExecutionStatus Status, Run? Run = null);
 /// Callers admit the Run first through <see cref="RunningWatches"/> and <see cref="RunSlots"/>.
 /// Announces the Run's start and finish, and any change of the Watch's status, through <see cref="WatchEvents"/>.
 /// </summary>
-public sealed class RunExecutor(
+public sealed partial class RunExecutor(
     LookoutDbContext database,
     IRunnerClient runner,
     NotificationDispatcher notifications,
     WatchEvents events,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    ILogger<RunExecutor> logger)
 {
     public async Task<RunExecution> ExecuteAsync(Guid watchId, CancellationToken cancellationToken)
     {
@@ -114,6 +115,11 @@ public sealed class RunExecutor(
         watch.FailureStreakNotified = evaluation.FailureStreakNotified;
         watch.Revision++;
         database.Runs.Add(run);
+        var debugOutput = DebugOutputOf(run, result);
+        if (debugOutput is not null)
+        {
+            database.RunDebugOutputs.Add(debugOutput);
+        }
 
         try
         {
@@ -141,6 +147,63 @@ public sealed class RunExecutor(
             throw;
         }
 
+        if (debugOutput is not null)
+        {
+            await TrimDebugOutput(watchId);
+        }
+
         return (new RunExecution(RunExecutionStatus.Recorded, run), evaluation.Notifications);
     }
+
+    /// <summary>
+    /// Drops the Watch's debug output beyond its most recent Runs'. Only a Run that kept debug output can take the Watch
+    /// past its limit. The Run is already recorded, so a failure here is only logged, and the next such Run trims again.
+    /// </summary>
+    private async Task TrimDebugOutput(Guid watchId)
+    {
+        try
+        {
+            await database.RunDebugOutputs
+                .Where(item => item.Run!.WatchId == watchId)
+                .OrderByDescending(item => item.RunId)
+                .Skip(RunDebugOutput.KeptPerWatch)
+                .ExecuteDeleteAsync(CancellationToken.None);
+        }
+        catch (Exception error)
+        {
+            LogTrimFailed(logger, error, watchId);
+        }
+    }
+
+    /// <summary>What a Known failure or Errored Run left to debug it by, if anything; a Succeeded Run keeps none.</summary>
+    private static RunDebugOutput? DebugOutputOf(Run run, RunnerResult result)
+    {
+        if (run.Outcome == RunOutcome.Succeeded)
+        {
+            return null;
+        }
+
+        var consoleOutput = string.IsNullOrEmpty(result.ConsoleOutput) ? null : result.ConsoleOutput;
+        var screenshot = result.Screenshot is null ? null : DecodeScreenshot(result.Screenshot);
+        return consoleOutput is null && screenshot is null
+            ? null
+            : new RunDebugOutput { Run = run, ConsoleOutput = consoleOutput, Screenshot = screenshot };
+    }
+
+    /// <summary>The runner's base64 screenshot, or nothing if it isn't valid base64, which shouldn't cost the Run.</summary>
+    private static byte[]? DecodeScreenshot(string base64)
+    {
+        try
+        {
+            var bytes = Convert.FromBase64String(base64);
+            return bytes.Length > 0 ? bytes : null;
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
+    }
+
+    [LoggerMessage(LogLevel.Warning, "Could not drop older debug output of Watch {WatchId}.")]
+    private static partial void LogTrimFailed(ILogger logger, Exception error, Guid watchId);
 }

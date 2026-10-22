@@ -40,6 +40,7 @@ public class Program
         services.AddSingleton<WatchEvents>();
         services.AddSingleton<EventConnections>();
         services.AddScoped<RunExecutor>();
+        services.AddHostedService<RunRetention>();
         ConfigureScheduling(services, configuration);
         ConfigureNotifications(services, configuration);
         var runnerBaseAddress = HttpUrls.ConfiguredBaseAddress(configuration, "Runner:BaseUrl", "http://localhost:3000");

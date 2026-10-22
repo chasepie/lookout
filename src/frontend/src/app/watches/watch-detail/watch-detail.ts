@@ -7,6 +7,7 @@ import { Router, RouterLink } from '@angular/router';
 import { OutcomeBadge } from '../outcome-badge/outcome-badge';
 import { problemMessage } from '../../shared/problem';
 import { refreshableHttpResource } from '../../shared/refreshable-http-resource';
+import { RunDebugOutput } from '../run-debug-output/run-debug-output';
 import { RunTiming } from '../run-timing/run-timing';
 import { ScheduleEditor } from '../../schedules/schedule-editor/schedule-editor';
 import { StatusBadge } from '../status-badge/status-badge';
@@ -31,7 +32,7 @@ const noOlderRuns: OlderRuns = { runs: [], ended: false, loading: false };
 
 @Component({
   selector: 'app-watch-detail',
-  imports: [DatePipe, FormField, OutcomeBadge, RouterLink, RunTiming, ScheduleEditor, StatusBadge, WatchChannels],
+  imports: [DatePipe, FormField, OutcomeBadge, RouterLink, RunDebugOutput, RunTiming, ScheduleEditor, StatusBadge, WatchChannels],
   templateUrl: './watch-detail.html',
   styleUrl: './watch-detail.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

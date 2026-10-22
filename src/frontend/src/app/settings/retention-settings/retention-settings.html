@@ -1,0 +1,21 @@
+<section class="panel" aria-labelledby="retention-heading">
+  <h2 id="retention-heading">Run history</h2>
+  <p>Lookout prunes older Runs to keep its database small. Changes are kept forever.</p>
+  @if (settings.error()) {
+    <p class="error" role="alert">Could not load the Run history settings. <button type="button" (click)="settings.reload()">Try again</button></p>
+  } @else if (settings.hasValue()) {
+    <form (submit)="$event.preventDefault(); save()">
+      <label for="retention-days">Keep Runs for (days)</label>
+      <input id="retention-days" type="number" step="1" [formField]="retentionForm.retentionDays" aria-describedby="retention-help" />
+      <small id="retention-help">Runs that aren't Changes are pruned once they are this many days old.</small>
+      @if (retentionForm.retentionDays().touched() && retentionForm.retentionDays().errors()[0]; as error) {
+        <small class="error">{{ error.message }}</small>
+      }
+      <button class="primary" type="submit" [disabled]="retentionForm().submitting() || retentionForm().invalid()">
+        {{ retentionForm().submitting() ? 'Saving…' : 'Save' }}
+      </button>
+    </form>
+  } @else {
+    <p>Loading Run history settings…</p>
+  }
+</section>

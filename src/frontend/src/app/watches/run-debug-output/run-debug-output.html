@@ -1,0 +1,29 @@
+<button type="button" (click)="toggle()" [attr.aria-expanded]="open()">{{ open() ? 'Hide debug output' : 'Show debug output' }}</button>
+@if (open()) {
+  <div class="debug-output">
+    @if (missing()) {
+      <p class="details">No debug output is kept for this Run. Either the Run ended before the Script left any, or it was dropped: Lookout keeps the screenshot and console output of each Watch's {{ keptPerWatch }} most recent Known failure and Errored Runs that have them.</p>
+    } @else if (debugOutput.error()) {
+      <p class="error" role="alert">Could not load the debug output. <button type="button" (click)="debugOutput.reload()">Try again</button></p>
+    } @else if (debugOutput.hasValue()) {
+      @let output = debugOutput.value();
+      @if (output.hasScreenshot) {
+        @if (screenshotFailed()) {
+          <p class="error" role="alert">Could not load the screenshot. It may have been dropped since. <button type="button" (click)="screenshotFailed.set(false)">Try again</button></p>
+        } @else {
+          <a [href]="screenshotUrl()" target="_blank" rel="noopener">
+            <img class="screenshot" [src]="screenshotUrl()" alt="Screenshot of the Script's page when the Run ended" (error)="screenshotFailed.set(true)" />
+          </a>
+        }
+      }
+      <h3>Console output</h3>
+      @if (output.consoleOutput) {
+        <pre class="console"><code>{{ output.consoleOutput }}</code></pre>
+      } @else {
+        <p class="details">The Script wrote nothing to the console.</p>
+      }
+    } @else {
+      <p class="details">Loading debug output…</p>
+    }
+  </div>
+}
