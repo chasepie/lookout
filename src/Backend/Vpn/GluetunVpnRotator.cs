@@ -89,9 +89,19 @@ public sealed class GluetunVpnRotator(HttpClient client, GluetunSettings setting
         }
     }
 
-    private async Task PutVpnStatusAsync(string status, CancellationToken cancellationToken)
+    /// <summary>
+    /// Runs gluetun's updater, which fetches the servers through the VPN, unlike its update command, which would go out
+    /// from the home IP (ADR-0004).
+    /// </summary>
+    public Task RefreshServerListAsync(CancellationToken cancellationToken) =>
+        PutStatusAsync("v1/updater/status", "running", cancellationToken);
+
+    private Task PutVpnStatusAsync(string status, CancellationToken cancellationToken) =>
+        PutStatusAsync("v1/vpn/status", status, cancellationToken);
+
+    private async Task PutStatusAsync(string path, string status, CancellationToken cancellationToken)
     {
-        using var request = Request(HttpMethod.Put, "v1/vpn/status");
+        using var request = Request(HttpMethod.Put, path);
         request.Content = JsonContent.Create(new { status });
         using var response = await client.SendAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();

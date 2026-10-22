@@ -1,4 +1,6 @@
 using ChasePie.Lookout.Backend.Events;
+using ChasePie.Lookout.Database;
+using Microsoft.EntityFrameworkCore;
 
 namespace ChasePie.Lookout.Backend.Vpn;
 
@@ -8,9 +10,14 @@ namespace ChasePie.Lookout.Backend.Vpn;
 /// <see cref="VpnRunLease"/> while it uses the VPN. No VPN Run starts during a Rotation, which waits for those in
 /// progress to finish before it rotates. Direct Runs carry on throughout. Pushes the VPN's status through
 /// <see cref="WatchEvents"/> as each Rotation starts and ends, and checks it every 30 seconds in between, pushing it
-/// when it has changed.
+/// when it has changed. Has the VPN refresh its list of servers when it first connects.
 /// </summary>
-public sealed partial class VpnRotation(IVpnRotator vpn, WatchEvents events, TimeProvider timeProvider, ILogger<VpnRotation> logger)
+public sealed partial class VpnRotation(
+    IVpnRotator vpn,
+    WatchEvents events,
+    IServiceScopeFactory scopes,
+    TimeProvider timeProvider,
+    ILogger<VpnRotation> logger)
     : BackgroundService
 {
     public static readonly TimeSpan MinInterval = TimeSpan.FromMinutes(10);
@@ -46,6 +53,12 @@ public sealed partial class VpnRotation(IVpnRotator vpn, WatchEvents events, Tim
     /// <summary>How often the VPN's status is checked between Rotations, for the app to show changes such as a drop.</summary>
     public static readonly TimeSpan StatusWatchInterval = TimeSpan.FromSeconds(30);
 
+    /// <summary>
+    /// How long a refresh of the VPN's list of servers lasts before Lookout has another done when the VPN first
+    /// connects: gluetun's own <c>UPDATER_PERIOD</c>, as refreshing more often risks PIA blocking it.
+    /// </summary>
+    public static readonly TimeSpan ServerListRefreshPeriod = TimeSpan.FromHours(360);
+
     private static readonly TimeSpan StatusCheckInterval = TimeSpan.FromSeconds(1);
 
     private readonly Lock _lock = new();
@@ -65,6 +78,8 @@ public sealed partial class VpnRotation(IVpnRotator vpn, WatchEvents events, Tim
     /// <summary>The status the app last had pushed, or read at startup, compared without its error's wording.</summary>
     private (bool Enabled, bool Connected, bool Rotating, string? Region, string? ExitIp)? _lastPushed;
     private long _pushes;
+    /// <summary>Whether this run of Lookout has seen the VPN connect, and so considered refreshing its servers.</summary>
+    private bool _seenConnected;
 
     /// <summary>
     /// Starts a VPN Run, which a Rotation then waits for until the lease is disposed, or nothing during a Rotation.
@@ -191,6 +206,11 @@ public sealed partial class VpnRotation(IVpnRotator vpn, WatchEvents events, Tim
                     pushesBefore = _pushes;
                 }
                 var status = await vpn.GetStatusAsync(stoppingToken);
+                if (status.Connected && !_seenConnected)
+                {
+                    _seenConnected = true;
+                    await RefreshServerListIfDueAsync(stoppingToken);
+                }
                 // A push since the read began, such as a Rotation's, is newer than this read.
                 await PushAsync(status, onlyIfChanged: true, unlessPushedSince: pushesBefore);
             }
@@ -198,6 +218,34 @@ public sealed partial class VpnRotation(IVpnRotator vpn, WatchEvents events, Tim
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
             // Lookout is stopping.
+        }
+    }
+
+    /// <summary>
+    /// Has the VPN refresh its list of servers, unless Lookout last had that done within
+    /// <see cref="ServerListRefreshPeriod"/>. gluetun's bundled list goes stale, and gluetun's own refresh only comes a
+    /// full period after it starts (ADR-0004). A failure is only logged, as gluetun refreshes by itself eventually, and
+    /// trying again soon would only fail again, such as when its control-server role lacks the route.
+    /// </summary>
+    private async Task RefreshServerListIfDueAsync(CancellationToken stoppingToken)
+    {
+        try
+        {
+            await using var scope = scopes.CreateAsyncScope();
+            var database = scope.ServiceProvider.GetRequiredService<LookoutDbContext>();
+            var refreshedAt = await database.Settings.Select(settings => settings.VpnServerListRefreshedAt).SingleAsync(stoppingToken);
+            var now = timeProvider.GetUtcNow();
+            if (now - refreshedAt < ServerListRefreshPeriod)
+            {
+                return;
+            }
+            await vpn.RefreshServerListAsync(stoppingToken);
+            await database.Settings.ExecuteUpdateAsync(setters => setters
+                .SetProperty(settings => settings.VpnServerListRefreshedAt, now), stoppingToken);
+        }
+        catch (Exception error) when (!stoppingToken.IsCancellationRequested)
+        {
+            LogServerListRefreshFailed(logger, error);
         }
     }
 
@@ -384,6 +432,9 @@ public sealed partial class VpnRotation(IVpnRotator vpn, WatchEvents events, Tim
 
     [LoggerMessage(LogLevel.Warning, "Gave up rotating the VPN after {Attempts} attempts without a new exit IP. {Error}")]
     private static partial void LogGaveUp(ILogger logger, int attempts, string? error);
+
+    [LoggerMessage(LogLevel.Warning, "Could not have the VPN refresh its list of servers. If gluetun refused it (HTTP 401), check that compose.yaml's gluetun-auth role includes PUT /v1/updater/status.")]
+    private static partial void LogServerListRefreshFailed(ILogger logger, Exception error);
 
     [LoggerMessage(LogLevel.Error, "Could not rotate the VPN.")]
     private static partial void LogRotationFailed(ILogger logger, Exception error);

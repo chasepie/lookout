@@ -74,6 +74,10 @@ public sealed class FakeGluetun : IAsyncDisposable
                 }
                 await context.Response.WriteAsync("""{"outcome":"stopped"}""", context.RequestAborted);
                 break;
+            case ("PUT", "/v1/updater/status"):
+                Changes.Enqueue($"PUT /v1/updater/status {FakeHttpServer.RequestOf(context).Body}");
+                await context.Response.WriteAsync("""{"outcome":"running"}""", context.RequestAborted);
+                break;
             case ("GET", "/v1/publicip/ip"):
                 await Task.Delay(PublicIpDelay, context.RequestAborted);
                 if (DropsPublicIpResponse)

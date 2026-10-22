@@ -183,11 +183,12 @@ volumes:
 
 configs:
   # Lookout's key for gluetun's control server, for only the routes it uses: the VPN's status, which it changes to
-  # rotate, and the exit IP. Other routes refuse every request. gluetun refuses to start without a key.
+  # rotate, the exit IP, and the updater, which it runs to refresh the server list. Other routes refuse every request.
+  # gluetun refuses to start without a key.
   gluetun-auth:
     content: |
       [[roles]]
       name = "lookout"
-      routes = ["GET /v1/vpn/status", "PUT /v1/vpn/status", "GET /v1/publicip/ip"]
+      routes = ["GET /v1/vpn/status", "PUT /v1/vpn/status", "GET /v1/publicip/ip", "PUT /v1/updater/status"]
       auth = "apikey"
       apikey = "${LOOKOUT_VPN_API_KEY:-}"

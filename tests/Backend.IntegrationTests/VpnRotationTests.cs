@@ -3,6 +3,8 @@ using System.Text.Json.Nodes;
 using ChasePie.Lookout.Backend.Runner;
 using ChasePie.Lookout.Backend.Vpn;
 using ChasePie.Lookout.Model;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace ChasePie.Lookout.Backend.IntegrationTests;
 
@@ -377,6 +379,62 @@ public sealed class VpnRotationTests(TestContext testContext)
             """{"enabled":true,"connected":true,"rotating":false,"region":"Chicago","exitIp":"198.51.100.4","error":null}""",
             reconnected.GetRawText());
     }
+
+    [TestMethod]
+    public async Task RefreshesTheServerListWhenTheVpnFirstConnectsAtMostOnceEvery360Hours()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        factory.Vpn.Status = VpnStatus.Disconnected("gluetun is connecting the VPN.");
+        // gluetun stays on a dead server through the Rotation at startup
+        factory.Vpn.OnRotate = () => { };
+        var databasePath = Path.Combine(Path.GetTempPath(), $"lookout-test-{Guid.NewGuid():N}.db");
+        try
+        {
+            int whileDisconnected, onceConnected, laterThatRun;
+            await using (var first = SharingDatabase(factory, databasePath))
+            {
+                using var client = await first.CreateSignedInClientAsync(testContext.CancellationToken);
+                await Advance(factory, TimeSpan.FromMinutes(1));
+                whileDisconnected = factory.Vpn.ServerListRefreshes;
+                factory.Vpn.Status = VpnStatus.ConnectedThrough(new ProxySettings("http://gluetun:8888"), "203.0.113.7", "New York");
+                await Advance(factory, TimeSpan.FromSeconds(30));
+                await Eventually(() => factory.Vpn.ServerListRefreshes > whileDisconnected);
+                onceConnected = factory.Vpn.ServerListRefreshes;
+                await Advance(factory, TimeSpan.FromHours(1));
+                laterThatRun = factory.Vpn.ServerListRefreshes;
+            }
+
+            factory.Time.Advance(TimeSpan.FromHours(300));
+            int afterARestartWithin360Hours;
+            await using (var second = SharingDatabase(factory, databasePath))
+            {
+                using var client = second.CreateClient();
+                await Advance(factory, TimeSpan.FromMinutes(1));
+                afterARestartWithin360Hours = factory.Vpn.ServerListRefreshes;
+            }
+
+            factory.Time.Advance(TimeSpan.FromHours(60));
+            await using (var third = SharingDatabase(factory, databasePath))
+            {
+                using var client = third.CreateClient();
+                await Advance(factory, TimeSpan.FromMinutes(1));
+                await Eventually(() => factory.Vpn.ServerListRefreshes == 2);
+            }
+
+            Assert.AreEqual(0, whileDisconnected);
+            Assert.AreEqual(1, onceConnected);
+            Assert.AreEqual(1, laterThatRun);
+            Assert.AreEqual(1, afterARestartWithin360Hours);
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    private static WebApplicationFactory<Program> SharingDatabase(LookoutWebApplicationFactory factory, string databasePath) =>
+        factory.WithWebHostBuilder(builder =>
+            builder.UseSetting("ConnectionStrings:Lookout", $"Data Source={databasePath};Pooling=False"));
 
     [TestMethod]
     public async Task DoesNotRotateOrPushWithoutAVpn()

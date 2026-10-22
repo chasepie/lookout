@@ -122,6 +122,27 @@ public sealed class GluetunVpnRotatorTests(TestContext testContext)
     }
 
     [TestMethod]
+    public async Task RefreshesTheServerListThroughGluetunsUpdater()
+    {
+        await using var gluetun = await FakeGluetun.StartAsync(ApiKey);
+        var rotator = gluetun.CreateRotator(ApiKey);
+
+        await rotator.RefreshServerListAsync(testContext.CancellationToken);
+
+        Assert.AreSequenceEqual(["""PUT /v1/updater/status {"status":"running"}"""], gluetun.Changes.ToList());
+    }
+
+    [TestMethod]
+    public async Task ARefreshGluetunRefusesFails()
+    {
+        await using var gluetun = await FakeGluetun.StartAsync(ApiKey);
+        var rotator = gluetun.CreateRotator("wrong-key");
+
+        await Assert.ThrowsExactlyAsync<HttpRequestException>(() => rotator.RefreshServerListAsync(testContext.CancellationToken));
+        Assert.IsEmpty(gluetun.Changes);
+    }
+
+    [TestMethod]
     public async Task IsDisconnectedWhenGluetunDropsItsResponse()
     {
         await using var gluetun = await FakeGluetun.StartAsync(ApiKey);

@@ -1,6 +1,8 @@
 namespace ChasePie.Lookout.Model;
 
-/// <summary>The install-wide settings the user changes in the app, kept in a single row.</summary>
+/// <summary>
+/// The install-wide settings the user changes in the app, and what Lookout keeps about the install, in a single row.
+/// </summary>
 public sealed class Settings
 {
     /// <summary>The only Id the settings can have, so the database holds one set of them.</summary>
@@ -13,4 +15,6 @@ public sealed class Settings
     public int Id { get; set; } = SingletonId;
     /// <summary>How many days a Run is kept before it is pruned, unless it is a Change.</summary>
     public int RetentionDays { get; set; } = DefaultRetentionDays;
+    /// <summary>When Lookout last had the VPN refresh its list of servers, if it ever has.</summary>
+    public DateTimeOffset? VpnServerListRefreshedAt { get; set; }
 }
