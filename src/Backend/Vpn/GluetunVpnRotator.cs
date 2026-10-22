@@ -38,7 +38,10 @@ public sealed class GluetunVpnRotator(HttpClient client, GluetunSettings setting
             {
                 return VpnStatus.Disconnected();
             }
-            return VpnStatus.ConnectedThrough(settings.Proxy, exit.Ip, string.IsNullOrEmpty(exit.Region) ? null : exit.Region);
+            return VpnStatus.ConnectedThrough(
+                proxy: settings.Proxy,
+                exitIp: exit.Ip,
+                region: string.IsNullOrEmpty(exit.Region) ? null : exit.Region);
         }
         catch (HttpRequestException error) when (error.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
         {
