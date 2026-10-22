@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
 using ChasePie.Lookout.Database;
 using ChasePie.Lookout.Backend.Events;
+using ChasePie.Lookout.Backend.Runner;
 using ChasePie.Lookout.Backend.Scheduling;
 using ChasePie.Lookout.Model;
 using Microsoft.AspNetCore.Mvc;
@@ -15,11 +16,13 @@ namespace ChasePie.Lookout.Backend.Controllers;
 public sealed class WatchesController(
     LookoutDbContext database,
     RunExecutor runExecutor,
+    IRunnerClient runner,
     WatchSchedules schedules,
     RunningWatches runningWatches,
     RunSlots runSlots,
     WatchEvents watchEvents,
-    IHostApplicationLifetime applicationLifetime)
+    IHostApplicationLifetime applicationLifetime,
+    TimeProvider timeProvider)
     : LookoutControllerBase
 {
     [HttpGet]
@@ -43,22 +46,15 @@ public sealed class WatchesController(
             return invalid;
         }
 
-        var fileKind = Path.GetExtension(request.Script.FileName).ToLowerInvariant();
-        if (fileKind is not (".ts" or ".js") || request.Script.Length is < 1 or > 65536)
+        var (script, scriptProblem) = await ReadScriptAsync(request.Script, cancellationToken);
+        if (script is null)
         {
-            return Problem("Upload a .ts or .js Script between 1 byte and 64 KiB.", statusCode: HttpStatusCode.BadRequest);
+            return scriptProblem!;
         }
 
         if (!TryBuildSchedule(request, out var schedule, out var scheduleProblem))
         {
             return scheduleProblem;
-        }
-
-        using var reader = new StreamReader(request.Script.OpenReadStream());
-        var source = await reader.ReadToEndAsync(cancellationToken);
-        if (string.IsNullOrWhiteSpace(source))
-        {
-            return Problem("Script source must not be empty.", statusCode: HttpStatusCode.BadRequest);
         }
 
         if (await FindChannels(request.ChannelIds, cancellationToken) is not { } channels)
@@ -79,8 +75,10 @@ public sealed class WatchesController(
         var version = new ScriptVersion
         {
             WatchId = watch.Id,
-            Source = source,
-            FileKind = fileKind[1..]
+            Number = 1,
+            UploadedAt = timeProvider.GetUtcNow(),
+            Source = script.Source,
+            FileKind = script.FileKind
         };
         watch.ScriptVersions.Add(version);
 
@@ -280,6 +278,156 @@ public sealed class WatchesController(
         return NoContent();
     }
 
+    [HttpPost("{id:guid}/script-versions")]
+    [RequestSizeLimit(128 * 1024)]
+    public async Task<ActionResult<ScriptVersionSummary>> UploadScript(
+        Guid id,
+        [FromForm] UploadScriptRequest request,
+        CancellationToken cancellationToken)
+    {
+        var (script, scriptProblem) = await ReadScriptAsync(request.Script, cancellationToken);
+        if (script is null)
+        {
+            return scriptProblem!;
+        }
+
+        await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
+        if (await WatchSummary.StatusAsync(database.Watches, id, cancellationToken) is not { } previousStatus)
+        {
+            return NotFound();
+        }
+
+        // The transaction holds SQLite's write lock from the start, so no other upload can take the same number.
+        var latestNumber = await database.ScriptVersions
+            .Where(version => version.WatchId == id)
+            .MaxAsync(version => (int?)version.Number, cancellationToken);
+        var version = new ScriptVersion
+        {
+            WatchId = id,
+            Number = (latestNumber ?? 0) + 1,
+            UploadedAt = timeProvider.GetUtcNow(),
+            Source = script.Source,
+            FileKind = script.FileKind
+        };
+        database.ScriptVersions.Add(version);
+        await database.SaveChangesAsync(cancellationToken);
+
+        // Advancing the Revision discards a Run of the replaced version still in progress, which would otherwise set
+        // the Baseline from the old Script's content. A set-based update leaves the Watch's other settings alone.
+        await database.Watches
+            .Where(watch => watch.Id == id)
+            .ExecuteUpdateAsync(setters =>
+            {
+                setters
+                    .SetProperty(watch => watch.CurrentScriptVersionId, version.Id)
+                    .SetProperty(watch => watch.Revision, watch => watch.Revision + 1);
+                // A new Script may report its content differently, so by default it starts afresh, as Pending.
+                // Its failures are a new streak, which notifies afresh.
+                if (!request.KeepBaseline)
+                {
+                    setters
+                        .SetProperty(watch => watch.Baseline, (string?)null)
+                        .SetProperty(watch => watch.FailureStreak, 0)
+                        .SetProperty(watch => watch.FailureStreakNotified, false);
+                }
+            }, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        if (await WatchSummary.StatusAsync(database.Watches, id, CancellationToken.None) is { } status && status != previousStatus)
+        {
+            await watchEvents.StatusChangedAsync(id, status);
+        }
+
+        return StatusCode(StatusCodes.Status201Created,
+            new ScriptVersionSummary(version.Id, version.Number, version.FileKind, version.UploadedAt, IsCurrent: true));
+    }
+
+    [HttpGet("{id:guid}/script-versions")]
+    public async Task<ActionResult<IReadOnlyList<ScriptVersionSummary>>> ListScriptVersions(Guid id, CancellationToken cancellationToken)
+    {
+        // One query, so an upload committing meanwhile can't leave the list and its current version out of step.
+        var versions = await database.ScriptVersions.AsNoTracking()
+            .Where(version => version.WatchId == id)
+            .OrderByDescending(version => version.Number)
+            .Select(version => new ScriptVersionSummary(
+                Id: version.Id,
+                Number: version.Number,
+                FileKind: version.FileKind,
+                UploadedAt: version.UploadedAt,
+                IsCurrent: database.Watches.Any(watch => watch.Id == id && watch.CurrentScriptVersionId == version.Id)))
+            .ToListAsync(cancellationToken);
+
+        // Every Watch has at least the Script version it was created with.
+        return versions.Count == 0 ? NotFound() : versions;
+    }
+
+    [HttpGet("{id:guid}/script-versions/{versionId:guid}")]
+    public async Task<ActionResult<ScriptVersionSource>> GetScriptVersion(Guid id, Guid versionId, CancellationToken cancellationToken)
+    {
+        var version = await database.ScriptVersions.AsNoTracking()
+            .Where(version => version.Id == versionId && version.WatchId == id)
+            .Select(version => new ScriptVersionSource(
+                Id: version.Id,
+                Number: version.Number,
+                FileKind: version.FileKind,
+                UploadedAt: version.UploadedAt,
+                IsCurrent: database.Watches.Any(watch => watch.Id == id && watch.CurrentScriptVersionId == version.Id),
+                Source: version.Source))
+            .SingleOrDefaultAsync(cancellationToken);
+        return version is null ? NotFound() : version;
+    }
+
+    [HttpPost("{id:guid}/test-runs")]
+    [RequestSizeLimit(128 * 1024)]
+    public async Task<ActionResult<TestRun>> RunTest(Guid id, [FromForm] TestRunRequest request, CancellationToken cancellationToken)
+    {
+        var (script, scriptProblem) = await ReadScriptAsync(request.Script, cancellationToken);
+        if (script is null)
+        {
+            return scriptProblem!;
+        }
+
+        var watch = await database.Watches.AsNoTracking()
+            .Where(watch => watch.Id == id)
+            .Select(watch => new { watch.NotificationUrl, watch.TimeoutSeconds })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (watch is null)
+        {
+            return NotFound();
+        }
+
+        // A Test run takes a slot like any Run, since it uses the browser too, but it isn't one of the Watch's Runs: it
+        // doesn't make the Watch Running, and its result is neither evaluated against the Baseline nor recorded.
+        // Leaving the page cancels the request, which stops the Script.
+        using var stopping = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, applicationLifetime.ApplicationStopping);
+        await runSlots.WaitAsync(stopping.Token);
+        RunnerResult result;
+        try
+        {
+            result = await runner.ExecuteAsync(new RunnerRequest(
+                Source: script.Source,
+                FileKind: script.FileKind,
+                Context: new ScriptContext(watch.NotificationUrl),
+                TimeoutMs: watch.TimeoutSeconds * 1000,
+                AlwaysScreenshot: true), stopping.Token);
+        }
+        finally
+        {
+            runSlots.Release();
+        }
+
+        // Shows the outcome a Run would record for the same result.
+        var (outcome, errorMessage) = RunEvaluation.RecordedOutcome(result.Outcome, result.Content, result.ErrorMessage);
+        return new TestRun(
+            Outcome: outcome,
+            Content: result.Content,
+            Details: result.Details,
+            ErrorMessage: errorMessage,
+            DurationMs: result.DurationMs,
+            Screenshot: result.Screenshot,
+            ConsoleOutput: result.ConsoleOutput);
+    }
+
     [HttpGet("{id:guid}/runs")]
     public async Task<ActionResult<IReadOnlyList<Run>>> History(Guid id, CancellationToken cancellationToken,
         [FromQuery] int limit = 50, [FromQuery] long? before = null)
@@ -334,6 +482,7 @@ public sealed class WatchesController(
                 RunExecutionStatus.WatchNotFound => NotFound(),
                 RunExecutionStatus.NoScriptVersion => Problem("This Watch has no current Script version.", statusCode: HttpStatusCode.Conflict),
                 RunExecutionStatus.Deleted => Problem("The Watch was deleted while this Run was in progress, so this Run was not recorded.", statusCode: HttpStatusCode.Conflict),
+                RunExecutionStatus.ScriptReplaced => Problem("A new Script version was uploaded while this Run was in progress, so this Run was not recorded.", statusCode: HttpStatusCode.Conflict),
                 _ => Problem("Another Run of this Watch finished first, so this Run was not recorded.", statusCode: HttpStatusCode.Conflict)
             };
         }
@@ -381,6 +530,29 @@ public sealed class WatchesController(
 
         return null;
     }
+
+    /// <summary>Reads an uploaded Script, or explains why it can't be used.</summary>
+    private async Task<(UploadedScript? Script, ObjectResult? Problem)> ReadScriptAsync(
+        IFormFile file,
+        CancellationToken cancellationToken)
+    {
+        var fileKind = Path.GetExtension(file.FileName).ToLowerInvariant();
+        if (fileKind is not (".ts" or ".js") || file.Length is < 1 or > 65536)
+        {
+            return (null, Problem("Upload a .ts or .js Script between 1 byte and 64 KiB.", statusCode: HttpStatusCode.BadRequest));
+        }
+
+        using var reader = new StreamReader(file.OpenReadStream());
+        var source = await reader.ReadToEndAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(source))
+        {
+            return (null, Problem("Script source must not be empty.", statusCode: HttpStatusCode.BadRequest));
+        }
+
+        return (new UploadedScript(source, fileKind[1..]), null);
+    }
+
+    private sealed record UploadedScript(string Source, string FileKind);
 
     /// <summary>Builds the requested schedule, or explains why it can't be used.</summary>
     private bool TryBuildSchedule(
@@ -497,6 +669,33 @@ public sealed class EditWatchRequest
     public required string Name { get; init; }
     public required string NotificationUrl { get; init; }
     public required int TimeoutSeconds { get; init; }
+}
+
+public sealed record ScriptVersionSummary(Guid Id, int Number, string FileKind, DateTimeOffset UploadedAt, bool IsCurrent);
+
+public sealed record ScriptVersionSource(Guid Id, int Number, string FileKind, DateTimeOffset UploadedAt, bool IsCurrent,
+    string Source);
+
+/// <summary>The result of a Test run, which, unlike a Run's, has a screenshot even when it Succeeded.</summary>
+public sealed record TestRun(
+    RunOutcome Outcome,
+    string? Content,
+    string? Details,
+    string? ErrorMessage,
+    double DurationMs,
+    string? Screenshot,
+    string? ConsoleOutput);
+
+public sealed class TestRunRequest
+{
+    public required IFormFile Script { get; init; }
+}
+
+public sealed class UploadScriptRequest
+{
+    public required IFormFile Script { get; init; }
+    /// <summary>Keeps the Baseline and failure streak, for a new version that reports its content the same way.</summary>
+    public bool KeepBaseline { get; init; }
 }
 
 public sealed class CreateWatchRequest : ScheduleRequest

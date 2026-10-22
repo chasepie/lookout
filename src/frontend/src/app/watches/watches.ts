@@ -1,10 +1,10 @@
 import { HttpClient } from '@angular/common/http';
 import { Service, inject } from '@angular/core';
-import { firstValueFrom } from 'rxjs';
+import { firstValueFrom, fromEvent, takeUntil } from 'rxjs';
 import { refreshableHttpResource } from '../shared/refreshable-http-resource';
 import { type ScheduleForm, scheduleFields } from '../schedules/schedule';
 import { Session } from '../session/session';
-import type { Run, Watch, WatchSettings } from './watch.model';
+import type { Run, ScriptVersion, ScriptVersionSource, TestRun, Watch, WatchSettings } from './watch.model';
 
 @Service()
 export class Watches {
@@ -58,6 +58,25 @@ export class Watches {
 
   runNow(id: string) {
     return firstValueFrom(this.http.post<Run>(`/api/watches/${id}/runs`, {}));
+  }
+
+  /** Runs a Test run, which `stop` cancels: the backend then stops the Script and frees its run slot. */
+  testRun(id: string, script: File, stop: AbortSignal) {
+    const data = new FormData();
+    data.set('script', script);
+    return firstValueFrom(this.http.post<TestRun>(`/api/watches/${id}/test-runs`, data)
+      .pipe(takeUntil(fromEvent(stop, 'abort'))));
+  }
+
+  uploadScript(id: string, script: File, keepBaseline: boolean) {
+    const data = new FormData();
+    data.set('script', script);
+    data.set('keepBaseline', String(keepBaseline));
+    return firstValueFrom(this.http.post<ScriptVersion>(`/api/watches/${id}/script-versions`, data));
+  }
+
+  scriptVersion(id: string, versionId: string) {
+    return firstValueFrom(this.http.get<ScriptVersionSource>(`/api/watches/${id}/script-versions/${versionId}`));
   }
 
   history(id: string, before: number, limit: number) {

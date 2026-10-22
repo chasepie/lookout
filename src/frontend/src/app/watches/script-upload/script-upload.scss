@@ -1,0 +1,88 @@
+@use 'tokens';
+@use 'mixins';
+
+:host { display: block; }
+
+@include mixins.page-heading;
+@include mixins.stacked-form;
+@include mixins.messages;
+
+h2 { font-size: 19px; margin: 0 0 18px; }
+h3 { font-size: 14px; margin: 20px 0 8px; }
+p { line-height: 1.6; }
+
+.back-link {
+  display: inline-block;
+  font-size: 14px;
+  color: tokens.$text-muted;
+  text-decoration: none;
+  margin-bottom: 18px;
+
+  &:hover { text-decoration: underline; }
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 335px minmax(0, 1fr);
+  gap: 30px;
+  align-items: start;
+  margin-top: 24px;
+
+  @include mixins.narrow { grid-template-columns: 1fr; }
+}
+
+.panel { @include mixins.panel; padding: 25px; }
+.empty-state { @include mixins.empty-state; }
+
+input {
+  &[type=file] { padding: 9px; font-size: 12px; }
+
+  &::file-selector-button {
+    border: 0;
+    background: tokens.$file-button;
+    padding: 8px;
+    border-radius: 4px;
+    color: tokens.$text;
+    margin-right: 8px;
+  }
+}
+
+label.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 23px 0 0;
+
+  input { width: auto; margin: 0; }
+}
+
+.actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 26px; }
+
+button {
+  @include mixins.button;
+
+  &.primary { @include mixins.primary-button; margin-top: 0; padding: 9px 16px; }
+}
+
+.run-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.content { font-size: 20px; margin: 10px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.details, .error { margin: 8px 0 0; }
+
+.screenshot {
+  display: block;
+  width: 100%;
+  margin-top: 16px;
+  border: 1px solid tokens.$border-run;
+  border-radius: 8px;
+}
+
+.console {
+  margin: 0;
+  padding: 12px;
+  max-height: 320px;
+  overflow: auto;
+  font-size: 12px;
+  background: tokens.$input;
+  border: 1px solid tokens.$border-run;
+  border-radius: 8px;
+}

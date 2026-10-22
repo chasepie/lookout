@@ -36,6 +36,15 @@ export async function pauseWatch(page: Page, id: string) {
   expect(response.status()).toBe(204);
 }
 
+/** Uploads a new Script version through the API, as another browser tab would. */
+export async function uploadScript(page: Page, id: string, source: string) {
+  const response = await page.request.post(`/api/watches/${id}/script-versions`, {
+    headers: { 'X-XSRF-TOKEN': await requestToken(page) },
+    multipart: { script: { name: 'price.ts', mimeType: 'text/plain', buffer: Buffer.from(source) } },
+  });
+  expect(response.status()).toBe(201);
+}
+
 /** Runs a Watch through the API the given number of times, one Run after another. */
 export async function runWatch(page: Page, id: string, times: number) {
   const headers = { 'X-XSRF-TOKEN': await requestToken(page) };

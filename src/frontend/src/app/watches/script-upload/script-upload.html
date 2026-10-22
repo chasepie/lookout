@@ -1,0 +1,59 @@
+@if (missing()) {
+  <a class="back-link" routerLink="/"><span aria-hidden="true">←</span> All Watches</a>
+  <div class="empty-state" role="alert">This Watch no longer exists.</div>
+} @else {
+  <a class="back-link" [routerLink]="['/watches', id()]"><span aria-hidden="true">←</span> Back to Watch</a>
+  <div class="page-heading">
+    <p class="eyebrow">NEW SCRIPT VERSION</p>
+    <h1>{{ watch.hasValue() ? watch.value().name : 'Upload Script' }}</h1>
+    <p>Choose a Script and Lookout tries it once with a Test run. A Test run isn't recorded and doesn't affect the Watch, so you can check the Script before saving it.</p>
+  </div>
+  @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+  <div class="layout">
+    <section class="panel" aria-labelledby="upload-heading">
+      <h2 id="upload-heading">New version</h2>
+      <form (submit)="$event.preventDefault(); save()">
+        <label for="script">Script</label>
+        <input #scriptInput id="script" type="file" accept=".ts,.js" (change)="selectScript(scriptInput)" aria-describedby="script-help" required />
+        <small id="script-help">Upload a TypeScript or JavaScript file, up to 64 KiB.</small>
+        <label class="checkbox">
+          <input #keepBaselineInput type="checkbox" [checked]="keepBaseline()" (change)="keepBaseline.set(keepBaselineInput.checked)" aria-describedby="keep-baseline-help" />
+          Keep Baseline
+        </label>
+        <small id="keep-baseline-help">
+          Tick this if the new version reports its content the same way, to keep comparing against the current Baseline.
+          Otherwise the Watch goes back to Pending, and its next Succeeded Run sets a new Baseline without a Change.
+        </small>
+        <div class="actions">
+          <button type="button" (click)="runTest()" [disabled]="!script() || testing()">{{ testing() ? 'Testing…' : 'Test again' }}</button>
+          <button class="primary" type="submit" [disabled]="!script() || saving()">{{ saving() ? 'Saving…' : 'Save new version' }}</button>
+        </div>
+      </form>
+    </section>
+    <section class="panel" aria-labelledby="test-run-heading" aria-live="polite" [attr.aria-busy]="testing()">
+      <h2 id="test-run-heading">Test run</h2>
+      @if (testing()) {
+        <p class="details">Running the Script…</p>
+      } @else if (testRun(); as result) {
+        <div class="run-heading">
+          <app-outcome-badge [outcome]="result.outcome" />
+          <small>{{ result.durationMs / 1000 | number:'1.0-2' }}s</small>
+        </div>
+        @if (result.content !== null) {
+          <p class="content">{{ result.content === '' ? '(Empty content)' : result.content }}</p>
+        }
+        @if (result.details) { <p class="details">{{ result.details }}</p> }
+        @if (result.errorMessage) { <p class="error">{{ result.errorMessage }}</p> }
+        @if (result.screenshot) {
+          <img class="screenshot" [src]="screenshotUrl(result.screenshot)" alt="Screenshot of the Script's page" />
+        }
+        @if (result.consoleOutput) {
+          <h3>Console output</h3>
+          <pre class="console"><code>{{ result.consoleOutput }}</code></pre>
+        }
+      } @else {
+        <p class="details">Choose a Script to try it.</p>
+      }
+    </section>
+  </div>
+}

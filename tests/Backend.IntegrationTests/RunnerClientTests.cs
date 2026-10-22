@@ -93,7 +93,7 @@ public sealed class RunnerClientTests(TestContext testContext)
     }
 
     [TestMethod]
-    public async Task ExecutesTypeScriptThroughTheRealRunnerAndPassesTheNotificationUrl()
+    public async Task ExecutesTypeScriptThroughTheRealRunnerAndReturnsItsScreenshotAndConsoleOutput()
     {
         var start = new ProcessStartInfo("node") { RedirectStandardOutput = true, UseShellExecute = false };
         start.ArgumentList.Add(Path.Combine(RepositoryRoot.Find(), "src/runner/index.ts"));
@@ -115,15 +115,18 @@ public sealed class RunnerClientTests(TestContext testContext)
                 export default {
                   async run(page: Page, context: { notificationUrl: string }) {
                     await page.setContent('<p>£19.99</p>');
+                    console.log('Reading the price');
                     return { success: true, content: await page.locator('p').innerText(), details: context.notificationUrl };
                   }
                 };
-                """, "ts", new ScriptContext("https://example.com/widget")), timeout.Token);
+                """, "ts", new ScriptContext("https://example.com/widget"), AlwaysScreenshot: true), timeout.Token);
 
             Assert.AreEqual(RunOutcome.Succeeded, result.Outcome, result.ErrorMessage);
             Assert.AreEqual("£19.99", result.Content);
             Assert.AreEqual("https://example.com/widget", result.Details);
             Assert.IsGreaterThan(0, result.DurationMs);
+            Assert.AreEqual("Reading the price\n", result.ConsoleOutput);
+            Assert.IsTrue(Convert.FromBase64String(result.Screenshot!).AsSpan().StartsWith((byte[])[0x89, 0x50, 0x4E, 0x47]));
         }
         finally
         {

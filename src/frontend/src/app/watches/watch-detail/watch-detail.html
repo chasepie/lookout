@@ -69,6 +69,35 @@
         <h2 id="channels-heading">Channels</h2>
         <app-watch-channels [watch]="current" (saved)="channelsSaved()" />
       </section>
+      <section class="panel" aria-labelledby="script-versions-heading">
+        <h2 id="script-versions-heading">Script versions</h2>
+        @if (scriptVersions.error()) {
+          <p class="error" role="alert">Could not load the Script versions. <button type="button" (click)="scriptVersions.reload()">Try again</button></p>
+        } @else if (scriptVersions.hasValue()) {
+          <ol class="versions" aria-label="Script versions">
+            @for (version of scriptVersions.value(); track version.id) {
+              <li class="version">
+                <div class="version-heading">
+                  <strong>Version {{ version.number }}</strong>
+                  @if (version.isCurrent) { <span class="current-badge">Current</span> }
+                </div>
+                <small>.{{ version.fileKind }} file, uploaded <time [attr.datetime]="version.uploadedAt">{{ version.uploadedAt | date:'medium' }}</time></small>
+                <button type="button" class="source-toggle" (click)="toggleSource(version)" [attr.aria-expanded]="shownSources().has(version.id)">
+                  {{ shownSources().has(version.id) ? 'Hide source' : 'View source' }}
+                </button>
+                @if (shownSources().has(version.id)) {
+                  @if (shownSources().get(version.id); as source) {
+                    <pre class="source"><code>{{ source }}</code></pre>
+                  } @else {
+                    <p class="details">Loading source…</p>
+                  }
+                }
+              </li>
+            }
+          </ol>
+        } @else { <p>Loading Script versions…</p> }
+        <a class="button-link" [routerLink]="['/watches', current.id, 'script']">Upload new version</a>
+      </section>
       <section class="panel danger-zone" aria-labelledby="delete-heading">
         <h2 id="delete-heading">Delete</h2>
         @if (confirmingDelete()) {
@@ -96,6 +125,7 @@
                   <app-outcome-badge [outcome]="run.outcome" />
                   @if (run.isChange) { <span class="change-badge">Change</span> }
                   <small><app-run-timing [run]="run" /></small>
+                  @if (versionNumbers().get(run.scriptVersionId); as number) { <small>· Version {{ number }}</small> }
                 </div>
                 @if (run.content !== null) {
                   <p class="content">{{ run.content === '' ? '(Empty content)' : run.content }}</p>

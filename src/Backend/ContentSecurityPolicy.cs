@@ -9,6 +9,8 @@ public static class ContentSecurityPolicy
     private static readonly string Policy = string.Join("; ",
         "default-src 'self'",
         "script-src 'self'",
+        // Test run screenshots arrive as base64 in JSON, so they are shown from data: URLs.
+        "img-src 'self' data:",
         // Angular adds component styles as <style> elements; allowing them needs a per-request nonce otherwise.
         // Nothing needs inline style="…" attributes, the likelier route for injected CSS, so those are blocked.
         // Browsers that predate these two directives fall back to style-src.

@@ -12,11 +12,7 @@ public sealed record RunEvaluation(
 {
     public static RunEvaluation Evaluate(Watch watch, RunOutcome outcome, string? content, string? details, string? errorMessage)
     {
-        if (outcome == RunOutcome.Succeeded && content is null)
-        {
-            outcome = RunOutcome.Errored;
-            errorMessage = "Succeeded runner result did not include content.";
-        }
+        (outcome, errorMessage) = RecordedOutcome(outcome, content, errorMessage);
 
         if (outcome != RunOutcome.Succeeded)
         {
@@ -73,4 +69,14 @@ public sealed record RunEvaluation(
             ErrorMessage: errorMessage,
             Notifications: notifications);
     }
+
+    /// <summary>
+    /// The outcome a Run records for a runner's result, which Test runs show too: a Succeeded result without content is
+    /// Errored, since there is nothing to compare with the Baseline.
+    /// </summary>
+    public static (RunOutcome Outcome, string? ErrorMessage) RecordedOutcome(
+        RunOutcome outcome, string? content, string? errorMessage) =>
+        outcome == RunOutcome.Succeeded && content is null
+            ? (RunOutcome.Errored, "Succeeded runner result did not include content.")
+            : (outcome, errorMessage);
 }

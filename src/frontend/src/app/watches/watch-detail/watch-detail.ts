@@ -11,7 +11,7 @@ import { RunTiming } from '../run-timing/run-timing';
 import { ScheduleEditor } from '../../schedules/schedule-editor/schedule-editor';
 import { StatusBadge } from '../status-badge/status-badge';
 import { WatchEvents } from '../watch-events';
-import { type Run, type Watch, type WatchSettings, outcomeLabels } from '../watch.model';
+import { type Run, type ScriptVersion, type Watch, type WatchSettings, outcomeLabels } from '../watch.model';
 import { defaultTimeoutSeconds, maxTimeoutSeconds, nameAndNotificationUrlRules, timeoutRules } from '../watch-settings';
 import { WatchChannels } from '../watch-channels/watch-channels';
 import { Watches } from '../watches';
@@ -46,6 +46,18 @@ export class WatchDetail {
     url: `/api/watches/${this.id()}/runs`,
     params: { limit: historyPageSize },
   }));
+  protected readonly scriptVersions = refreshableHttpResource<ScriptVersion[]>(() => ({
+    url: `/api/watches/${this.id()}/script-versions`,
+  }));
+  /** Each Script version's number by its ID, to show which version each Run ran. */
+  protected readonly versionNumbers = computed(() => new Map(
+    (this.scriptVersions.hasValue() ? this.scriptVersions.value() : []).map((version) => [version.id, version.number]),
+  ));
+  /** The source of each Script version on show, or null while it loads. A version's source never changes. */
+  protected readonly shownSources = linkedSignal<string, ReadonlyMap<string, string | null>>({
+    source: this.id,
+    computation: () => new Map(),
+  });
   // An action that finishes after leaving this page must not act on whatever page is shown by then.
   private destroyed = false;
   // A resource's value() throws while it is in an error state, so this checks hasValue() first.
@@ -210,6 +222,26 @@ export class WatchDetail {
     }
   }
 
+  protected async toggleSource({ id: versionId }: ScriptVersion) {
+    const id = this.id();
+    if (this.shownSources().has(versionId)) {
+      this.shownSources.update((sources) => without(sources, versionId));
+      return;
+    }
+    this.shownSources.update((sources) => new Map(sources).set(versionId, null));
+    // Hidden again or moved to another Watch meanwhile: there is nowhere to show it.
+    const isWanted = () => !this.destroyed && id === this.id() && this.shownSources().has(versionId);
+    try {
+      const { source } = await this.watches.scriptVersion(id, versionId);
+      if (isWanted()) {this.shownSources.update((sources) => new Map(sources).set(versionId, source));}
+    } catch (error: unknown) {
+      if (isWanted()) {
+        this.shownSources.update((sources) => without(sources, versionId));
+        this.error.set(problemMessage(error, 'Could not load the Script source. Please try again.'));
+      }
+    }
+  }
+
   /**
    * Runs one of the Watch's actions, showing its failure message if it fails, then reads the Watch afresh rather than
    * trusting any response, which a later change may already have superseded.
@@ -234,12 +266,20 @@ export class WatchDetail {
 
   private refreshWatch() {
     this.watch.refresh();
+    // A version uploaded elsewhere changes the current one, and Runs of it need its number.
+    this.scriptVersions.refresh();
   }
 
   private clearMessages() {
     this.error.set('');
     this.notice.set('');
   }
+}
+
+function without<K, V>(map: ReadonlyMap<K, V>, key: K): ReadonlyMap<K, V> {
+  const copy = new Map(map);
+  copy.delete(key);
+  return copy;
 }
 
 /** The settings as the backend stores them, which trims the name and Notification URL. */

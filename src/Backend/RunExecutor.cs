@@ -15,6 +15,8 @@ public enum RunExecutionStatus
     NoScriptVersion,
     /// <summary>Another Run of the Watch was recorded while this one executed, so this one was discarded.</summary>
     Superseded,
+    /// <summary>A new Script version was uploaded while this Run executed, so this Run of the old one was discarded.</summary>
+    ScriptReplaced,
     /// <summary>The Watch was deleted while this Run executed, so there was nothing to record it against.</summary>
     Deleted
 }
@@ -121,13 +123,20 @@ public sealed class RunExecutor(
         catch (DbUpdateException exception)
         {
             // A deleted Watch fails either the Run's foreign key or the Watch's concurrency check, whichever EF sends first.
-            if (!await database.Watches.AnyAsync(item => item.Id == watchId, CancellationToken.None))
+            var current = await database.Watches.AsNoTracking()
+                .Where(item => item.Id == watchId)
+                .Select(item => new { item.CurrentScriptVersionId })
+                .SingleOrDefaultAsync(CancellationToken.None);
+            if (current is null)
             {
                 return (new RunExecution(RunExecutionStatus.Deleted), []);
             }
             if (exception is DbUpdateConcurrencyException)
             {
-                return (new RunExecution(RunExecutionStatus.Superseded), []);
+                var status = current.CurrentScriptVersionId == script.Id
+                    ? RunExecutionStatus.Superseded
+                    : RunExecutionStatus.ScriptReplaced;
+                return (new RunExecution(status), []);
             }
             throw;
         }

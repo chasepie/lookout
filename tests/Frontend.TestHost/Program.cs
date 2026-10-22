@@ -19,7 +19,14 @@ public static class Program
         };
         var changingRuns = 0;
         var slowRuns = 0;
-        factory.Runner.OnExecute = async (request, cancellationToken) =>
+        factory.Runner.OnExecute = async (request, cancellationToken) => (await Execute(request, cancellationToken)) with
+        {
+            // Test runs ask for a screenshot whatever the outcome: a single transparent pixel.
+            Screenshot = request.AlwaysScreenshot
+                ? "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+                : null
+        };
+        async Task<RunnerResult> Execute(RunnerRequest request, CancellationToken cancellationToken)
         {
             if (request.Context.NotificationUrl == "https://example.com/slow-changing")
             {
@@ -38,9 +45,9 @@ public static class Program
                 },
                 "https://example.com/known-failure" => new RunnerResult { Outcome = RunOutcome.KnownFailure, Details = "Access denied", DurationMs = 25 },
                 "https://example.com/errored" => new RunnerResult { Outcome = RunOutcome.Errored, ErrorMessage = "Page unavailable", DurationMs = 25 },
-                _ => factory.Runner.DefaultResult
+                _ => factory.Runner.DefaultResult!
             };
-        };
+        }
         factory.UseKestrel(5117);
         using var client = factory.CreateClient();
         using var shutdown = new CancellationTokenSource();

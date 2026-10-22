@@ -46,6 +46,7 @@ Runs one Script and responds once it has finished. If the caller disconnects fir
 | `context` | Passed to the Script's `run` as its second argument. |
 | `timeoutMs` | 1 to 2147483647. It covers the whole execution, including starting the process and launching the browser, not just `run`. An outcome the Script reached before it stands. Past it, a Script without one is Errored, and its process gets up to 5 seconds to send a screenshot before it's killed. |
 | `proxy` | Optional. The proxy for the Script's browser context, as Playwright's `proxy` option: `server`, and optionally `username`, `password` and `bypass`. VPN Runs set this. Direct Runs leave it out or send `null`. |
+| `alwaysScreenshot` | Optional, `false` when left out or `null`. Whether a `succeeded` response has a `screenshot` too. Test runs set this. |
 
 A malformed request gets a `400` with `{ "error": "<what is wrong>" }`, and a body over 1 MiB a `413`. A request with an `Origin` header gets a `403`, and one whose `Content-Type` isn't `application/json` a `415`. Browsers send `Origin` with every POST, and a web page can only send JSON after a CORS preflight, which the runner never answers. So a page Browserless loads can't run a Script here, even one whose domain was rebound to the runner's address. A failure inside the runner itself gets a `500` with `{ "error": "Internal runner error" }`, and any other route a `404`.
 
@@ -66,7 +67,7 @@ Every response also has:
 - **`durationMs`:** like `timeoutMs`, it covers the whole execution. For a Script that ran past its timeout, that includes the time taken to screenshot it.
 - **`consoleOutput`:** what the Script's process wrote to stdout and stderr, which may be empty. The two are interleaved in the order they reached the runner, which needn't be the order they were written in. Past 262,144 characters (256 Ki) only the end is kept, after the line `[Earlier output was cut]`.
 
-A `knownFailure` or `errored` response also has a `screenshot` of the Script's page, as a base64 PNG of its viewport, if the Script got as far as having a page and its process could still take one. A Script whose default export is wrong, or one that ran out of memory or blocked its process until its timeout, has none.
+A `knownFailure` or `errored` response, or any response to a request with `alwaysScreenshot`, also has a `screenshot` of the Script's page, as a base64 PNG of its viewport, if the Script got as far as having a page and its process could still take one. A Script whose default export is wrong, or one that ran out of memory or blocked its process until its timeout, has none.
 
 ## Writing a Script
 

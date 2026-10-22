@@ -267,9 +267,19 @@ test.describe('when responses arrive late', () => {
     const release = await holdFirst(page, new RegExp(`/api/watches/${id}/runs\\?.*before=`));
     await page.goto(`/watches/${id}`);
     await page.getByRole('button', { name: 'Show older Runs' }).click();
+    // The latest page read after Run now, with the new Run at the top. Live events read it too, so a read can still
+    // be under way when the Run finishes; an older page landing before it is kept, with nothing skipped.
+    const runFinished = page.waitForResponse((response) => response.request().method() === 'POST'
+      && response.url().endsWith(`/api/watches/${id}/runs`));
+    const latestWithNewRun = page.waitForResponse(async (response) => {
+      if (!response.url().includes(`/api/watches/${id}/runs?`) || response.url().includes('before=')) {return false;}
+      const [newest] = await response.json() as { id: number }[];
+      return newest?.id === (await (await runFinished).json() as { id: number }).id;
+    });
 
     await page.getByRole('button', { name: 'Run now' }).click();
     await expect(page.getByRole('status')).toHaveText('Run finished: Succeeded.');
+    await latestWithNewRun;
     release();
 
     await expect(runHistory(page)).toHaveCount(50);

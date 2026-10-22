@@ -89,6 +89,41 @@ public sealed class MigrationTests(TestContext testContext)
         }
     }
 
+    [TestMethod]
+    public async Task ScriptVersionsUploadedBeforeTheyWereNumberedAreVersionOneUploadedByTheirFirstRun()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"lookout-test-{Guid.NewGuid():N}.db");
+        var connectionString = $"Data Source={databasePath};Pooling=False";
+        try
+        {
+            await using (var database = new LookoutDbContext(new DbContextOptionsBuilder<LookoutDbContext>().UseSqlite(connectionString).Options))
+            {
+                await database.GetService<IMigrator>().MigrateAsync("CreateWatches", testContext.CancellationToken);
+                await InsertWatch(database, "Ran", "Succeeded", "Errored");
+                await InsertWatch(database, "Never ran");
+            }
+            await using var factory = new LookoutWebApplicationFactory();
+            using var client = await factory
+                .WithWebHostBuilder(builder => builder.UseSetting("ConnectionStrings:Lookout", connectionString))
+                .CreateSignedInClientAsync(testContext.CancellationToken);
+            var watches = await client.GetFromJsonAsync<JsonArray>("/api/watches", testContext.CancellationToken);
+            var byName = watches!.ToDictionary(watch => watch!["name"]!.GetValue<string>(), watch => watch!["id"]!.GetValue<string>());
+
+            var ran = (await client.GetFromJsonAsync<JsonArray>($"/api/watches/{byName["Ran"]}/script-versions", testContext.CancellationToken))!;
+            var neverRan = (await client.GetFromJsonAsync<JsonArray>($"/api/watches/{byName["Never ran"]}/script-versions", testContext.CancellationToken))!;
+
+            Assert.AreEqual(1, ran.Single()!["number"]!.GetValue<int>());
+            Assert.AreEqual(new DateTimeOffset(2026, 10, 19, 12, 0, 0, TimeSpan.Zero), ran.Single()!["uploadedAt"]!.GetValue<DateTimeOffset>());
+            Assert.AreEqual(1, neverRan.Single()!["number"]!.GetValue<int>());
+            Assert.IsLessThan(TimeSpan.FromMinutes(5),
+                (DateTimeOffset.UtcNow - neverRan.Single()!["uploadedAt"]!.GetValue<DateTimeOffset>()).Duration());
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
     private async Task InsertWatch(LookoutDbContext database, string name, params string[] outcomes)
     {
         // EF Core stores Guids as upper-case text in SQLite.

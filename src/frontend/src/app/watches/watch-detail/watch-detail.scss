@@ -64,3 +64,37 @@ button {
 .run-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .content { font-size: 20px; margin: 10px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .empty-state { @include mixins.empty-state; }
+
+.versions { list-style: none; margin: 0 0 16px; padding: 0; display: grid; gap: 10px; }
+
+.version {
+  display: grid;
+  gap: 6px;
+  border: 1px solid tokens.$border-run;
+  border-radius: 8px;
+  padding: 12px 14px;
+
+  small { font-size: 12px; }
+  .details { margin: 0; }
+}
+
+.version-heading { display: flex; align-items: center; gap: 8px; }
+.current-badge { @include mixins.badge; color: tokens.$success; background: tokens.$success-surface; font-weight: 650; }
+.source-toggle { justify-self: start; padding: 5px 10px; font-size: 12px; }
+
+.source {
+  margin: 0;
+  padding: 10px;
+  max-height: 360px;
+  overflow: auto;
+  font-size: 12px;
+  background: tokens.$input;
+  border: 1px solid tokens.$border-run;
+  border-radius: 6px;
+}
+
+.button-link {
+  @include mixins.button;
+  display: inline-block;
+  text-decoration: none;
+}

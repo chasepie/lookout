@@ -194,7 +194,7 @@ async function connectBrowser(url: string): Promise<ScriptBrowser> {
   }
 }
 
-/** Runs the job's Script, reporting its outcome, and resolves to a screenshot if the Run didn't Succeed */
+/** Runs the job's Script, reporting its outcome, and resolves to a screenshot if the Run didn't Succeed or the job asks */
 async function runJob(job: ScriptJob): Promise<Screenshot> {
   const script = await Promise.race([loadScript(job.scriptPath), backgroundError]);
   const { browser, contextOptions, close } = job.browser.provider === 'connect'
@@ -208,7 +208,7 @@ async function runJob(job: ScriptJob): Promise<Screenshot> {
     const running = Promise.try(() => script.run(page, job.context));
     const result = await Promise.race([running, backgroundError]).then(toResult).catch(errored);
     reportOutcome(job.token, result);
-    return result.outcome === 'succeeded' ? {} : await screenshotOf(page);
+    return result.outcome === 'succeeded' && !job.alwaysScreenshot ? {} : await screenshotOf(page);
   } finally {
     // A failure to clean up must not replace the Script's own result
     await close().catch(() => undefined);

@@ -13,6 +13,8 @@ public sealed class ContentSecurityPolicyTests(TestContext testContext)
     [
         "default-src 'self'",
         "script-src 'self'",
+        // Test run screenshots arrive as base64 in JSON, so they are shown from data: URLs.
+        "img-src 'self' data:",
         // Angular adds component styles as <style> elements, but nothing needs inline style="…" attributes.
         "style-src-elem 'self' 'unsafe-inline'",
         "style-src-attr 'none'",
