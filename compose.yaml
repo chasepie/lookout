@@ -117,8 +117,9 @@ services:
       OPENVPN_USER: ${PIA_USER:-}
       OPENVPN_PASSWORD: ${PIA_PASSWORD:-}
       OPENVPN_PROTOCOL: tcp
-      # gluetun picks a server at random from these regions each time it connects. Kept to the US: another country's
-      # exit changes what retailers serve, which would show up as false Changes.
+      # gluetun picks a server at random from these regions each time it connects. By default in the US; whichever you
+      # choose, keep them in one country, as another country's exit changes what retailers serve, which would show up
+      # as false Changes.
       SERVER_REGIONS: ${LOOKOUT_VPN_REGIONS:-US East,US New York,US Florida,US California,US Chicago,US Texas,US Washington DC,US Atlanta}
       # About one server in five is dead; these make OpenVPN give up on one, so gluetun picks another, rather than
       # retrying it forever

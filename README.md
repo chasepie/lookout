@@ -148,7 +148,7 @@ To set it up:
 4. Run `docker compose up -d`. The host needs `/dev/net/tun`, which gluetun opens with the `NET_ADMIN` capability.
 5. Open **Settings** in Lookout. Once gluetun has connected, which can take a minute or two, the VPN shows as Connected, with its region and exit IP.
 
-Each time gluetun connects, it picks a server at random from the regions in `LOOKOUT_VPN_REGIONS`, by default `US East`, `US New York`, `US Florida`, `US California`, `US Chicago`, `US Texas`, `US Washington DC` and `US Atlanta`. Keep them in one country: an exit in another changes what retailers serve, which shows up as false Changes. Region names are gluetun's, such as `US Seattle`; see its [PIA server list](https://github.com/qdm12/gluetun/blob/v3.41.3/internal/storage/servers.json).
+Each time gluetun connects, it picks a server at random from the regions in `LOOKOUT_VPN_REGIONS`, by default `US East`, `US New York`, `US Florida`, `US California`, `US Chicago`, `US Texas`, `US Washington DC` and `US Atlanta`. Any of PIA's regions will do, but keep them in one country: an exit in another changes what retailers serve, which shows up as false Changes. Region names are gluetun's, such as `US Seattle`; see its [PIA server list](https://github.com/qdm12/gluetun/blob/v3.41.3/internal/storage/servers.json).
 
 Lookout rotates the VPN to a new exit IP every 10 to 15 minutes, so a site a Watch reads often doesn't block one IP. A Known failure on a VPN Run brings the next Rotation forward, though never to within 3 minutes of the last one; the Run isn't retried, and the Watch's next Run uses the new IP. A Rotation:
 
