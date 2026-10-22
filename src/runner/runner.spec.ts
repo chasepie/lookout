@@ -551,7 +551,8 @@ test('a Script that blocks its process is killed at its timeout with its browser
   const { result, screenshot } = await response;
 
   expect(result).toEqual({ outcome: 'errored', errorMessage: 'Script timed out after 2000 ms' });
-  expect(browserPids.filter(isAlive)).toEqual([]);
+  // The runner responds once it has sent SIGKILL, and a busy machine can take a moment to finish off a process
+  await expect.poll(() => browserPids.filter(isAlive), { timeout: 5_000 }).toEqual([]);
   // It can't take a screenshot when nothing else in its process can run
   expect(screenshot).toBeUndefined();
   expect(await hasChildProcesses(runner.pid!)).toBe(false);
