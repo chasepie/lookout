@@ -25,6 +25,8 @@ public sealed record VpnStatus
     public bool Enabled { get; private init; }
     /// <summary>Whether VPN Runs can go through it now.</summary>
     public bool Connected => Proxy is not null;
+    /// <summary>Whether Lookout is rotating the VPN to a new exit IP, during which no VPN Run starts.</summary>
+    public bool Rotating { get; private init; }
     public string? Region { get; private init; }
     public string? ExitIp { get; private init; }
     /// <summary>Why the VPN isn't connected, if that's known.</summary>
@@ -44,6 +46,9 @@ public sealed record VpnStatus
 
     public static VpnStatus ConnectedThrough(ProxySettings proxy, string exitIp, string? region) =>
         new() { Enabled = true, Proxy = proxy, ExitIp = exitIp, Region = region };
+
+    /// <summary>This status, during a Rotation.</summary>
+    public VpnStatus WhileRotating() => this with { Rotating = true };
 
     /// <summary>
     /// Why <paramref name="run"/>, such as a VPN Run, can't go ahead, or nothing when it can go through the VPN. It

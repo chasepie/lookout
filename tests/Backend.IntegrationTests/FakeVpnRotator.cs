@@ -12,6 +12,11 @@ public sealed class FakeVpnRotator : IVpnRotator
         VpnStatus.ConnectedThrough(new ProxySettings("http://gluetun:8888"), "203.0.113.7", "New York");
     public int StatusReads => Volatile.Read(ref _statusReads);
     public int Rotations => Volatile.Read(ref _rotations);
+    /// <summary>
+    /// Called on each attempt at a Rotation, after it's counted. Without it, a connected VPN reconnects at once with
+    /// a new exit IP.
+    /// </summary>
+    public Action? OnRotate { get; set; }
 
     public Task<VpnStatus> GetStatusAsync(CancellationToken cancellationToken)
     {
@@ -21,7 +26,15 @@ public sealed class FakeVpnRotator : IVpnRotator
 
     public Task RotateAsync(CancellationToken cancellationToken)
     {
-        Interlocked.Increment(ref _rotations);
+        var rotations = Interlocked.Increment(ref _rotations);
+        if (OnRotate is not null)
+        {
+            OnRotate();
+        }
+        else if (Status is { Connected: true, Proxy: { } proxy })
+        {
+            Status = VpnStatus.ConnectedThrough(proxy, $"203.0.113.{7 + rotations}", Status.Region);
+        }
         return Task.CompletedTask;
     }
 }

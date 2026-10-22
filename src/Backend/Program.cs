@@ -52,6 +52,8 @@ public class Program
             client.Timeout = Timeout.InfiniteTimeSpan;
         });
         ConfigureVpn(services, configuration);
+        services.AddSingleton<VpnRotation>();
+        services.AddHostedService(provider => provider.GetRequiredService<VpnRotation>());
         services.AddOpenApi();
 
         services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme).AddCookie(SessionCookie.Configure);

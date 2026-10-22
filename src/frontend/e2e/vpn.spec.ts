@@ -1,7 +1,9 @@
 import { expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
+import { createWatch, runWatch } from './watches';
 
-// The test host's VPN is connected through New York, exiting at 203.0.113.7.
+// The test host's VPN is connected through New York, exiting at 203.0.113.7 until it rotates to another 203.0.113.x.
+const exitIp = /203\.0\.113\.\d+/;
 
 test('create a VPN Watch, see its Runs record the VPN exit, then send its Runs direct', async ({ page }) => {
   const name = `VPN price ${randomUUID()}`;
@@ -21,7 +23,7 @@ test('create a VPN Watch, see its Runs record the VPN exit, then send its Runs d
   await page.getByRole('button', { name: 'Run now' }).click();
   await expect(page.getByRole('status')).toHaveText('Run finished: Succeeded.');
   const runs = page.getByRole('list', { name: 'Run history' }).getByRole('listitem');
-  await expect(runs.nth(0)).toContainText('Through the VPN: New York, 203.0.113.7');
+  await expect(runs.nth(0)).toContainText(/Through the VPN: New York, 203\.0\.113\.\d+/);
 
   await page.getByLabel('Send Runs through the VPN').uncheck();
   await page.getByRole('button', { name: 'Save settings' }).click();
@@ -35,10 +37,24 @@ test('create a VPN Watch, see its Runs record the VPN exit, then send its Runs d
 
 test('see the VPN status in Settings', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('link', { name: 'Settings' }).click();
+  await page.getByRole('link', { name: 'Settings', exact: true }).click();
 
   const vpn = page.getByRole('region', { name: 'VPN' });
   await expect(vpn).toContainText('Connected');
   await expect(vpn).toContainText('New York');
-  await expect(vpn).toContainText('203.0.113.7');
+  await expect(vpn).toContainText(exitIp);
+});
+
+// Each Run is started through the API, as the scheduler would, so only pushed events update the page.
+test('see the VPN rotate to a new exit IP after a Known failure, without reloading', async ({ page }) => {
+  const id = await createWatch(page, `Blocked price ${randomUUID()}`, 'https://example.com/known-failure', true);
+  await page.goto('/settings');
+  const vpn = page.getByRole('region', { name: 'VPN' });
+  await expect(vpn).toContainText('Connected');
+  const exitBefore = (await vpn.getByText(exitIp).textContent())!;
+
+  await runWatch(page, id, 1);
+
+  await expect(vpn.getByText(exitIp)).not.toHaveText(exitBefore);
+  await expect(vpn).toContainText('Connected');
 });

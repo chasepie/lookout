@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using ChasePie.Lookout.Backend.Vpn;
 using ChasePie.Lookout.Model;
 using Microsoft.AspNetCore.SignalR;
 
@@ -15,8 +16,8 @@ public sealed record RunFinishedEvent(Guid WatchId, long? RunId, RunOutcome? Out
 public sealed record WatchStatusChangedEvent(Guid WatchId, WatchStatus Status);
 
 /// <summary>
-/// Pushes what happens to Watches to the app over <see cref="WatchEventsHub"/>, and knows which Watches are
-/// Running: from when a Run starts until it finishes, recorded or not.
+/// Pushes what happens to Watches, and to the VPN they may go through, to the app over <see cref="WatchEventsHub"/>, and
+/// knows which Watches are Running: from when a Run starts until it finishes, recorded or not.
 /// Pushing never fails or holds up a Run for long: a failed or stalled push is logged, and the app catches up when
 /// it next reads.
 /// </summary>
@@ -51,6 +52,8 @@ public sealed partial class WatchEvents(IHubContext<WatchEventsHub, IWatchEvents
 
     public Task StatusChangedAsync(Guid watchId, WatchStatus status) =>
         SendAsync(clients => clients.WatchStatusChanged(new WatchStatusChangedEvent(watchId, status)));
+
+    public Task VpnStatusChangedAsync(VpnStatus status) => SendAsync(clients => clients.VpnStatusChanged(status));
 
     private async Task SendAsync(Func<IWatchEventsClient, Task> send)
     {

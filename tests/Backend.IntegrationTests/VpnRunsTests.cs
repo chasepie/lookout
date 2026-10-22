@@ -124,8 +124,10 @@ public sealed class VpnRunsTests(TestContext testContext)
         Assert.AreEqual(
             "The VPN is not connected, so this VPN Run was not started. gluetun's control server returned HTTP 500.",
             run["errorMessage"]!.GetValue<string>());
-        Assert.AreEqual(TimeSpan.FromMinutes(2),
-            run["finishedAt"]!.GetValue<DateTimeOffset>() - run["startedAt"]!.GetValue<DateTimeOffset>());
+        // Fake time moves on in steps of a second while the Run records itself, so it may finish a step or two later
+        var waited = run["finishedAt"]!.GetValue<DateTimeOffset>() - run["startedAt"]!.GetValue<DateTimeOffset>();
+        Assert.IsGreaterThanOrEqualTo(TimeSpan.FromMinutes(2), waited);
+        Assert.IsLessThanOrEqualTo(TimeSpan.FromMinutes(2) + TimeSpan.FromSeconds(5), waited);
         Assert.IsNull(run["vpnExitIp"]);
     }
 
@@ -352,10 +354,10 @@ public sealed class VpnRunsTests(TestContext testContext)
         var disconnected = await client.GetFromJsonAsync<JsonObject>("/api/vpn", testContext.CancellationToken);
 
         Assert.AreEqual(
-            """{"enabled":true,"connected":true,"region":"New York","exitIp":"203.0.113.7","error":null}""",
+            """{"enabled":true,"connected":true,"rotating":false,"region":"New York","exitIp":"203.0.113.7","error":null}""",
             connected!.ToJsonString());
         Assert.AreEqual(
-            """{"enabled":true,"connected":false,"region":null,"exitIp":null,"error":"gluetun refused the API key (HTTP 401)."}""",
+            """{"enabled":true,"connected":false,"rotating":false,"region":null,"exitIp":null,"error":"gluetun refused the API key (HTTP 401)."}""",
             disconnected!.ToJsonString());
     }
 

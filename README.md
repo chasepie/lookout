@@ -150,6 +150,15 @@ To set it up:
 
 Each time gluetun connects, it picks a server at random from the regions in `LOOKOUT_VPN_REGIONS`, by default `US East`, `US New York`, `US Florida`, `US California`, `US Chicago`, `US Texas`, `US Washington DC` and `US Atlanta`. Keep them in one country: an exit in another changes what retailers serve, which shows up as false Changes. Region names are gluetun's, such as `US Seattle`; see its [PIA server list](https://github.com/qdm12/gluetun/blob/v3.41.3/internal/storage/servers.json).
 
+Lookout rotates the VPN to a new exit IP every 10 to 15 minutes, so a site a Watch reads often doesn't block one IP. A Known failure on a VPN Run brings the next Rotation forward, though never to within 3 minutes of the last one; the Run isn't retried, and the Watch's next Run uses the new IP. A Rotation:
+
+1. stops VPN Runs from starting. Those that come due wait, and start once it's done.
+2. waits for VPN Runs in progress to finish, for up to 10 minutes, the longest Run timeout.
+3. asks gluetun to reconnect, which picks another server from `LOOKOUT_VPN_REGIONS`.
+4. waits until gluetun reports an exit IP different from the one before. gluetun can pick the same exit again, or a dead server, so after 15 seconds without a new IP it asks again, and gives up after 8 attempts.
+
+Direct Runs carry on throughout. A VPN Watch's Test run asked for during a Rotation is refused at once, rather than kept waiting. **Settings** shows the VPN as Rotating while one is under way, and its new exit IP afterwards, without reloading.
+
 gluetun is pinned to v3.41.3, the version the prototype tested, and later than v3.40, which made its control server require authentication. Lookout's key opens only the routes it uses. With an HTTP proxy, WebRTC could reveal your own IP, so every browser is launched with `--webrtc-ip-handling-policy=disable_non_proxied_udp`, and `HTTPPROXY_STEALTH` keeps gluetun from passing Browserless's address on. Requests through the proxy fail rather than leak while the tunnel is down.
 
 gluetun refreshes PIA's server list into the `gluetun-data` volume every 360 hours, starting 360 hours after it first starts. Until then, it picks from the list bundled with its image, in which more servers are dead, so connecting can take longer. Each dead server costs about 35 seconds before gluetun picks another.
@@ -215,7 +224,8 @@ With the VPN set up, also check that VPN Runs leave from the VPN's exit and dire
 3. Choose **Run now**. The Run's content is the exit IP it records in its history, and it differs from your own IP (`curl https://api.ipify.org` from the host).
 4. Turn off **Send Runs through the VPN**, save, and choose **Run now** again. The Run's content is your own IP, and it records no VPN exit.
 5. Stop gluetun (`docker compose stop gluetun`) and choose **Run now** with the VPN turned back on. After 2 minutes, the Run is Errored, saying the VPN is not connected. Start gluetun again afterwards.
-6. Check that pages can't reach Lookout through gluetun's proxy, which connects from inside gluetun. This prints `unreachable` for each of Lookout's addresses:
+6. Check that the VPN rotates. With gluetun running again, change the `ip.ts` Watch's schedule to every 3 minutes, and leave **Settings** open. Within 15 minutes, the exit IP it shows changes without reloading, and the VPN shows as Rotating for the few seconds in between. After half an hour, the Watch's Run history shows several exit IPs, and every Run Succeeded, its content matching the exit IP it records.
+7. Check that pages can't reach Lookout through gluetun's proxy, which connects from inside gluetun. This prints `unreachable` for each of Lookout's addresses:
 
    ```sh
    for ip in $(docker inspect "$(docker compose ps -q lookout)" --format '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}'); do

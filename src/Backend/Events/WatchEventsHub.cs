@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using ChasePie.Lookout.Backend.Vpn;
 using ChasePie.Lookout.Database;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
@@ -11,6 +12,7 @@ public interface IWatchEventsClient
     Task RunStarted(RunStartedEvent message);
     Task RunFinished(RunFinishedEvent message);
     Task WatchStatusChanged(WatchStatusChangedEvent message);
+    Task VpnStatusChanged(VpnStatus message);
 }
 
 /// <summary>
