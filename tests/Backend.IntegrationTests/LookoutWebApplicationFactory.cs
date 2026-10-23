@@ -29,6 +29,11 @@ public sealed class LookoutWebApplicationFactory : WebApplicationFactory<Program
     public bool UseSystemTime { get; init; }
     /// <summary>Uses the VPN rotator Lookout's configuration chooses instead of <see cref="Vpn"/>.</summary>
     public bool UseConfiguredVpn { get; init; }
+    /// <summary>
+    /// Whether the scheduler starts due Runs on its own timer. Off, a test starts them with
+    /// <see cref="Scheduling.Scheduler.StartDueRunsAsync"/>, so nothing races it.
+    /// </summary>
+    public bool PollsSchedule { get; init; } = true;
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -38,6 +43,10 @@ public sealed class LookoutWebApplicationFactory : WebApplicationFactory<Program
 
         builder.UseEnvironment("Testing");
         builder.UseSetting("Logging:LogLevel:Default", "Error");
+        if (!PollsSchedule)
+        {
+            builder.UseSetting("Scheduling:Poll", "false");
+        }
         builder.ConfigureTestServices(services =>
         {
             services.AddSingleton<IRunnerClient>(Runner);
