@@ -125,7 +125,13 @@ public sealed class WatchSchedules(IServiceScopeFactory scopes, TimeProvider tim
         {
             var current = await database.Watches.AsNoTracking()
                 .Where(watch => watch.Id == watchId)
-                .Select(watch => new { watch.IsPaused, watch.Schedule, watch.JitterMinutes, watch.LastScheduledRunAt })
+                .Select(watch => new
+                {
+                    watch.IsPaused,
+                    watch.Schedule,
+                    watch.JitterMinutes,
+                    watch.LastScheduledRunAt
+                })
                 .SingleOrDefaultAsync(cancellationToken);
             if (current is null)
             {
@@ -218,9 +224,9 @@ public sealed class WatchSchedules(IServiceScopeFactory scopes, TimeProvider tim
 
     private string? Validate(Schedule schedule, int jitterMinutes) =>
         schedule.Validate(timeProvider.GetUtcNow(), _timeZone)
-        ?? (jitterMinutes is < 0 or > MaximumJitterMinutes
-            ? $"Jitter must be between 0 and {MaximumJitterMinutes} minutes."
-            : null);
+            ?? (jitterMinutes is < 0 or > MaximumJitterMinutes
+                ? $"Jitter must be between 0 and {MaximumJitterMinutes} minutes."
+                : null);
 
     /// <summary>
     /// The schedule's next occurrence after now, delayed by up to <paramref name="jitterMinutes"/>, in whole seconds.

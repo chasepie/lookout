@@ -20,7 +20,12 @@ public static class ExampleWatches
         {
             Name = "Bot detection example",
             NotificationUrl = "https://www.browserscan.net/bot-detection",
-            Schedule = new Schedule { Kind = ScheduleKind.Interval, Every = 1, Unit = IntervalUnit.Hours }
+            Schedule = new Schedule
+            {
+                Kind = ScheduleKind.Interval,
+                Every = 1,
+                Unit = IntervalUnit.Hours
+            }
         };
         if (schedules.Schedule(watch) is { } problem)
         {
