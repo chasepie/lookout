@@ -1,11 +1,7 @@
-using ChasePie.Lookout.Database;
-using ChasePie.Lookout.Model;
-using Microsoft.EntityFrameworkCore;
-
 namespace ChasePie.Lookout.Backend.Scheduling;
 
 /// <summary>
-/// Starts Runs of Watches as they fall due, reading what is due from the database.
+/// Starts Runs of Watches as they fall due, as <see cref="WatchSchedules"/> says.
 /// It never catches up: a Watch that fell due while Lookout was down, or several times while it waited for
 /// a free <see cref="Runs">Run slot</see>, runs at most once and its next Run is scheduled from now.
 /// A due Watch that is already Running skips this Run. Startup also redoes daily and cron Watches' next Runs if the
@@ -14,7 +10,6 @@ namespace ChasePie.Lookout.Backend.Scheduling;
 /// </summary>
 public sealed partial class Scheduler(
     bool polls,
-    IServiceScopeFactory scopes,
     TimeProvider timeProvider,
     WatchSchedules schedules,
     Runs runs,
@@ -27,7 +22,7 @@ public sealed partial class Scheduler(
     public override async Task StartAsync(CancellationToken cancellationToken)
     {
         // Finish before the host starts serving, so a Watch created after startup is never mistaken for a missed one.
-        await RescheduleStaleRuns(cancellationToken);
+        await schedules.RescheduleStaleAsync(cancellationToken);
         await base.StartAsync(cancellationToken);
     }
 
@@ -68,26 +63,20 @@ public sealed partial class Scheduler(
     /// </summary>
     public async Task<IReadOnlyList<Admission>> StartDueRunsAsync(CancellationToken cancellationToken)
     {
-        await using var scope = scopes.CreateAsyncScope();
-        var database = scope.ServiceProvider.GetRequiredService<LookoutDbContext>();
-        var now = timeProvider.GetUtcNow();
-        var due = await database.Watches.AsNoTracking()
-            .Where(watch => watch.NextRunAt <= now && !watch.IsPaused)
-            .OrderBy(watch => watch.NextRunAt)
-            .ToListAsync(cancellationToken);
+        var due = await schedules.DueAsync(cancellationToken);
 
         // Every due Watch is admitted or refused before any skip is claimed, as Runs admits without waiting.
-        var admissions = due.ConvertAll(watch => runs.Run(watch.Id, (runDatabase, token) => TryClaimWatch(runDatabase, watch, token)));
-        foreach (var (watch, admission) in due.Zip(admissions))
+        var admissions = due.Select(run => runs.Run(run.WatchId, token => schedules.ClaimAsync(run, token))).ToList();
+        foreach (var (run, admission) in due.Zip(admissions))
         {
             if (admission is Admitted admitted)
             {
-                _ = LogEndingAsync(watch.Id, admitted.Finished);
+                _ = LogEndingAsync(run.WatchId, admitted.Finished);
             }
             else if (admission is not Refused { Reason: RunRefusal.WaitingForSlot, Gated: true })
             {
                 // A Watch that is already running skips this Run rather than overlapping it.
-                await TryClaimWatch(database, watch, cancellationToken);
+                await schedules.ClaimAsync(run, cancellationToken);
             }
         }
         return admissions;
@@ -112,46 +101,6 @@ public sealed partial class Scheduler(
         {
             LogRunFailed(logger, error, watchId);
         }
-    }
-
-    private async Task RescheduleStaleRuns(CancellationToken cancellationToken)
-    {
-        await using var scope = scopes.CreateAsyncScope();
-        var database = scope.ServiceProvider.GetRequiredService<LookoutDbContext>();
-        var now = timeProvider.GetUtcNow();
-        var timeZone = schedules.TimeZone.Id;
-
-        // Daily and cron times are wall-clock times, so they move when the install's time zone changes.
-        // A paused Watch has no next Run until it is resumed.
-        var stale = await database.Watches
-            .Where(watch => !watch.IsPaused)
-            .Where(watch =>
-                watch.NextRunAt == null
-                || watch.NextRunAt <= now
-                || (watch.Schedule.Kind != ScheduleKind.Interval && watch.NextRunTimeZone != timeZone))
-            .ToListAsync(cancellationToken);
-        foreach (var watch in stale)
-        {
-            watch.NextRunAt = schedules.NextRunAt(watch.Schedule, watch.JitterMinutes, watch.LastScheduledRunAt);
-            watch.NextRunTimeZone = timeZone;
-        }
-        await database.SaveChangesAsync(cancellationToken);
-    }
-
-    /// <summary>
-    /// Records the Watch's due Run as starting now and schedules the next one from now, unless the Watch was paused or
-    /// rescheduled since it was read, or another backend instance has already claimed this Run.
-    /// </summary>
-    private async Task<bool> TryClaimWatch(LookoutDbContext database, Watch watch, CancellationToken cancellationToken)
-    {
-        var now = timeProvider.GetUtcNow();
-        var claimed = await database.Watches
-            .Where(item => item.Id == watch.Id && item.NextRunAt == watch.NextRunAt)
-            .ExecuteUpdateAsync(setters => setters
-                .SetProperty(item => item.NextRunAt, schedules.NextRunAt(watch.Schedule, watch.JitterMinutes, now))
-                .SetProperty(item => item.NextRunTimeZone, schedules.TimeZone.Id)
-                .SetProperty(item => item.LastScheduledRunAt, now), cancellationToken);
-        return claimed == 1;
     }
 
     [LoggerMessage(LogLevel.Error, "Could not start due Runs.")]

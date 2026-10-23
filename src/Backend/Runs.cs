@@ -51,12 +51,8 @@ public enum RunRefusal
     Executing
 }
 
-/// <summary>
-/// Decides, once a Run has a Run slot and before the Watch is read, whether it goes ahead. It is given the Run's own
-/// database context, which then loads the Watch, so it must not track entities: a tracked Watch would be loaded as it
-/// was before the gate changed it.
-/// </summary>
-public delegate Task<bool> RunGate(LookoutDbContext database, CancellationToken cancellationToken);
+/// <summary>Decides, once a Run has a Run slot and before the Watch is read, whether it goes ahead.</summary>
+public delegate Task<bool> RunGate(CancellationToken cancellationToken);
 
 /// <summary>The result of a Test run, which, unlike a Run's, has a screenshot even when it Succeeded.</summary>
 public sealed record TestRun(
@@ -245,7 +241,7 @@ public sealed partial class Runs(
             hasSlot = true;
             await using var scope = scopes.CreateAsyncScope();
             var database = scope.ServiceProvider.GetRequiredService<LookoutDbContext>();
-            if (gate is not null && !await gate(database, _stopping))
+            if (gate is not null && !await gate(_stopping))
             {
                 return new RunExecution(RunExecutionStatus.NotClaimed);
             }

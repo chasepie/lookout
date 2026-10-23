@@ -94,7 +94,7 @@ public sealed class RunsTests(TestContext testContext)
         runs.Run(busy);
         await runner.WaitForStarted(1);
 
-        var admitted = Assert.IsInstanceOfType<Admitted>(runs.Run(waiting, (_, _) => Task.FromResult(true)));
+        var admitted = Assert.IsInstanceOfType<Admitted>(runs.Run(waiting, _ => Task.FromResult(true)));
 
         Assert.IsTrue(runs.IsRunning(waiting));
         Assert.AreEqual(new Refused(RunRefusal.WaitingForSlot, Gated: true), runs.Run(waiting));
@@ -202,7 +202,7 @@ public sealed class RunsTests(TestContext testContext)
         await runner.WaitForStarted(1);
         var asked = 0;
 
-        var admitted = Assert.IsInstanceOfType<Admitted>(runs.Run(gated, (_, _) =>
+        var admitted = Assert.IsInstanceOfType<Admitted>(runs.Run(gated, _ =>
         {
             Interlocked.Increment(ref asked);
             return Task.FromResult(false);
