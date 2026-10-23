@@ -27,7 +27,7 @@ public static class ExampleWatches
                 Unit = IntervalUnit.Hours
             }
         };
-        if (schedules.Schedule(watch) is { } problem)
+        if (schedules.ScheduleFirstRun(watch) is { } problem)
         {
             throw new InvalidOperationException($"The example Watch's schedule can't be used: {problem}");
         }

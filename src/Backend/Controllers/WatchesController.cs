@@ -60,7 +60,7 @@ public sealed class WatchesController(
             UsesVpn = request.UsesVpn,
             JitterMinutes = request.JitterMinutes
         };
-        if (schedules.Schedule(watch) is { } scheduleProblem)
+        if (schedules.ScheduleFirstRun(watch) is { } scheduleProblem)
         {
             return Problem(scheduleProblem, statusCode: HttpStatusCode.BadRequest);
         }
@@ -110,13 +110,12 @@ public sealed class WatchesController(
         var update = await schedules.ChangeScheduleAsync(id, schedule, request.JitterMinutes, cancellationToken);
         return update.Status switch
         {
-            ScheduleUpdateStatus.Changed => WithRunning(await database.Watches.AsNoTracking()
-                .Where(watch => watch.Id == id)
-                .Select(WatchSummary.Projection)
-                .SingleAsync(cancellationToken)),
+            // Read back, unless the Watch was deleted since.
+            ScheduleUpdateStatus.Changed => await Get(id, cancellationToken),
             ScheduleUpdateStatus.NotFound => NotFound(),
             ScheduleUpdateStatus.Invalid => Problem(update.Problem!, statusCode: HttpStatusCode.BadRequest),
-            _ => Problem("Runs of this Watch kept starting while its schedule was being saved. Please try again.", statusCode: HttpStatusCode.Conflict)
+            ScheduleUpdateStatus.KeptChanging => Problem("Runs of this Watch kept starting while its schedule was being saved. Please try again.", statusCode: HttpStatusCode.Conflict),
+            _ => throw new UnreachableException()
         };
     }
 
@@ -166,13 +165,16 @@ public sealed class WatchesController(
     {
         switch ((await schedules.PauseAsync(id, cancellationToken)).Status)
         {
-            case ScheduleUpdateStatus.NotFound:
-                return NotFound();
             case ScheduleUpdateStatus.Changed:
                 await watchEvents.StatusChangedAsync(id, WatchStatus.Paused);
-                break;
+                return NoContent();
+            case ScheduleUpdateStatus.Unchanged:
+                return NoContent();
+            case ScheduleUpdateStatus.NotFound:
+                return NotFound();
+            default:
+                throw new UnreachableException();
         }
-        return NoContent();
     }
 
     [HttpPost("{id:guid}/resume")]
@@ -180,18 +182,21 @@ public sealed class WatchesController(
     {
         switch ((await schedules.ResumeAsync(id, cancellationToken)).Status)
         {
-            case ScheduleUpdateStatus.NotFound:
-                return NotFound();
-            case ScheduleUpdateStatus.KeptChanging:
-                return Problem("The schedule of this Watch kept changing while it was being resumed. Please try again.", statusCode: HttpStatusCode.Conflict);
             case ScheduleUpdateStatus.Changed:
                 if (await WatchSummary.StatusAsync(database.Watches, id, CancellationToken.None) is { } resumed)
                 {
                     await watchEvents.StatusChangedAsync(id, resumed);
                 }
-                break;
+                return NoContent();
+            case ScheduleUpdateStatus.Unchanged:
+                return NoContent();
+            case ScheduleUpdateStatus.NotFound:
+                return NotFound();
+            case ScheduleUpdateStatus.KeptChanging:
+                return Problem("The schedule of this Watch kept changing while it was being resumed. Please try again.", statusCode: HttpStatusCode.Conflict);
+            default:
+                throw new UnreachableException();
         }
-        return NoContent();
     }
 
     [HttpPut("{id:guid}/channels")]

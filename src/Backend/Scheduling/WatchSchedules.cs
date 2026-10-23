@@ -23,9 +23,10 @@ public sealed record DueRun(Guid WatchId, DateTimeOffset NextRunAt, Schedule Sch
 
 /// <summary>
 /// Decides when Watches run, in the install's single time zone, and owns everything that does: a Watch's Schedule,
-/// Jitter, whether it is Paused, its next Run and when its last scheduled Run started. Every change is checked against
-/// what was read, so changes made at the same time, such as the scheduler claiming a Run while the user changes the
-/// Schedule, can't undo one another. A paused Watch has no next Run until it is resumed.
+/// Jitter, whether it is Paused, its next Run and when its last scheduled Run started. Each change made while Lookout
+/// serves is checked against what was read, so changes made at the same time, such as the scheduler claiming a Run
+/// while the user changes the Schedule, can't undo one another. Rescheduling at startup isn't, as it finishes before
+/// Lookout serves. A paused Watch has no next Run until it is resumed.
 /// </summary>
 public sealed class WatchSchedules(IServiceScopeFactory scopes, TimeProvider timeProvider, TimeZoneInfo? configuredTimeZone)
 {
@@ -40,7 +41,7 @@ public sealed class WatchSchedules(IServiceScopeFactory scopes, TimeProvider tim
     /// <summary>
     /// Schedules the first Run of a Watch not yet saved, from its Schedule and Jitter, or explains why they can't be used.
     /// </summary>
-    public string? Schedule(Watch watch)
+    public string? ScheduleFirstRun(Watch watch)
     {
         if (Validate(watch.Schedule, watch.JitterMinutes) is { } problem)
         {
@@ -170,11 +171,11 @@ public sealed class WatchSchedules(IServiceScopeFactory scopes, TimeProvider tim
         await using var scope = scopes.CreateAsyncScope();
         var database = scope.ServiceProvider.GetRequiredService<LookoutDbContext>();
         var now = timeProvider.GetUtcNow();
-        var due = await database.Watches.AsNoTracking()
+        return await database.Watches.AsNoTracking()
             .Where(watch => watch.NextRunAt <= now && !watch.IsPaused)
             .OrderBy(watch => watch.NextRunAt)
+            .Select(watch => new DueRun(watch.Id, watch.NextRunAt!.Value, watch.Schedule, watch.JitterMinutes))
             .ToListAsync(cancellationToken);
-        return due.ConvertAll(watch => new DueRun(watch.Id, watch.NextRunAt!.Value, watch.Schedule, watch.JitterMinutes));
     }
 
     /// <summary>
@@ -231,13 +232,13 @@ public sealed class WatchSchedules(IServiceScopeFactory scopes, TimeProvider tim
     /// <summary>
     /// The schedule's next occurrence after now, delayed by up to <paramref name="jitterMinutes"/>, in whole seconds.
     /// Jitter can delay a Run until just before the schedule's next occurrence, so the next Run is also held at least
-    /// <see cref="Model.Schedule.MinimumInterval"/> after <paramref name="lastRunAt"/>.
+    /// <see cref="Schedule.MinimumInterval"/> after <paramref name="lastRunAt"/>.
     /// </summary>
     private DateTimeOffset? NextRunAt(Schedule schedule, int jitterMinutes, DateTimeOffset? lastRunAt = null)
     {
         var jitter = TimeSpan.FromSeconds(Random.Shared.Next(jitterMinutes * 60 + 1));
         var next = schedule.NextOccurrence(timeProvider.GetUtcNow(), _timeZone) + jitter;
-        var earliest = lastRunAt + Model.Schedule.MinimumInterval;
+        var earliest = lastRunAt + Schedule.MinimumInterval;
         if (next < earliest)
         {
             next = earliest;
@@ -248,8 +249,8 @@ public sealed class WatchSchedules(IServiceScopeFactory scopes, TimeProvider tim
     }
 
     /// <summary>
-    /// Rounds up rather than down, so a Run held <see cref="Model.Schedule.MinimumInterval"/> after the last one stays
-    /// clear of it.
+    /// Rounds up rather than down, so a Run held <see cref="Schedule.MinimumInterval"/> after the last one stays clear of
+    /// it.
     /// </summary>
     private static DateTimeOffset RoundUpToWholeSecond(DateTimeOffset time)
     {
