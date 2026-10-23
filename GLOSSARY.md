@@ -44,6 +44,14 @@ _Avoid_: Dry run, Preview
 One of a limited number of places where a Run or Test run can execute at once. A Run that can't get one waits its turn.
 _Avoid_: Worker, Concurrency slot
 
+**Schedule**:
+When a Watch's scheduled Runs happen: every so many minutes, hours or days, at a time each day, or by a cron expression, in the install's time zone. A Paused Watch keeps its Schedule but has no scheduled Runs.
+_Avoid_: Frequency, Cadence, Timer
+
+**Jitter**:
+A random delay of up to an hour, chosen per Watch, added to each of its scheduled Runs so they don't happen at predictable times.
+_Avoid_: Random delay, Offset, Fuzz
+
 **Channel**:
 A destination Lookout sends notifications to, such as a Discord webhook or a Pushover account, configured once and chosen per Watch.
 _Avoid_: Integration, Notifier
