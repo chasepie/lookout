@@ -581,6 +581,20 @@ public sealed class WatchesTests(TestContext testContext)
     }
 
     [TestMethod]
+    public async Task RunningOrTestingAMissingWatchIsNotFound()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
+        using var form = new MultipartFormDataContent { { new StringContent("export default {}"), "script", "price.ts" } };
+
+        var runNow = await client.PostAsync(new Uri($"/api/watches/{Guid.NewGuid()}/runs", UriKind.Relative), null, testContext.CancellationToken);
+        var testRun = await client.PostAsync(new Uri($"/api/watches/{Guid.NewGuid()}/test-runs", UriKind.Relative), form, testContext.CancellationToken);
+
+        Assert.AreEqual(HttpStatusCode.NotFound, runNow.StatusCode);
+        Assert.AreEqual(HttpStatusCode.NotFound, testRun.StatusCode);
+    }
+
+    [TestMethod]
     public async Task ARunOfAWatchDeletedWhileItRanIsNotRecorded()
     {
         await using var factory = new LookoutWebApplicationFactory();

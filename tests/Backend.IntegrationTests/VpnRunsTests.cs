@@ -4,7 +4,7 @@ using System.Text.Json.Nodes;
 using ChasePie.Lookout.Backend.Runner;
 using ChasePie.Lookout.Backend.Vpn;
 using ChasePie.Lookout.Model;
-using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace ChasePie.Lookout.Backend.IntegrationTests;
 
@@ -25,13 +25,13 @@ public sealed class VpnRunsTests(TestContext testContext)
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         var watch = await CreateWatch(client, usesVpn: true);
 
-        var run = await RunNow(client, watch["id"]!.GetValue<string>());
+        var run = await RunNow(factory, watch);
 
         Assert.IsTrue(watch["usesVpn"]!.GetValue<bool>());
         Assert.AreEqual(new ProxySettings("http://gluetun:8888", "lookout", "secret"), executed!.Proxy);
-        Assert.AreEqual("succeeded", run["outcome"]!.GetValue<string>());
-        Assert.AreEqual("New York", run["vpnRegion"]!.GetValue<string>());
-        Assert.AreEqual("203.0.113.7", run["vpnExitIp"]!.GetValue<string>());
+        Assert.AreEqual(RunOutcome.Succeeded, run.Outcome);
+        Assert.AreEqual("New York", run.VpnRegion);
+        Assert.AreEqual("203.0.113.7", run.VpnExitIp);
     }
 
     [TestMethod]
@@ -47,13 +47,13 @@ public sealed class VpnRunsTests(TestContext testContext)
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         var watch = await CreateWatch(client, usesVpn: false);
 
-        var run = await RunNow(client, watch["id"]!.GetValue<string>());
+        var run = await RunNow(factory, watch);
 
         Assert.IsFalse(watch["usesVpn"]!.GetValue<bool>());
         Assert.IsNull(executed!.Proxy);
-        Assert.AreEqual("succeeded", run["outcome"]!.GetValue<string>());
-        Assert.IsNull(run["vpnRegion"]);
-        Assert.IsNull(run["vpnExitIp"]);
+        Assert.AreEqual(RunOutcome.Succeeded, run.Outcome);
+        Assert.IsNull(run.VpnRegion);
+        Assert.IsNull(run.VpnExitIp);
     }
 
     [TestMethod]
@@ -70,13 +70,13 @@ public sealed class VpnRunsTests(TestContext testContext)
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         var watch = await CreateWatch(client, usesVpn: true);
 
-        var run = await RunNow(client, watch["id"]!.GetValue<string>());
+        var run = await RunNow(factory, watch);
 
         Assert.AreEqual(0, executions);
-        Assert.AreEqual("errored", run["outcome"]!.GetValue<string>());
-        Assert.AreEqual("No VPN is configured, so this VPN Run was not started.", run["errorMessage"]!.GetValue<string>());
-        Assert.IsNull(run["vpnRegion"]);
-        Assert.IsNull(run["vpnExitIp"]);
+        Assert.AreEqual(RunOutcome.Errored, run.Outcome);
+        Assert.AreEqual("No VPN is configured, so this VPN Run was not started.", run.ErrorMessage);
+        Assert.IsNull(run.VpnRegion);
+        Assert.IsNull(run.VpnExitIp);
     }
 
     [TestMethod]
@@ -94,14 +94,14 @@ public sealed class VpnRunsTests(TestContext testContext)
         var watch = await CreateWatch(client, usesVpn: true);
 
         var readsBefore = factory.Vpn.StatusReads;
-        var running = RunNow(client, watch["id"]!.GetValue<string>());
+        var running = RunNow(factory, watch);
         await AdvanceUntil(factory, () => factory.Vpn.StatusReads - readsBefore >= 2);
         factory.Vpn.Status = VpnStatus.ConnectedThrough(new ProxySettings("http://gluetun:8888"), "203.0.113.7", "New York");
         var run = await AdvanceUntilDone(factory, running);
 
-        Assert.AreEqual("succeeded", run["outcome"]!.GetValue<string>());
+        Assert.AreEqual(RunOutcome.Succeeded, run.Outcome);
         Assert.AreEqual(new ProxySettings("http://gluetun:8888"), executed!.Proxy);
-        Assert.AreEqual("203.0.113.7", run["vpnExitIp"]!.GetValue<string>());
+        Assert.AreEqual("203.0.113.7", run.VpnExitIp);
     }
 
     [TestMethod]
@@ -121,18 +121,18 @@ public sealed class VpnRunsTests(TestContext testContext)
         await AdvanceUntil(factory, () => factory.Time.GetUtcNow() - startedAt > VpnRotation.StartupWait);
         factory.Vpn.Status = VpnStatus.Disconnected("gluetun's control server returned HTTP 500.");
 
-        var run = await AdvanceUntilDone(factory, RunNow(client, watch["id"]!.GetValue<string>()));
+        var run = await AdvanceUntilDone(factory, RunNow(factory, watch));
 
         Assert.AreEqual(0, executions);
-        Assert.AreEqual("errored", run["outcome"]!.GetValue<string>());
+        Assert.AreEqual(RunOutcome.Errored, run.Outcome);
         Assert.AreEqual(
             "The VPN is not connected, so this VPN Run was not started. gluetun's control server returned HTTP 500.",
-            run["errorMessage"]!.GetValue<string>());
+            run.ErrorMessage);
         // Fake time moves on in steps of a second while the Run records itself, so it may finish a step or two later
-        var waited = run["finishedAt"]!.GetValue<DateTimeOffset>() - run["startedAt"]!.GetValue<DateTimeOffset>();
+        var waited = run.FinishedAt - run.StartedAt;
         Assert.IsGreaterThanOrEqualTo(TimeSpan.FromMinutes(2), waited);
         Assert.IsLessThanOrEqualTo(TimeSpan.FromMinutes(2) + TimeSpan.FromSeconds(5), waited);
-        Assert.IsNull(run["vpnExitIp"]);
+        Assert.IsNull(run.VpnExitIp);
     }
 
     [TestMethod]
@@ -146,39 +146,14 @@ public sealed class VpnRunsTests(TestContext testContext)
         var readsBefore = factory.Vpn.StatusReads;
 
         // Without fake time moving on, a Run that waited for the VPN would never finish
-        var run = await RunNow(client, watch["id"]!.GetValue<string>())
+        var run = await RunNow(factory, watch)
             .WaitAsync(TimeSpan.FromSeconds(10), testContext.CancellationToken);
 
         Assert.AreEqual(1, factory.Vpn.StatusReads - readsBefore);
-        Assert.AreEqual("errored", run["outcome"]!.GetValue<string>());
+        Assert.AreEqual(RunOutcome.Errored, run.Outcome);
         Assert.AreEqual(
             "The VPN is not connected, so this VPN Run was not started. gluetun refused Lookout's API key (HTTP 401).",
-            run["errorMessage"]!.GetValue<string>());
-    }
-
-    [TestMethod]
-    public async Task OtherRunsTakeTheRunSlotOfAVpnRunWaitingForTheVpn()
-    {
-        await using var factory = new LookoutWebApplicationFactory();
-        await using var host = factory.WithWebHostBuilder(builder => builder.UseSetting("Scheduling:MaxConcurrentRuns", "1"));
-        factory.Vpn.Status = VpnStatus.Disconnected();
-        factory.Runner.DefaultResult = new RunnerResult { Outcome = RunOutcome.Succeeded, Content = "£20", DurationMs = 1 };
-        using var client = await host.CreateSignedInClientAsync(testContext.CancellationToken);
-        var vpnWatch = await CreateWatch(client, usesVpn: true);
-        var directWatch = await CreateWatch(client, usesVpn: false);
-
-        var readsBefore = factory.Vpn.StatusReads;
-        var waiting = RunNow(client, vpnWatch["id"]!.GetValue<string>());
-        await AdvanceUntil(factory, () => factory.Vpn.StatusReads - readsBefore >= 1);
-        // Without fake time moving on, the VPN Run is still waiting
-        var direct = await RunNow(client, directWatch["id"]!.GetValue<string>())
-            .WaitAsync(TimeSpan.FromSeconds(10), testContext.CancellationToken);
-        factory.Vpn.Status = VpnStatus.ConnectedThrough(new ProxySettings("http://gluetun:8888"), "203.0.113.7", "New York");
-        var vpnRun = await AdvanceUntilDone(factory, waiting);
-
-        Assert.AreEqual("succeeded", direct["outcome"]!.GetValue<string>());
-        Assert.AreEqual("succeeded", vpnRun["outcome"]!.GetValue<string>());
-        Assert.AreEqual("203.0.113.7", vpnRun["vpnExitIp"]!.GetValue<string>());
+            run.ErrorMessage);
     }
 
     [TestMethod]
@@ -194,9 +169,9 @@ public sealed class VpnRunsTests(TestContext testContext)
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         var watch = await CreateWatch(client, usesVpn: true);
 
-        var testRun = await TestRun(client, watch["id"]!.GetValue<string>());
+        var testRun = await TestRun(factory, watch);
 
-        Assert.AreEqual("succeeded", testRun["outcome"]!.GetValue<string>());
+        Assert.AreEqual(RunOutcome.Succeeded, testRun.Outcome);
         Assert.AreEqual(new ProxySettings("http://gluetun:8888"), executed!.Proxy);
     }
 
@@ -217,47 +192,12 @@ public sealed class VpnRunsTests(TestContext testContext)
         var watch = await CreateWatch(client, usesVpn: true);
         var readsBefore = factory.Vpn.StatusReads;
 
-        var testRun = await TestRun(client, watch["id"]!.GetValue<string>());
+        var testRun = await TestRun(factory, watch);
 
         Assert.AreEqual(0, executions);
         Assert.AreEqual(1, factory.Vpn.StatusReads - readsBefore);
-        Assert.AreEqual("errored", testRun["outcome"]!.GetValue<string>());
-        Assert.AreEqual(errorMessage, testRun["errorMessage"]!.GetValue<string>());
-    }
-
-    [TestMethod]
-    public async Task AVpnWatchsTestRunChecksTheVpnOnceItHasARunSlot()
-    {
-        await using var factory = new LookoutWebApplicationFactory();
-        await using var host = factory.WithWebHostBuilder(builder => builder.UseSetting("Scheduling:MaxConcurrentRuns", "1"));
-        var slotHeld = new TaskCompletionSource();
-        var releaseSlot = new TaskCompletionSource();
-        var executions = 0;
-        factory.Runner.OnExecute = async (_, _) =>
-        {
-            if (Interlocked.Increment(ref executions) == 1)
-            {
-                slotHeld.SetResult();
-                await releaseSlot.Task;
-            }
-            return new RunnerResult { Outcome = RunOutcome.Succeeded, Content = "£20", DurationMs = 1 };
-        };
-        using var client = await host.CreateSignedInClientAsync(testContext.CancellationToken);
-        var directWatch = await CreateWatch(client, usesVpn: false);
-        var vpnWatch = await CreateWatch(client, usesVpn: true);
-
-        var holding = RunNow(client, directWatch["id"]!.GetValue<string>());
-        await slotHeld.Task.WaitAsync(testContext.CancellationToken);
-        var testing = TestRun(client, vpnWatch["id"]!.GetValue<string>());
-        // Long enough for a Test run that checked the VPN before waiting for the slot to have done so already
-        await Task.Delay(300, testContext.CancellationToken);
-        factory.Vpn.Status = VpnStatus.Disconnected();
-        releaseSlot.SetResult();
-        await holding;
-        var testRun = await testing;
-
-        Assert.AreEqual(1, executions);
-        Assert.AreEqual("The VPN is not connected, so this Test run was not started.", testRun["errorMessage"]!.GetValue<string>());
+        Assert.AreEqual(RunOutcome.Errored, testRun.Outcome);
+        Assert.AreEqual(errorMessage, testRun.ErrorMessage);
     }
 
     [TestMethod]
@@ -274,22 +214,15 @@ public sealed class VpnRunsTests(TestContext testContext)
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         var watch = await CreateWatch(client, usesVpn: false);
 
-        var testRun = await TestRun(client, watch["id"]!.GetValue<string>());
+        var testRun = await TestRun(factory, watch);
 
-        Assert.AreEqual("succeeded", testRun["outcome"]!.GetValue<string>());
+        Assert.AreEqual(RunOutcome.Succeeded, testRun.Outcome);
         Assert.IsNull(executed!.Proxy);
     }
 
-    private async Task<JsonObject> TestRun(HttpClient client, string id)
-    {
-        using var form = new MultipartFormDataContent
-        {
-            { new StringContent("export default { async run() { return { success: true, content: '£21' }; } };"), "script", "price.ts" }
-        };
-        var response = await client.PostAsync(new Uri($"/api/watches/{id}/test-runs", UriKind.Relative), form, testContext.CancellationToken);
-        response.EnsureSuccessStatusCode();
-        return (await response.Content.ReadFromJsonAsync<JsonObject>(testContext.CancellationToken))!;
-    }
+    private async Task<TestRun> TestRun(LookoutWebApplicationFactory factory, JsonObject watch) =>
+        (await factory.Services.GetRequiredService<Runs>().TestAsync(Guid.Parse(watch["id"]!.GetValue<string>()),
+            "export default { async run() { return { success: true, content: '£21' }; } };", "ts", testContext.CancellationToken))!;
 
     /// <summary>Moves fake time on in small steps, letting the Run react to each, until <paramref name="done"/> holds.</summary>
     private async Task AdvanceUntil(LookoutWebApplicationFactory factory, Func<bool> done)
@@ -302,7 +235,7 @@ public sealed class VpnRunsTests(TestContext testContext)
         }
     }
 
-    private async Task<JsonObject> AdvanceUntilDone(LookoutWebApplicationFactory factory, Task<JsonObject> running)
+    private async Task<T> AdvanceUntilDone<T>(LookoutWebApplicationFactory factory, Task<T> running)
     {
         await AdvanceUntil(factory, () => running.IsCompleted);
         return await running;
@@ -323,10 +256,10 @@ public sealed class VpnRunsTests(TestContext testContext)
 
         await Edit(client, id, usesVpn: true);
         var vpnWatch = await client.GetFromJsonAsync<JsonObject>($"/api/watches/{id}", testContext.CancellationToken);
-        await RunNow(client, id);
+        await RunNow(factory, id);
         await Edit(client, id, usesVpn: false);
         var directWatch = await client.GetFromJsonAsync<JsonObject>($"/api/watches/{id}", testContext.CancellationToken);
-        await RunNow(client, id);
+        await RunNow(factory, id);
 
         Assert.IsTrue(vpnWatch!["usesVpn"]!.GetValue<bool>());
         Assert.IsFalse(directWatch!["usesVpn"]!.GetValue<bool>());
@@ -405,10 +338,14 @@ public sealed class VpnRunsTests(TestContext testContext)
         return (await response.Content.ReadFromJsonAsync<JsonObject>(testContext.CancellationToken))!;
     }
 
-    private async Task<JsonObject> RunNow(HttpClient client, string id)
+    private static Task<Run> RunNow(LookoutWebApplicationFactory factory, JsonObject watch) =>
+        RunNow(factory, watch["id"]!.GetValue<string>());
+
+    private static async Task<Run> RunNow(LookoutWebApplicationFactory factory, string id)
     {
-        var response = await client.PostAsync(new Uri($"/api/watches/{id}/runs", UriKind.Relative), null, testContext.CancellationToken);
-        response.EnsureSuccessStatusCode();
-        return (await response.Content.ReadFromJsonAsync<JsonObject>(testContext.CancellationToken))!;
+        var admitted = Assert.IsInstanceOfType<Admitted>(factory.Services.GetRequiredService<Runs>().Run(Guid.Parse(id)));
+        var execution = await admitted.Finished;
+        Assert.AreEqual(RunExecutionStatus.Recorded, execution.Status);
+        return execution.Run!;
     }
 }

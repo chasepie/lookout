@@ -40,6 +40,10 @@ _Avoid_: Plain Run, Non-VPN Run
 An execution of a Script to show its result to the user. It is not recorded in the Watch's history and never affects its Baseline.
 _Avoid_: Dry run, Preview
 
+**Run slot**:
+One of a limited number of places where a Run or Test run can execute at once. A Run that can't get one waits its turn.
+_Avoid_: Worker, Concurrency slot
+
 **Channel**:
 A destination Lookout sends notifications to, such as a Discord webhook or a Pushover account, configured once and chosen per Watch.
 _Avoid_: Integration, Notifier
@@ -79,7 +83,7 @@ The user has stopped the Watch's scheduled Runs; its Baseline and failure streak
 _Avoid_: Disabled, Stopped
 
 **Running**:
-A Run of the Watch is in progress. It is shown alongside the Watch's status rather than replacing it; Test runs do not count.
+A Run of the Watch has been started and has not yet finished, including while it waits its turn to execute. It is shown alongside the Watch's status rather than replacing it; Test runs do not count.
 _Avoid_: In progress, Busy
 
 ### Run outcomes

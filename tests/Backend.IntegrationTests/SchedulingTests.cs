@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 using ChasePie.Lookout.Backend.Runner;
+using ChasePie.Lookout.Backend.Scheduling;
 using ChasePie.Lookout.Database;
 using ChasePie.Lookout.Model;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -16,12 +17,25 @@ namespace ChasePie.Lookout.Backend.IntegrationTests;
 [TestClass]
 public sealed class SchedulingTests(TestContext testContext)
 {
-    private static readonly RunnerResult Succeeded = new() { Outcome = RunOutcome.Succeeded, Content = "£20", DurationMs = 1 };
+    private static readonly RunnerResult Succeeded = BlockingRunner.Succeeded;
+
+    [TestMethod]
+    public async Task PollsForDueWatches()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        factory.Runner.DefaultResult = Succeeded;
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
+        var id = (await CreateWatch(client, Every(5, "minutes")))["id"]!.GetValue<string>();
+
+        factory.Time.Advance(TimeSpan.FromMinutes(5));
+
+        await WaitForHistory(client, id, 1);
+    }
 
     [TestMethod]
     public async Task RunsAWatchWhenItIsDue()
     {
-        await using var factory = new LookoutWebApplicationFactory();
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
         factory.Runner.DefaultResult = Succeeded;
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         var created = factory.Time.GetUtcNow();
@@ -30,11 +44,11 @@ public sealed class SchedulingTests(TestContext testContext)
         Assert.AreEqual(created.AddMinutes(5), watch["nextRunAt"]!.GetValue<DateTimeOffset>());
 
         factory.Time.Advance(TimeSpan.FromMinutes(4));
-        await Settle();
-        Assert.IsEmpty(await History(client, id));
+        Assert.IsEmpty(await StartDueRuns(factory));
 
         factory.Time.Advance(TimeSpan.FromMinutes(1));
-        var history = await WaitForHistory(client, id, 1);
+        await StartAndFinishDueRuns(factory);
+        var history = await History(client, id);
 
         Assert.AreEqual("succeeded", history[0]!["outcome"]!.GetValue<string>());
         Assert.AreEqual(created.AddMinutes(5), history[0]!["startedAt"]!.GetValue<DateTimeOffset>());
@@ -46,7 +60,7 @@ public sealed class SchedulingTests(TestContext testContext)
     [TestMethod]
     public async Task APausedWatchIsNotScheduled()
     {
-        await using var factory = new LookoutWebApplicationFactory();
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
         factory.Runner.DefaultResult = Succeeded;
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         var id = (await CreateWatch(client, Every(5, "minutes")))["id"]!.GetValue<string>();
@@ -54,8 +68,8 @@ public sealed class SchedulingTests(TestContext testContext)
         await PostWatchAction(client, id, "pause");
         var paused = await Watch(client, id);
         factory.Time.Advance(TimeSpan.FromHours(1));
-        await Settle();
 
+        Assert.IsEmpty(await StartDueRuns(factory));
         Assert.IsNull(paused["nextRunAt"]);
         Assert.IsEmpty(await History(client, id));
         Assert.IsNull((await Watch(client, id))["nextRunAt"]);
@@ -64,7 +78,7 @@ public sealed class SchedulingTests(TestContext testContext)
     [TestMethod]
     public async Task ResumingSchedulesTheNextRunFromNow()
     {
-        await using var factory = new LookoutWebApplicationFactory();
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
         factory.Runner.DefaultResult = Succeeded;
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         var id = (await CreateWatch(client, Every(5, "minutes")))["id"]!.GetValue<string>();
@@ -75,16 +89,16 @@ public sealed class SchedulingTests(TestContext testContext)
         var resumed = await Watch(client, id);
 
         Assert.AreEqual(factory.Time.GetUtcNow().AddMinutes(5), resumed["nextRunAt"]!.GetValue<DateTimeOffset>());
-        await Settle();
-        Assert.IsEmpty(await History(client, id));
+        Assert.IsEmpty(await StartDueRuns(factory));
         factory.Time.Advance(TimeSpan.FromMinutes(5));
-        await WaitForHistory(client, id, 1);
+        await StartAndFinishDueRuns(factory);
+        Assert.HasCount(1, await History(client, id));
     }
 
     [TestMethod]
     public async Task APausedWatchStaysUnscheduledAfterARestart()
     {
-        await using var factory = new LookoutWebApplicationFactory();
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
         factory.Runner.DefaultResult = Succeeded;
         var databasePath = Path.Combine(Path.GetTempPath(), $"lookout-test-{Guid.NewGuid():N}.db");
         try
@@ -101,8 +115,8 @@ public sealed class SchedulingTests(TestContext testContext)
             await using var after = SharingDatabase(factory, databasePath);
             using var restarted = await after.CreateLoggedInClientAsync(testContext.CancellationToken);
             factory.Time.Advance(TimeSpan.FromHours(1));
-            await Settle();
 
+            Assert.IsEmpty(await StartDueRuns(after));
             Assert.IsNull((await Watch(restarted, id))["nextRunAt"]);
             Assert.IsEmpty(await History(restarted, id));
         }
@@ -115,7 +129,7 @@ public sealed class SchedulingTests(TestContext testContext)
     [TestMethod]
     public async Task ChangingAPausedWatchsScheduleLeavesItUnscheduled()
     {
-        await using var factory = new LookoutWebApplicationFactory();
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
         factory.Runner.DefaultResult = Succeeded;
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         var id = (await CreateWatch(client, Every(5, "minutes")))["id"]!.GetValue<string>();
@@ -135,7 +149,7 @@ public sealed class SchedulingTests(TestContext testContext)
     [TestMethod]
     public async Task ResumingUsesAScheduleChangedWhileItResumes()
     {
-        await using var factory = new LookoutWebApplicationFactory();
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
         HttpClient? client = null;
         string? id = null;
         var changeSchedule = new BeforeCommand("AND \"w\".\"IsPaused\"", async () =>
@@ -160,16 +174,16 @@ public sealed class SchedulingTests(TestContext testContext)
     [TestMethod]
     public async Task RunsOnceAfterTimePassesSeveralMissedRunsThenSchedulesFromNow()
     {
-        await using var factory = new LookoutWebApplicationFactory();
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
         factory.Runner.DefaultResult = Succeeded;
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         var watch = await CreateWatch(client, Every(5, "minutes"));
         var id = watch["id"]!.GetValue<string>();
 
         factory.Time.Advance(TimeSpan.FromHours(1));
-        await WaitForHistory(client, id, 1);
-        await Settle();
+        await StartAndFinishDueRuns(factory);
 
+        Assert.IsEmpty(await StartDueRuns(factory));
         Assert.HasCount(1, await History(client, id));
         Assert.AreEqual(factory.Time.GetUtcNow().AddMinutes(5), (await Watch(client, id))["nextRunAt"]!.GetValue<DateTimeOffset>());
     }
@@ -177,7 +191,7 @@ public sealed class SchedulingTests(TestContext testContext)
     [TestMethod]
     public async Task SkipsRunsMissedWhileLookoutWasDown()
     {
-        await using var factory = new LookoutWebApplicationFactory();
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
         factory.Runner.DefaultResult = Succeeded;
         var databasePath = Path.Combine(Path.GetTempPath(), $"lookout-test-{Guid.NewGuid():N}.db");
         try
@@ -192,63 +206,17 @@ public sealed class SchedulingTests(TestContext testContext)
             factory.Time.Advance(TimeSpan.FromHours(1));
             await using var after = SharingDatabase(factory, databasePath);
             using var restarted = await after.CreateLoggedInClientAsync(testContext.CancellationToken);
-            await Settle();
 
-            Assert.IsEmpty(await History(restarted, id));
+            Assert.IsEmpty(await StartDueRuns(after));
             Assert.AreEqual(factory.Time.GetUtcNow().AddMinutes(5), (await Watch(restarted, id))["nextRunAt"]!.GetValue<DateTimeOffset>());
             factory.Time.Advance(TimeSpan.FromMinutes(5));
-            await WaitForHistory(restarted, id, 1);
+            await StartAndFinishDueRuns(after);
+            Assert.HasCount(1, await History(restarted, id));
         }
         finally
         {
             File.Delete(databasePath);
         }
-    }
-
-    [TestMethod]
-    public async Task RunsAtMostTwoWatchesAtOnceAndStartsTheRestAsRunsFinish()
-    {
-        await using var factory = new LookoutWebApplicationFactory();
-        var runner = new BlockingRunner();
-        factory.Runner.OnExecute = runner.Execute;
-        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
-        for (var index = 0; index < 3; index++)
-        {
-            await CreateWatch(client, Every(5, "minutes"));
-        }
-
-        factory.Time.Advance(TimeSpan.FromMinutes(5));
-        await runner.WaitForStarted(2);
-        await Settle();
-        Assert.AreEqual(2, runner.Started);
-
-        runner.FinishOne();
-        await runner.WaitForStarted(3);
-        runner.FinishAll();
-    }
-
-    [TestMethod]
-    public async Task OnDemandRunsShareTheLimitOnRunsAtOnce()
-    {
-        await using var factory = new LookoutWebApplicationFactory();
-        var runner = new BlockingRunner();
-        factory.Runner.OnExecute = runner.Execute;
-        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
-        await CreateWatch(client, Every(5, "minutes"));
-        await CreateWatch(client, Every(5, "minutes"));
-        var onDemand = (await CreateWatch(client, Every(1, "hours")))["id"]!.GetValue<string>();
-        factory.Time.Advance(TimeSpan.FromMinutes(5));
-        await runner.WaitForStarted(2);
-
-        var runNow = client.PostAsync(new Uri($"/api/watches/{onDemand}/runs", UriKind.Relative), null, testContext.CancellationToken);
-        await Settle();
-        Assert.AreEqual(2, runner.Started);
-        Assert.IsFalse(runNow.IsCompleted);
-
-        runner.FinishOne();
-        await runner.WaitForStarted(3);
-        runner.FinishAll();
-        (await runNow).EnsureSuccessStatusCode();
     }
 
     [TestMethod]
@@ -262,7 +230,7 @@ public sealed class SchedulingTests(TestContext testContext)
     [DataRow("America/New_York", "cron", null, "0 9 1 11 *", "2026-11-01T14:00:00Z")]
     public async Task InterpretsTimesInTheConfiguredTimeZone(string? timeZone, string kind, string? timeOfDay, string? cron, string expected)
     {
-        await using var factory = new LookoutWebApplicationFactory();
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
         await using var host = factory.WithWebHostBuilder(builder =>
         {
             if (timeZone is not null) builder.UseSetting("Scheduling:TimeZone", timeZone);
@@ -281,14 +249,15 @@ public sealed class SchedulingTests(TestContext testContext)
     [TestMethod]
     public async Task RunsADailyWatchAtItsTimeEachDay()
     {
-        await using var factory = new LookoutWebApplicationFactory();
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
         factory.Runner.DefaultResult = Succeeded;
         await using var host = factory.WithWebHostBuilder(builder => builder.UseSetting("Scheduling:TimeZone", "Asia/Tokyo"));
         using var client = await host.CreateSignedInClientAsync(testContext.CancellationToken);
         var id = (await CreateWatch(client, new() { ["scheduleKind"] = "daily", ["timeOfDay"] = "09:00" }))["id"]!.GetValue<string>();
 
         factory.Time.Advance(TimeSpan.FromHours(12));
-        var history = await WaitForHistory(client, id, 1);
+        await StartAndFinishDueRuns(host);
+        var history = await History(client, id);
 
         Assert.AreEqual(DateTimeOffset.Parse("2026-10-20T00:00:00Z", System.Globalization.CultureInfo.InvariantCulture),
             history[0]!["startedAt"]!.GetValue<DateTimeOffset>());
@@ -301,7 +270,7 @@ public sealed class SchedulingTests(TestContext testContext)
     [DataRow("Scheduling:MaxConcurrentRuns", "0")]
     public async Task RefusesToStartWithInvalidSchedulingSettings(string setting, string value)
     {
-        await using var factory = new LookoutWebApplicationFactory();
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
         await using var host = factory.WithWebHostBuilder(builder => builder.UseSetting(setting, value));
 
         var error = Assert.ThrowsExactly<InvalidOperationException>(() => host.CreateClient());
@@ -312,18 +281,20 @@ public sealed class SchedulingTests(TestContext testContext)
     [TestMethod]
     public async Task RejectsAnOnDemandRunWhileAScheduledRunOfTheSameWatchIsInProgress()
     {
-        await using var factory = new LookoutWebApplicationFactory();
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
         var runner = new BlockingRunner();
         factory.Runner.OnExecute = runner.Execute;
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         var id = (await CreateWatch(client, Every(5, "minutes")))["id"]!.GetValue<string>();
         factory.Time.Advance(TimeSpan.FromMinutes(5));
+        var scheduled = await StartDueRuns(factory);
         await runner.WaitForStarted(1);
 
-        var onDemand = await client.PostAsync(new Uri($"/api/watches/{id}/runs", UriKind.Relative), null, testContext.CancellationToken);
+        var onDemand = await RunNow(client, id);
         runner.FinishAll();
+        await FinishAll(scheduled);
 
-        Assert.AreEqual(System.Net.HttpStatusCode.Conflict, onDemand.StatusCode);
+        await AssertConflict(onDemand, "This Watch is already running.");
         await AssertOneRunSetTheBaseline(client, id);
         Assert.AreEqual(1, runner.Started);
     }
@@ -331,60 +302,109 @@ public sealed class SchedulingTests(TestContext testContext)
     [TestMethod]
     public async Task SkipsAScheduledRunWhileAnOnDemandRunOfTheSameWatchIsInProgress()
     {
-        await using var factory = new LookoutWebApplicationFactory();
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
         var runner = new BlockingRunner();
         factory.Runner.OnExecute = runner.Execute;
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         var id = (await CreateWatch(client, Every(5, "minutes")))["id"]!.GetValue<string>();
-        var onDemand = client.PostAsync(new Uri($"/api/watches/{id}/runs", UriKind.Relative), null, testContext.CancellationToken);
+        var onDemand = RunNow(client, id);
         await runner.WaitForStarted(1);
 
         factory.Time.Advance(TimeSpan.FromMinutes(5));
-        // The scheduler reschedules a Watch from now when it takes its due Run, whether or not it starts it.
-        var rescheduledTo = factory.Time.GetUtcNow().AddMinutes(5);
-        for (var attempt = 0; attempt < 100 && (await Watch(client, id))["nextRunAt"]!.GetValue<DateTimeOffset>() != rescheduledTo; attempt++)
-        {
-            await Task.Delay(50, testContext.CancellationToken);
-        }
-        Assert.AreEqual(rescheduledTo, (await Watch(client, id))["nextRunAt"]!.GetValue<DateTimeOffset>());
-        runner.FinishAll();
+        var scheduled = await StartDueRuns(factory);
 
+        // The scheduler reschedules a Watch from now when it takes its due Run, whether or not it starts it.
+        Assert.IsInstanceOfType<Refused>(Assert.ContainsSingle(scheduled));
+        Assert.AreEqual(factory.Time.GetUtcNow().AddMinutes(5), (await Watch(client, id))["nextRunAt"]!.GetValue<DateTimeOffset>());
+        runner.FinishAll();
         (await onDemand).EnsureSuccessStatusCode();
         await AssertOneRunSetTheBaseline(client, id);
         Assert.AreEqual(1, runner.Started);
     }
 
     [TestMethod]
-    public async Task SkipsAScheduledRunOfARunningWatchEvenWhileEverySlotIsBusy()
+    public async Task SkipsAScheduledRunAtOnceWhileAnOnDemandRunOfTheSameWatchWaitsForASlot()
     {
-        await using var factory = new LookoutWebApplicationFactory();
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
         var runner = new BlockingRunner();
         factory.Runner.OnExecute = runner.Execute;
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
-        var id = (await CreateWatch(client, Every(3, "minutes")))["id"]!.GetValue<string>();
-        var other = (await CreateWatch(client, Every(1, "hours")))["id"]!.GetValue<string>();
-        var onDemand = client.PostAsync(new Uri($"/api/watches/{id}/runs", UriKind.Relative), null, testContext.CancellationToken);
-        await runner.WaitForStarted(1);
-        var otherOnDemand = client.PostAsync(new Uri($"/api/watches/{other}/runs", UriKind.Relative), null, testContext.CancellationToken);
-        await runner.WaitForStarted(2);
+        var id = (await CreateWatch(client, Every(5, "minutes")))["id"]!.GetValue<string>();
+        var busy = await OccupyEveryRunSlot(client, runner);
+        var onDemand = RunNow(client, id);
+        await WaitUntilRunning(factory, id);
 
-        factory.Time.Advance(TimeSpan.FromMinutes(3));
-        await Settle();
-        // The Watch's own on-demand Run finishes first, freeing a slot while its due Run is still being decided.
-        runner.FinishOne();
-        (await onDemand).EnsureSuccessStatusCode();
-        await Settle();
+        factory.Time.Advance(TimeSpan.FromMinutes(5));
+        var scheduled = await StartDueRuns(factory);
 
-        Assert.AreEqual(2, runner.Started);
-        Assert.HasCount(1, await History(client, id));
+        Assert.AreEqual(new Refused(RunRefusal.WaitingForSlot, Gated: false), Assert.ContainsSingle(scheduled));
+        Assert.AreEqual(factory.Time.GetUtcNow().AddMinutes(5), (await Watch(client, id))["nextRunAt"]!.GetValue<DateTimeOffset>());
         runner.FinishAll();
-        (await otherOnDemand).EnsureSuccessStatusCode();
+        await runner.WaitForStarted(3);
+        runner.FinishAll();
+        (await onDemand).EnsureSuccessStatusCode();
+        foreach (var response in busy) (await response).EnsureSuccessStatusCode();
+        Assert.IsEmpty(await StartDueRuns(factory));
+        Assert.HasCount(1, await History(client, id));
+    }
+
+    [TestMethod]
+    public async Task LeavesItsOwnScheduledRunWaitingForASlotToBeClaimedWhenItStarts()
+    {
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
+        var runner = new BlockingRunner();
+        factory.Runner.OnExecute = runner.Execute;
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
+        var id = (await CreateWatch(client, Every(5, "minutes")))["id"]!.GetValue<string>();
+        var busy = await OccupyEveryRunSlot(client, runner);
+        factory.Time.Advance(TimeSpan.FromMinutes(5));
+        var dueAt = (await Watch(client, id))["nextRunAt"]!.GetValue<DateTimeOffset>();
+        var scheduled = await StartDueRuns(factory);
+
+        factory.Time.Advance(TimeSpan.FromMinutes(1));
+        var again = await StartDueRuns(factory);
+
+        Assert.AreEqual(new Refused(RunRefusal.WaitingForSlot, Gated: true), Assert.ContainsSingle(again));
+        Assert.AreEqual(dueAt, (await Watch(client, id))["nextRunAt"]!.GetValue<DateTimeOffset>());
+        runner.FinishAll();
+        await runner.WaitForStarted(3);
+        runner.FinishAll();
+        foreach (var response in busy) (await response).EnsureSuccessStatusCode();
+        await FinishAll(scheduled);
+        var history = await History(client, id);
+        Assert.HasCount(1, history);
+        // Claimed once it had a slot, so it's recorded as starting then, and the next Run is scheduled from then.
+        Assert.AreEqual(factory.Time.GetUtcNow(), history[0]!["startedAt"]!.GetValue<DateTimeOffset>());
+        Assert.AreEqual(factory.Time.GetUtcNow().AddMinutes(5), (await Watch(client, id))["nextRunAt"]!.GetValue<DateTimeOffset>());
+    }
+
+    [TestMethod]
+    public async Task DropsAScheduledRunWhoseWatchIsPausedWhileItWaitsForASlot()
+    {
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
+        var runner = new BlockingRunner();
+        factory.Runner.OnExecute = runner.Execute;
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
+        var id = (await CreateWatch(client, Every(5, "minutes")))["id"]!.GetValue<string>();
+        var busy = await OccupyEveryRunSlot(client, runner);
+        factory.Time.Advance(TimeSpan.FromMinutes(5));
+        var scheduled = Assert.IsInstanceOfType<Admitted>(Assert.ContainsSingle(await StartDueRuns(factory)));
+
+        await PostWatchAction(client, id, "pause");
+        runner.FinishAll();
+        var execution = await scheduled.Finished;
+
+        Assert.AreEqual(RunExecutionStatus.NotClaimed, execution.Status);
+        Assert.AreEqual(2, runner.Started);
+        foreach (var response in busy) (await response).EnsureSuccessStatusCode();
+        Assert.IsEmpty(await History(client, id));
+        Assert.IsFalse((await Watch(client, id))["isRunning"]!.GetValue<bool>());
     }
 
     [TestMethod]
     public async Task SkipsAScheduledRunOfARunningWatchWhileAnEarlierDueWatchWaitsForASlot()
     {
-        await using var factory = new LookoutWebApplicationFactory();
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
         var runner = new BlockingRunner();
         factory.Runner.OnExecute = runner.Execute;
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
@@ -392,64 +412,59 @@ public sealed class SchedulingTests(TestContext testContext)
         var id = (await CreateWatch(client, Every(4, "minutes")))["id"]!.GetValue<string>();
         var other = (await CreateWatch(client, Every(1, "hours")))["id"]!.GetValue<string>();
         factory.Time.Advance(TimeSpan.FromMinutes(2));
-        var onDemand = client.PostAsync(new Uri($"/api/watches/{id}/runs", UriKind.Relative), null, testContext.CancellationToken);
+        var onDemand = RunNow(client, id);
         await runner.WaitForStarted(1);
-        var otherOnDemand = client.PostAsync(new Uri($"/api/watches/{other}/runs", UriKind.Relative), null, testContext.CancellationToken);
+        var otherOnDemand = RunNow(client, other);
         await runner.WaitForStarted(2);
 
         // The 3-minute Watch, due first, waits for a slot; the 4-minute Watch is due too but already running.
         factory.Time.Advance(TimeSpan.FromMinutes(2));
-        await Settle();
+        var scheduled = await StartDueRuns(factory);
         runner.FinishOne();
         (await onDemand).EnsureSuccessStatusCode();
         await runner.WaitForStarted(3);
-        runner.FinishOne();
-        await Settle();
+        runner.FinishAll();
+        await FinishAll(scheduled);
 
+        Assert.IsInstanceOfType<Admitted>(scheduled[0]);
+        Assert.AreEqual(new Refused(RunRefusal.Executing, Gated: false), scheduled[1]);
+        Assert.IsEmpty(await StartDueRuns(factory));
         Assert.AreEqual(3, runner.Started);
         Assert.HasCount(1, await History(client, id));
-        runner.FinishAll();
         (await otherOnDemand).EnsureSuccessStatusCode();
     }
 
     [TestMethod]
     public async Task ExplainsThatRunNowIsRejectedWhileTheWatchWaitsForASlot()
     {
-        await using var factory = new LookoutWebApplicationFactory();
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
         var runner = new BlockingRunner();
         factory.Runner.OnExecute = runner.Execute;
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         var id = (await CreateWatch(client, Every(3, "minutes")))["id"]!.GetValue<string>();
-        var busy = new List<Task<HttpResponseMessage>>();
-        for (var index = 0; index < 2; index++)
-        {
-            var other = (await CreateWatch(client, Every(1, "hours")))["id"]!.GetValue<string>();
-            busy.Add(client.PostAsync(new Uri($"/api/watches/{other}/runs", UriKind.Relative), null, testContext.CancellationToken));
-            await runner.WaitForStarted(index + 1);
-        }
+        var busy = await OccupyEveryRunSlot(client, runner);
         factory.Time.Advance(TimeSpan.FromMinutes(3));
-        await Settle();
+        var scheduled = await StartDueRuns(factory);
 
-        var runNow = await client.PostAsync(new Uri($"/api/watches/{id}/runs", UriKind.Relative), null, testContext.CancellationToken);
+        var runNow = await RunNow(client, id);
 
-        Assert.AreEqual(System.Net.HttpStatusCode.Conflict, runNow.StatusCode);
-        var problem = await runNow.Content.ReadFromJsonAsync<JsonObject>(testContext.CancellationToken);
-        Assert.AreEqual("This Watch is waiting for a free slot to run.", problem!["detail"]!.GetValue<string>());
+        await AssertConflict(runNow, "This Watch is waiting for a free slot to run.");
         runner.FinishAll();
         await runner.WaitForStarted(3);
         runner.FinishAll();
         foreach (var response in busy) (await response).EnsureSuccessStatusCode();
+        await FinishAll(scheduled);
     }
 
     [TestMethod]
     public async Task KeepsAChangedScheduleThreeMinutesAwayFromTheRunThatJustStarted()
     {
-        await using var factory = new LookoutWebApplicationFactory();
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
         factory.Runner.DefaultResult = Succeeded;
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         var id = (await CreateWatch(client, Every(5, "minutes")))["id"]!.GetValue<string>();
         factory.Time.Advance(TimeSpan.FromMinutes(5));
-        await WaitForHistory(client, id, 1);
+        await StartAndFinishDueRuns(factory);
 
         var response = await client.PutAsJsonAsync($"/api/watches/{id}/schedule",
             new { scheduleKind = "daily", timeOfDay = "12:06" }, testContext.CancellationToken);
@@ -463,7 +478,7 @@ public sealed class SchedulingTests(TestContext testContext)
     [TestMethod]
     public async Task KeepsARunRescheduledForANewTimeZoneThreeMinutesAwayFromTheLastRun()
     {
-        await using var factory = new LookoutWebApplicationFactory();
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
         factory.Runner.DefaultResult = Succeeded;
         var databasePath = Path.Combine(Path.GetTempPath(), $"lookout-test-{Guid.NewGuid():N}.db");
         try
@@ -475,7 +490,7 @@ public sealed class SchedulingTests(TestContext testContext)
                 // 12:05, 12:51, 17:05 and 17:51 in UTC; in Kathmandu (UTC+5:45), 17:51 local is 12:06 UTC.
                 id = (await CreateWatch(client, new() { ["scheduleKind"] = "cron", ["cron"] = "5,51 12,17 * * *" }))["id"]!.GetValue<string>();
                 factory.Time.Advance(TimeSpan.FromMinutes(5));
-                await WaitForHistory(client, id, 1);
+                await StartAndFinishDueRuns(before);
             }
 
             await using var after = SharingDatabase(factory, databasePath, "Asia/Kathmandu");
@@ -493,7 +508,7 @@ public sealed class SchedulingTests(TestContext testContext)
     [TestMethod]
     public async Task ReturnsTheNextRunAsStoredWhenCreatingAWatch()
     {
-        await using var factory = new LookoutWebApplicationFactory();
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
         // A real clock rarely lands on a whole second.
         factory.Time.Advance(TimeSpan.FromTicks(1_234_567));
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
@@ -507,7 +522,7 @@ public sealed class SchedulingTests(TestContext testContext)
     [TestMethod]
     public async Task DiscardsAScheduledRunEvaluatedAgainstABaselineAnotherInstanceAdvanced()
     {
-        await using var factory = new LookoutWebApplicationFactory();
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         var id = (await CreateWatch(client, Every(5, "minutes")))["id"]!.GetValue<string>();
         var executions = 0;
@@ -515,7 +530,7 @@ public sealed class SchedulingTests(TestContext testContext)
         {
             if (Interlocked.Increment(ref executions) == 1)
             {
-                // Another backend instance, which RunningWatches can't see, records a Run while this one executes.
+                // Another backend instance, whose Runs this one can't see, records a Run while this one executes.
                 await using var scope = factory.Services.CreateAsyncScope();
                 await scope.ServiceProvider.GetRequiredService<LookoutDbContext>().Watches.Where(item => item.Id == Guid.Parse(id))
                     .ExecuteUpdateAsync(setters => setters
@@ -526,28 +541,26 @@ public sealed class SchedulingTests(TestContext testContext)
         };
 
         factory.Time.Advance(TimeSpan.FromMinutes(5));
-        for (var attempt = 0; attempt < 100 && Volatile.Read(ref executions) == 0; attempt++)
-        {
-            await Task.Delay(50, testContext.CancellationToken);
-        }
-        await Settle();
+        var discarded = Assert.IsInstanceOfType<Admitted>(Assert.ContainsSingle(await StartDueRuns(factory)));
 
+        Assert.AreEqual(RunExecutionStatus.Superseded, (await discarded.Finished).Status);
         Assert.AreEqual(1, Volatile.Read(ref executions));
         Assert.IsEmpty(await History(client, id));
         Assert.AreEqual("£19", (await Watch(client, id))["baseline"]!.GetValue<string>());
 
         // The discarded Run still released the Watch, so its next scheduled Run is recorded against the newer Baseline.
         factory.Time.Advance(TimeSpan.FromMinutes(5));
-        var history = await WaitForHistory(client, id, 1);
+        await StartAndFinishDueRuns(factory);
+        var history = await History(client, id);
+        Assert.HasCount(1, history);
         Assert.AreEqual("£20", history[0]!["content"]!.GetValue<string>());
         Assert.IsTrue(history[0]!["isChange"]!.GetValue<bool>());
     }
 
     private async Task AssertOneRunSetTheBaseline(HttpClient client, string id)
     {
-        var history = await WaitForHistory(client, id, 1);
-        await Settle();
-        Assert.HasCount(1, await History(client, id));
+        var history = await History(client, id);
+        Assert.HasCount(1, history);
         Assert.AreEqual("£20", history[0]!["content"]!.GetValue<string>());
         Assert.AreEqual("£20", (await Watch(client, id))["baseline"]!.GetValue<string>());
     }
@@ -555,7 +568,7 @@ public sealed class SchedulingTests(TestContext testContext)
     [TestMethod]
     public async Task ChangesAWatchsScheduleAndSchedulesItsNextRunFromNow()
     {
-        await using var factory = new LookoutWebApplicationFactory();
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         var id = (await CreateWatch(client, Every(1, "hours")))["id"]!.GetValue<string>();
         factory.Time.Advance(TimeSpan.FromMinutes(20));
@@ -588,7 +601,7 @@ public sealed class SchedulingTests(TestContext testContext)
     [TestMethod]
     public async Task KeepsTheScheduleWhenAChangeIsRejected()
     {
-        await using var factory = new LookoutWebApplicationFactory();
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         var watch = await CreateWatch(client, Every(1, "hours"));
         var id = watch["id"]!.GetValue<string>();
@@ -613,7 +626,7 @@ public sealed class SchedulingTests(TestContext testContext)
     [DataRow("cron", null, "0 9 * * *")]
     public async Task ReschedulesWatchesForANewTimeZoneWhenLookoutRestarts(string kind, string? timeOfDay, string? cron)
     {
-        await using var factory = new LookoutWebApplicationFactory();
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
         factory.Runner.DefaultResult = Succeeded;
         var databasePath = Path.Combine(Path.GetTempPath(), $"lookout-test-{Guid.NewGuid():N}.db");
         try
@@ -637,7 +650,8 @@ public sealed class SchedulingTests(TestContext testContext)
             Assert.AreEqual(DateTimeOffset.Parse("2026-10-20T00:00:00Z", System.Globalization.CultureInfo.InvariantCulture),
                 (await Watch(restarted, id))["nextRunAt"]!.GetValue<DateTimeOffset>());
             factory.Time.Advance(TimeSpan.FromHours(12));
-            var history = await WaitForHistory(restarted, id, 1);
+            await StartAndFinishDueRuns(after);
+            var history = await History(restarted, id);
             Assert.AreEqual(DateTimeOffset.Parse("2026-10-20T00:00:00Z", System.Globalization.CultureInfo.InvariantCulture),
                 history[0]!["startedAt"]!.GetValue<DateTimeOffset>());
         }
@@ -650,7 +664,7 @@ public sealed class SchedulingTests(TestContext testContext)
     [TestMethod]
     public async Task KeepsPendingRunsWhenLookoutRestartsInTheSameTimeZone()
     {
-        await using var factory = new LookoutWebApplicationFactory();
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
         var databasePath = Path.Combine(Path.GetTempPath(), $"lookout-test-{Guid.NewGuid():N}.db");
         try
         {
@@ -691,7 +705,7 @@ public sealed class SchedulingTests(TestContext testContext)
     [DataRow("cron", null, null, "59,0 23,0 * * *")]
     public async Task RejectsSchedulesThatRunMoreThanOnceEveryThreeMinutes(string kind, string? every, string? unit, string? cron)
     {
-        await using var factory = new LookoutWebApplicationFactory();
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
 
         var response = await PostWatch(client, Fields(kind, every, unit, cron));
@@ -707,7 +721,7 @@ public sealed class SchedulingTests(TestContext testContext)
     [DataRow("cron", null, null, "0 9 * * 1-5")]
     public async Task AcceptsSchedulesThatRunAtMostOnceEveryThreeMinutes(string kind, string? every, string? unit, string? cron)
     {
-        await using var factory = new LookoutWebApplicationFactory();
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
 
         var response = await PostWatch(client, Fields(kind, every, unit, cron));
@@ -728,7 +742,7 @@ public sealed class SchedulingTests(TestContext testContext)
     [DataRow(null, null, null, null, "Choose an interval, daily or cron schedule.")]
     public async Task RejectsIncompleteOrInvalidSchedules(string? kind, string? every, string? unit, string? cron, string message)
     {
-        await using var factory = new LookoutWebApplicationFactory();
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
 
         var response = await PostWatch(client, Fields(kind, every, unit, cron));
@@ -739,7 +753,7 @@ public sealed class SchedulingTests(TestContext testContext)
     [TestMethod]
     public async Task DelaysEachRunByUpToItsJitter()
     {
-        await using var factory = new LookoutWebApplicationFactory();
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
         factory.Runner.DefaultResult = Succeeded;
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         var created = factory.Time.GetUtcNow();
@@ -758,9 +772,10 @@ public sealed class SchedulingTests(TestContext testContext)
         Assert.IsGreaterThan(1, nextRuns.Distinct().Count(), "Jitter should vary the next Run.");
 
         factory.Time.Advance(TimeSpan.FromMinutes(15));
+        await StartAndFinishDueRuns(factory);
         foreach (var watch in watches)
         {
-            await WaitForHistory(client, watch["id"]!.GetValue<string>(), 1);
+            Assert.HasCount(1, await History(client, watch["id"]!.GetValue<string>()));
         }
         var rescheduled = await client.GetFromJsonAsync<JsonArray>("/api/watches", testContext.CancellationToken);
         var now = factory.Time.GetUtcNow();
@@ -771,7 +786,7 @@ public sealed class SchedulingTests(TestContext testContext)
     [TestMethod]
     public async Task NeverSchedulesARunWithinThreeMinutesOfTheLastOneDespiteJitter()
     {
-        await using var factory = new LookoutWebApplicationFactory();
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
         factory.Runner.DefaultResult = Succeeded;
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         var schedule = new Dictionary<string, string> { ["scheduleKind"] = "cron", ["cron"] = "*/3 * * * *", ["jitterMinutes"] = "2" };
@@ -783,9 +798,10 @@ public sealed class SchedulingTests(TestContext testContext)
 
         // Every Watch's first Run is due by 12:05; a Run delayed past the next occurrence must not bunch up with it.
         factory.Time.Advance(TimeSpan.FromMinutes(5));
+        await StartAndFinishDueRuns(factory);
         foreach (var id in ids)
         {
-            var startedAt = (await WaitForHistory(client, id, 1))[0]!["startedAt"]!.GetValue<DateTimeOffset>();
+            var startedAt = (await History(client, id))[0]!["startedAt"]!.GetValue<DateTimeOffset>();
             var nextRunAt = (await Watch(client, id))["nextRunAt"]!.GetValue<DateTimeOffset>();
             Assert.IsGreaterThanOrEqualTo(startedAt.AddMinutes(3), nextRunAt);
         }
@@ -796,7 +812,7 @@ public sealed class SchedulingTests(TestContext testContext)
     [DataRow("61")]
     public async Task RejectsJitterOutsideZeroToSixtyMinutes(string jitter)
     {
-        await using var factory = new LookoutWebApplicationFactory();
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         var schedule = Every(10, "minutes");
         schedule["jitterMinutes"] = jitter;
@@ -902,46 +918,47 @@ public sealed class SchedulingTests(TestContext testContext)
         return history;
     }
 
-    /// <summary>Holds each Run open until the test finishes it.</summary>
-    private sealed class BlockingRunner
+    /// <summary>Starts the Runs of the Watches due now, as the scheduler's timer would.</summary>
+    private Task<IReadOnlyList<Admission>> StartDueRuns(WebApplicationFactory<Program> host) =>
+        host.Services.GetRequiredService<Scheduler>().StartDueRunsAsync(testContext.CancellationToken);
+
+    private async Task StartAndFinishDueRuns(WebApplicationFactory<Program> host) => await FinishAll(await StartDueRuns(host));
+
+    /// <summary>Waits for every admitted Run to be recorded or discarded.</summary>
+    private static async Task FinishAll(IEnumerable<Admission> admissions) =>
+        await Task.WhenAll(admissions.OfType<Admitted>().Select(admitted => admitted.Finished));
+
+    /// <summary>Runs two other Watches now and holds them, which takes both of the default Run slots.</summary>
+    private async Task<List<Task<HttpResponseMessage>>> OccupyEveryRunSlot(HttpClient client, BlockingRunner runner)
     {
-        private readonly System.Collections.Concurrent.ConcurrentQueue<TaskCompletionSource<RunnerResult>> _pending = new();
-        private int _started;
-
-        public int Started => Volatile.Read(ref _started);
-
-        public Task<RunnerResult> Execute(RunnerRequest request, CancellationToken cancellationToken)
+        var busy = new List<Task<HttpResponseMessage>>();
+        for (var index = 0; index < 2; index++)
         {
-            var run = new TaskCompletionSource<RunnerResult>(TaskCreationOptions.RunContinuationsAsynchronously);
-            _pending.Enqueue(run);
-            Interlocked.Increment(ref _started);
-            return run.Task.WaitAsync(cancellationToken);
+            var other = (await CreateWatch(client, Every(1, "hours")))["id"]!.GetValue<string>();
+            busy.Add(RunNow(client, other));
+            await runner.WaitForStarted(runner.Started + 1);
         }
-
-        public async Task WaitForStarted(int count)
-        {
-            for (var attempt = 0; attempt < 100 && Started < count; attempt++)
-            {
-                await Task.Delay(50);
-            }
-            Assert.AreEqual(count, Started);
-        }
-
-        public void FinishOne()
-        {
-            Assert.IsTrue(_pending.TryDequeue(out var run));
-            run.SetResult(Succeeded);
-        }
-
-        public void FinishAll()
-        {
-            while (_pending.TryDequeue(out var run))
-            {
-                run.SetResult(Succeeded);
-            }
-        }
+        return busy;
     }
 
-    /// <summary>Gives the scheduler real time to act on time a test advanced, before asserting nothing happened.</summary>
-    private Task Settle() => Task.Delay(300, testContext.CancellationToken);
+    /// <summary>Waits until a Run of the Watch is admitted, such as one a request still on its way asked for.</summary>
+    private async Task WaitUntilRunning(WebApplicationFactory<Program> host, string id)
+    {
+        var runs = host.Services.GetRequiredService<Runs>();
+        for (var attempt = 0; attempt < 100 && !runs.IsRunning(Guid.Parse(id)); attempt++)
+        {
+            await Task.Delay(50, testContext.CancellationToken);
+        }
+        Assert.IsTrue(runs.IsRunning(Guid.Parse(id)));
+    }
+
+    private Task<HttpResponseMessage> RunNow(HttpClient client, string id) =>
+        client.PostAsync(new Uri($"/api/watches/{id}/runs", UriKind.Relative), null, testContext.CancellationToken);
+
+    private async Task AssertConflict(HttpResponseMessage response, string detail)
+    {
+        Assert.AreEqual(HttpStatusCode.Conflict, response.StatusCode);
+        var problem = await response.Content.ReadFromJsonAsync<JsonObject>(testContext.CancellationToken);
+        Assert.AreEqual(detail, problem!["detail"]!.GetValue<string>());
+    }
 }

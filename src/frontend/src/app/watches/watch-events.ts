@@ -7,7 +7,7 @@ import type { SessionStatus } from '../session/session.model';
 import type { Vpn } from '../settings/vpn.model';
 import type { RunOutcome, WatchStatus } from './watch.model';
 
-export interface RunStarted { watchId: string; startedAt: string }
+export interface RunStarted { watchId: string }
 
 /** A Run that ended without being recorded, such as one another Run superseded, has no ID or outcome. */
 export interface RunFinished {
