@@ -1,10 +1,9 @@
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
 using ChasePie.Lookout.Database;
 using ChasePie.Lookout.Backend.Events;
-using ChasePie.Lookout.Backend.Runner;
 using ChasePie.Lookout.Backend.Scheduling;
-using ChasePie.Lookout.Backend.Vpn;
 using ChasePie.Lookout.Model;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -16,14 +15,9 @@ namespace ChasePie.Lookout.Backend.Controllers;
 [Route("api/watches")]
 public sealed class WatchesController(
     LookoutDbContext database,
-    RunExecutor runExecutor,
-    IRunnerClient runner,
-    VpnRotation rotation,
+    Runs runs,
     WatchSchedules schedules,
-    RunningWatches runningWatches,
-    RunSlots runSlots,
     WatchEvents watchEvents,
-    IHostApplicationLifetime applicationLifetime,
     TimeProvider timeProvider)
     : LookoutControllerBase
 {
@@ -391,74 +385,10 @@ public sealed class WatchesController(
             return scriptProblem!;
         }
 
-        var watch = await database.Watches.AsNoTracking()
-            .Where(watch => watch.Id == id)
-            .Select(watch => new { watch.NotificationUrl, watch.TimeoutSeconds, watch.UsesVpn })
-            .SingleOrDefaultAsync(cancellationToken);
-        if (watch is null)
-        {
-            return NotFound();
-        }
-
-        // A Test run takes a slot like any Run, since it uses the browser too, but it isn't one of the Watch's Runs: it
-        // doesn't make the Watch Running, and its result is neither evaluated against the Baseline nor recorded.
         // Leaving the page cancels the request, which stops the Script.
-        using var stopping = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, applicationLifetime.ApplicationStopping);
-        await runSlots.WaitAsync(stopping.Token);
-        RunnerResult result;
-        VpnRunLease? vpnRun = null;
-        try
-        {
-            // Checked once the slot is taken, which can be minutes later. It fails closed like a Run, but at once
-            // rather than waiting for the VPN, as the user is waiting for the result. A Rotation waits for it like a
-            // VPN Run, so its browser isn't left with a connection through the old exit.
-            VpnStatus? vpnStatus = null;
-            if (watch.UsesVpn)
-            {
-                (vpnRun, vpnStatus) = await rotation.TryStartVpnRunAsync(stopping.Token);
-                if (vpnStatus is null)
-                {
-                    return RefusedTestRun("The VPN is rotating to a new exit IP, so this Test run was not started. Try again in a minute.");
-                }
-            }
-            if (vpnStatus?.RefusalOf("Test run") is { } refusal)
-            {
-                return RefusedTestRun(refusal);
-            }
-            result = await runner.ExecuteAsync(new RunnerRequest(
-                Source: script.Source,
-                FileKind: script.FileKind,
-                Context: new ScriptContext(watch.NotificationUrl),
-                TimeoutMs: watch.TimeoutSeconds * 1000,
-                AlwaysScreenshot: true,
-                Proxy: vpnStatus?.Proxy), stopping.Token);
-        }
-        finally
-        {
-            vpnRun?.Dispose();
-            runSlots.Release();
-        }
-
-        // Shows the outcome a Run would record for the same result.
-        var (outcome, errorMessage) = RunEvaluation.RecordedOutcome(result.Outcome, result.Content, result.ErrorMessage);
-        return new TestRun(
-            Outcome: outcome,
-            Content: result.Content,
-            Details: result.Details,
-            ErrorMessage: errorMessage,
-            DurationMs: result.DurationMs,
-            Screenshot: result.Screenshot,
-            ConsoleOutput: result.ConsoleOutput);
+        var testRun = await runs.TestAsync(id, script.Source, script.FileKind, cancellationToken);
+        return testRun is null ? NotFound() : testRun;
     }
-
-    private static TestRun RefusedTestRun(string errorMessage) => new(
-        Outcome: RunOutcome.Errored,
-        Content: null,
-        Details: null,
-        ErrorMessage: errorMessage,
-        DurationMs: 0,
-        Screenshot: null,
-        ConsoleOutput: null);
 
     [HttpGet("{id:guid}/runs")]
     public async Task<ActionResult<IReadOnlyList<Run>>> History(Guid id, CancellationToken cancellationToken,
@@ -514,42 +444,26 @@ public sealed class WatchesController(
     [HttpPost("{id:guid}/runs")]
     public async Task<ActionResult<Run>> RunNow(Guid id)
     {
-        if (!runningWatches.TryStart(id))
+        switch (runs.Run(id))
         {
-            var detail = runningWatches.IsWaitingForSlot(id)
-                ? "This Watch is waiting for a free slot to run."
-                : "This Watch is already running.";
-            return Problem(detail, statusCode: HttpStatusCode.Conflict);
-        }
-
-        try
-        {
-            await runSlots.WaitAsync(applicationLifetime.ApplicationStopping);
-            runningWatches.MarkExecuting(id);
-
-            RunExecution execution;
-            try
-            {
-                execution = await runExecutor.ExecuteAsync(id, applicationLifetime.ApplicationStopping);
-            }
-            finally
-            {
-                runSlots.Release();
-            }
-
-            return execution.Status switch
-            {
-                RunExecutionStatus.Recorded => Ok(execution.Run),
-                RunExecutionStatus.WatchNotFound => NotFound(),
-                RunExecutionStatus.NoScriptVersion => Problem("This Watch has no current Script version.", statusCode: HttpStatusCode.Conflict),
-                RunExecutionStatus.Deleted => Problem("The Watch was deleted while this Run was in progress, so this Run was not recorded.", statusCode: HttpStatusCode.Conflict),
-                RunExecutionStatus.ScriptReplaced => Problem("A new Script version was uploaded while this Run was in progress, so this Run was not recorded.", statusCode: HttpStatusCode.Conflict),
-                _ => Problem("Another Run of this Watch finished first, so this Run was not recorded.", statusCode: HttpStatusCode.Conflict)
-            };
-        }
-        finally
-        {
-            runningWatches.Finish(id);
+            case Refused { Reason: RunRefusal.WaitingForSlot }:
+                return Problem("This Watch is waiting for a free slot to run.", statusCode: HttpStatusCode.Conflict);
+            case Refused:
+                return Problem("This Watch is already running.", statusCode: HttpStatusCode.Conflict);
+            case Admitted { Finished: var finished }:
+                // Not cancelled by the request: a Run the user started carries on if they leave the page.
+                var execution = await finished;
+                return execution.Status switch
+                {
+                    RunExecutionStatus.Recorded => Ok(execution.Run),
+                    RunExecutionStatus.WatchNotFound => NotFound(),
+                    RunExecutionStatus.NoScriptVersion => Problem("This Watch has no current Script version.", statusCode: HttpStatusCode.Conflict),
+                    RunExecutionStatus.Deleted => Problem("The Watch was deleted while this Run was in progress, so this Run was not recorded.", statusCode: HttpStatusCode.Conflict),
+                    RunExecutionStatus.ScriptReplaced => Problem("A new Script version was uploaded while this Run was in progress, so this Run was not recorded.", statusCode: HttpStatusCode.Conflict),
+                    _ => Problem("Another Run of this Watch finished first, so this Run was not recorded.", statusCode: HttpStatusCode.Conflict)
+                };
+            default:
+                throw new UnreachableException();
         }
     }
 
@@ -570,7 +484,7 @@ public sealed class WatchesController(
     private ObjectResult ChannelMissing() =>
         Problem("One of the chosen Channels no longer exists.", statusCode: HttpStatusCode.BadRequest);
 
-    private WatchSummary WithRunning(WatchSummary watch) => watch with { IsRunning = watchEvents.IsRunning(watch.Id) };
+    private WatchSummary WithRunning(WatchSummary watch) => watch with { IsRunning = runs.IsRunning(watch.Id) };
 
     private ObjectResult? ValidateSettings(string name, string notificationUrl, int timeoutSeconds)
     {

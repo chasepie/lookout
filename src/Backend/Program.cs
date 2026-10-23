@@ -36,11 +36,9 @@ public class Program
         // Every POST, PUT, PATCH and DELETE to a controller must carry the request token (see RequestForgery).
         services.AddControllers(options => options.Filters.Add<RequestForgery.ValidateTokenFilter>());
         services.AddSingleton(TimeProvider.System);
-        services.AddSingleton<RunningWatches>();
         services.AddSignalR();
         services.AddSingleton<WatchEvents>();
         services.AddSingleton<EventConnections>();
-        services.AddScoped<RunExecutor>();
         services.AddHostedService<RunRetention>();
         ConfigureScheduling(services, configuration);
         ConfigureNotifications(services, configuration);
@@ -161,11 +159,13 @@ public class Program
         {
             throw new InvalidOperationException($"Scheduling:MaxConcurrentRuns must be at least 1, not {maxConcurrentRuns}");
         }
-        services.AddSingleton(_ => new RunSlots(maxConcurrentRuns));
         // Before the Scheduler, as hosted services stop in reverse: the Scheduler stops starting Runs, then Runs drains.
         services.AddSingleton(provider => ActivatorUtilities.CreateInstance<Runs>(provider, maxConcurrentRuns));
         services.AddHostedService(provider => provider.GetRequiredService<Runs>());
-        services.AddHostedService<Scheduler>();
+        // Off only in tests, which start due Runs themselves so nothing races them.
+        var polls = configuration.GetValue("Scheduling:Poll", true);
+        services.AddSingleton(provider => ActivatorUtilities.CreateInstance<Scheduler>(provider, polls));
+        services.AddHostedService(provider => provider.GetRequiredService<Scheduler>());
     }
 
     private static void ConfigureNotifications(IServiceCollection services, ConfigurationManager configuration)

@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using ChasePie.Lookout.Backend.Vpn;
 using ChasePie.Lookout.Model;
 using Microsoft.AspNetCore.SignalR;
@@ -16,8 +15,7 @@ public sealed record RunFinishedEvent(Guid WatchId, long? RunId, RunOutcome? Out
 public sealed record WatchStatusChangedEvent(Guid WatchId, WatchStatus Status);
 
 /// <summary>
-/// Pushes what happens to Watches, and to the VPN they may go through, to the app over <see cref="WatchEventsHub"/>, and
-/// knows which Watches are Running: from when a Run starts until it finishes, recorded or not.
+/// Pushes what happens to Watches, and to the VPN they may go through, to the app over <see cref="WatchEventsHub"/>.
 /// Pushing never fails or holds up a Run for long: a failed or stalled push is logged, and the app catches up when
 /// it next reads.
 /// </summary>
@@ -26,29 +24,17 @@ public sealed partial class WatchEvents(IHubContext<WatchEventsHub, IWatchEvents
     /// <summary>How long a push may wait on connections that aren't reading, such as a stalled browser tab.</summary>
     private static readonly TimeSpan SendTimeout = TimeSpan.FromSeconds(5);
 
-    private readonly ConcurrentDictionary<Guid, byte> _running = new();
-
-    public bool IsRunning(Guid watchId) => _running.ContainsKey(watchId);
-
-    public Task RunStartedAsync(Guid watchId)
-    {
-        _running[watchId] = 0;
-        return SendAsync(clients => clients.RunStarted(new RunStartedEvent(watchId)));
-    }
+    public Task RunStartedAsync(Guid watchId) => SendAsync(clients => clients.RunStarted(new RunStartedEvent(watchId)));
 
     /// <summary>Announces the end of a Run, with the Run if it was recorded.</summary>
-    public Task RunFinishedAsync(Guid watchId, Run? run)
-    {
-        // Before announcing it, so the app reads the Watch as no longer Running when it reloads on this event.
-        _running.TryRemove(watchId, out _);
-        return SendAsync(clients => clients.RunFinished(
+    public Task RunFinishedAsync(Guid watchId, Run? run) =>
+        SendAsync(clients => clients.RunFinished(
             new RunFinishedEvent(
                 WatchId: watchId,
                 RunId: run?.Id,
                 Outcome: run?.Outcome,
                 IsChange: run?.IsChange == true,
                 Content: run?.IsChange == true ? run.Content : null)));
-    }
 
     public Task StatusChangedAsync(Guid watchId, WatchStatus status) =>
         SendAsync(clients => clients.WatchStatusChanged(new WatchStatusChangedEvent(watchId, status)));
