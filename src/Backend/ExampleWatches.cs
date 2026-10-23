@@ -16,15 +16,16 @@ public static class ExampleWatches
             ?? throw new InvalidOperationException("The bot-detection example Script is not embedded in the backend.");
         using var reader = new StreamReader(script);
 
-        var schedule = new Schedule { Kind = ScheduleKind.Interval, Every = 1, Unit = IntervalUnit.Hours };
         var watch = new Watch
         {
             Name = "Bot detection example",
             NotificationUrl = "https://www.browserscan.net/bot-detection",
-            Schedule = schedule,
-            NextRunAt = schedules.NextRunAt(schedule, 0),
-            NextRunTimeZone = schedules.TimeZone.Id
+            Schedule = new Schedule { Kind = ScheduleKind.Interval, Every = 1, Unit = IntervalUnit.Hours }
         };
+        if (schedules.Schedule(watch) is { } problem)
+        {
+            throw new InvalidOperationException($"The example Watch's schedule can't be used: {problem}");
+        }
         var version = new ScriptVersion
         {
             WatchId = watch.Id,

@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
 using ChasePie.Lookout.Database;
 using ChasePie.Lookout.Backend.Events;
@@ -48,14 +47,9 @@ public sealed class WatchesController(
             return scriptProblem!;
         }
 
-        if (!TryBuildSchedule(request, out var schedule, out var scheduleProblem))
+        if (ScheduleOf(request) is not { } schedule)
         {
-            return scheduleProblem;
-        }
-
-        if (await FindChannels(request.ChannelIds, cancellationToken) is not { } channels)
-        {
-            return ChannelMissing();
+            return ScheduleMissing();
         }
 
         var watch = new Watch
@@ -64,11 +58,18 @@ public sealed class WatchesController(
             NotificationUrl = notificationUrl,
             Schedule = schedule,
             UsesVpn = request.UsesVpn,
-            JitterMinutes = request.JitterMinutes,
-            NextRunAt = schedules.NextRunAt(schedule, request.JitterMinutes),
-            NextRunTimeZone = schedules.TimeZone.Id,
-            Channels = channels
+            JitterMinutes = request.JitterMinutes
         };
+        if (schedules.Schedule(watch) is { } scheduleProblem)
+        {
+            return Problem(scheduleProblem, statusCode: HttpStatusCode.BadRequest);
+        }
+
+        if (await FindChannels(request.ChannelIds, cancellationToken) is not { } channels)
+        {
+            return ChannelMissing();
+        }
+        watch.Channels = channels;
         var version = new ScriptVersion
         {
             WatchId = watch.Id,
@@ -101,42 +102,22 @@ public sealed class WatchesController(
     [HttpPut("{id:guid}/schedule")]
     public async Task<ActionResult<WatchSummary>> ChangeSchedule(Guid id, ScheduleRequest request, CancellationToken cancellationToken)
     {
-        if (!TryBuildSchedule(request, out var schedule, out var scheduleProblem))
+        if (ScheduleOf(request) is not { } schedule)
         {
-            return scheduleProblem;
+            return ScheduleMissing();
         }
 
-        for (var attempt = 0; attempt < 3; attempt++)
+        var update = await schedules.ChangeScheduleAsync(id, schedule, request.JitterMinutes, cancellationToken);
+        return update.Status switch
         {
-            var current = await database.Watches
+            ScheduleUpdateStatus.Changed => WithRunning(await database.Watches.AsNoTracking()
                 .Where(watch => watch.Id == id)
-                .Select(watch => new { watch.LastScheduledRunAt })
-                .SingleOrDefaultAsync(cancellationToken);
-            if (current is null)
-            {
-                return NotFound();
-            }
-
-            // A set-based update leaves Revision alone, so a Run finishing meanwhile is still recorded. It applies
-            // only if the scheduler started no Run since the read, as the next Run must stay clear of the last one.
-            var nextRunAt = schedules.NextRunAt(schedule, request.JitterMinutes, current.LastScheduledRunAt);
-            var updated = await database.Watches
-                .Where(watch => watch.Id == id && watch.LastScheduledRunAt == current.LastScheduledRunAt)
-                .ExecuteUpdateAsync(setters => setters
-                    .SetProperty(watch => watch.Schedule, schedule)
-                    .SetProperty(watch => watch.JitterMinutes, request.JitterMinutes)
-                    // A paused Watch has no next Run until it is resumed.
-                    .SetProperty(watch => watch.NextRunAt, watch => watch.IsPaused ? null : nextRunAt)
-                    .SetProperty(watch => watch.NextRunTimeZone, schedules.TimeZone.Id), cancellationToken);
-            if (updated == 1)
-            {
-                return WithRunning(await database.Watches.AsNoTracking()
-                    .Where(watch => watch.Id == id)
-                    .Select(WatchSummary.Projection)
-                    .SingleAsync(cancellationToken));
-            }
-        }
-        return Problem("Runs of this Watch kept starting while its schedule was being saved. Please try again.", statusCode: HttpStatusCode.Conflict);
+                .Select(WatchSummary.Projection)
+                .SingleAsync(cancellationToken)),
+            ScheduleUpdateStatus.NotFound => NotFound(),
+            ScheduleUpdateStatus.Invalid => Problem(update.Problem!, statusCode: HttpStatusCode.BadRequest),
+            _ => Problem("Runs of this Watch kept starting while its schedule was being saved. Please try again.", statusCode: HttpStatusCode.Conflict)
+        };
     }
 
     [HttpGet("{id:guid}")]
@@ -183,63 +164,34 @@ public sealed class WatchesController(
     [HttpPost("{id:guid}/pause")]
     public async Task<IActionResult> Pause(Guid id, CancellationToken cancellationToken)
     {
-        // Clearing the next Run also stops the scheduler claiming one it read as due just before.
-        var updated = await database.Watches
-            .Where(watch => watch.Id == id && !watch.IsPaused)
-            .ExecuteUpdateAsync(setters => setters
-                .SetProperty(watch => watch.IsPaused, true)
-                .SetProperty(watch => watch.NextRunAt, (DateTimeOffset?)null), cancellationToken);
-        if (updated == 1)
+        switch ((await schedules.PauseAsync(id, cancellationToken)).Status)
         {
-            await watchEvents.StatusChangedAsync(id, WatchStatus.Paused);
-            return NoContent();
+            case ScheduleUpdateStatus.NotFound:
+                return NotFound();
+            case ScheduleUpdateStatus.Changed:
+                await watchEvents.StatusChangedAsync(id, WatchStatus.Paused);
+                break;
         }
-        return await database.Watches.AnyAsync(watch => watch.Id == id, cancellationToken) ? NoContent() : NotFound();
+        return NoContent();
     }
 
     [HttpPost("{id:guid}/resume")]
     public async Task<IActionResult> Resume(Guid id, CancellationToken cancellationToken)
     {
-        for (var attempt = 0; attempt < 3; attempt++)
+        switch ((await schedules.ResumeAsync(id, cancellationToken)).Status)
         {
-            var current = await database.Watches.AsNoTracking()
-                .Where(watch => watch.Id == id)
-                .Select(watch => new { watch.IsPaused, watch.Schedule, watch.JitterMinutes, watch.LastScheduledRunAt })
-                .SingleOrDefaultAsync(cancellationToken);
-            if (current is null)
-            {
+            case ScheduleUpdateStatus.NotFound:
                 return NotFound();
-            }
-
-            if (!current.IsPaused)
-            {
-                return NoContent();
-            }
-
-            // The next Run is scheduled from now, so a Watch resumed after a long pause doesn't run at once. The
-            // failure streak carries on, and a set-based update leaves the Revision alone, so a Run in progress is
-            // still recorded. It applies only if the schedule is still the one read, as one saved meanwhile decides
-            // the next Run.
-            var nextRunAt = schedules.NextRunAt(current.Schedule, current.JitterMinutes, current.LastScheduledRunAt);
-            var updated = await database.Watches
-                .Where(watch => watch.Id == id && watch.IsPaused
-                    && watch.Schedule == current.Schedule
-                    && watch.JitterMinutes == current.JitterMinutes
-                    && watch.LastScheduledRunAt == current.LastScheduledRunAt)
-                .ExecuteUpdateAsync(setters => setters
-                    .SetProperty(watch => watch.IsPaused, false)
-                    .SetProperty(watch => watch.NextRunAt, nextRunAt)
-                    .SetProperty(watch => watch.NextRunTimeZone, schedules.TimeZone.Id), cancellationToken);
-            if (updated == 1)
-            {
+            case ScheduleUpdateStatus.KeptChanging:
+                return Problem("The schedule of this Watch kept changing while it was being resumed. Please try again.", statusCode: HttpStatusCode.Conflict);
+            case ScheduleUpdateStatus.Changed:
                 if (await WatchSummary.StatusAsync(database.Watches, id, CancellationToken.None) is { } resumed)
                 {
                     await watchEvents.StatusChangedAsync(id, resumed);
                 }
-                return NoContent();
-            }
+                break;
         }
-        return Problem("The schedule of this Watch kept changing while it was being resumed. Please try again.", statusCode: HttpStatusCode.Conflict);
+        return NoContent();
     }
 
     [HttpPut("{id:guid}/channels")]
@@ -529,30 +481,18 @@ public sealed class WatchesController(
 
     private sealed record UploadedScript(string Source, string FileKind);
 
-    /// <summary>Builds the requested schedule, or explains why it can't be used.</summary>
-    private bool TryBuildSchedule(
-        ScheduleRequest request,
-        [NotNullWhen(true)] out Schedule? schedule,
-        [NotNullWhen(false)] out ObjectResult? problem)
+    /// <summary>The requested Schedule, which <see cref="WatchSchedules"/> checks, or null if no kind was chosen.</summary>
+    private static Schedule? ScheduleOf(ScheduleRequest request) => request.ScheduleKind switch
     {
-        schedule = request.ScheduleKind switch
-        {
-            ScheduleKind.Interval => new Schedule { Kind = ScheduleKind.Interval, Every = request.Every, Unit = request.Unit },
-            ScheduleKind.Daily when request.TimeOfDay is { } timeOfDay => Schedule.DailyAt(timeOfDay),
-            ScheduleKind.Daily => new Schedule { Kind = ScheduleKind.Daily },
-            ScheduleKind.Cron => Schedule.FromCron(request.Cron ?? ""),
-            _ => null
-        };
-        var message = schedule is null
-            ? "Choose an interval, daily or cron schedule."
-            : schedules.Validate(schedule);
-        if (message is null && request.JitterMinutes is < 0 or > WatchSchedules.MaximumJitterMinutes)
-        {
-            message = $"Jitter must be between 0 and {WatchSchedules.MaximumJitterMinutes} minutes.";
-        }
-        problem = message is null ? null : Problem(message, statusCode: HttpStatusCode.BadRequest);
-        return problem is null;
-    }
+        ScheduleKind.Interval => new Schedule { Kind = ScheduleKind.Interval, Every = request.Every, Unit = request.Unit },
+        ScheduleKind.Daily when request.TimeOfDay is { } timeOfDay => Schedule.DailyAt(timeOfDay),
+        ScheduleKind.Daily => new Schedule { Kind = ScheduleKind.Daily },
+        ScheduleKind.Cron => Schedule.FromCron(request.Cron ?? ""),
+        _ => null
+    };
+
+    private ObjectResult ScheduleMissing() =>
+        Problem("Choose an interval, daily or cron schedule.", statusCode: HttpStatusCode.BadRequest);
 }
 
 public sealed record WatchSummary(

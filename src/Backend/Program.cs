@@ -152,7 +152,8 @@ public class Program
         {
             throw new InvalidOperationException($"Scheduling:TimeZone must be a time zone ID such as Europe/London, not '{timeZoneId}'");
         }
-        services.AddSingleton(provider => new WatchSchedules(provider.GetRequiredService<TimeProvider>(), timeZone));
+        services.AddSingleton(provider => new WatchSchedules(
+            provider.GetRequiredService<IServiceScopeFactory>(), provider.GetRequiredService<TimeProvider>(), timeZone));
 
         var maxConcurrentRuns = configuration.GetValue("Scheduling:MaxConcurrentRuns", 2);
         if (maxConcurrentRuns < 1)
