@@ -4,7 +4,9 @@ using ChasePie.Lookout.Database;
 using ChasePie.Lookout.Model;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace ChasePie.Lookout.Backend.IntegrationTests;
 
@@ -48,6 +50,35 @@ public sealed class RunsTests(TestContext testContext)
         Assert.IsTrue(duringRun);
         Assert.IsFalse(runs.IsRunning(watchId));
         Assert.AreEqual(1, runner.Started);
+    }
+
+    [TestMethod]
+    public async Task AWatchIsRunningUntilItsRunsNotificationsAreSent()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        factory.Runner.DefaultResult = BlockingRunner.Succeeded;
+        var sending = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var sent = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        factory.Channels.OnSend = (_, _) =>
+        {
+            sending.TrySetResult();
+            return sent.Task;
+        };
+        var runs = factory.Services.GetRequiredService<Runs>();
+        var watchId = await AddWatchAsync(factory, baseline: "£19", notifies: true);
+
+        var finished = Assert.IsInstanceOfType<Admitted>(runs.Run(watchId)).Finished;
+        await sending.Task.WaitAsync(TimeSpan.FromSeconds(10), testContext.CancellationToken);
+        var whileSending = runs.Run(watchId);
+        var runningWhileSending = runs.IsRunning(watchId);
+        sent.SetResult();
+        var execution = await finished;
+
+        Assert.AreEqual(new Refused(RunRefusal.Executing, Gated: false), whileSending);
+        Assert.IsTrue(runningWhileSending);
+        Assert.IsTrue(execution.Run!.IsChange);
+        Assert.HasCount(1, factory.Channels.Sent);
+        Assert.IsFalse(runs.IsRunning(watchId));
     }
 
     [TestMethod]
@@ -113,22 +144,36 @@ public sealed class RunsTests(TestContext testContext)
         await runner.WaitForStarted(1);
 
         var testing = runs.TestAsync(tested, "export default {}", "ts", testContext.CancellationToken);
-        // Admitted after the Test run, so it takes the slot after it.
-        var queued = Assert.IsInstanceOfType<Admitted>(runs.Run(tested)).Finished;
+        var runningWhileWaiting = runs.IsRunning(tested);
         runner.FinishOne();
         await runner.WaitForStarted(2);
-        var whileTesting = runs.Run(tested);
+        var runningWhileTesting = runs.IsRunning(tested);
         runner.FinishOne();
         var testRun = await testing;
-        await runner.WaitForStarted(3);
-        runner.FinishAll();
-        await queued;
 
         Assert.AreEqual(RunOutcome.Succeeded, testRun!.Outcome);
         Assert.IsTrue(runner.Requests[1].AlwaysScreenshot);
-        Assert.IsFalse(runner.Requests[2].AlwaysScreenshot);
-        // Running, but because of its queued Run, not the Test run.
-        Assert.AreEqual(new Refused(RunRefusal.WaitingForSlot, Gated: false), whileTesting);
+        Assert.IsFalse(runningWhileWaiting);
+        Assert.IsFalse(runningWhileTesting);
+    }
+
+    [TestMethod]
+    public async Task ATestRunMayExecuteAlongsideARunOfTheSameWatch()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        var runner = new BlockingRunner();
+        factory.Runner.OnExecute = runner.Execute;
+        var runs = factory.Services.GetRequiredService<Runs>();
+        var watchId = await AddWatchAsync(factory);
+        var finished = Assert.IsInstanceOfType<Admitted>(runs.Run(watchId)).Finished;
+        await runner.WaitForStarted(1);
+
+        var testing = runs.TestAsync(watchId, "export default {}", "ts", testContext.CancellationToken);
+        await runner.WaitForStarted(2);
+        runner.FinishAll();
+
+        Assert.AreEqual(RunOutcome.Succeeded, (await testing)!.Outcome);
+        Assert.AreEqual(RunExecutionStatus.Recorded, (await finished).Status);
     }
 
     [TestMethod]
@@ -235,8 +280,8 @@ public sealed class RunsTests(TestContext testContext)
     [TestMethod]
     public async Task StoppingCancelsRunsInProgressAndThoseWaitingForASlot()
     {
-        var factory = new LookoutWebApplicationFactory();
-        var host = OneRunSlot(factory);
+        await using var factory = new LookoutWebApplicationFactory();
+        await using var host = OneRunSlot(factory);
         var runner = new BlockingRunner();
         factory.Runner.OnExecute = runner.Execute;
         var runs = host.Services.GetRequiredService<Runs>();
@@ -245,11 +290,41 @@ public sealed class RunsTests(TestContext testContext)
         var waiting = Assert.IsInstanceOfType<Admitted>(runs.Run(await AddWatchAsync(host))).Finished;
 
         await host.DisposeAsync();
-        await factory.DisposeAsync();
 
         Assert.IsTrue(executing.IsCanceled);
         Assert.IsTrue(waiting.IsCanceled);
         Assert.AreEqual(1, runner.Started);
+    }
+
+    [TestMethod]
+    public async Task StoppingGivesUpOnARunStillSendingWhenTheShutdownTimeoutPasses()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        await using var host = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+            services.Configure<HostOptions>(options => options.ShutdownTimeout = TimeSpan.FromSeconds(1))));
+        factory.Runner.DefaultResult = BlockingRunner.Succeeded;
+        var sending = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var sent = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        factory.Channels.OnSend = (_, _) =>
+        {
+            sending.TrySetResult();
+            return sent.Task;
+        };
+        var runs = host.Services.GetRequiredService<Runs>();
+        var finished = Assert.IsInstanceOfType<Admitted>(runs.Run(await AddWatchAsync(host, baseline: "£19", notifies: true))).Finished;
+        await sending.Task.WaitAsync(TimeSpan.FromSeconds(10), testContext.CancellationToken);
+
+        try
+        {
+            // Notifications of a finished Run go out despite stopping, so this one outlasts the shutdown timeout.
+            await host.DisposeAsync();
+        }
+        finally
+        {
+            sent.SetResult();
+        }
+
+        Assert.AreEqual(RunExecutionStatus.Recorded, (await finished).Status);
     }
 
     private static WebApplicationFactory<Program> OneRunSlot(LookoutWebApplicationFactory factory) =>
@@ -268,7 +343,7 @@ public sealed class RunsTests(TestContext testContext)
 
     /// <summary>Adds a Watch that only runs when a test asks, as the scheduler never finds it due.</summary>
     private static async Task<Guid> AddWatchAsync(WebApplicationFactory<Program> factory, bool usesVpn = false,
-        string notificationUrl = "https://example.com/widget")
+        string notificationUrl = "https://example.com/widget", string? baseline = null, bool notifies = false)
     {
         await using var scope = factory.Services.CreateAsyncScope();
         var database = scope.ServiceProvider.GetRequiredService<LookoutDbContext>();
@@ -277,8 +352,13 @@ public sealed class RunsTests(TestContext testContext)
             Name = "Widget price",
             NotificationUrl = notificationUrl,
             Schedule = new Schedule { Kind = ScheduleKind.Interval, Every = 1, Unit = IntervalUnit.Hours },
-            UsesVpn = usesVpn
+            UsesVpn = usesVpn,
+            Baseline = baseline
         };
+        if (notifies)
+        {
+            watch.Channels.Add(new Channel { Name = "Phone", Kind = ChannelKind.Discord, WebhookUrl = "https://discord.example/hook" });
+        }
         var version = new ScriptVersion { WatchId = watch.Id, Number = 1, Source = "export default {}", FileKind = "ts" };
         watch.ScriptVersions.Add(version);
         database.Watches.Add(watch);

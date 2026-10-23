@@ -32,8 +32,8 @@ public abstract record Admission;
 
 /// <summary>
 /// The Run was admitted and executes in the background. <see cref="Finished"/> always completes: with how the Run
-/// ended, cancelled if Lookout stopped before the runner answered, or faulted on an unexpected error, which
-/// <see cref="Runs"/> has logged.
+/// ended, cancelled if Lookout stopped before the runner answered, or faulted on an unexpected error, which whoever
+/// admitted the Run reports.
 /// </summary>
 public sealed record Admitted(Task<RunExecution> Finished) : Admission;
 
@@ -53,7 +53,8 @@ public enum RunRefusal
 
 /// <summary>
 /// Decides, once a Run has a Run slot and before the Watch is read, whether it goes ahead. It is given the Run's own
-/// database context.
+/// database context, which then loads the Watch, so it must not track entities: a tracked Watch would be loaded as it
+/// was before the gate changed it.
 /// </summary>
 public delegate Task<bool> RunGate(LookoutDbContext database, CancellationToken cancellationToken);
 
@@ -70,11 +71,13 @@ public sealed record TestRun(
 /// <summary>
 /// Admits, executes and records Runs, scheduled or on demand, and executes Test runs. Both take one of a limited number
 /// of Run slots, first come, first served. A Watch is Running from when its Run is admitted, including while it waits
-/// for a slot, until the Run is recorded or discarded; a Watch never has two Runs in this process, though
+/// for a slot, until the Run is discarded, or recorded and its notifications sent; a Watch never has two Runs in this
+/// process, though
 /// <see cref="Watch.Revision"/> still rejects a stale Run recorded by another. A VPN Run gives its slot back while it
 /// waits for the VPN to connect or a <see cref="VpnRotation">Rotation</see> to end, and goes to the front of the
-/// queue to take one again. Announces each Run's start and finish, and any change of the Watch's status, through
-/// <see cref="WatchEvents"/>, then sends its notifications. Lookout stopping cancels Runs, and waits for them to finish.
+/// queue to take one again. Sends each recorded Run's notifications, and announces each Run's start and finish, and any
+/// change of the Watch's status, through <see cref="WatchEvents"/>. Lookout stopping cancels Runs, and waits for them
+/// to finish.
 /// </summary>
 public sealed partial class Runs(
     int slotLimit,
@@ -92,6 +95,8 @@ public sealed partial class Runs(
 
     private readonly Lock _slotsLock = new();
     private int _freeSlots = slotLimit;
+    /// <summary>VPN Runs taking a slot back after waiting for the VPN, which come before those waiting for their first.</summary>
+    private readonly LinkedList<TaskCompletionSource> _retakingSlot = new();
     private readonly LinkedList<TaskCompletionSource> _waitingForSlot = new();
 
     /// <summary>
@@ -101,21 +106,19 @@ public sealed partial class Runs(
     public Admission Run(Guid watchId, RunGate? gate = null)
     {
         var entry = new Entry(gate is not null);
-        while (!_running.TryAdd(watchId, entry))
+        var existing = _running.GetOrAdd(watchId, entry);
+        if (existing != entry)
         {
-            if (_running.TryGetValue(watchId, out var existing))
-            {
-                return new Refused(existing.Executing ? RunRefusal.Executing : RunRefusal.WaitingForSlot, existing.Gated);
-            }
+            return new Refused(existing.Executing ? RunRefusal.Executing : RunRefusal.WaitingForSlot, existing.Gated);
         }
 
         // Queued now rather than in the background, so Runs admitted one after another take slots in that order.
-        var slot = TakeSlotAsync(first: false, _stopping);
+        var slot = TakeSlotAsync(retaking: false, _stopping);
         var finished = RunAdmittedAsync(watchId, entry, gate, slot);
         _inProgress.TryAdd(finished, 0);
         _ = finished.ContinueWith(done =>
         {
-            // Observed here, as a scheduled Run's ending is only logged.
+            // Observed here, in case whoever admitted the Run doesn't wait for it.
             _ = done.Exception;
             _inProgress.TryRemove(done, out _);
         }, TaskScheduler.Default);
@@ -143,7 +146,7 @@ public sealed partial class Runs(
             }
 
             using var stopping = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _stopping);
-            await TakeSlotAsync(first: false, stopping.Token);
+            await TakeSlotAsync(retaking: false, stopping.Token);
             VpnRunLease? vpnRun = null;
             try
             {
@@ -189,7 +192,10 @@ public sealed partial class Runs(
             ConsoleOutput: result.ConsoleOutput);
     }
 
-    /// <summary>Whether the Watch is Running: from when its Run is admitted until it's recorded or discarded.</summary>
+    /// <summary>
+    /// Whether the Watch is Running: from when its Run is admitted until it's discarded, or recorded and its
+    /// notifications sent.
+    /// </summary>
     public bool IsRunning(Guid watchId) => _running.ContainsKey(watchId);
 
     public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
@@ -200,13 +206,19 @@ public sealed partial class Runs(
     /// </summary>
     public async Task StopAsync(CancellationToken cancellationToken)
     {
+        var inProgress = _inProgress.Keys.ToList();
         try
         {
-            await Task.WhenAll(_inProgress.Keys).WaitAsync(cancellationToken);
+            await Task.WhenAll(inProgress).WaitAsync(cancellationToken);
         }
-        catch (Exception) when (!cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            // Each Run's ending was logged, or reached whoever admitted it.
+            // The host stops waiting after its shutdown timeout, and so does this, rather than failing the shutdown.
+            LogStoppedWithRunsInProgress(logger, inProgress.Count(run => !run.IsCompleted));
+        }
+        catch (Exception)
+        {
+            // Each Run's ending reached whoever admitted it.
         }
     }
 
@@ -242,6 +254,11 @@ public sealed partial class Runs(
             var (execution, statusBefore, toSend) = await ExecuteAsync(scope.ServiceProvider, database, watchId);
             if (execution.Run is { } recorded)
             {
+                // Sent while the Watch is still Running, so another of its Runs can't notify before this one has. Like
+                // the save, notifications of a finished Run still go out if shutdown started; senders time out by
+                // themselves.
+                await scope.ServiceProvider.GetRequiredService<NotificationDispatcher>()
+                    .NotifyAsync(watchId, toSend, CancellationToken.None);
                 await FinishAsync(watchId, entry, recorded);
                 // Read back, as the tracked Watch misses the user pausing or resuming it while the Run executed. A Run
                 // doesn't change a paused Watch's status, and pausing announced it.
@@ -250,29 +267,12 @@ public sealed partial class Runs(
                 {
                     await events.StatusChangedAsync(watchId, statusAfter);
                 }
-                // After the events, so the app isn't held up by sending. Like the save, notifications of a finished Run
-                // still go out if shutdown started; senders time out by themselves.
-                await scope.ServiceProvider.GetRequiredService<NotificationDispatcher>()
-                    .NotifyAsync(watchId, toSend, CancellationToken.None);
-            }
-            else if (execution.Status != RunExecutionStatus.NotClaimed)
-            {
-                LogNotRecorded(logger, watchId, execution.Status);
             }
             return execution;
         }
-        catch (OperationCanceledException) when (_stopping.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception error)
-        {
-            LogRunFailed(logger, error, watchId);
-            throw;
-        }
         finally
         {
-            // A Run that wasn't recorded finishes here, after anything it logged.
+            // A Run that wasn't recorded finishes here.
             await FinishAsync(watchId, entry, null);
             if (hasSlot)
             {
@@ -448,7 +448,7 @@ public sealed partial class Runs(
             {
                 // Taken back even when stopping, as the Run releases it when it ends. Every other Run is then stopping
                 // too, so one frees up soon.
-                await TakeSlotAsync(first: true, CancellationToken.None);
+                await TakeSlotAsync(retaking: true, CancellationToken.None);
             }
         }
     }
@@ -503,10 +503,10 @@ public sealed partial class Runs(
     }
 
     /// <summary>
-    /// Takes a Run slot, waiting behind those already waiting unless <paramref name="first"/>. Queues at once, so the
-    /// order of calls is the order slots are handed out.
+    /// Takes a Run slot, waiting behind those already waiting, though a Run <paramref name="retaking"/> its slot waits
+    /// only behind others doing so. Queues at once, so the order of calls is the order slots are handed out.
     /// </summary>
-    private Task TakeSlotAsync(bool first, CancellationToken cancellationToken)
+    private Task TakeSlotAsync(bool retaking, CancellationToken cancellationToken)
     {
         TaskCompletionSource waiter;
         LinkedListNode<TaskCompletionSource> node;
@@ -518,18 +518,18 @@ public sealed partial class Runs(
                 return Task.CompletedTask;
             }
             waiter = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            node = first ? _waitingForSlot.AddFirst(waiter) : _waitingForSlot.AddLast(waiter);
+            node = (retaking ? _retakingSlot : _waitingForSlot).AddLast(waiter);
         }
         var cancelled = cancellationToken.Register(() =>
         {
             lock (_slotsLock)
             {
                 // Already handed a slot, which its Run releases.
-                if (node.List is null)
+                if (node.List is not { } queue)
                 {
                     return;
                 }
-                _waitingForSlot.Remove(node);
+                queue.Remove(node);
             }
             waiter.TrySetCanceled(cancellationToken);
         });
@@ -542,9 +542,9 @@ public sealed partial class Runs(
     {
         lock (_slotsLock)
         {
-            if (_waitingForSlot.First is { } next)
+            if ((_retakingSlot.First ?? _waitingForSlot.First) is { } next)
             {
-                _waitingForSlot.RemoveFirst();
+                next.List!.Remove(next);
                 next.Value.SetResult();
                 return;
             }
@@ -560,11 +560,8 @@ public sealed partial class Runs(
         public volatile bool Executing;
     }
 
-    [LoggerMessage(LogLevel.Warning, "Run of Watch {WatchId} was not recorded: {Status}.")]
-    private static partial void LogNotRecorded(ILogger logger, Guid watchId, RunExecutionStatus status);
-
-    [LoggerMessage(LogLevel.Error, "Run of Watch {WatchId} failed.")]
-    private static partial void LogRunFailed(ILogger logger, Exception error, Guid watchId);
+    [LoggerMessage(LogLevel.Warning, "Lookout stopped before {Count} Runs in progress finished.")]
+    private static partial void LogStoppedWithRunsInProgress(ILogger logger, int count);
 
     [LoggerMessage(LogLevel.Warning, "Could not drop older debug output of Watch {WatchId}.")]
     private static partial void LogTrimFailed(ILogger logger, Exception error, Guid watchId);

@@ -40,9 +40,10 @@ public sealed class BlockingRunner
     public Task<RunnerResult> Execute(RunnerRequest request, CancellationToken cancellationToken)
     {
         var run = new TaskCompletionSource<RunnerResult>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _pending.Enqueue(run);
         lock (_lock)
         {
+            // Together, so the oldest execution FinishOne finishes is the first of Requests still in progress.
+            _pending.Enqueue(run);
             _requests.Add(request);
             foreach (var waiter in _waiters.Where(waiter => waiter.Count <= _requests.Count).ToList())
             {

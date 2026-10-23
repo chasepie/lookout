@@ -35,6 +35,7 @@ public sealed partial class Scheduler(
     {
         if (!polls)
         {
+            LogNotPolling(logger);
             return;
         }
         using var timer = new PeriodicTimer(PollInterval, timeProvider);
@@ -79,13 +80,38 @@ public sealed partial class Scheduler(
         var admissions = due.ConvertAll(watch => runs.Run(watch.Id, (runDatabase, token) => TryClaimWatch(runDatabase, watch, token)));
         foreach (var (watch, admission) in due.Zip(admissions))
         {
-            if (admission is Refused refused && refused is not { Reason: RunRefusal.WaitingForSlot, Gated: true })
+            if (admission is Admitted admitted)
+            {
+                _ = LogEndingAsync(watch.Id, admitted.Finished);
+            }
+            else if (admission is not Refused { Reason: RunRefusal.WaitingForSlot, Gated: true })
             {
                 // A Watch that is already running skips this Run rather than overlapping it.
                 await TryClaimWatch(database, watch, cancellationToken);
             }
         }
         return admissions;
+    }
+
+    /// <summary>Logs a scheduled Run that failed, or wasn't recorded for a reason other than not being claimed.</summary>
+    private async Task LogEndingAsync(Guid watchId, Task<RunExecution> finished)
+    {
+        try
+        {
+            var execution = await finished;
+            if (execution.Status is not (RunExecutionStatus.Recorded or RunExecutionStatus.NotClaimed))
+            {
+                LogRunNotRecorded(logger, watchId, execution.Status);
+            }
+        }
+        catch (OperationCanceledException) when (finished.IsCanceled)
+        {
+            // Lookout stopped before the Run finished, so there is nothing to record.
+        }
+        catch (Exception error)
+        {
+            LogRunFailed(logger, error, watchId);
+        }
     }
 
     private async Task RescheduleStaleRuns(CancellationToken cancellationToken)
@@ -130,4 +156,13 @@ public sealed partial class Scheduler(
 
     [LoggerMessage(LogLevel.Error, "Could not start due Runs.")]
     private static partial void LogDispatchFailed(ILogger logger, Exception error);
+
+    [LoggerMessage(LogLevel.Warning, "Scheduled Run of Watch {WatchId} was not recorded: {Status}.")]
+    private static partial void LogRunNotRecorded(ILogger logger, Guid watchId, RunExecutionStatus status);
+
+    [LoggerMessage(LogLevel.Error, "Scheduled Run of Watch {WatchId} failed.")]
+    private static partial void LogRunFailed(ILogger logger, Exception error, Guid watchId);
+
+    [LoggerMessage(LogLevel.Warning, "Scheduling:Poll is off, so no Watch runs on its schedule.")]
+    private static partial void LogNotPolling(ILogger logger);
 }

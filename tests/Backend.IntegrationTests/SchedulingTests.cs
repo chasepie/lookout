@@ -332,7 +332,7 @@ public sealed class SchedulingTests(TestContext testContext)
         var id = (await CreateWatch(client, Every(5, "minutes")))["id"]!.GetValue<string>();
         var busy = await OccupyEveryRunSlot(client, runner);
         var onDemand = RunNow(client, id);
-        Assert.IsTrue((await Watch(client, id))["isRunning"]!.GetValue<bool>());
+        await WaitUntilRunning(factory, id);
 
         factory.Time.Advance(TimeSpan.FromMinutes(5));
         var scheduled = await StartDueRuns(factory);
@@ -939,6 +939,17 @@ public sealed class SchedulingTests(TestContext testContext)
             await runner.WaitForStarted(runner.Started + 1);
         }
         return busy;
+    }
+
+    /// <summary>Waits until a Run of the Watch is admitted, such as one a request still on its way asked for.</summary>
+    private async Task WaitUntilRunning(WebApplicationFactory<Program> host, string id)
+    {
+        var runs = host.Services.GetRequiredService<Runs>();
+        for (var attempt = 0; attempt < 100 && !runs.IsRunning(Guid.Parse(id)); attempt++)
+        {
+            await Task.Delay(50, testContext.CancellationToken);
+        }
+        Assert.IsTrue(runs.IsRunning(Guid.Parse(id)));
     }
 
     private Task<HttpResponseMessage> RunNow(HttpClient client, string id) =>
