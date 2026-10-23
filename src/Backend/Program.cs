@@ -162,6 +162,9 @@ public class Program
             throw new InvalidOperationException($"Scheduling:MaxConcurrentRuns must be at least 1, not {maxConcurrentRuns}");
         }
         services.AddSingleton(_ => new RunSlots(maxConcurrentRuns));
+        // Before the Scheduler, as hosted services stop in reverse: the Scheduler stops starting Runs, then Runs drains.
+        services.AddSingleton(provider => ActivatorUtilities.CreateInstance<Runs>(provider, maxConcurrentRuns));
+        services.AddHostedService(provider => provider.GetRequiredService<Runs>());
         services.AddHostedService<Scheduler>();
     }
 

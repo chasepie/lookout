@@ -9,21 +9,6 @@ using Microsoft.EntityFrameworkCore;
 
 namespace ChasePie.Lookout.Backend;
 
-public enum RunExecutionStatus
-{
-    Recorded,
-    WatchNotFound,
-    NoScriptVersion,
-    /// <summary>Another Run of the Watch was recorded while this one executed, so this one was discarded.</summary>
-    Superseded,
-    /// <summary>A new Script version was uploaded while this Run executed, so this Run of the old one was discarded.</summary>
-    ScriptReplaced,
-    /// <summary>The Watch was deleted while this Run executed, so there was nothing to record it against.</summary>
-    Deleted
-}
-
-public sealed record RunExecution(RunExecutionStatus Status, Run? Run = null);
-
 /// <summary>
 /// Executes a Watch's current Script, records the Run and sends its notifications, for both scheduled and on-demand Runs.
 /// Callers admit the Run first through <see cref="RunningWatches"/> and <see cref="RunSlots"/>; a VPN Run gives its slot
@@ -59,7 +44,7 @@ public sealed partial class RunExecutor(
 
         var status = WatchSummary.StatusOf(watch);
         var startedAt = timeProvider.GetUtcNow();
-        await events.RunStartedAsync(watchId, startedAt);
+        await events.RunStartedAsync(watchId);
         RunExecution execution;
         IReadOnlyList<Notification> toSend;
         try

@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.SignalR;
 
 namespace ChasePie.Lookout.Backend.Events;
 
-public sealed record RunStartedEvent(Guid WatchId, DateTimeOffset StartedAt);
+public sealed record RunStartedEvent(Guid WatchId);
 
 /// <summary>
 /// A Run has finished. A Run that ended without being recorded, such as one superseded by another, has no ID or
@@ -30,10 +30,10 @@ public sealed partial class WatchEvents(IHubContext<WatchEventsHub, IWatchEvents
 
     public bool IsRunning(Guid watchId) => _running.ContainsKey(watchId);
 
-    public Task RunStartedAsync(Guid watchId, DateTimeOffset startedAt)
+    public Task RunStartedAsync(Guid watchId)
     {
         _running[watchId] = 0;
-        return SendAsync(clients => clients.RunStarted(new RunStartedEvent(watchId, startedAt)));
+        return SendAsync(clients => clients.RunStarted(new RunStartedEvent(watchId)));
     }
 
     /// <summary>Announces the end of a Run, with the Run if it was recorded.</summary>
