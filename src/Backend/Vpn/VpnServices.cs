@@ -53,7 +53,7 @@ public static class VpnServices
             defaultUrl: "http://gluetun-control:8000");
 
         services
-            .AddSingleton(() => new GluetunSettings(apiKey, new ProxySettings(
+            .AddSingleton(new GluetunSettings(apiKey, new ProxySettings(
                 Server: proxyAddress.GetLeftPart(UriPartial.Authority),
                 Username: NullIfEmpty(configuration["Vpn:ProxyUsername"]),
                 Password: NullIfEmpty(configuration["Vpn:ProxyPassword"]))))
