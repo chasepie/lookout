@@ -39,7 +39,7 @@ export default {
 } satisfies LookoutScript;
 ```
 
-To type-check Scripts in your own project, install `@chasepie/lookout-scripting` and `playwright` as dev dependencies. The scripting package is published to GitHub Packages, which requires a login even for public packages. Add `@chasepie:registry=https://npm.pkg.github.com` to your project's `.npmrc`, then run `npm login --scope=@chasepie --auth-type=legacy --registry=https://npm.pkg.github.com` with your GitHub user name and a personal access token (classic) with the `read:packages` scope as the password.
+To type-check Scripts in your own project, install `@chasepie/lookout-scripting` and `playwright` as dev dependencies. The scripting package is published to GitHub Packages, which requires a login even for public packages. Add `@chasepie:registry=https://npm.pkg.github.com` to your project's `.npmrc`, then run `npm login --scope=@chasepie --auth-type=legacy --registry=https://npm.pkg.github.com` with your GitHub user name and a personal access token (classic) with the `read:packages` scope as the password. Install the version matching your Lookout's, or `@chasepie/lookout-scripting@edge` for the types on `main` (see [Releasing](#releasing)).
 
 See [the runner documentation](src/runner/README.md) for the Script contract and execution limits. Uploads accept `.ts` and `.js` files up to 64 KiB. Each Run uses its Watch's timeout: 120 seconds by default, editable from 1 to 600. Running the same Watch again while it is already running returns HTTP 409. Once started, a Run continues and is recorded even if its browser tab disconnects; application shutdown still cancels active Runs.
 
@@ -87,6 +87,17 @@ npm test
 ```
 
 `npm test` runs the runner tests, the .NET tests (including the HTTP client against the real runner), and the Playwright flow. Tests use local pages and temporary SQLite databases. The end-to-end command builds Angular and the test host before Playwright launches a test-only backend on port 5117 with a fake runner; the production backend always uses the HTTP runner client. `npm run test:runner`, `dotnet test --project tests/Backend.IntegrationTests`, and `npm run test:e2e` run those suites individually. Tests in `examples/` contact an external bot-detection site and are excluded from the automated suite.
+
+## Releasing
+
+Once every check passes, CI publishes the images and the scripting package from each push to `main`, as edge builds, and from each release:
+
+| | Push to `main` | Release `v0.2.0` |
+| --- | --- | --- |
+| `ghcr.io/chasepie/lookout` and `ghcr.io/chasepie/lookout-runner`, for amd64 and arm64 | `edge` and `sha-<short SHA>` | `0.2.0`, `0.2` and `latest` |
+| `@chasepie/lookout-scripting` on GitHub Packages | `0.2.1-edge.<run number>`, tagged `edge`, only when what it would publish differs from the last edge | `0.2.0`, tagged `latest` |
+
+To release, run `gh release create v0.2.0 --generate-notes`. It tags the latest commit on `main` and writes the release notes from the titles of the pull requests merged since the last release. The tag sets every published version, so no `package.json` is bumped for a release. Lookout and the runner always share a version, as they must match. A pre-release, such as `gh release create v0.2.0-rc.1 --prerelease --generate-notes`, publishes images tagged only `0.2.0-rc.1` and the package tagged `next`, leaving `latest` as it was. Versions stay below 1.0 while Lookout is in beta, so any release may need changes to a deployment or to Scripts: add those steps to its release notes.
 
 ## Deploying
 
