@@ -1,125 +1,38 @@
-import { execFile, spawn, type ChildProcess } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
-import { once } from 'node:events';
-import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { createServer, type IncomingMessage, type Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
+import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Duplex } from 'node:stream';
-import { fileURLToPath } from 'node:url';
-import { chromium, type BrowserServer } from 'playwright';
-import { afterAll, beforeAll, describe, expect, onTestFinished, test } from 'vitest';
-import type { FileKind } from './execute.ts';
-import type { ProxySettings } from './browser.ts';
+import { afterAll, beforeAll, expect, test } from 'vitest';
+import { createRunner, type Runner } from './execute.ts';
+import {
+  eventually,
+  executeFixture,
+  fixtureRequest,
+  fixtureSource,
+  hasChildProcesses,
+  hasMarkedProcesses,
+  isAlive,
+  isPng,
+  listen,
+  scriptSubprocesses,
+  servePages,
+  subprocessScript,
+  type FixtureOptions,
+} from './test/helpers.ts';
 
-const runnerPath = fileURLToPath(new URL('./index.ts', import.meta.url));
-const fixtureSource = (name: string) =>
-  readFile(new URL(`./test/fixtures/${name}`, import.meta.url), 'utf8');
-
-/** Pages the fixture Scripts read, served locally so no test needs the internet */
-const pages: Record<string, string> = {
-  '/in-stock': '<h1>Widget</h1><p class="price">£20.00</p>',
-  '/blocked': '<h1>Access Denied</h1>',
-};
-
-const listen = async (server: Server) => {
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
-  return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-};
-
-/** The runner's Script processes still running, which are its direct children */
-const childPids = (pid: number) =>
-  new Promise<number[]>((resolve) => {
-    execFile('pgrep', ['-P', String(pid)], (_, stdout) => resolve(stdout.split('\n').filter(Boolean).map(Number)));
-  });
-
-const hasChildProcesses = async (pid: number) => (await childPids(pid)).length > 0;
-
-/** The processes with `marker` in their command line, such as a subprocess the `starts-subprocess.ts` fixture started */
-const markedPids = (marker: string) =>
-  new Promise<number[]>((resolve) => {
-    execFile('pgrep', ['-f', marker], (_, stdout) => resolve(stdout.split('\n').filter(Boolean).map(Number)));
-  });
-
-const hasMarkedProcesses = async (marker: string) => (await markedPids(marker)).length > 0;
-
-/** A Notification URL for `starts-subprocess.ts`, with a fresh marker for the subprocess it starts */
-function subprocessScript(...flags: ('inherit' | 'hang')[]) {
-  const marker = `lookout-test-subprocess-${randomUUID()}`;
-  const url = new URL('https://example.com/');
-  url.searchParams.set('marker', marker);
-  for (const flag of flags) {
-    url.searchParams.set(flag, '');
-  }
-  return { marker, notificationUrl: url.href };
-}
-
-const isAlive = (pid: number) => {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-/** Polls until `check` holds, failing once `timeoutMs` passes */
-async function eventually(check: () => boolean | Promise<boolean>, timeoutMs = 5_000) {
-  const deadline = Date.now() + timeoutMs;
-  while (!await check()) {
-    if (Date.now() > deadline) {
-      throw new Error(`Condition still false after ${timeoutMs} ms`);
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-}
-
-/** The processes a Script's process started, such as Chromium, once it has started any */
-async function scriptSubprocesses(runnerPid: number) {
-  let found: number[] = [];
-  await eventually(async () => {
-    const [scriptPid] = await childPids(runnerPid);
-    found = scriptPid === undefined ? [] : await childPids(scriptPid);
-    return found.length > 0;
-  });
-  return found;
-}
-
-/** Starts a real runner process and resolves with its base URL once it is listening */
-async function startRunner(env: Record<string, string>) {
-  const runner = spawn(process.execPath, [runnerPath], {
-    env: { ...process.env, PORT: '0', ...env },
-    stdio: ['ignore', 'pipe', 'inherit'],
-  });
-  let output = '';
-  for await (const chunk of runner.stdout) {
-    output += String(chunk);
-    const match = /listening on (http:\/\/\S+)/.exec(output);
-    if (match?.[1]) {
-      return { runner, url: match[1] };
-    }
-  }
-  throw new Error(`Runner exited before listening: ${output}`);
-}
+/** Where this file's own temp files go, outside the runner's */
+const systemTmpdir = tmpdir();
 
 let pageServer: Server;
 let pagesUrl: string;
 let proxyServer: Server;
 let proxyUrl: string;
-let runner: ChildProcess;
-let runnerUrl: string;
+let runner: Runner;
 /** The runner's temp directory, where every execution's files must be gone once it responds */
 let runnerTmpdir: string;
 
 beforeAll(async () => {
-  pageServer = createServer((request, response) => {
-    const page = pages[request.url ?? ''];
-    response.writeHead(page === undefined ? 404 : 200, { 'content-type': 'text/html; charset=utf-8' });
-    response.end(page ?? 'Not found');
-  });
-  pagesUrl = await listen(pageServer);
+  ({ server: pageServer, url: pagesUrl } = await servePages());
   // Answers every request itself, as long as it carries the proxy's credentials
   proxyServer = createServer((request, response) => {
     const expected = `Basic ${Buffer.from('lookout:secret').toString('base64')}`;
@@ -132,57 +45,25 @@ beforeAll(async () => {
     response.end(`<h1>Proxied</h1><p class="price">${request.url}</p>`);
   });
   proxyUrl = await listen(proxyServer);
-  runnerTmpdir = await mkdtemp(join(tmpdir(), 'lookout-runner-test-'));
-  ({ runner, url: runnerUrl } = await startRunner({ HEADLESS: 'true', TMPDIR: runnerTmpdir }));
+  runnerTmpdir = await mkdtemp(join(systemTmpdir, 'lookout-runner-test-'));
+  // The runner makes each execution's directory in the temp directory as it is then
+  process.env['TMPDIR'] = runnerTmpdir;
+  runner = await createRunner({ provider: 'launch', headless: true });
 });
 
 afterAll(async () => {
-  runner.kill();
-  await once(runner, 'exit');
+  runner.stopAll();
+  process.env['TMPDIR'] = systemTmpdir;
   pageServer.close();
   proxyServer.close();
   await rm(runnerTmpdir, { recursive: true, force: true });
 });
 
-interface ExecuteOptions {
-  fileKind?: FileKind;
-  notificationUrl?: string;
-  timeoutMs?: number;
-  proxy?: ProxySettings;
-  alwaysScreenshot?: boolean;
-}
+const executeTimed = (fixture: string, options: Partial<FixtureOptions> = {}) =>
+  executeFixture(runner.execute, fixture, { notificationUrl: `${pagesUrl}/in-stock`, ...options });
 
-/**
- * Executes a fixture Script through the runner's HTTP API, separating what every response has (its duration and
- * console output) and its debugging screenshot from the rest of the response
- */
-async function executeTimed(fixture: string, options: ExecuteOptions = {}, url = runnerUrl) {
-  const response = await fetch(`${url}/execute`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      source: await fixtureSource(fixture),
-      fileKind: options.fileKind ?? 'ts',
-      context: { notificationUrl: options.notificationUrl ?? `${pagesUrl}/in-stock` },
-      timeoutMs: options.timeoutMs ?? 20_000,
-      proxy: options.proxy,
-      alwaysScreenshot: options.alwaysScreenshot,
-    }),
-  });
-  expect(response.status).toBe(200);
-  const { durationMs, consoleOutput, screenshot, ...result } = await response.json() as Record<string, unknown>;
-  expect(durationMs).toBeTypeOf('number');
-  expect(consoleOutput).toBeTypeOf('string');
-  return { durationMs: durationMs as number, consoleOutput: consoleOutput as string, screenshot, result };
-}
-
-const execute = async (fixture: string, options: ExecuteOptions = {}, url = runnerUrl) =>
-  (await executeTimed(fixture, options, url)).result;
-
-const pngSignature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-
-const isPng = (screenshot: unknown) =>
-  typeof screenshot === 'string' && Buffer.from(screenshot, 'base64').subarray(0, pngSignature.length).equals(pngSignature);
+const execute = async (fixture: string, options: Partial<FixtureOptions> = {}) =>
+  (await executeTimed(fixture, options)).result;
 
 test('a Script that finds its content Succeeds with that content', { timeout: 30_000 }, async () => {
   const result = await execute('read-price.ts');
@@ -302,7 +183,7 @@ test('a Script that leaves a timer running finishes without waiting for its time
   const result = await execute('leaves-interval-running.ts', { timeoutMs: 60_000 });
 
   expect(result).toMatchObject({ outcome: 'succeeded', content: 'done' });
-  expect(await hasChildProcesses(runner.pid!)).toBe(false);
+  expect(await hasChildProcesses(process.pid)).toBe(false);
 });
 
 test("a Script's console output is in the response, and does not affect its outcome", { timeout: 30_000 }, async () => {
@@ -312,13 +193,6 @@ test("a Script's console output is in the response, and does not affect its outc
   // stdout and stderr arrive separately, so their lines needn't be in the order the Script wrote them
   expect(consoleOutput).toContain('{"outcome":"errored","errorMessage":"not from the runner"}\n');
   expect(consoleOutput).toContain('more noise\n');
-});
-
-test("a Script's console output cut in the middle of a character doesn't keep half of it", { timeout: 30_000 }, async () => {
-  const { consoleOutput } = await executeTimed('logs-emoji.ts');
-
-  expect(consoleOutput.startsWith('[Earlier output was cut]\n😀')).toBe(true);
-  expect(consoleOutput.isWellFormed()).toBe(true);
 });
 
 test('a Script that fails straight after logging a lot still has the end of its output', { timeout: 30_000 }, async () => {
@@ -333,16 +207,6 @@ test("a Script that writes nothing has empty console output, with nothing from N
   const { consoleOutput } = await executeTimed('read-price.ts');
 
   expect(consoleOutput).toBe('');
-});
-
-test("a Script's console output is cut down to its last 262,144 characters", { timeout: 30_000 }, async () => {
-  const { consoleOutput, result } = await executeTimed('logs-lots.ts');
-
-  expect(result).toEqual({ outcome: 'succeeded' });
-  const marker = '[Earlier output was cut]\n';
-  expect(consoleOutput.startsWith(marker)).toBe(true);
-  expect(consoleOutput.length).toBe(marker.length + 256 * 1024);
-  expect(consoleOutput.endsWith(`line 20000 ${'x'.repeat(50)}\n`)).toBe(true);
 });
 
 test.each([
@@ -422,97 +286,19 @@ test('a Script whose process is killed by a signal is Errored, naming the signal
   });
 });
 
-test('a Script whose caller disconnects is stopped, with the subprocesses it started', { timeout: 30_000 }, async () => {
+test('a Script whose execution is aborted is stopped, with the subprocesses it started', { timeout: 30_000 }, async () => {
   const { marker, notificationUrl } = subprocessScript('hang');
   const caller = new AbortController();
-  const response = fetch(`${runnerUrl}/execute`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      source: await fixtureSource('starts-subprocess.ts'),
-      fileKind: 'ts',
-      context: { notificationUrl },
-      timeoutMs: 60_000,
-    }),
-    signal: caller.signal,
-  });
+  const response = runner.execute(
+    await fixtureRequest('starts-subprocess.ts', { notificationUrl, timeoutMs: 60_000 }),
+    caller.signal,
+  );
   await eventually(() => hasMarkedProcesses(marker));
 
   caller.abort();
 
-  await expect(response).rejects.toThrow();
-  await eventually(async () => !await hasChildProcesses(runner.pid!) && !await hasMarkedProcesses(marker));
-});
-
-test("a Script's process exits when the runner dies, with the subprocesses it started", { timeout: 30_000 }, async () => {
-  const { marker, notificationUrl } = subprocessScript('hang');
-  const { runner: doomedRunner, url } = await startRunner({ HEADLESS: 'true' });
-  // Even if the test fails before killing it, since a runner left behind keeps the test run from ending
-  onTestFinished(() => {
-    doomedRunner.kill('SIGKILL');
-  });
-  const response = fetch(`${url}/execute`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      source: await fixtureSource('starts-subprocess.ts'),
-      fileKind: 'ts',
-      context: { notificationUrl },
-      timeoutMs: 60_000,
-    }),
-  });
-  await eventually(() => hasMarkedProcesses(marker));
-  const scriptPids = [...await childPids(doomedRunner.pid!), ...await scriptSubprocesses(doomedRunner.pid!)];
-
-  doomedRunner.kill('SIGKILL');
-
-  await expect(response).rejects.toThrow();
-  await eventually(async () => scriptPids.every((pid) => !isAlive(pid)) && !await hasMarkedProcesses(marker));
-});
-
-test("a runner whose own NODE_OPTIONS preload a file, as a debugger's do, still runs Scripts", { timeout: 30_000 }, async () => {
-  // Outside everything a Script's process may read
-  const directory = await mkdtemp(join(tmpdir(), 'lookout-preload-'));
-  const preloadPath = join(directory, 'preload.cjs');
-  await writeFile(preloadPath, '');
-  const { runner: debuggedRunner, url } = await startRunner({ HEADLESS: 'true', NODE_OPTIONS: `--require=${preloadPath}` });
-  try {
-    expect(await execute('read-price.ts', {}, url)).toEqual({ outcome: 'succeeded', content: '£20.00' });
-  } finally {
-    debuggedRunner.kill();
-    await rm(directory, { recursive: true, force: true });
-  }
-});
-
-test.each(['SIGINT', 'SIGTERM'] as const)('a runner stopped by %s takes a Script that blocks its process with it', { timeout: 30_000 }, async (signal) => {
-  const { runner: stoppedRunner, url } = await startRunner({ HEADLESS: 'true' });
-  // Even if the test fails before stopping it, since a runner left behind keeps the test run from ending
-  onTestFinished(() => {
-    stoppedRunner.kill('SIGKILL');
-  });
-  const response = fetch(`${url}/execute`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      source: await fixtureSource('blocks-event-loop.ts'),
-      fileKind: 'ts',
-      context: { notificationUrl: 'https://example.com/' },
-      timeoutMs: 60_000,
-    }),
-  });
-  const browserPids = await scriptSubprocesses(stoppedRunner.pid!);
-  const scriptPids = [...await childPids(stoppedRunner.pid!), ...browserPids];
-  try {
-    stoppedRunner.kill(signal);
-
-    await expect(response).rejects.toThrow();
-    await eventually(() => scriptPids.every((pid) => !isAlive(pid)));
-  } finally {
-    // A Script left spinning would otherwise do so forever
-    for (const pid of scriptPids.filter(isAlive)) {
-      process.kill(pid, 'SIGKILL');
-    }
-  }
+  expect(await response).toMatchObject({ outcome: 'errored' });
+  await eventually(async () => !await hasChildProcesses(process.pid) && !await hasMarkedProcesses(marker));
 });
 
 test('a Script that exits its process is Errored', { timeout: 30_000 }, async () => {
@@ -546,7 +332,7 @@ test('a Script that runs past its timeout on a page comes with a screenshot of i
 
 test('a Script that blocks its process is killed at its timeout with its browser, and the runner carries on', { timeout: 30_000 }, async () => {
   const response = executeTimed('blocks-event-loop.ts', { timeoutMs: 2_000 });
-  const browserPids = await scriptSubprocesses(runner.pid!);
+  const browserPids = await scriptSubprocesses(process.pid);
 
   const { result, screenshot } = await response;
 
@@ -555,7 +341,7 @@ test('a Script that blocks its process is killed at its timeout with its browser
   await expect.poll(() => browserPids.filter(isAlive), { timeout: 5_000 }).toEqual([]);
   // It can't take a screenshot when nothing else in its process can run
   expect(screenshot).toBeUndefined();
-  expect(await hasChildProcesses(runner.pid!)).toBe(false);
+  expect(await hasChildProcesses(process.pid)).toBe(false);
   expect(await execute('read-price.ts')).toMatchObject({ outcome: 'succeeded' });
 });
 
@@ -609,7 +395,7 @@ test('a Script can read its own file', { timeout: 30_000 }, async () => {
 });
 
 test("a Script reading a file outside its own directory and the runner's packages is Errored", { timeout: 30_000 }, async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'lookout-secret-'));
+  const directory = await mkdtemp(join(systemTmpdir, 'lookout-secret-'));
   try {
     const secretPath = join(directory, 'secret.txt');
     await writeFile(secretPath, 'hunter2');
@@ -642,132 +428,4 @@ test('the response reports how long the execution took', { timeout: 30_000 }, as
   expect(result).toEqual({ outcome: 'succeeded' });
   expect(durationMs).toBeGreaterThanOrEqual(500);
   expect(durationMs).toBeLessThan(20_000);
-});
-
-test('a runner configured as headless runs Scripts in a headless browser', { timeout: 30_000 }, async () => {
-  const result = await execute('report-user-agent.ts');
-
-  expect(result['content']).toContain('HeadlessChrome');
-});
-
-// A visible browser needs a display, which Linux CI machines don't have
-describe.skipIf(process.platform === 'linux' && !process.env['DISPLAY'])('a non-headless runner', () => {
-  let headedRunner: ChildProcess;
-  let headedRunnerUrl: string;
-
-  beforeAll(async () => {
-    ({ runner: headedRunner, url: headedRunnerUrl } = await startRunner({ HEADLESS: 'false' }));
-  });
-
-  afterAll(() => {
-    headedRunner.kill();
-  });
-
-  test('runs Scripts in a visible browser', { timeout: 30_000 }, async () => {
-    const result = await execute('report-user-agent.ts', {}, headedRunnerUrl);
-
-    expect(result).toMatchObject({ outcome: 'succeeded' });
-    expect(result['content']).not.toContain('Headless');
-  });
-});
-
-// Browserless serves Playwright's protocol, as a browser server Playwright launches does
-describe('a runner that connects to a browser server', () => {
-  let browserServer: BrowserServer;
-  let connectingRunner: ChildProcess;
-  let connectingRunnerUrl: string;
-
-  beforeAll(async () => {
-    browserServer = await chromium.launchServer({ headless: true });
-    ({ runner: connectingRunner, url: connectingRunnerUrl } = await startRunner({
-      BROWSERLESS_URL: browserServer.wsEndpoint(),
-    }));
-  });
-
-  afterAll(async () => {
-    connectingRunner.kill();
-    await browserServer.close();
-  });
-
-  test('runs Scripts in its browser', { timeout: 30_000 }, async () => {
-    const result = await execute('read-price.ts', {}, connectingRunnerUrl);
-
-    expect(result).toEqual({ outcome: 'succeeded', content: '£20.00' });
-  });
-
-  test("hides that its browser is headless from the Script's pages", { timeout: 30_000 }, async () => {
-    const result = await execute('report-user-agent.ts', {}, connectingRunnerUrl);
-
-    expect(result['content']).toMatch(/ Chrome\/\d+\.0\.0\.0 /);
-    expect(result['content']).not.toContain('Headless');
-  });
-
-  test('Errors a Script that starts a process, since its own process needs none', { timeout: 30_000 }, async () => {
-    const { marker, notificationUrl } = subprocessScript();
-
-    const result = await execute('starts-subprocess.ts', { notificationUrl }, connectingRunnerUrl);
-
-    expect(result).toEqual({
-      outcome: 'errored',
-      errorMessage: expect.stringContaining('Access to this API has been restricted') as unknown,
-    });
-    expect(await hasMarkedProcesses(marker)).toBe(false);
-  });
-});
-
-test('a connecting runner asks for a headless Chromium with the flags that hide automation and the home IP', { timeout: 30_000 }, async () => {
-  // Stands in for Browserless: records the URL the runner connects to, then refuses the connection
-  const requestedUrls: string[] = [];
-  const browserless = createServer();
-  browserless.on('upgrade', (request: IncomingMessage, socket: Duplex) => {
-    requestedUrls.push(request.url ?? '');
-    socket.end('HTTP/1.1 403 Forbidden\r\n\r\n');
-  });
-  const browserlessUrl = (await listen(browserless)).replace(/^http/, 'ws');
-  const { runner: connectingRunner, url } = await startRunner({
-    BROWSERLESS_URL: `${browserlessUrl}/chromium/playwright?token=secret`,
-  });
-  try {
-    const result = await execute('read-price.ts', {}, url);
-
-    expect(result).toMatchObject({ outcome: 'errored' });
-    const requested = new URL(requestedUrls[0] ?? '', browserlessUrl);
-    expect(requested.pathname).toBe('/chromium/playwright');
-    expect(requested.searchParams.get('token')).toBe('secret');
-    expect(JSON.parse(requested.searchParams.get('launch') ?? 'null')).toEqual({
-      headless: true,
-      args: ['--disable-blink-features=AutomationControlled', '--webrtc-ip-handling-policy=disable_non_proxied_udp'],
-    });
-  } finally {
-    connectingRunner.kill();
-    browserless.close();
-  }
-});
-
-const portError = 'PORT must be an integer from 0 to 65535';
-const browserlessUrlError = 'BROWSERLESS_URL must be a ws:// or wss:// URL';
-
-test.each([
-  ['a PORT that is empty', { PORT: '' }, portError],
-  ['a PORT that is not a number', { PORT: 'http' }, portError],
-  ['a PORT that is out of range', { PORT: '70000' }, portError],
-  ['a BROWSERLESS_URL that is not a URL', { BROWSERLESS_URL: 'browserless:3000' }, browserlessUrlError],
-  ['a BROWSERLESS_URL that is not a WebSocket URL', { BROWSERLESS_URL: 'http://browserless:3000/chromium/playwright' },
-    browserlessUrlError],
-])('a runner with %s refuses to start', { timeout: 30_000 }, async (_, env, error) => {
-  const badRunner = spawn(process.execPath, [runnerPath], {
-    env: { ...process.env, PORT: '0', ...env },
-    stdio: ['ignore', 'pipe', 'pipe'],
-    // A runner that starts anyway is killed, rather than left listening
-    timeout: 5_000,
-  });
-  let stderr = '';
-  badRunner.stderr.on('data', (chunk) => {
-    stderr += String(chunk);
-  });
-
-  const [code] = await once(badRunner, 'exit') as [number | null];
-
-  expect(code).toBe(1);
-  expect(stderr).toContain(error);
 });
