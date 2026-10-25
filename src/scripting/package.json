@@ -1,8 +1,25 @@
 {
   "name": "@chasepie/lookout-scripting",
   "version": "1.0.0",
-  "description": "",
+  "description": "Types for writing Lookout Scripts",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chasepie/lookout.git",
+    "directory": "src/scripting"
+  },
   "type": "module",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "prepack": "tsc -p tsconfig.build.json",
+    "postpack": "node --eval \"fs.rmSync('dist', { recursive: true, force: true })\""
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
   "peerDependencies": {
     "playwright": "^1.64.1"
   }

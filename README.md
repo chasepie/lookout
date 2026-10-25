@@ -39,6 +39,8 @@ export default {
 } satisfies LookoutScript;
 ```
 
+To type-check Scripts in your own project, install `@chasepie/lookout-scripting` and `playwright` as dev dependencies. The scripting package is published to GitHub Packages, which requires a login even for public packages. Add `@chasepie:registry=https://npm.pkg.github.com` to your project's `.npmrc`, then run `npm login --scope=@chasepie --auth-type=legacy --registry=https://npm.pkg.github.com` with your GitHub user name and a personal access token (classic) with the `read:packages` scope as the password.
+
 See [the runner documentation](src/runner/README.md) for the Script contract and execution limits. Uploads accept `.ts` and `.js` files up to 64 KiB. Each Run uses its Watch's timeout: 120 seconds by default, editable from 1 to 600. Running the same Watch again while it is already running returns HTTP 409. Once started, a Run continues and is recorded even if its browser tab disconnects; application shutdown still cancels active Runs.
 
 The first Succeeded Run sets the Baseline silently. Later Succeeded Runs record a Change when their trimmed content differs. Original content is retained, and details never affect comparison. Known failure and Errored Runs stay in history without replacing the Baseline; the list continues to show the most recent successful content.

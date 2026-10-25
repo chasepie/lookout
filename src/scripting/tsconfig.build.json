@@ -1,0 +1,14 @@
+{
+  // Builds the published package's types, before npm packs it. In this repository the package resolves to index.ts,
+  // which the root project checks: package.json's "types" names dist, and TypeScript falls back to index.ts without it.
+  "extends": "../../tsconfig.node.json",
+  "include": [
+    "index.ts"
+  ],
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "outDir": "dist"
+  }
+}

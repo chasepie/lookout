@@ -86,3 +86,97 @@ jobs:
       # the stack against the real Browserless is the README's manual smoke test.
       - name: Build
         run: docker compose build
+
+  # Only for pushes to main, once every check above has passed. Pull requests skip it. A newer push cancels this run
+  # (see concurrency), so an older commit can't finish last and overwrite latest.
+  publish-images:
+    name: Publish ${{ matrix.image }} image
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [backend, node, images]
+    runs-on: ubuntu-latest
+    # The arm64 build runs partly under emulation, which takes longer than the images job
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - image: lookout
+            dockerfile: src/Backend/Dockerfile
+          - image: lookout-runner
+            dockerfile: src/runner/Dockerfile
+    steps:
+      - uses: actions/checkout@v7
+
+      # arm64 too, for homelabs on a Raspberry Pi. The lookout image's build stages run on the build machine's own
+      # platform; only its last stage and the runner image's build run under emulation.
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # latest, and the commit's sha-<short SHA> to pin or roll back to. The labels include the source repository, which
+      # links the package to this repository on GitHub.
+      - id: meta
+        uses: docker/metadata-action@v6
+        env:
+          # For a multi-platform image, GHCR reads the description from the index
+          DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+          tags: |
+            type=raw,value=latest
+            type=sha
+
+      # Built from the repository root with .dockerignore, as compose.yaml builds it
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+
+  # Publishes the types Scripts import, with the same conditions as the images job above
+  publish-scripting:
+    name: Publish scripting package
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [backend, node, images]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          registry-url: https://npm.pkg.github.com
+
+      # The root's devDependencies hold the TypeScript that builds the package's types
+      - run: npm ci --workspace src/scripting --include-workspace-root
+
+      # A registry accepts each version only once, so this publishes only when src/scripting/package.json has a version
+      # that isn't published yet. Bump it there to publish a change to the types.
+      - name: Publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version=$(node --print "require('./src/scripting/package.json').version")
+          if [ -n "$(npm view "@chasepie/lookout-scripting@$version" version 2>/dev/null)" ]; then
+            echo "@chasepie/lookout-scripting@$version is already published"
+          else
+            npm publish --workspace src/scripting
+          fi
