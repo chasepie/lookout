@@ -67,9 +67,9 @@
           <button type="button" (click)="editingSchedule.set(true)">Edit schedule</button>
         }
       </section>
-      <section class="panel" aria-labelledby="channels-heading">
-        <h2 id="channels-heading">Channels</h2>
-        <app-watch-channels [watch]="current" (saved)="channelsSaved()" />
+      <section class="panel" aria-labelledby="notification-channels-heading">
+        <h2 id="notification-channels-heading">Notification channels</h2>
+        <app-watch-notification-channels [watch]="current" (saved)="notificationChannelsSaved()" />
       </section>
       <section class="panel" aria-labelledby="script-versions-heading">
         <h2 id="script-versions-heading">Script versions</h2>

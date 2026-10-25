@@ -1,17 +1,17 @@
-export type ChannelKind = 'discord' | 'pushover';
+export type NotificationChannelKind = 'discord' | 'pushover';
 
-export const channelKindLabels: Record<ChannelKind, string> = { discord: 'Discord', pushover: 'Pushover' };
+export const notificationChannelKindLabels: Record<NotificationChannelKind, string> = { discord: 'Discord', pushover: 'Pushover' };
 
-/** A Channel as the backend lists it, which never includes its secrets. */
-export interface Channel {
+/** A Notification channel as the backend lists it, which never includes its secrets. */
+export interface NotificationChannel {
   id: string;
   name: string;
-  kind: ChannelKind;
+  kind: NotificationChannelKind;
 }
 
-/** A new Channel and the secrets it is sent with, of which only its kind's are used. */
-export interface NewChannel {
-  kind: ChannelKind;
+/** A new Notification channel and the secrets it is sent with, of which only its kind's are used. */
+export interface NewNotificationChannel {
+  kind: NotificationChannelKind;
   name: string;
   webhookUrl: string;
   userKey: string;

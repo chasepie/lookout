@@ -1,25 +1,25 @@
 import { ChangeDetectionStrategy, Component, inject, model } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { channelKindLabels } from '../channel.model';
-import { Channels } from '../channels';
+import { notificationChannelKindLabels } from '../notification-channel.model';
+import { NotificationChannels } from '../notification-channels';
 
-/** Checkboxes for choosing which Channels a Watch notifies. Its content, such as a save button, shows below them. */
+/** Checkboxes for choosing which Notification channels a Watch notifies. Its content, such as a save button, shows below them. */
 @Component({
-  selector: 'app-channel-choices',
+  selector: 'app-notification-channel-choices',
   imports: [RouterLink],
-  templateUrl: './channel-choices.html',
-  styleUrl: './channel-choices.scss',
+  templateUrl: './notification-channel-choices.html',
+  styleUrl: './notification-channel-choices.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class ChannelChoices {
-  protected readonly channels = inject(Channels);
-  /** The IDs of the chosen Channels. */
+export class NotificationChannelChoices {
+  protected readonly notificationChannels = inject(NotificationChannels);
+  /** The IDs of the chosen Notification channels. */
   readonly chosen = model.required<ReadonlySet<string>>();
-  protected readonly kinds = channelKindLabels;
+  protected readonly kinds = notificationChannelKindLabels;
 
   constructor() {
-    // Channels may have been added in Settings since the list was last read.
-    this.channels.list.refresh();
+    // Notification channels may have been added in Settings since the list was last read.
+    this.notificationChannels.list.refresh();
   }
 
   protected toggle(id: string, checked: boolean) {

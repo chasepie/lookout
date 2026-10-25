@@ -60,7 +60,7 @@ public sealed class RunsTests(TestContext testContext)
         factory.Runner.DefaultResult = BlockingRunner.Succeeded;
         var sending = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var sent = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        factory.Channels.OnSend = (_, _) =>
+        factory.NotificationChannels.OnSend = (_, _) =>
         {
             sending.TrySetResult();
             return sent.Task;
@@ -78,7 +78,7 @@ public sealed class RunsTests(TestContext testContext)
         Assert.AreEqual(new Refused(RunRefusal.Executing, Gated: false), whileSending);
         Assert.IsTrue(runningWhileSending);
         Assert.IsTrue(execution.Run!.IsChange);
-        Assert.HasCount(1, factory.Channels.Sent);
+        Assert.HasCount(1, factory.NotificationChannels.Sent);
         Assert.IsFalse(runs.IsRunning(watchId));
     }
 
@@ -306,7 +306,7 @@ public sealed class RunsTests(TestContext testContext)
         factory.Runner.DefaultResult = BlockingRunner.Succeeded;
         var sending = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var sent = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        factory.Channels.OnSend = (_, _) =>
+        factory.NotificationChannels.OnSend = (_, _) =>
         {
             sending.TrySetResult();
             return sent.Task;
@@ -358,7 +358,7 @@ public sealed class RunsTests(TestContext testContext)
         };
         if (notifies)
         {
-            watch.Channels.Add(new Channel { Name = "Phone", Kind = ChannelKind.Discord, WebhookUrl = "https://discord.example/hook" });
+            watch.NotificationChannels.Add(new NotificationChannel { Name = "Phone", Kind = NotificationChannelKind.Discord, WebhookUrl = "https://discord.example/hook" });
         }
         var version = new ScriptVersion { WatchId = watch.Id, Number = 1, Source = "export default {}", FileKind = "ts" };
         watch.ScriptVersions.Add(version);

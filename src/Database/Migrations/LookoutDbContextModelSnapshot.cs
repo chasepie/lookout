@@ -39,7 +39,7 @@ namespace ChasePie.Lookout.Database.Migrations
                         });
                 });
 
-            modelBuilder.Entity("ChasePie.Lookout.Model.Channel", b =>
+            modelBuilder.Entity("ChasePie.Lookout.Model.NotificationChannel", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -64,7 +64,7 @@ namespace ChasePie.Lookout.Database.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Channels");
+                    b.ToTable("NotificationChannels");
                 });
 
             modelBuilder.Entity("ChasePie.Lookout.Model.Run", b =>
@@ -287,19 +287,19 @@ namespace ChasePie.Lookout.Database.Migrations
                     b.ToTable("Watches");
                 });
 
-            modelBuilder.Entity("ChasePie.Lookout.Model.WatchChannel", b =>
+            modelBuilder.Entity("ChasePie.Lookout.Model.WatchNotificationChannel", b =>
                 {
                     b.Property<Guid>("WatchId")
                         .HasColumnType("TEXT");
 
-                    b.Property<Guid>("ChannelId")
+                    b.Property<Guid>("NotificationChannelId")
                         .HasColumnType("TEXT");
 
-                    b.HasKey("WatchId", "ChannelId");
+                    b.HasKey("WatchId", "NotificationChannelId");
 
-                    b.HasIndex("ChannelId");
+                    b.HasIndex("NotificationChannelId");
 
-                    b.ToTable("WatchChannels");
+                    b.ToTable("WatchNotificationChannels");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.DataProtection.EntityFrameworkCore.DataProtectionKey", b =>
@@ -373,11 +373,11 @@ namespace ChasePie.Lookout.Database.Migrations
                     b.Navigation("CurrentScriptVersion");
                 });
 
-            modelBuilder.Entity("ChasePie.Lookout.Model.WatchChannel", b =>
+            modelBuilder.Entity("ChasePie.Lookout.Model.WatchNotificationChannel", b =>
                 {
-                    b.HasOne("ChasePie.Lookout.Model.Channel", null)
+                    b.HasOne("ChasePie.Lookout.Model.NotificationChannel", null)
                         .WithMany()
-                        .HasForeignKey("ChannelId")
+                        .HasForeignKey("NotificationChannelId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 

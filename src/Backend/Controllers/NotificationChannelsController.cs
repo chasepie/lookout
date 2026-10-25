@@ -9,40 +9,40 @@ using Microsoft.EntityFrameworkCore;
 
 namespace ChasePie.Lookout.Backend.Controllers;
 
-/// <summary>The Channels Watches can notify. Responses never include a Channel's secrets.</summary>
+/// <summary>The Notification channels Watches can notify. Responses never include a Notification channel's secrets.</summary>
 [ApiController]
-[Route("api/channels")]
-public sealed partial class ChannelsController(LookoutDbContext database, NotificationDispatcher notifications)
+[Route("api/notification-channels")]
+public sealed partial class NotificationChannelsController(LookoutDbContext database, NotificationDispatcher notifications)
     : LookoutControllerBase
 {
     [HttpGet]
-    public async Task<IReadOnlyList<ChannelSummary>> List(CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<NotificationChannelSummary>> List(CancellationToken cancellationToken)
     {
-        return await database.Channels.AsNoTracking()
-            .OrderBy(channel => EF.Functions.Collate(channel.Name, "NOCASE"))
-            .Select(ChannelSummary.Projection)
+        return await database.NotificationChannels.AsNoTracking()
+            .OrderBy(notificationChannel => EF.Functions.Collate(notificationChannel.Name, "NOCASE"))
+            .Select(NotificationChannelSummary.Projection)
             .ToListAsync(cancellationToken);
     }
 
     [HttpPost]
-    public async Task<ActionResult<ChannelSummary>> Create(ChannelRequest request, CancellationToken cancellationToken)
+    public async Task<ActionResult<NotificationChannelSummary>> Create(NotificationChannelRequest request, CancellationToken cancellationToken)
     {
-        if (!TryBuildChannel(request, out var channel, out var problem))
+        if (!TryBuildNotificationChannel(request, out var notificationChannel, out var problem))
         {
             return problem;
         }
 
-        database.Channels.Add(channel);
+        database.NotificationChannels.Add(notificationChannel);
         await database.SaveChangesAsync(cancellationToken);
-        return StatusCode(StatusCodes.Status201Created, ChannelSummary.From(channel));
+        return StatusCode(StatusCodes.Status201Created, NotificationChannelSummary.From(notificationChannel));
     }
 
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
-        // SQLite cascades the delete to every Watch's choice of this Channel.
-        var deleted = await database.Channels
-            .Where(channel => channel.Id == id)
+        // SQLite cascades the delete to every Watch's choice of this Notification channel.
+        var deleted = await database.NotificationChannels
+            .Where(notificationChannel => notificationChannel.Id == id)
             .ExecuteDeleteAsync(cancellationToken);
         return deleted == 0 ? NotFound() : NoContent();
     }
@@ -50,18 +50,18 @@ public sealed partial class ChannelsController(LookoutDbContext database, Notifi
     [HttpPost("{id:guid}/test")]
     public async Task<IActionResult> SendTest(Guid id, CancellationToken cancellationToken)
     {
-        var channel = await database.Channels.AsNoTracking()
-            .SingleOrDefaultAsync(channel => channel.Id == id, cancellationToken);
-        if (channel is null)
+        var notificationChannel = await database.NotificationChannels.AsNoTracking()
+            .SingleOrDefaultAsync(notificationChannel => notificationChannel.Id == id, cancellationToken);
+        if (notificationChannel is null)
         {
             return NotFound();
         }
 
         try
         {
-            await notifications.SendAsync(channel, Notification.Test(channel.Name), cancellationToken);
+            await notifications.SendAsync(notificationChannel, Notification.Test(notificationChannel.Name), cancellationToken);
         }
-        // The Channel's service refused or didn't answer in time; the request itself wasn't abandoned.
+        // The Notification channel's service refused or didn't answer in time; the request itself wasn't abandoned.
         catch (Exception error) when (error is HttpRequestException or TaskCanceledException
             && !cancellationToken.IsCancellationRequested)
         {
@@ -70,19 +70,19 @@ public sealed partial class ChannelsController(LookoutDbContext database, Notifi
         return NoContent();
     }
 
-    private bool TryBuildChannel(
-        ChannelRequest request,
-        [NotNullWhen(true)] out Channel? channel,
+    private bool TryBuildNotificationChannel(
+        NotificationChannelRequest request,
+        [NotNullWhen(true)] out NotificationChannel? notificationChannel,
         [NotNullWhen(false)] out ObjectResult? problem)
     {
-        channel = null;
+        notificationChannel = null;
         var name = request.Name?.Trim() ?? "";
         string? message = null;
         if (name.Length is < 1 or > 100)
         {
             message = "Name must contain between 1 and 100 characters.";
         }
-        else if (request.Kind == ChannelKind.Discord)
+        else if (request.Kind == NotificationChannelKind.Discord)
         {
             var webhookUrl = request.WebhookUrl?.Trim() ?? "";
             if (!HttpUrls.IsValid(webhookUrl))
@@ -91,10 +91,10 @@ public sealed partial class ChannelsController(LookoutDbContext database, Notifi
             }
             else
             {
-                channel = new Channel { Name = name, Kind = ChannelKind.Discord, WebhookUrl = webhookUrl };
+                notificationChannel = new NotificationChannel { Name = name, Kind = NotificationChannelKind.Discord, WebhookUrl = webhookUrl };
             }
         }
-        else if (request.Kind == ChannelKind.Pushover)
+        else if (request.Kind == NotificationChannelKind.Pushover)
         {
             var userKey = request.UserKey?.Trim() ?? "";
             var appToken = request.AppToken?.Trim() ?? "";
@@ -104,16 +104,16 @@ public sealed partial class ChannelsController(LookoutDbContext database, Notifi
             }
             else
             {
-                channel = new Channel { Name = name, Kind = ChannelKind.Pushover, UserKey = userKey, AppToken = appToken };
+                notificationChannel = new NotificationChannel { Name = name, Kind = NotificationChannelKind.Pushover, UserKey = userKey, AppToken = appToken };
             }
         }
         else
         {
-            message = "Choose a Discord or Pushover Channel.";
+            message = "Choose a Discord or Pushover Notification channel.";
         }
 
         problem = message is null ? null : Problem(message, statusCode: HttpStatusCode.BadRequest);
-        return channel is not null;
+        return notificationChannel is not null;
     }
 
     [GeneratedRegex("^[A-Za-z0-9]{30}$")]

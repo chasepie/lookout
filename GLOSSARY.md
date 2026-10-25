@@ -52,9 +52,9 @@ _Avoid_: Frequency, Cadence, Timer
 A random delay of up to an hour, chosen per Watch, added to each of its scheduled Runs so they don't happen at predictable times.
 _Avoid_: Random delay, Offset, Fuzz
 
-**Channel**:
+**Notification channel**:
 A destination Lookout sends notifications to, such as a Discord webhook or a Pushover account, configured once and chosen per Watch.
-_Avoid_: Integration, Notifier
+_Avoid_: Channel, Integration, Notifier
 
 **Change**:
 A difference between the content of a Watch's latest Succeeded Run and that of its previous Succeeded Run, as judged by Lookout rather than by the Script.

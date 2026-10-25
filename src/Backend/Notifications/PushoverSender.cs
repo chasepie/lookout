@@ -3,8 +3,8 @@ using ChasePie.Lookout.Model;
 
 namespace ChasePie.Lookout.Backend.Notifications;
 
-/// <summary>Sends notifications through Pushover's Message API, authorised by the Channel's app token and user key.</summary>
-public sealed class PushoverSender(HttpClient client) : IChannelSender
+/// <summary>Sends notifications through Pushover's Message API, authorised by the Notification channel's app token and user key.</summary>
+public sealed class PushoverSender(HttpClient client) : INotificationChannelSender
 {
     public const string DefaultBaseUrl = "https://api.pushover.net/";
 
@@ -13,14 +13,14 @@ public sealed class PushoverSender(HttpClient client) : IChannelSender
     private const int MaxMessageLength = 1024;
     private const int MaxUrlLength = 512;
 
-    public ChannelKind Kind => ChannelKind.Pushover;
+    public NotificationChannelKind Kind => NotificationChannelKind.Pushover;
 
-    public async Task SendAsync(Channel channel, Notification notification, CancellationToken cancellationToken)
+    public async Task SendAsync(NotificationChannel notificationChannel, Notification notification, CancellationToken cancellationToken)
     {
         var fields = new Dictionary<string, string>
         {
-            ["token"] = channel.AppToken!,
-            ["user"] = channel.UserKey!,
+            ["token"] = notificationChannel.AppToken!,
+            ["user"] = notificationChannel.UserKey!,
             ["title"] = Notification.Fit(notification.Title, MaxTitleLength),
             ["message"] = Notification.Fit(notification.Message, MaxMessageLength)
         };
@@ -35,7 +35,7 @@ public sealed class PushoverSender(HttpClient client) : IChannelSender
         using var content = new FormUrlEncodedContent(fields);
         var uri = new Uri("1/messages.json", UriKind.Relative);
         using var response = await client.PostAsync(uri, content, cancellationToken);
-        await ChannelResponses.EnsureAcceptedAsync(response, "Pushover",
+        await NotificationChannelResponses.EnsureAcceptedAsync(response, "Pushover",
             body =>
             {
                 if (body.TryGetProperty("errors", out var errors)

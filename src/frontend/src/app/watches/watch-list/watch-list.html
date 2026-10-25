@@ -27,7 +27,7 @@
       <app-schedule-picker [schedule]="watchForm.schedule" />
       <label class="checkbox"><input type="checkbox" [formField]="watchForm.usesVpn" aria-describedby="vpn-help" /> Send Runs through the VPN</label>
       <small id="vpn-help">Runs go out from the VPN's exit IP rather than your own.</small>
-      <app-channel-choices class="channel-choices" [(chosen)]="channelIds" />
+      <app-notification-channel-choices class="notification-channel-choices" [(chosen)]="notificationChannelIds" />
       <button class="primary" type="submit" [disabled]="watchForm().submitting() || watchForm().invalid() || !script()">
         {{ watchForm().submitting() ? 'Creating…' : 'Create Watch' }}
       </button>

@@ -6,78 +6,78 @@
 <p class="notice" role="status">{{ notice() }}</p>
 @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
 <div class="workspace">
-  <section class="panel" aria-labelledby="add-channel-heading">
-    <h2 id="add-channel-heading">Add a Channel</h2>
-    <p>Each Watch then chooses which Channels it notifies.</p>
-    <form (submit)="$event.preventDefault(); addChannel()">
-      <label for="channel-kind">Kind</label>
-      <select id="channel-kind" [formField]="channelForm.kind">
+  <section class="panel" aria-labelledby="add-notification-channel-heading">
+    <h2 id="add-notification-channel-heading">Add a Notification channel</h2>
+    <p>Each Watch then chooses which Notification channels it notifies.</p>
+    <form (submit)="$event.preventDefault(); addNotificationChannel()">
+      <label for="notification-channel-kind">Kind</label>
+      <select id="notification-channel-kind" [formField]="notificationChannelForm.kind">
         @for (kind of kinds | keyvalue; track kind.key) {
           <option [value]="kind.key">{{ kind.value }}</option>
         }
       </select>
-      <label for="channel-name">Name</label>
-      <input id="channel-name" [formField]="channelForm.name" placeholder="e.g. Deals server" />
-      @if (channelForm.name().touched() && channelForm.name().invalid()) {
+      <label for="notification-channel-name">Name</label>
+      <input id="notification-channel-name" [formField]="notificationChannelForm.name" placeholder="e.g. Deals server" />
+      @if (notificationChannelForm.name().touched() && notificationChannelForm.name().invalid()) {
         <small class="error">Enter a name between 1 and 100 characters.</small>
       }
-      @if (!channelForm.webhookUrl().hidden()) {
+      @if (!notificationChannelForm.webhookUrl().hidden()) {
         <label for="webhook-url">Webhook URL</label>
-        <input id="webhook-url" type="url" [formField]="channelForm.webhookUrl" autocomplete="off" spellcheck="false"
+        <input id="webhook-url" type="url" [formField]="notificationChannelForm.webhookUrl" autocomplete="off" spellcheck="false"
           placeholder="https://discord.com/api/webhooks/…" aria-describedby="webhook-help" />
         <small id="webhook-help">From the Discord channel's Integrations settings.</small>
-        @if (channelForm.webhookUrl().touched() && channelForm.webhookUrl().invalid()) {
+        @if (notificationChannelForm.webhookUrl().touched() && notificationChannelForm.webhookUrl().invalid()) {
           <small class="error">Enter an HTTP or HTTPS URL.</small>
         }
       }
-      @if (!channelForm.userKey().hidden()) {
+      @if (!notificationChannelForm.userKey().hidden()) {
         <label for="user-key">User key</label>
-        <input id="user-key" [formField]="channelForm.userKey" autocomplete="off" spellcheck="false" aria-describedby="user-key-help" />
+        <input id="user-key" [formField]="notificationChannelForm.userKey" autocomplete="off" spellcheck="false" aria-describedby="user-key-help" />
         <small id="user-key-help">Shown on your Pushover dashboard, or a group key.</small>
         <label for="app-token">App token</label>
-        <input id="app-token" [formField]="channelForm.appToken" autocomplete="off" spellcheck="false" aria-describedby="app-token-help" />
+        <input id="app-token" [formField]="notificationChannelForm.appToken" autocomplete="off" spellcheck="false" aria-describedby="app-token-help" />
         <small id="app-token-help">The API token of an application you created in Pushover.</small>
       }
       <small class="secret-note">Lookout keeps these secrets to itself: it never shows them again or gives them to Scripts.</small>
-      <button class="primary" type="submit" [disabled]="channelForm().submitting() || channelForm().invalid()">
-        {{ channelForm().submitting() ? 'Adding…' : 'Add Channel' }}
+      <button class="primary" type="submit" [disabled]="notificationChannelForm().submitting() || notificationChannelForm().invalid()">
+        {{ notificationChannelForm().submitting() ? 'Adding…' : 'Add Notification channel' }}
       </button>
     </form>
   </section>
-  <section class="channel-list" aria-labelledby="channels-heading">
-    <h2 id="channels-heading">Channels</h2>
-    @if (channels.list.error()) {
+  <section class="notification-channel-list" aria-labelledby="notification-channels-heading">
+    <h2 id="notification-channels-heading">Notification channels</h2>
+    @if (notificationChannels.list.error()) {
       <div class="empty-state" role="alert">
-        <h2>Could not load your Channels</h2>
-        <button type="button" (click)="channels.list.reload()">Try again</button>
+        <h2>Could not load your Notification channels</h2>
+        <button type="button" (click)="notificationChannels.list.reload()">Try again</button>
       </div>
-    } @else if (channels.list.hasValue()) {
-      @for (channel of channels.list.value(); track channel.id) {
-        @let action = busy().get(channel.id);
-        <article class="panel channel" [attr.aria-label]="channel.name" [attr.aria-busy]="!!action">
-          <div class="channel-heading">
-            <h3>{{ channel.name }}</h3>
-            <span class="kind-badge">{{ kinds[channel.kind] }}</span>
+    } @else if (notificationChannels.list.hasValue()) {
+      @for (notificationChannel of notificationChannels.list.value(); track notificationChannel.id) {
+        @let action = busy().get(notificationChannel.id);
+        <article class="panel notification-channel" [attr.aria-label]="notificationChannel.name" [attr.aria-busy]="!!action">
+          <div class="notification-channel-heading">
+            <h3>{{ notificationChannel.name }}</h3>
+            <span class="kind-badge">{{ kinds[notificationChannel.kind] }}</span>
           </div>
-          @if (confirmingDelete() === channel.id) {
-            <p class="details">Watches that notify this Channel will stop. This can't be undone.</p>
+          @if (confirmingDelete() === notificationChannel.id) {
+            <p class="details">Watches that notify this Notification channel will stop. This can't be undone.</p>
             <div class="actions">
-              <button type="button" class="danger primary" (click)="delete(channel)" [disabled]="!!action">{{ action === 'deleting' ? 'Deleting…' : 'Delete permanently' }}</button>
+              <button type="button" class="danger primary" (click)="delete(notificationChannel)" [disabled]="!!action">{{ action === 'deleting' ? 'Deleting…' : 'Delete permanently' }}</button>
               <button type="button" (click)="confirmingDelete.set(undefined)" [disabled]="!!action">Cancel</button>
             </div>
           } @else {
             <div class="actions">
-              <button type="button" (click)="sendTest(channel)" [disabled]="!!action">{{ action === 'testing' ? 'Sending…' : 'Send test' }}</button>
-              <button type="button" class="danger" (click)="confirmingDelete.set(channel.id)" [disabled]="!!action">Delete</button>
+              <button type="button" (click)="sendTest(notificationChannel)" [disabled]="!!action">{{ action === 'testing' ? 'Sending…' : 'Send test' }}</button>
+              <button type="button" class="danger" (click)="confirmingDelete.set(notificationChannel.id)" [disabled]="!!action">Delete</button>
             </div>
           }
         </article>
       } @empty {
         <div class="empty-state">
-          <p>No Channels yet. Add a Discord webhook or a Pushover account to get notified.</p>
+          <p>No Notification channels yet. Add a Discord webhook or a Pushover account to get notified.</p>
         </div>
       }
-    } @else { <p>Loading Channels…</p> }
+    } @else { <p>Loading Notification channels…</p> }
   </section>
 </div>
 <div class="workspace more-settings">

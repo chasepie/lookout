@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.WebUtilities;
 namespace ChasePie.Lookout.Backend.IntegrationTests;
 
 [TestClass]
-public sealed class ChannelSenderTests(TestContext testContext)
+public sealed class NotificationChannelSenderTests(TestContext testContext)
 {
     private const string UserKey = "uQiRzpo4DXghDmr9QzzfQu27cmVRsG";
     private const string AppToken = "azGDORePK8gMaC0QOYAMyEEuzJnyUi";
@@ -19,9 +19,9 @@ public sealed class ChannelSenderTests(TestContext testContext)
     {
         await using var server = await FakeHttpServer.StartAsync(testContext.CancellationToken);
         using var http = new HttpClient();
-        var channel = Discord(new Uri(server.BaseAddress, "api/webhooks/123/webhook-token"));
+        var notificationChannel = Discord(new Uri(server.BaseAddress, "api/webhooks/123/webhook-token"));
 
-        await new DiscordSender(http).SendAsync(channel, Change, testContext.CancellationToken);
+        await new DiscordSender(http).SendAsync(notificationChannel, Change, testContext.CancellationToken);
 
         var request = server.Requests.Single();
         Assert.AreEqual("POST", request.Method);
@@ -79,10 +79,10 @@ public sealed class ChannelSenderTests(TestContext testContext)
             return context.Response.WriteAsJsonAsync(new { message = "Unknown Webhook", code = 10015 }, context.RequestAborted);
         };
         using var http = new HttpClient();
-        var channel = Discord(new Uri(server.BaseAddress, "api/webhooks/123/webhook-token"));
+        var notificationChannel = Discord(new Uri(server.BaseAddress, "api/webhooks/123/webhook-token"));
 
         var error = await Assert.ThrowsExactlyAsync<HttpRequestException>(() =>
-            new DiscordSender(http).SendAsync(channel, Change, testContext.CancellationToken));
+            new DiscordSender(http).SendAsync(notificationChannel, Change, testContext.CancellationToken));
 
         Assert.AreEqual("Discord returned HTTP 404 (Not Found): Unknown Webhook", error.Message);
     }
@@ -179,11 +179,11 @@ public sealed class ChannelSenderTests(TestContext testContext)
         Assert.AreEqual("Pushover returned HTTP 502 (Bad Gateway).", pushover.Message);
     }
 
-    private static Channel Discord(Uri webhookUrl) =>
-        new() { Name = "Deals server", Kind = ChannelKind.Discord, WebhookUrl = webhookUrl.ToString() };
+    private static NotificationChannel Discord(Uri webhookUrl) =>
+        new() { Name = "Deals server", Kind = NotificationChannelKind.Discord, WebhookUrl = webhookUrl.ToString() };
 
-    private static Channel Pushover() =>
-        new() { Name = "Phone", Kind = ChannelKind.Pushover, UserKey = UserKey, AppToken = AppToken };
+    private static NotificationChannel Pushover() =>
+        new() { Name = "Phone", Kind = NotificationChannelKind.Pushover, UserKey = UserKey, AppToken = AppToken };
 
     private static Dictionary<string, string> Form(string body) =>
         QueryHelpers.ParseQuery(body).ToDictionary(field => field.Key, field => field.Value.ToString());

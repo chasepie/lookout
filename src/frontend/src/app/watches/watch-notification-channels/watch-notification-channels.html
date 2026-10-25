@@ -1,6 +1,6 @@
 <form (submit)="$event.preventDefault(); save()">
-  <app-channel-choices [(chosen)]="chosen">
+  <app-notification-channel-choices [(chosen)]="chosen">
     @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
-    <button type="submit" [disabled]="saving()">{{ saving() ? 'Saving…' : 'Save Channels' }}</button>
-  </app-channel-choices>
+    <button type="submit" [disabled]="saving()">{{ saving() ? 'Saving…' : 'Save Notification channels' }}</button>
+  </app-notification-channel-choices>
 </form>

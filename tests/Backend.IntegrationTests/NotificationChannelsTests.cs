@@ -9,33 +9,33 @@ using ChasePie.Lookout.Model;
 namespace ChasePie.Lookout.Backend.IntegrationTests;
 
 [TestClass]
-public sealed class ChannelsTests(TestContext testContext)
+public sealed class NotificationChannelsTests(TestContext testContext)
 {
     private const string WebhookUrl = "https://discord.com/api/webhooks/123/secret-webhook-token";
     private const string UserKey = "uQiRzpo4DXghDmr9QzzfQu27cmVRsG";
     private const string AppToken = "azGDORePK8gMaC0QOYAMyEEuzJnyUi";
 
     [TestMethod]
-    public async Task ConfiguresDiscordAndPushoverChannelsWithoutEverReturningTheirSecrets()
+    public async Task ConfiguresDiscordAndPushoverNotificationChannelsWithoutEverReturningTheirSecrets()
     {
         await using var factory = new LookoutWebApplicationFactory();
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
 
-        var phone = await client.PostAsJsonAsync("/api/channels",
+        var phone = await client.PostAsJsonAsync("/api/notification-channels",
             new { name = " Phone ", kind = "pushover", userKey = UserKey, appToken = AppToken }, testContext.CancellationToken);
-        var server = await client.PostAsJsonAsync("/api/channels",
+        var server = await client.PostAsJsonAsync("/api/notification-channels",
             new { name = "Deals server", kind = "discord", webhookUrl = WebhookUrl }, testContext.CancellationToken);
-        using var list = await client.GetAsync(new Uri("/api/channels", UriKind.Relative), testContext.CancellationToken);
+        using var list = await client.GetAsync(new Uri("/api/notification-channels", UriKind.Relative), testContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.Created, phone.StatusCode);
         Assert.AreEqual(HttpStatusCode.Created, server.StatusCode);
         var body = await list.Content.ReadAsStringAsync(testContext.CancellationToken);
-        var channels = JsonNode.Parse(body)!.AsArray();
-        Assert.HasCount(2, channels);
-        Assert.AreEqual("Deals server", channels[0]!["name"]!.GetValue<string>());
-        Assert.AreEqual("discord", channels[0]!["kind"]!.GetValue<string>());
-        Assert.AreEqual("Phone", channels[1]!["name"]!.GetValue<string>());
-        Assert.AreEqual("pushover", channels[1]!["kind"]!.GetValue<string>());
+        var notificationChannels = JsonNode.Parse(body)!.AsArray();
+        Assert.HasCount(2, notificationChannels);
+        Assert.AreEqual("Deals server", notificationChannels[0]!["name"]!.GetValue<string>());
+        Assert.AreEqual("discord", notificationChannels[0]!["kind"]!.GetValue<string>());
+        Assert.AreEqual("Phone", notificationChannels[1]!["name"]!.GetValue<string>());
+        Assert.AreEqual("pushover", notificationChannels[1]!["kind"]!.GetValue<string>());
         foreach (var response in new[] { body, await phone.Content.ReadAsStringAsync(testContext.CancellationToken),
                      await server.Content.ReadAsStringAsync(testContext.CancellationToken) })
         {
@@ -51,35 +51,35 @@ public sealed class ChannelsTests(TestContext testContext)
     [DataRow("""{ "name": "Server", "kind": "discord", "webhookUrl": "ftp://discord.com/a" }""", "Webhook URL must be")]
     [DataRow("""{ "name": "Phone", "kind": "pushover", "userKey": "short", "appToken": "azGDORePK8gMaC0QOYAMyEEuzJnyUi" }""", "Pushover's user key")]
     [DataRow("""{ "name": "Phone", "kind": "pushover", "userKey": "uQiRzpo4DXghDmr9QzzfQu27cmVRsG" }""", "Pushover's user key")]
-    [DataRow("""{ "name": "Phone" }""", "Choose a Discord or Pushover Channel.")]
-    public async Task RejectsAnIncompleteChannel(string json, string message)
+    [DataRow("""{ "name": "Phone" }""", "Choose a Discord or Pushover Notification channel.")]
+    public async Task RejectsAnIncompleteNotificationChannel(string json, string message)
     {
         await using var factory = new LookoutWebApplicationFactory();
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
 
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
-        var response = await client.PostAsync(new Uri("/api/channels", UriKind.Relative), content, testContext.CancellationToken);
+        var response = await client.PostAsync(new Uri("/api/notification-channels", UriKind.Relative), content, testContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode);
         var problem = await response.Content.ReadFromJsonAsync<JsonObject>(testContext.CancellationToken);
         Assert.StartsWith(message, problem!["detail"]!.GetValue<string>());
-        Assert.IsEmpty((await client.GetFromJsonAsync<JsonArray>("/api/channels", testContext.CancellationToken))!);
+        Assert.IsEmpty((await client.GetFromJsonAsync<JsonArray>("/api/notification-channels", testContext.CancellationToken))!);
     }
 
     [TestMethod]
-    public async Task SendsATestNotificationToTheChosenChannelOnly()
+    public async Task SendsATestNotificationToTheChosenNotificationChannelOnly()
     {
         await using var factory = new LookoutWebApplicationFactory();
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
-        var phone = await CreateChannel(client, "Phone");
-        await CreateChannel(client, "Deals server");
+        var phone = await CreateNotificationChannel(client, "Phone");
+        await CreateNotificationChannel(client, "Deals server");
 
-        var response = await client.PostAsync(new Uri($"/api/channels/{phone}/test", UriKind.Relative), null,
+        var response = await client.PostAsync(new Uri($"/api/notification-channels/{phone}/test", UriKind.Relative), null,
             testContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.NoContent, response.StatusCode);
-        var sent = factory.Channels.Sent.Single();
-        Assert.AreEqual("Phone", sent.ChannelName);
+        var sent = factory.NotificationChannels.Sent.Single();
+        Assert.AreEqual("Phone", sent.NotificationChannelName);
         Assert.AreEqual(NotificationKind.Test, sent.Notification.Kind);
     }
 
@@ -88,20 +88,20 @@ public sealed class ChannelsTests(TestContext testContext)
     {
         await using var endpoint = await FakeHttpServer.StartAsync(testContext.CancellationToken);
         endpoint.Respond = context => context.Response.WriteAsJsonAsync(new { status = 1 }, context.RequestAborted);
-        await using var factory = new LookoutWebApplicationFactory { UseRealChannels = true };
+        await using var factory = new LookoutWebApplicationFactory { UseRealNotificationChannels = true };
         await using var host = factory.WithWebHostBuilder(builder =>
             builder.UseSetting("Notifications:PushoverBaseUrl", new Uri(endpoint.BaseAddress, "pushover").ToString()));
         using var client = await host.CreateSignedInClientAsync(testContext.CancellationToken);
-        var discord = await client.PostAsJsonAsync("/api/channels",
+        var discord = await client.PostAsJsonAsync("/api/notification-channels",
             new { name = "Deals server", kind = "discord", webhookUrl = new Uri(endpoint.BaseAddress, "api/webhooks/1/a") },
             testContext.CancellationToken);
-        var pushover = await client.PostAsJsonAsync("/api/channels",
+        var pushover = await client.PostAsJsonAsync("/api/notification-channels",
             new { name = "Phone", kind = "pushover", userKey = UserKey, appToken = AppToken }, testContext.CancellationToken);
 
         foreach (var created in new[] { discord, pushover })
         {
             var id = (await created.Content.ReadFromJsonAsync<JsonObject>(testContext.CancellationToken))!["id"]!.GetValue<string>();
-            var response = await client.PostAsync(new Uri($"/api/channels/{id}/test", UriKind.Relative), null,
+            var response = await client.PostAsync(new Uri($"/api/notification-channels/{id}/test", UriKind.Relative), null,
                 testContext.CancellationToken);
             Assert.AreEqual(HttpStatusCode.NoContent, response.StatusCode);
         }
@@ -114,11 +114,11 @@ public sealed class ChannelsTests(TestContext testContext)
     public async Task ExplainsWhyATestNotificationCouldNotBeSent()
     {
         await using var factory = new LookoutWebApplicationFactory();
-        factory.Channels.OnSend = (_, _) => throw new HttpRequestException("Discord returned HTTP 404 (Not Found): Unknown Webhook");
+        factory.NotificationChannels.OnSend = (_, _) => throw new HttpRequestException("Discord returned HTTP 404 (Not Found): Unknown Webhook");
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
-        var id = await CreateChannel(client, "Deals server");
+        var id = await CreateNotificationChannel(client, "Deals server");
 
-        var response = await client.PostAsync(new Uri($"/api/channels/{id}/test", UriKind.Relative), null,
+        var response = await client.PostAsync(new Uri($"/api/notification-channels/{id}/test", UriKind.Relative), null,
             testContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.BadGateway, response.StatusCode);
@@ -131,30 +131,30 @@ public sealed class ChannelsTests(TestContext testContext)
     public async Task ABugInSendingATestNotificationIsNotPassedOffAsTheServiceRefusingIt()
     {
         await using var factory = new LookoutWebApplicationFactory();
-        factory.Channels.OnSend = (_, _) => throw new InvalidOperationException("Internal detail");
+        factory.NotificationChannels.OnSend = (_, _) => throw new InvalidOperationException("Internal detail");
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
-        var id = await CreateChannel(client, "Deals server");
+        var id = await CreateNotificationChannel(client, "Deals server");
 
         // The test host passes unhandled exceptions to the client, where a real host would answer 500 and log them.
         await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => client.PostAsync(
-            new Uri($"/api/channels/{id}/test", UriKind.Relative), null, testContext.CancellationToken));
+            new Uri($"/api/notification-channels/{id}/test", UriKind.Relative), null, testContext.CancellationToken));
     }
 
     [TestMethod]
-    public async Task TestingAMissingChannelIsNotFound()
+    public async Task TestingAMissingNotificationChannelIsNotFound()
     {
         await using var factory = new LookoutWebApplicationFactory();
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
 
-        var response = await client.PostAsync(new Uri($"/api/channels/{Guid.NewGuid()}/test", UriKind.Relative), null,
+        var response = await client.PostAsync(new Uri($"/api/notification-channels/{Guid.NewGuid()}/test", UriKind.Relative), null,
             testContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.NotFound, response.StatusCode);
     }
 
-    private async Task<string> CreateChannel(HttpClient client, string name)
+    private async Task<string> CreateNotificationChannel(HttpClient client, string name)
     {
-        var response = await client.PostAsJsonAsync("/api/channels", new { name, kind = "discord", webhookUrl = WebhookUrl },
+        var response = await client.PostAsJsonAsync("/api/notification-channels", new { name, kind = "discord", webhookUrl = WebhookUrl },
             testContext.CancellationToken);
         response.EnsureSuccessStatusCode();
         var created = await response.Content.ReadFromJsonAsync<JsonObject>(testContext.CancellationToken);

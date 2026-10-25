@@ -19,7 +19,7 @@ public sealed record WatchSummary(
     Schedule Schedule,
     int JitterMinutes,
     DateTimeOffset? NextRunAt,
-    IReadOnlyList<Guid> ChannelIds)
+    IReadOnlyList<Guid> NotificationChannelIds)
 {
     /// <summary>Maps a Watch in a database query; <see cref="From"/> applies the same mapping in memory.</summary>
     public static readonly Expression<Func<Watch, WatchSummary>> Projection = WatchStatuses.WithStatus((watch, status) => new WatchSummary(
@@ -37,7 +37,7 @@ public sealed record WatchSummary(
         watch.Schedule,
         watch.JitterMinutes,
         watch.NextRunAt,
-        watch.Channels.Select(channel => channel.Id).ToList()));
+        watch.NotificationChannels.Select(notificationChannel => notificationChannel.Id).ToList()));
 
     /// <summary>Whether the Watch is Running, which is shown alongside its <see cref="Status"/>.</summary>
     public bool IsRunning { get; init; }
@@ -47,9 +47,9 @@ public sealed record WatchSummary(
     public static WatchSummary From(Watch watch) => CompiledProjection(watch);
 }
 
-public sealed class ChannelsRequest
+public sealed class NotificationChannelsRequest
 {
-    public required IReadOnlyList<Guid> ChannelIds { get; init; }
+    public required IReadOnlyList<Guid> NotificationChannelIds { get; init; }
 }
 
 public sealed class EditWatchRequest
@@ -66,7 +66,7 @@ public sealed class CreateWatchRequest : ScheduleRequest
     public required string Name { get; init; }
     public required string NotificationUrl { get; init; }
     public required IFormFile Script { get; init; }
-    public List<Guid> ChannelIds { get; init; } = [];
+    public List<Guid> NotificationChannelIds { get; init; } = [];
     /// <summary>Whether the Watch's Runs go through the VPN rather than direct.</summary>
     public bool UsesVpn { get; init; }
 }

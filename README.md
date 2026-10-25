@@ -205,7 +205,7 @@ The automated tests don't cover the real Browserless stack, so check a deploymen
 
 7. Check that a Script can run past Browserless's default timeout. Add `await page.waitForTimeout(45_000);` after `page.goto` in the Script, create a Watch with it and choose **Run now**. The Run Succeeds after about 45 seconds.
 8. Check that killed Scripts don't linger. Change the Script's wait to `await new Promise(() => {});`, so it never finishes, and choose **Run now** a few times. Each Run is Errored once its timeout passes. Afterwards, `docker compose top runner` lists only `docker-init` and `node index.ts`, with no `<defunct>` (zombie) process.
-9. Check that Lookout can reach your Channels. In **Settings**, add a Discord Channel with a webhook URL (or a Pushover Channel), and choose **Send test**. The test notification arrives.
+9. Check that Lookout can reach your Notification channels. In **Settings**, add a Discord Notification channel with a webhook URL (or a Pushover Notification channel), and choose **Send test**. The test notification arrives.
 
 With the VPN set up, also check that VPN Runs leave from the VPN's exit and direct Runs from your own IP:
 

@@ -52,7 +52,7 @@ export interface Watch {
   schedule: Schedule;
   jitterMinutes: number;
   nextRunAt: string | null;
-  channelIds: string[];
+  notificationChannelIds: string[];
 }
 
 export interface ScriptVersion {

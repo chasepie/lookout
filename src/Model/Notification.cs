@@ -10,7 +10,7 @@ public enum NotificationKind
     Test
 }
 
-/// <summary>What a Channel is sent, worded once so every kind of Channel says the same thing.</summary>
+/// <summary>What a Notification channel is sent, worded once so every kind of Notification channel says the same thing.</summary>
 public sealed record Notification(NotificationKind Kind, string Title, string Message, string? Url = null)
 {
     /// <summary>A Known failure can be a passing block that a Rotation fixes, so only a third in a row notifies.</summary>
@@ -18,7 +18,8 @@ public sealed record Notification(NotificationKind Kind, string Title, string Me
 
     /// <summary>
     /// How much of a Run's content a notification shows. A Change shows two contents, which together stay within the
-    /// shortest message a Channel's service allows (Pushover's 1024 characters), so the new content is never cut off.
+    /// shortest message a Notification channel's service allows (Pushover's 1024 characters), so the new content is never
+    /// cut off.
     /// </summary>
     private const int MaxShownContentLength = 480;
 
@@ -46,10 +47,10 @@ public sealed record Notification(NotificationKind Kind, string Title, string Me
         Message: $"It succeeded again: {Shown(content)}",
         Url: notificationUrl);
 
-    public static Notification Test(string channelName) => new(
+    public static Notification Test(string notificationChannelName) => new(
         Kind: NotificationKind.Test,
         Title: "Lookout test notification",
-        Message: $"{channelName} is set up to receive Lookout's notifications.");
+        Message: $"{notificationChannelName} is set up to receive Lookout's notifications.");
 
     /// <summary>Shortens text to at most <paramref name="maxLength"/> characters, ending it with an ellipsis if cut.</summary>
     public static string Fit(string text, int maxLength)

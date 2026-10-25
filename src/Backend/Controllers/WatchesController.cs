@@ -65,11 +65,11 @@ public sealed class WatchesController(
             return Problem(scheduleProblem, statusCode: HttpStatusCode.BadRequest);
         }
 
-        if (await FindChannels(request.ChannelIds, cancellationToken) is not { } channels)
+        if (await FindNotificationChannels(request.NotificationChannelIds, cancellationToken) is not { } notificationChannels)
         {
-            return ChannelMissing();
+            return NotificationChannelMissing();
         }
-        watch.Channels = channels;
+        watch.NotificationChannels = notificationChannels;
         var version = new ScriptVersion
         {
             WatchId = watch.Id,
@@ -86,10 +86,10 @@ public sealed class WatchesController(
         {
             await database.SaveChangesAsync(cancellationToken);
         }
-        catch (DbUpdateException) when (channels.Count > 0)
+        catch (DbUpdateException) when (notificationChannels.Count > 0)
         {
-            // A chosen Channel was deleted since it was read, failing its join row's foreign key.
-            return Problem("One of the chosen Channels was deleted while the Watch was being created.", statusCode: HttpStatusCode.Conflict);
+            // A chosen Notification channel was deleted since it was read, failing its join row's foreign key.
+            return Problem("One of the chosen Notification channels was deleted while the Watch was being created.", statusCode: HttpStatusCode.Conflict);
         }
 
         watch.CurrentScriptVersionId = version.Id;
@@ -199,17 +199,17 @@ public sealed class WatchesController(
         }
     }
 
-    [HttpPut("{id:guid}/channels")]
-    public async Task<IActionResult> ChangeChannels(Guid id, ChannelsRequest request, CancellationToken cancellationToken)
+    [HttpPut("{id:guid}/notification-channels")]
+    public async Task<IActionResult> ChangeNotificationChannels(Guid id, NotificationChannelsRequest request, CancellationToken cancellationToken)
     {
         if (!await database.Watches.AnyAsync(watch => watch.Id == id, cancellationToken))
         {
             return NotFound();
         }
 
-        if (await FindChannels(request.ChannelIds, cancellationToken) is not { } channels)
+        if (await FindNotificationChannels(request.NotificationChannelIds, cancellationToken) is not { } notificationChannels)
         {
-            return ChannelMissing();
+            return NotificationChannelMissing();
         }
 
         // The choice is replaced whole in a transaction that writes before anything else, so SQLite runs overlapping
@@ -218,37 +218,37 @@ public sealed class WatchesController(
         await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
         try
         {
-            await database.WatchChannels
+            await database.WatchNotificationChannels
                 .Where(choice => choice.WatchId == id)
                 .ExecuteDeleteAsync(cancellationToken);
-            database.WatchChannels.AddRange(channels.Select(channel => new WatchChannel { WatchId = id, ChannelId = channel.Id }));
+            database.WatchNotificationChannels.AddRange(notificationChannels.Select(notificationChannel => new WatchNotificationChannel { WatchId = id, NotificationChannelId = notificationChannel.Id }));
             await database.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
         }
         catch (DbUpdateException)
         {
-            // The Watch or a chosen Channel was deleted since they were read.
-            return Problem("The Watch or one of the chosen Channels no longer exists.", statusCode: HttpStatusCode.Conflict);
+            // The Watch or a chosen Notification channel was deleted since they were read.
+            return Problem("The Watch or one of the chosen Notification channels no longer exists.", statusCode: HttpStatusCode.Conflict);
         }
         return NoContent();
     }
 
-    /// <summary>The chosen Channels, or null if any of them doesn't exist.</summary>
-    private async Task<List<Channel>?> FindChannels(IReadOnlyList<Guid> ids, CancellationToken cancellationToken)
+    /// <summary>The chosen Notification channels, or null if any of them doesn't exist.</summary>
+    private async Task<List<NotificationChannel>?> FindNotificationChannels(IReadOnlyList<Guid> ids, CancellationToken cancellationToken)
     {
         var chosen = ids.Distinct().ToList();
         if (chosen.Count == 0)
         {
             return [];
         }
-        var channels = await database.Channels
-            .Where(channel => chosen.Contains(channel.Id))
+        var notificationChannels = await database.NotificationChannels
+            .Where(notificationChannel => chosen.Contains(notificationChannel.Id))
             .ToListAsync(cancellationToken);
-        return channels.Count == chosen.Count ? channels : null;
+        return notificationChannels.Count == chosen.Count ? notificationChannels : null;
     }
 
-    private ObjectResult ChannelMissing() =>
-        Problem("One of the chosen Channels no longer exists.", statusCode: HttpStatusCode.BadRequest);
+    private ObjectResult NotificationChannelMissing() =>
+        Problem("One of the chosen Notification channels no longer exists.", statusCode: HttpStatusCode.BadRequest);
 
     private WatchSummary WithRunning(WatchSummary watch) => watch with { IsRunning = runs.IsRunning(watch.Id) };
 

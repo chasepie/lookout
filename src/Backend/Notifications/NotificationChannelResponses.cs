@@ -2,12 +2,12 @@ using System.Text.Json;
 
 namespace ChasePie.Lookout.Backend.Notifications;
 
-/// <summary>Reads the responses of the services Channels send to, such as Discord and Pushover.</summary>
-internal static class ChannelResponses
+/// <summary>Reads the responses of the services Notification channels send to, such as Discord and Pushover.</summary>
+internal static class NotificationChannelResponses
 {
     /// <summary>
     /// Throws if the service refused the notification, saying why in its own words where it gave any. The message never
-    /// includes the request's URL or body, which hold the Channel's secrets.
+    /// includes the request's URL or body, which hold the Notification channel's secrets.
     /// </summary>
     public static async Task EnsureAcceptedAsync(HttpResponseMessage response, string service,
         Func<JsonElement, string?> reason, CancellationToken cancellationToken)

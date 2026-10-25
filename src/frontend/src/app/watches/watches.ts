@@ -15,7 +15,7 @@ export class Watches {
   readonly list = refreshableHttpResource<Watch[]>(() => (this.session.userName() ? { url: '/api/watches' } : undefined));
 
   create(name: string, notificationUrl: string, usesVpn: boolean, schedule: ScheduleForm, script: File,
-    channelIds: Iterable<string>) {
+    notificationChannelIds: Iterable<string>) {
     const data = new FormData();
     data.set('name', name);
     data.set('notificationUrl', notificationUrl);
@@ -23,8 +23,8 @@ export class Watches {
     for (const [field, value] of Object.entries(scheduleFields(schedule))) {
       data.set(field, String(value));
     }
-    for (const id of channelIds) {
-      data.append('channelIds', id);
+    for (const id of notificationChannelIds) {
+      data.append('notificationChannelIds', id);
     }
     data.set('script', script);
     return firstValueFrom(this.http.post<Watch>('/api/watches', data));
@@ -38,8 +38,8 @@ export class Watches {
     return firstValueFrom(this.http.put<void>(`/api/watches/${id}`, settings));
   }
 
-  changeChannels(id: string, channelIds: string[]) {
-    return firstValueFrom(this.http.put<void>(`/api/watches/${id}/channels`, { channelIds }));
+  changeNotificationChannels(id: string, notificationChannelIds: string[]) {
+    return firstValueFrom(this.http.put<void>(`/api/watches/${id}/notification-channels`, { notificationChannelIds }));
   }
 
   pause(id: string) {

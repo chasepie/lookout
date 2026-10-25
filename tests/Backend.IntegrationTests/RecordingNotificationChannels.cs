@@ -4,29 +4,29 @@ using ChasePie.Lookout.Model;
 
 namespace ChasePie.Lookout.Backend.IntegrationTests;
 
-/// <summary>A notification a Channel was sent, with the Channel's name and kind.</summary>
-public sealed record SentNotification(string ChannelName, ChannelKind ChannelKind, Notification Notification);
+/// <summary>A notification a Notification channel was sent, with the Notification channel's name and kind.</summary>
+public sealed record SentNotification(string NotificationChannelName, NotificationChannelKind NotificationChannelKind, Notification Notification);
 
-/// <summary>Records the notifications sent to every Channel, of any kind, instead of delivering them.</summary>
-public sealed class RecordingChannels
+/// <summary>Records the notifications sent to every Notification channel, of any kind, instead of delivering them.</summary>
+public sealed class RecordingNotificationChannels
 {
     public ConcurrentQueue<SentNotification> Sent { get; } = new();
     /// <summary>Runs before each notification is recorded, so a test can make sending fail.</summary>
-    public Func<Channel, Notification, Task>? OnSend { get; set; }
+    public Func<NotificationChannel, Notification, Task>? OnSend { get; set; }
 
-    public IEnumerable<IChannelSender> Senders() => Enum.GetValues<ChannelKind>().Select(kind => new Sender(this, kind));
+    public IEnumerable<INotificationChannelSender> Senders() => Enum.GetValues<NotificationChannelKind>().Select(kind => new Sender(this, kind));
 
-    private sealed class Sender(RecordingChannels channels, ChannelKind kind) : IChannelSender
+    private sealed class Sender(RecordingNotificationChannels notificationChannels, NotificationChannelKind kind) : INotificationChannelSender
     {
-        public ChannelKind Kind => kind;
+        public NotificationChannelKind Kind => kind;
 
-        public async Task SendAsync(Channel channel, Notification notification, CancellationToken cancellationToken)
+        public async Task SendAsync(NotificationChannel notificationChannel, Notification notification, CancellationToken cancellationToken)
         {
-            if (channels.OnSend is { } onSend)
+            if (notificationChannels.OnSend is { } onSend)
             {
-                await onSend(channel, notification);
+                await onSend(notificationChannel, notification);
             }
-            channels.Sent.Enqueue(new SentNotification(channel.Name, channel.Kind, notification));
+            notificationChannels.Sent.Enqueue(new SentNotification(notificationChannel.Name, notificationChannel.Kind, notification));
         }
     }
 }

@@ -1,17 +1,17 @@
 import { KeyValuePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { FormField, form, hidden, maxLength, pattern, required, submit } from '@angular/forms/signals';
-import { type Channel, type NewChannel, channelKindLabels } from '../channels/channel.model';
-import { Channels } from '../channels/channels';
+import { type NotificationChannel, type NewNotificationChannel, notificationChannelKindLabels } from '../notification-channels/notification-channel.model';
+import { NotificationChannels } from '../notification-channels/notification-channels';
 import { problemMessage } from '../shared/problem';
 import { RetentionSettings } from './retention-settings/retention-settings';
 import { VpnStatus } from './vpn-status/vpn-status';
 
-type ChannelAction = 'testing' | 'deleting';
+type NotificationChannelAction = 'testing' | 'deleting';
 
-const emptyChannel = (): NewChannel => ({ kind: 'discord', name: '', webhookUrl: '', userKey: '', appToken: '' });
+const emptyNotificationChannel = (): NewNotificationChannel => ({ kind: 'discord', name: '', webhookUrl: '', userKey: '', appToken: '' });
 
-/** Lookout's settings: the Channels Watches can notify, how long Runs are kept, and the VPN's status. */
+/** Lookout's settings: the Notification channels Watches can notify, how long Runs are kept, and the VPN's status. */
 @Component({
   selector: 'app-settings',
   imports: [FormField, KeyValuePipe, RetentionSettings, VpnStatus],
@@ -20,9 +20,9 @@ const emptyChannel = (): NewChannel => ({ kind: 'discord', name: '', webhookUrl:
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class Settings {
-  protected readonly channels = inject(Channels);
-  protected readonly model = signal(emptyChannel());
-  protected readonly channelForm = form(this.model, (fields) => {
+  protected readonly notificationChannels = inject(NotificationChannels);
+  protected readonly model = signal(emptyNotificationChannel());
+  protected readonly notificationChannelForm = form(this.model, (fields) => {
     required(fields.name);
     pattern(fields.name, /\S/);
     maxLength(fields.name, 100);
@@ -35,50 +35,50 @@ export class Settings {
       required(secret);
     }
   });
-  protected readonly kinds = channelKindLabels;
+  protected readonly kinds = notificationChannelKindLabels;
   protected readonly error = signal('');
   protected readonly notice = signal('');
-  /** The action in progress on each Channel. */
-  protected readonly busy = signal(new Map<string, ChannelAction>());
-  /** The Channel whose deletion is being confirmed, if any. */
+  /** The action in progress on each Notification channel. */
+  protected readonly busy = signal(new Map<string, NotificationChannelAction>());
+  /** The Notification channel whose deletion is being confirmed, if any. */
   protected readonly confirmingDelete = signal<string | undefined>(undefined);
 
   constructor() {
-    // Channels may have changed in another tab since the list was last read.
-    this.channels.list.refresh();
+    // Notification channels may have changed in another tab since the list was last read.
+    this.notificationChannels.list.refresh();
   }
 
-  protected async addChannel() {
-    await submit(this.channelForm, async () => {
+  protected async addNotificationChannel() {
+    await submit(this.notificationChannelForm, async () => {
       this.clearMessages();
       try {
-        const created = await this.channels.create(this.model());
-        // The kind stays chosen, as the next Channel is likely another of the same kind.
-        this.channelForm().reset({ ...emptyChannel(), kind: this.model().kind });
+        const created = await this.notificationChannels.create(this.model());
+        // The kind stays chosen, as the next Notification channel is likely another of the same kind.
+        this.notificationChannelForm().reset({ ...emptyNotificationChannel(), kind: this.model().kind });
         this.notice.set(`${created.name} added.`);
       } catch (error: unknown) {
-        this.error.set(problemMessage(error, 'Could not add the Channel. Check the fields and try again.'));
+        this.error.set(problemMessage(error, 'Could not add the Notification channel. Check the fields and try again.'));
       }
     });
   }
 
-  protected async sendTest(channel: Channel) {
-    await this.perform(channel, 'testing', 'Could not send the test notification. Please try again.', async () => {
-      await this.channels.sendTest(channel.id);
-      this.notice.set(`Test notification sent to ${channel.name}.`);
+  protected async sendTest(notificationChannel: NotificationChannel) {
+    await this.perform(notificationChannel, 'testing', 'Could not send the test notification. Please try again.', async () => {
+      await this.notificationChannels.sendTest(notificationChannel.id);
+      this.notice.set(`Test notification sent to ${notificationChannel.name}.`);
     });
   }
 
-  protected async delete(channel: Channel) {
-    await this.perform(channel, 'deleting', 'Could not delete the Channel. Please try again.', async () => {
-      await this.channels.delete(channel.id);
+  protected async delete(notificationChannel: NotificationChannel) {
+    await this.perform(notificationChannel, 'deleting', 'Could not delete the Notification channel. Please try again.', async () => {
+      await this.notificationChannels.delete(notificationChannel.id);
       this.confirmingDelete.set(undefined);
-      this.notice.set(`${channel.name} deleted.`);
+      this.notice.set(`${notificationChannel.name} deleted.`);
     });
   }
 
-  private async perform(channel: Channel, action: ChannelAction, failure: string, work: () => Promise<void>) {
-    this.busy.update((actions) => new Map(actions).set(channel.id, action));
+  private async perform(notificationChannel: NotificationChannel, action: NotificationChannelAction, failure: string, work: () => Promise<void>) {
+    this.busy.update((actions) => new Map(actions).set(notificationChannel.id, action));
     this.clearMessages();
     try {
       await work();
@@ -87,7 +87,7 @@ export class Settings {
     } finally {
       this.busy.update((actions) => {
         const next = new Map(actions);
-        next.delete(channel.id);
+        next.delete(notificationChannel.id);
         return next;
       });
     }

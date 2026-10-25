@@ -15,8 +15,8 @@ public class LookoutDbContext(DbContextOptions<LookoutDbContext> options) : DbCo
     public DbSet<Watch> Watches => Set<Watch>();
     public DbSet<ScriptVersion> ScriptVersions => Set<ScriptVersion>();
     public DbSet<Run> Runs => Set<Run>();
-    public DbSet<Channel> Channels => Set<Channel>();
-    public DbSet<WatchChannel> WatchChannels => Set<WatchChannel>();
+    public DbSet<NotificationChannel> NotificationChannels => Set<NotificationChannel>();
+    public DbSet<WatchNotificationChannel> WatchNotificationChannels => Set<WatchNotificationChannel>();
     public DbSet<RunDebugOutput> RunDebugOutputs => Set<RunDebugOutput>();
     public DbSet<Settings> Settings => Set<Settings>();
 
@@ -46,15 +46,15 @@ public class LookoutDbContext(DbContextOptions<LookoutDbContext> options) : DbCo
             .HasForeignKey(run => run.WatchId);
 
         modelBuilder.Entity<Watch>()
-            .HasMany(watch => watch.Channels)
-            .WithMany(channel => channel.Watches)
-            .UsingEntity<WatchChannel>(
-                choice => choice.HasOne<Channel>().WithMany().HasForeignKey(item => item.ChannelId),
+            .HasMany(watch => watch.NotificationChannels)
+            .WithMany(notificationChannel => notificationChannel.Watches)
+            .UsingEntity<WatchNotificationChannel>(
+                choice => choice.HasOne<NotificationChannel>().WithMany().HasForeignKey(item => item.NotificationChannelId),
                 choice => choice.HasOne<Watch>().WithMany().HasForeignKey(item => item.WatchId),
-                choice => choice.HasKey(item => new { item.WatchId, item.ChannelId }));
+                choice => choice.HasKey(item => new { item.WatchId, item.NotificationChannelId }));
 
-        modelBuilder.Entity<Channel>()
-            .Property(channel => channel.Kind)
+        modelBuilder.Entity<NotificationChannel>()
+            .Property(notificationChannel => notificationChannel.Kind)
             .HasConversion<string>();
 
         modelBuilder.Entity<Run>()

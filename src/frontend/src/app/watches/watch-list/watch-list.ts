@@ -3,8 +3,8 @@ import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/cor
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormField, apply, form, submit } from '@angular/forms/signals';
 import { RouterLink } from '@angular/router';
-import { ChannelChoices } from '../../channels/channel-choices/channel-choices';
-import { Channels } from '../../channels/channels';
+import { NotificationChannelChoices } from '../../notification-channels/notification-channel-choices/notification-channel-choices';
+import { NotificationChannels } from '../../notification-channels/notification-channels';
 import { OutcomeBadge } from '../outcome-badge/outcome-badge';
 import { problemMessage } from '../../shared/problem';
 import { RunTiming } from '../run-timing/run-timing';
@@ -19,21 +19,21 @@ import { Watches } from '../watches';
 
 @Component({
   selector: 'app-watch-list',
-  imports: [ChannelChoices, DatePipe, FormField, OutcomeBadge, RouterLink, RunTiming, ScheduleEditor, SchedulePicker, StatusBadge],
+  imports: [NotificationChannelChoices, DatePipe, FormField, OutcomeBadge, RouterLink, RunTiming, ScheduleEditor, SchedulePicker, StatusBadge],
   templateUrl: './watch-list.html',
   styleUrl: './watch-list.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class WatchList {
   protected readonly watches = inject(Watches);
-  private readonly channels = inject(Channels);
+  private readonly notificationChannels = inject(NotificationChannels);
   protected readonly model = signal({ name: '', notificationUrl: '', usesVpn: false, schedule: defaultSchedule() });
   protected readonly watchForm = form(this.model, (fields) => {
     nameAndNotificationUrlRules(fields);
     apply(fields.schedule, scheduleSchema);
   });
   protected readonly script = signal<File | undefined>(undefined);
-  protected readonly channelIds = signal<ReadonlySet<string>>(new Set());
+  protected readonly notificationChannelIds = signal<ReadonlySet<string>>(new Set());
   protected readonly error = signal('');
   protected readonly notice = signal('');
   protected readonly running = signal(new Set<string>());
@@ -68,10 +68,10 @@ export class WatchList {
       try {
         const { name, notificationUrl, usesVpn, schedule } = this.model();
         await this.watches.create(name, notificationUrl, usesVpn, schedule, script,
-          this.channels.stillListed(this.channelIds()));
+          this.notificationChannels.stillListed(this.notificationChannelIds()));
         this.watchForm().reset({ name: '', notificationUrl: '', usesVpn: false, schedule: defaultSchedule() });
         this.script.set(undefined);
-        this.channelIds.set(new Set());
+        this.notificationChannelIds.set(new Set());
         input.value = '';
         this.notice.set('Watch created. It runs on its schedule, or you can run it now.');
         this.watches.list.refresh();
