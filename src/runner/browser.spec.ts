@@ -55,7 +55,8 @@ describe.skipIf(process.platform === 'linux' && !process.env['DISPLAY'])('a non-
   });
 });
 
-// Browserless serves Playwright's protocol, as a browser server Playwright launches does
+// Browserless serves Playwright's protocol, as a browser server Playwright launches does. The stand-in is headless,
+// since it ignores the launch options the runner asks for and Linux CI machines have no display.
 describe('a runner that connects to a browser server', () => {
   let browserServer: BrowserServer;
 
@@ -75,13 +76,6 @@ describe('a runner that connects to a browser server', () => {
     expect(result).toEqual({ outcome: 'succeeded', content: '£20.00' });
   });
 
-  test("hides that its browser is headless from the Script's pages", { timeout: 30_000 }, async () => {
-    const result = await executeWith(runner(), 'report-user-agent.ts');
-
-    expect(result['content']).toMatch(/ Chrome\/\d+\.0\.0\.0 /);
-    expect(result['content']).not.toContain('Headless');
-  });
-
   test('Errors a Script that starts a process, since its own process needs none', { timeout: 30_000 }, async () => {
     const { marker, notificationUrl } = subprocessScript();
 
@@ -95,7 +89,7 @@ describe('a runner that connects to a browser server', () => {
   });
 });
 
-test('a connecting runner asks for a headless Chromium with the flags that hide automation and the home IP', { timeout: 30_000 }, async () => {
+test('a connecting runner asks for a headful Chromium with the flags that hide automation and the home IP', { timeout: 30_000 }, async () => {
   // Stands in for Browserless: records the URL the runner connects to, then refuses the connection
   const requestedUrls: string[] = [];
   const browserless = createServer();
@@ -113,7 +107,7 @@ test('a connecting runner asks for a headless Chromium with the flags that hide 
     expect(requested.pathname).toBe('/chromium/playwright');
     expect(requested.searchParams.get('token')).toBe('secret');
     expect(JSON.parse(requested.searchParams.get('launch') ?? 'null')).toEqual({
-      headless: true,
+      headless: false,
       args: ['--disable-blink-features=AutomationControlled', '--webrtc-ip-handling-policy=disable_non_proxied_udp'],
     });
   } finally {

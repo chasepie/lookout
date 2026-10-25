@@ -14,10 +14,10 @@ HEADLESS=true npm start -w src/runner    # headless, as the tests run it
 | Variable   | Default | Meaning |
 |------------|---------|---------|
 | `PORT`     | `3000`  | The port to listen on, 0 to 65535. `0` picks a free one. Anything else stops the runner at startup. |
-| `BROWSERLESS_URL` | unset | Browserless's Playwright endpoint, such as `ws://browserless:3000/chromium/playwright`, which may include a `token`. Each Script then connects to its own headless Chromium there, as in deployment (the `connect` provider). Otherwise each Script launches a local Chromium (the `launch` provider). A URL that isn't `ws://` or `wss://` stops the runner at startup. |
-| `HEADLESS` | unset   | `true` runs a launched Chromium headless. Otherwise it is visible, for debugging Scripts locally. Browserless's is always headless. |
+| `BROWSERLESS_URL` | unset | Browserless's Playwright endpoint, such as `ws://browserless:3000/chromium/playwright`, which may include a `token`. Each Script then connects to its own headful Chromium there, as in deployment (the `connect` provider). Otherwise each Script launches a local Chromium (the `launch` provider). A URL that isn't `ws://` or `wss://` stops the runner at startup. |
+| `HEADLESS` | unset   | `true` runs a launched Chromium headless. Otherwise it is visible, for debugging Scripts locally. Browserless's is always headful, on the virtual display its image starts. |
 
-Either way, Chromium gets `--disable-blink-features=AutomationControlled`, so `navigator.webdriver` is false, and `--webrtc-ip-handling-policy=disable_non_proxied_udp`, so WebRTC can't reveal the home IP around a VPN Run's proxy. With `connect`, each browser context's user agent says `Chrome` rather than `HeadlessChrome`, which bot detection takes for a robot on its own ([the prototype's findings](../../docs/research/browser-and-vpn-prototype.md)). It's read from Browserless's Chromium, so it keeps up with upgrades. The runner's Playwright must match Browserless's at the major.minor level.
+Either way, Chromium gets `--disable-blink-features=AutomationControlled`, so `navigator.webdriver` is false, and `--webrtc-ip-handling-policy=disable_non_proxied_udp`, so WebRTC can't reveal the home IP around a VPN Run's proxy. With `connect`, Chromium is headful, so its user agent says `Chrome` rather than `HeadlessChrome`, which bot detection takes for a robot on its own ([the prototype's findings](../../docs/research/browser-and-vpn-prototype.md)). The runner's Playwright must match Browserless's at the major.minor level.
 
 In deployment, the runner runs from [`Dockerfile`](Dockerfile), which installs only `playwright` and no browser.
 

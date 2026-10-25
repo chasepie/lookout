@@ -13,7 +13,7 @@ export type ProxySettings = NonNullable<BrowserContextOptions['proxy']>;
 export type BrowserSettings =
   /** A Chromium the Script's process launches itself, for local development and tests; non-headless is for debugging */
   | { provider: 'launch'; headless: boolean }
-  /** A headless Chromium from Browserless, at its Playwright endpoint `url`, as in deployment */
+  /** A headful Chromium from Browserless, at its Playwright endpoint `url`, as in deployment */
   | { provider: 'connect'; url: string };
 
 /**
@@ -61,10 +61,9 @@ export async function browserPermissionArgs(settings: BrowserSettings): Promise<
   ];
 }
 
-/** A browser, with what its contexts need, and how to be done with it */
+/** A browser, and how to be done with it */
 interface OpenBrowser {
   browser: Browser;
-  contextOptions: BrowserContextOptions;
   close: () => Promise<void>;
 }
 
@@ -82,7 +81,7 @@ async function launchBrowser(headless: boolean, onProcess: (pid: number) => void
   // Closing the server closes Chromium, and with it its contexts
   const close = () => browserServer.close();
   try {
-    return { browser: await chromium.connect(browserServer.wsEndpoint()), contextOptions: {}, close };
+    return { browser: await chromium.connect(browserServer.wsEndpoint()), close };
   } catch (error) {
     await close();
     throw error;
@@ -90,38 +89,18 @@ async function launchBrowser(headless: boolean, onProcess: (pid: number) => void
 }
 
 /**
- * The browser's user agent as headful Chrome's. Browserless's Chromium is headless, so its user agent says
- * `HeadlessChrome`, which on its own makes bot detection take it for a robot
- * (docs/research/browser-and-vpn-prototype.md). It's read from the browser, so it keeps up with Browserless
- * upgrades, and its version cut to the major one, as Chrome's own is.
- */
-async function headfulUserAgent(browser: Browser) {
-  const session = await browser.newBrowserCDPSession();
-  try {
-    const { userAgent } = await session.send('Browser.getVersion');
-    return userAgent.replace(/HeadlessChrome\/(\d+)[\d.]*/, 'Chrome/$1.0.0.0');
-  } finally {
-    await session.detach();
-  }
-}
-
-/**
- * Connects to a headless Chromium in Browserless, which launches one per connection with the options in its
- * `launch` query parameter. Chromium isn't this process's to kill: Browserless closes it once the connection
- * closes, even when this process is killed.
+ * Connects to a headful Chromium in Browserless, which launches one per connection with the options in its
+ * `launch` query parameter, on the virtual display (Xvfb) its image starts. Headless Chromium's user agent says
+ * `HeadlessChrome`, which on its own makes bot detection take it for a robot; headful's is Chrome's own everywhere,
+ * workers included, and keeps up with Browserless upgrades (docs/research/browser-and-vpn-prototype.md). Chromium
+ * isn't this process's to kill: Browserless closes it once the connection closes, even when this process is killed.
  */
 async function connectBrowser(url: string): Promise<OpenBrowser> {
   const { chromium } = await import('playwright');
   const endpoint = new URL(url);
-  endpoint.searchParams.set('launch', JSON.stringify({ headless: true, args: browserArgs }));
+  endpoint.searchParams.set('launch', JSON.stringify({ headless: false, args: browserArgs }));
   const browser = await chromium.connect(endpoint.href);
-  const close = () => browser.close();
-  try {
-    return { browser, contextOptions: { userAgent: await headfulUserAgent(browser) }, close };
-  } catch (error) {
-    await close();
-    throw error;
-  }
+  return { browser, close: () => browser.close() };
 }
 
 /** A page for a Script, and how to be done with its browser */
@@ -138,11 +117,11 @@ export async function openPage(settings: BrowserSettings, { proxy, onProcess }: 
   proxy?: ProxySettings | undefined;
   onProcess: (pid: number) => void;
 }): Promise<ScriptPage> {
-  const { browser, contextOptions, close } = settings.provider === 'connect'
+  const { browser, close } = settings.provider === 'connect'
     ? await connectBrowser(settings.url)
     : await launchBrowser(settings.headless, onProcess);
   try {
-    const browserContext = await browser.newContext({ ...contextOptions, ...(proxy && { proxy }) });
+    const browserContext = await browser.newContext({ ...(proxy && { proxy }) });
     return { page: await browserContext.newPage(), close };
   } catch (error) {
     // A failure to clean up must not replace the one that stopped the page opening

@@ -4,7 +4,7 @@
  * - `BROWSERLESS_URL`: Browserless's Playwright endpoint, such as `ws://browserless:3000/chromium/playwright`, to
  *   connect to for each Script's browser, as in deployment. Without it, each Script launches a local Chromium.
  * - `HEADLESS`: `true` runs the launched Chromium headless, as tests do; otherwise it is visible, for local debugging.
- *   Browserless's is always headless.
+ *   Browserless's is always headful.
  */
 import { createRunner } from './execute.ts';
 import { createRunnerServer } from './server.ts';
