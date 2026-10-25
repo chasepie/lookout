@@ -184,7 +184,7 @@ jobs:
       - name: Publish edge
         if: github.ref == 'refs/heads/main'
         run: |
-          name=@chasepie/lookout-scripting
+          name=$(node --print "require('./src/scripting/package.json').name")
           work=$(mktemp -d)
           mkdir "$work/new" "$work/old"
           npm pack --workspace src/scripting --pack-destination "$work/new"
