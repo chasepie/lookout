@@ -394,6 +394,17 @@ test('a Script can read its own file', { timeout: 30_000 }, async () => {
   expect(result).toEqual({ outcome: 'succeeded', content: await fixtureSource('reads-file.ts') });
 });
 
+test("a Script isn't given the runner's token", { timeout: 30_000 }, async () => {
+  process.env['RUNNER_TOKEN'] = 'runner-secret';
+  try {
+    const result = await execute('reports-environment.ts', { notificationUrl: 'https://example.com/?name=RUNNER_TOKEN' });
+
+    expect(result).toEqual({ outcome: 'succeeded', content: 'unset' });
+  } finally {
+    delete process.env['RUNNER_TOKEN'];
+  }
+});
+
 test("a Script reading a file outside its own directory and the runner's packages is Errored", { timeout: 30_000 }, async () => {
   const directory = await mkdtemp(join(systemTmpdir, 'lookout-secret-'));
   try {

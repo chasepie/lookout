@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { fileKinds, type ExecuteRequest, type ExecuteScript, type FileKind } from './execute.ts';
 import { isObject } from './guards.ts';
@@ -116,7 +117,21 @@ function isJsonRequest(request: IncomingMessage) {
   return request.headers['content-type']?.split(';')[0]?.trim().toLowerCase() === 'application/json';
 }
 
-async function handleExecute(request: IncomingMessage, response: ServerResponse, execute: ExecuteScript) {
+/**
+ * Whether the request carries `Authorization: Bearer <token>`. Comparing digests takes the same time however much of
+ * the header matches, and whatever its length.
+ */
+function hasToken(request: IncomingMessage, token: string) {
+  const digest = (value: string) => createHash('sha256').update(value).digest();
+  return timingSafeEqual(digest(request.headers.authorization ?? ''), digest(`Bearer ${token}`));
+}
+
+async function handleExecute(request: IncomingMessage, response: ServerResponse, execute: ExecuteScript, token?: string) {
+  // Anything that can reach the runner could otherwise have it run a Script, including Browserless, which loads
+  // whatever pages Scripts visit
+  if (token !== undefined && !hasToken(request, token)) {
+    throw new InvalidRequestError('Requests without the runner token are refused', 401);
+  }
   // Browsers send an Origin with every POST, and the backend doesn't. This refuses a page whose domain was rebound
   // to the runner's address, which counts as same-origin and so needs no preflight.
   if (request.headers.origin !== undefined) {
@@ -136,15 +151,18 @@ async function handleExecute(request: IncomingMessage, response: ServerResponse,
   sendJson(response, 200, await execute(executeRequest, callerGone.signal));
 }
 
-/** The runner's HTTP API: `POST /execute` runs one Script with `execute` and responds with its outcome */
-export function createRunnerServer(execute: ExecuteScript) {
+/**
+ * The runner's HTTP API: `POST /execute` runs one Script with `execute` and responds with its outcome. Given a
+ * `token`, it refuses requests that don't carry it as a bearer token.
+ */
+export function createRunnerServer(execute: ExecuteScript, token?: string) {
   return createServer((request, response) => {
     if (request.method !== 'POST' || request.url !== '/execute') {
       sendJson(response, 404, { error: 'Not found' });
       return;
     }
 
-    handleExecute(request, response, execute).catch((error: unknown) => {
+    handleExecute(request, response, execute, token).catch((error: unknown) => {
       if (error instanceof InvalidRequestError) {
         sendJson(response, error.status, { error: error.message });
         return;

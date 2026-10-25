@@ -3,6 +3,8 @@
  * - `PORT`: the port to listen on (default 3000; 0 picks a free one).
  * - `HOST`: the address to listen on (default `127.0.0.1`). The runner runs any Script it's sent, so only the
  *   runner's container, whose networks reach nothing but Lookout and Browserless, listens on every interface.
+ * - `RUNNER_TOKEN`: the bearer token every request must carry, which Lookout is given as `Runner__Token`. Unset or
+ *   empty, requests need none.
  * - `BROWSERLESS_URL`: Browserless's Playwright endpoint, such as `ws://browserless:3000/chromium/playwright`, to
  *   connect to for each Script's browser, as in deployment. Without it, each Script launches a local Chromium.
  * - `HEADLESS`: `true` runs the launched Chromium headless, as tests do; otherwise it is visible, for local debugging.
@@ -37,7 +39,9 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   });
 }
 
-const server = createRunnerServer(runner.execute);
+// An unset compose variable is passed on as empty
+const token = process.env['RUNNER_TOKEN'];
+const server = createRunnerServer(runner.execute, token === '' ? undefined : token);
 
 const host = process.env['HOST'] ?? '127.0.0.1';
 

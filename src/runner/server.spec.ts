@@ -128,6 +128,40 @@ test('a request from a web page is refused, even one the page counts as same-ori
   expect(executed).toEqual([]);
 });
 
+test('given a token, a request is refused unless it carries that token, and executed when it does', async () => {
+  const guarded = createRunnerServer((request, signal) => {
+    executed.push(request);
+    return fakeExecute(request, signal);
+  }, 'runner-secret');
+  guarded.listen(0, '127.0.0.1');
+  await once(guarded, 'listening');
+  try {
+    const postWith = (headers: Record<string, string>) =>
+      fetch(`http://127.0.0.1:${(guarded.address() as AddressInfo).port}/execute`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...headers },
+        body: JSON.stringify(validRequest),
+      });
+
+    const missing = await postWith({});
+    const wrong = await postWith({ authorization: 'Bearer runner-secreT' });
+    const prefixed = await postWith({ authorization: 'Bearer runner-secret-and-more' });
+
+    for (const response of [missing, wrong, prefixed]) {
+      expect(response.status).toBe(401);
+      expect(await response.json()).toEqual({ error: 'Requests without the runner token are refused' });
+    }
+    expect(executed).toEqual([]);
+
+    const carried = await postWith({ authorization: 'Bearer runner-secret' });
+
+    expect(carried.status).toBe(200);
+    expect(executed).toHaveLength(1);
+  } finally {
+    guarded.close();
+  }
+});
+
 test('a request whose Content-Type has parameters is accepted', async () => {
   const response = await post(validRequest, { headers: { 'content-type': 'Application/JSON; charset=utf-8' } });
 

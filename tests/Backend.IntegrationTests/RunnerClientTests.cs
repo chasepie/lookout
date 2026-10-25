@@ -34,6 +34,36 @@ public sealed class RunnerClientTests(TestContext testContext)
     }
 
     [TestMethod]
+    public async Task SendsTheConfiguredRunnerTokenWithEveryRequest()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        var handler = new RunnerPathHandler();
+        await using var host = factory.WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("Runner:BaseUrl", "http://proxy/runner/");
+            builder.UseSetting("Runner:Token", "runner-secret");
+            builder.ConfigureTestServices(services => services.AddHttpClient<IRunnerClient, HttpRunnerClient>()
+                .ConfigurePrimaryHttpMessageHandler(() => handler));
+        });
+        var runner = host.Services.GetRequiredService<IRunnerClient>();
+
+        await runner.ExecuteAsync(new RunnerRequest("export default {}", "ts", new ScriptContext("https://example.com")), testContext.CancellationToken);
+
+        Assert.AreEqual("Bearer runner-secret", handler.Authorization);
+    }
+
+    [TestMethod]
+    public async Task RefusesToStartWithARunnerTokenThatCouldChangeTheHeader()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        await using var host = factory.WithWebHostBuilder(builder => builder.UseSetting("Runner:Token", "secret\r\nX-Other: 1"));
+
+        var error = Assert.ThrowsExactly<InvalidOperationException>(() => host.CreateClient());
+
+        Assert.Contains("Runner:Token", error.Message);
+    }
+
+    [TestMethod]
     [DataRow("localhost:3000")]
     [DataRow("not a URL")]
     [DataRow("ftp://runner")]
@@ -85,9 +115,13 @@ public sealed class RunnerClientTests(TestContext testContext)
 
     private sealed class RunnerPathHandler : HttpMessageHandler
     {
+        /// <summary>The Authorization header of the last request, if it had one.</summary>
+        public string? Authorization { get; private set; }
+
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             Assert.AreEqual(new Uri("http://proxy/runner/execute"), request.RequestUri);
+            Authorization = request.Headers.Authorization?.ToString();
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent("{\"outcome\":\"succeeded\",\"content\":\"£20\",\"durationMs\":1}")

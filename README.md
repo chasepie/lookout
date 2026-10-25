@@ -20,7 +20,7 @@ npm start -w src/runner
 dotnet run --project src/Backend --no-launch-profile --urls http://localhost:5280
 ```
 
-Open <http://localhost:5280>. The backend serves the Angular build and API from the same origin and applies database migrations on startup. Its database is `lookout.db` in the backend's content root, `src/Backend`, when started this way. Set `Storage__DataDirectory` to keep it in another directory, or `ConnectionStrings__Lookout` to choose another SQLite connection string, whose relative path is resolved against that directory (a `file:` URI is used as given). A database the Development environment creates starts with one example Watch, which runs `examples/bot-detection.ts` against browserscan.net every hour; other environments start empty. Set `Runner__BaseUrl` to change the runner address (default `http://localhost:3000`). Schedules use the host's time zone; set `Scheduling__TimeZone` (such as `Europe/London`) to choose another. `Scheduling__MaxConcurrentRuns` sets how many Run slots there are: how many Runs and Test runs execute at once (default 2). Set `HEADLESS=true` when starting the runner to hide Chromium. The VPN is disabled unless `Vpn__ApiKey` is set; see [VPN](#vpn).
+Open <http://localhost:5280>. The backend serves the Angular build and API from the same origin and applies database migrations on startup. Its database is `lookout.db` in the backend's content root, `src/Backend`, when started this way. Set `Storage__DataDirectory` to keep it in another directory, or `ConnectionStrings__Lookout` to choose another SQLite connection string, whose relative path is resolved against that directory (a `file:` URI is used as given). A database the Development environment creates starts with one example Watch, which runs `examples/bot-detection.ts` against browserscan.net every hour; other environments start empty. Set `Runner__BaseUrl` to change the runner address (default `http://localhost:3000`), and `Runner__Token` to the token the runner was started with as `RUNNER_TOKEN`, if any. Schedules use the host's time zone; set `Scheduling__TimeZone` (such as `Europe/London`) to choose another. `Scheduling__MaxConcurrentRuns` sets how many Run slots there are: how many Runs and Test runs execute at once (default 2). Set `HEADLESS=true` when starting the runner to hide Chromium. The VPN is disabled unless `Vpn__ApiKey` is set; see [VPN](#vpn).
 
 When an HTTPS endpoint is configured (including the `https` launch profile), HTTP requests redirect to it, except those to `/health`, so health probes can check over HTTP. The HTTP-only command above continues to serve HTTP. A runner base URL may include a path prefix, such as `http://proxy/runner/`.
 
@@ -95,18 +95,19 @@ Lookout deploys to a homelab with one Docker Compose file, [`compose.yaml`](comp
 - **`browserless`:** runs the headful Chromium each Script drives, on a virtual display. It shares an internal network with the runner, and has one with internet access: it's the only part of a Run that reaches the internet.
 - **`gluetun`:** optional, in the `vpn` profile. The VPN that VPN Runs go through, as an HTTP proxy that Browserless reaches over an internal network of their own. Its proxy forwards to any network gluetun is on, so gluetun shares none with Lookout. Instead, **`gluetun-control`**, a relay, carries Lookout's requests to gluetun's control server, and a page loaded through the proxy can follow it only back to that server, which needs Lookout's key.
 
-Each pair of services that talk shares a network of its own, so Browserless's Chromium, which loads whatever pages Scripts visit, can't reach Lookout. It can reach the runner, which refuses requests from web pages.
+Each pair of services that talk shares a network of its own, so Browserless's Chromium, which loads whatever pages Scripts visit, can't reach Lookout. It can reach the runner, which refuses requests without the runner token, which only Lookout has, and requests from web pages.
 
-On a host with Docker Compose, from a clone of this repository:
+On a host with Docker Compose, from a clone of this repository, copy [`example.env`](example.env) to `.env`, set `LOOKOUT_RUNNER_TOKEN` in it to a random value, such as from `openssl rand -hex 32`, and start Lookout:
 
 ```sh
 docker compose up -d --build
 ```
 
-Then open `http://<host>:8080` and set up the account. To upgrade, pull the latest code and run the same command again. To back up, copy the `lookout-data` volume. Settings go in the environment or a `.env` file beside `compose.yaml`. To start one, copy [`example.env`](example.env), which lists them all with their defaults, to `.env`:
+Then open `http://<host>:8080` and set up the account. To upgrade, pull the latest code and run the same command again. To back up, copy the `lookout-data` volume. Settings go in the environment or the `.env` file beside `compose.yaml`. `example.env` lists them all with their defaults:
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
+| `LOOKOUT_RUNNER_TOKEN` | required | The token Lookout sends the runner with every Script, without which the runner refuses it: letters, digits, `-` and `_` only |
 | `LOOKOUT_PORT` | `8080` | The host port Lookout is served on |
 | `LOOKOUT_TIME_ZONE` | UTC | The time zone schedules use, such as `Europe/London` |
 | `LOOKOUT_MAX_CONCURRENT_RUNS` | `2` | How many Runs execute at once, and how many browsers Browserless runs at once. Raise the two memory limits with it |

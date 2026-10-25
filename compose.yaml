@@ -1,6 +1,8 @@
 # Lookout's deployment: see "Deploying" in README.md. Settings come from the environment or an .env file beside
 # this one, which example.env shows how to write:
-#   LOOKOUT_PORT                 the host port Lookout is served on (default 8080)
+#   LOOKOUT_RUNNER_TOKEN         required: the token Lookout sends the runner, letters, digits, '-' and '_' only, such
+#                                as from openssl rand -hex 32
+#   LOOKOUT_PORT                the host port Lookout is served on (default 8080)
 #   LOOKOUT_TIME_ZONE            the time zone schedules use, such as Europe/London (default UTC)
 #   LOOKOUT_MAX_CONCURRENT_RUNS  how many Runs execute at once (default 2); raise the memory limits with it
 #   LOOKOUT_RUNNER_MEMORY        the runner's memory limit (default 1536m): 640m per concurrent Run, plus 256m
@@ -13,7 +15,8 @@
 #   LOOKOUT_VPN_REGIONS          the PIA regions gluetun picks from (default: eight in the US)
 #
 # Each pair of services that talk shares a network of its own, so Browserless's Chromium, which loads whatever pages
-# Scripts visit, can't reach Lookout. It can reach the runner, which refuses requests from web pages. gluetun's proxy
+# Scripts visit, can't reach Lookout. It can reach the runner, which refuses requests without the runner token, and
+# from web pages. gluetun's proxy
 # forwards to every network gluetun is on, so gluetun and Lookout share none: Lookout reaches gluetun's control server
 # through a relay.
 name: lookout
@@ -28,6 +31,7 @@ services:
       - ${LOOKOUT_PORT:-8080}:8080
     environment:
       Runner__BaseUrl: http://runner:3000
+      Runner__Token: ${LOOKOUT_RUNNER_TOKEN:?Set LOOKOUT_RUNNER_TOKEN, such as from openssl rand -hex 32}
       Scheduling__TimeZone: ${LOOKOUT_TIME_ZONE:-}
       Scheduling__MaxConcurrentRuns: ${LOOKOUT_MAX_CONCURRENT_RUNS:-2}
       # Without a key, the VPN is disabled and VPN Runs are refused
@@ -50,7 +54,8 @@ services:
         condition: service_healthy
 
   # Runs Scripts. It reaches only Browserless and Lookout, which calls it, and has nothing mounted: no database,
-  # secrets or backend configuration (ADR-0003).
+  # secrets or backend configuration (ADR-0003). Its only secret is the token it requires of Lookout, which Scripts
+  # aren't given.
   runner:
     build:
       context: .
@@ -58,6 +63,7 @@ services:
     restart: unless-stopped
     environment:
       BROWSERLESS_URL: ws://browserless:3000/chromium/playwright
+      RUNNER_TOKEN: ${LOOKOUT_RUNNER_TOKEN:?Set LOOKOUT_RUNNER_TOKEN, such as from openssl rand -hex 32}
     networks:
       - runs
       - browsers
