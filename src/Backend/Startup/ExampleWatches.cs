@@ -2,7 +2,7 @@ using ChasePie.Lookout.Backend.Scheduling;
 using ChasePie.Lookout.Database;
 using ChasePie.Lookout.Model;
 
-namespace ChasePie.Lookout.Backend;
+namespace ChasePie.Lookout.Backend.Startup;
 
 /// <summary>
 /// Gives a new development database a Watch to try Runs with: <c>examples/bot-detection.ts</c>, which reads

@@ -38,10 +38,3 @@ public sealed class SettingsController(LookoutDbContext database) : LookoutContr
         return new SettingsResponse(request.RetentionDays);
     }
 }
-
-public sealed record SettingsResponse(int RetentionDays);
-
-public sealed class SettingsRequest
-{
-    public required int RetentionDays { get; init; }
-}

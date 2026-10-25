@@ -1,5 +1,6 @@
 using System.Net;
 using ChasePie.Lookout.Backend.Events;
+using ChasePie.Lookout.Backend.Security;
 using ChasePie.Lookout.Database;
 using ChasePie.Lookout.Model;
 using Microsoft.AspNetCore.Antiforgery;
@@ -110,7 +111,3 @@ public sealed class AccountController(
     private ObjectResult AccountAlreadyExists() =>
         Problem("Lookout's account is already set up. Log in instead.", statusCode: HttpStatusCode.Conflict);
 }
-
-public sealed record SessionStatus(bool AccountExists, string? UserName);
-
-public sealed record Credentials(string UserName, string Password);

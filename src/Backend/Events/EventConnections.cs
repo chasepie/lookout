@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using ChasePie.Lookout.Backend.Security;
 using Microsoft.AspNetCore.SignalR;
 
 namespace ChasePie.Lookout.Backend.Events;

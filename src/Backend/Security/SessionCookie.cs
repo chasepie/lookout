@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.EntityFrameworkCore;
 
-namespace ChasePie.Lookout.Backend;
+namespace ChasePie.Lookout.Backend.Security;
 
 /// <summary>
 /// The cookie that keeps the user logged in. It names a <see cref="Session"/>, and is honoured only while that

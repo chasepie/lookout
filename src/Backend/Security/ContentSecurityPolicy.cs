@@ -1,4 +1,4 @@
-namespace ChasePie.Lookout.Backend;
+namespace ChasePie.Lookout.Backend.Security;
 
 /// <summary>
 /// A second line of defence against cross-site scripting, as Angular's security guide recommends. Only Lookout's own

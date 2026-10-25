@@ -1,3 +1,4 @@
+using ChasePie.Lookout.Backend.Security;
 using ChasePie.Lookout.Backend.Vpn;
 using ChasePie.Lookout.Database;
 using Microsoft.AspNetCore.SignalR;

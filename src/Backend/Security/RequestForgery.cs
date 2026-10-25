@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Microsoft.Extensions.Primitives;
 
-namespace ChasePie.Lookout.Backend;
+namespace ChasePie.Lookout.Backend.Security;
 
 /// <summary>
 /// Protects state-changing requests from cross-site request forgery. SameSite cookies alone don't: browsers ignore ports

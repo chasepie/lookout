@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using ChasePie.Lookout.Backend.Controllers;
 using ChasePie.Lookout.Backend.Events;
 using ChasePie.Lookout.Backend.Notifications;
 using ChasePie.Lookout.Backend.Runner;
@@ -8,61 +7,7 @@ using ChasePie.Lookout.Database;
 using ChasePie.Lookout.Model;
 using Microsoft.EntityFrameworkCore;
 
-namespace ChasePie.Lookout.Backend;
-
-public enum RunExecutionStatus
-{
-    Recorded,
-    WatchNotFound,
-    NoScriptVersion,
-    /// <summary>Another Run of the Watch was recorded while this one executed, so this one was discarded.</summary>
-    Superseded,
-    /// <summary>A new Script version was uploaded while this Run executed, so this Run of the old one was discarded.</summary>
-    ScriptReplaced,
-    /// <summary>The Watch was deleted while this Run executed, so there was nothing to record it against.</summary>
-    Deleted,
-    /// <summary>The Run's gate turned it down once it had a Run slot, so it never executed.</summary>
-    NotClaimed
-}
-
-public sealed record RunExecution(RunExecutionStatus Status, Run? Run = null);
-
-/// <summary>Whether <see cref="Runs.Run"/> admitted a Run of a Watch.</summary>
-public abstract record Admission;
-
-/// <summary>
-/// The Run was admitted and executes in the background. <see cref="Finished"/> always completes: with how the Run
-/// ended, cancelled if Lookout stopped before the runner answered, or faulted on an unexpected error, which whoever
-/// admitted the Run reports.
-/// </summary>
-public sealed record Admitted(Task<RunExecution> Finished) : Admission;
-
-/// <summary>
-/// The Watch already has a Run in this process. <see cref="Gated"/> says whether that Run was admitted with a gate,
-/// which the scheduler uses to recognise its own.
-/// </summary>
-public sealed record Refused(RunRefusal Reason, bool Gated) : Admission;
-
-public enum RunRefusal
-{
-    /// <summary>The Watch's Run is waiting for a Run slot.</summary>
-    WaitingForSlot,
-    /// <summary>The Watch's Run has a Run slot, or gave it back while it waits for the VPN.</summary>
-    Executing
-}
-
-/// <summary>Decides, once a Run has a Run slot and before the Watch is read, whether it goes ahead.</summary>
-public delegate Task<bool> RunGate(CancellationToken cancellationToken);
-
-/// <summary>The result of a Test run, which, unlike a Run's, has a screenshot even when it Succeeded.</summary>
-public sealed record TestRun(
-    RunOutcome Outcome,
-    string? Content,
-    string? Details,
-    string? ErrorMessage,
-    double DurationMs,
-    string? Screenshot,
-    string? ConsoleOutput);
+namespace ChasePie.Lookout.Backend.Running;
 
 /// <summary>
 /// Admits, executes and records Runs, scheduled or on demand, and executes Test runs. Both take one of a limited number
@@ -258,7 +203,7 @@ public sealed partial class Runs(
                 await FinishAsync(watchId, entry, recorded);
                 // Read back, as the tracked Watch misses the user pausing or resuming it while the Run executed. A Run
                 // doesn't change a paused Watch's status, and pausing announced it.
-                if (await WatchSummary.StatusAsync(database.Watches, watchId, CancellationToken.None) is { } statusAfter
+                if (await WatchStatuses.ReadAsync(database.Watches, watchId, CancellationToken.None) is { } statusAfter
                     && statusAfter != statusBefore && statusAfter != WatchStatus.Paused)
                 {
                     await events.StatusChangedAsync(watchId, statusAfter);
@@ -308,7 +253,7 @@ public sealed partial class Runs(
             return (new RunExecution(RunExecutionStatus.NoScriptVersion), null, []);
         }
 
-        var statusBefore = WatchSummary.StatusOf(watch);
+        var statusBefore = WatchStatuses.Of(watch);
         var startedAt = timeProvider.GetUtcNow();
         // Only a connected VPN has an exit and a proxy, so a refused Run records neither.
         (VpnStatus? vpnStatus, VpnRunLease? vpnRun) = watch.UsesVpn

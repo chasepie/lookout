@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 using ChasePie.Lookout.Backend.Runner;
+using ChasePie.Lookout.Backend.Running;
 using ChasePie.Lookout.Model;
 
 namespace ChasePie.Lookout.Backend.IntegrationTests;

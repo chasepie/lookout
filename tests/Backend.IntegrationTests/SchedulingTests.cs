@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 using ChasePie.Lookout.Backend.Runner;
+using ChasePie.Lookout.Backend.Running;
 using ChasePie.Lookout.Backend.Scheduling;
 using ChasePie.Lookout.Database;
 using ChasePie.Lookout.Model;

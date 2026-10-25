@@ -1,7 +1,7 @@
 using ChasePie.Lookout.Database;
 using Microsoft.EntityFrameworkCore;
 
-namespace ChasePie.Lookout.Backend;
+namespace ChasePie.Lookout.Backend.Running;
 
 /// <summary>
 /// Keeps the database small by pruning Runs older than the retention period in Settings, at startup and then periodically.
