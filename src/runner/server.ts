@@ -119,7 +119,9 @@ function isJsonRequest(request: IncomingMessage) {
   return request.headers['content-type']?.split(';')[0]?.trim().toLowerCase() === 'application/json';
 }
 
-const digest = (value: string) => createHash('sha256').update(value).digest();
+function digest(value: string) {
+  return createHash('sha256').update(value).digest();
+}
 
 /**
  * Refuses a request unless it carries the `Authorization` header whose digest is `expected`, telling one without the

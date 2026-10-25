@@ -17,7 +17,9 @@ import { createRunner } from './execute.ts';
 import { createRunnerServer } from './server.ts';
 
 /** An unset compose variable is passed on as empty, which counts as unset */
-const setting = (name: string) => (process.env[name] === '' ? undefined : process.env[name]);
+function getEnvSetting(name: string) {
+  return process.env[name] === '' ? undefined : process.env[name];
+}
 
 const portText = process.env['PORT'] ?? '3000';
 if (!/^\d+$/.test(portText) || Number(portText) > 65_535) {
@@ -25,7 +27,7 @@ if (!/^\d+$/.test(portText) || Number(portText) > 65_535) {
   process.exit(1);
 }
 
-const host = setting('RUNNER_HOST') ?? '127.0.0.1';
+const host = getEnvSetting('RUNNER_HOST') ?? '127.0.0.1';
 if (isIP(host) === 0) {
   console.error(`RUNNER_HOST must be an IP address, not ${JSON.stringify(host)}`);
   process.exit(1);
@@ -35,7 +37,7 @@ const loopback = new BlockList();
 loopback.addSubnet('127.0.0.0', 8, 'ipv4');
 loopback.addAddress('::1', 'ipv6');
 
-const token = setting('RUNNER_TOKEN');
+const token = getEnvSetting('RUNNER_TOKEN');
 if (token === undefined && !loopback.check(host, isIP(host) === 6 ? 'ipv6' : 'ipv4')) {
   console.error(`RUNNER_TOKEN must be set when RUNNER_HOST is ${host}, which other machines can reach, since the runner `
     + 'runs any Script it is sent');
