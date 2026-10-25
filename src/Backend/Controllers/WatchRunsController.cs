@@ -41,7 +41,9 @@ public sealed class WatchRunsController(LookoutDbContext database, Runs runs) : 
     {
         if (limit is < 1 or > 100 || before is <= 0)
         {
-            return Problem("History limit must be between 1 and 100; before must be a positive Run ID.", statusCode: HttpStatusCode.BadRequest);
+            return Problem(
+                detail: "History limit must be between 1 and 100; before must be a positive Run ID.",
+                statusCode: HttpStatusCode.BadRequest);
         }
 
         if (!await database.Watches.AnyAsync(watch => watch.Id == id, cancellationToken))
@@ -89,26 +91,44 @@ public sealed class WatchRunsController(LookoutDbContext database, Runs runs) : 
     [HttpPost("{id:guid}/runs")]
     public async Task<ActionResult<Run>> RunNow(Guid id)
     {
-        switch (runs.Run(id))
+        var admission = runs.Run(id);
+        if (admission is Refused { Reason: RunRefusal.WaitingForSlot })
         {
-            case Refused { Reason: RunRefusal.WaitingForSlot }:
-                return Problem("This Watch is waiting for a free slot to run.", statusCode: HttpStatusCode.Conflict);
-            case Refused:
-                return Problem("This Watch is already running.", statusCode: HttpStatusCode.Conflict);
-            case Admitted { Finished: var finished }:
-                // Not cancelled by the request: a Run the user started carries on if they leave the page.
-                var execution = await finished;
-                return execution.Status switch
-                {
-                    RunExecutionStatus.Recorded => Ok(execution.Run),
-                    RunExecutionStatus.WatchNotFound => NotFound(),
-                    RunExecutionStatus.NoScriptVersion => Problem("This Watch has no current Script version.", statusCode: HttpStatusCode.Conflict),
-                    RunExecutionStatus.Deleted => Problem("The Watch was deleted while this Run was in progress, so this Run was not recorded.", statusCode: HttpStatusCode.Conflict),
-                    RunExecutionStatus.ScriptReplaced => Problem("A new Script version was uploaded while this Run was in progress, so this Run was not recorded.", statusCode: HttpStatusCode.Conflict),
-                    _ => Problem("Another Run of this Watch finished first, so this Run was not recorded.", statusCode: HttpStatusCode.Conflict)
-                };
-            default:
-                throw new UnreachableException();
+            return Problem(
+                detail: "This Watch is waiting for a free slot to run.",
+                statusCode: HttpStatusCode.Conflict);
         }
+
+        if (admission is Refused)
+        {
+            return Problem(
+                detail: "This Watch is already running.",
+                statusCode: HttpStatusCode.Conflict);
+        }
+
+        if (admission is Admitted { Finished: var finished })
+        {
+            // Not cancelled by the request: a Run the user started carries on if they leave the page.
+            var execution = await finished;
+            return execution.Status switch
+            {
+                RunExecutionStatus.Recorded => Ok(execution.Run),
+                RunExecutionStatus.WatchNotFound => NotFound(),
+                RunExecutionStatus.NoScriptVersion => Problem(
+                    detail: "This Watch has no current Script version.",
+                    statusCode: HttpStatusCode.Conflict),
+                RunExecutionStatus.Deleted => Problem(
+                    detail: "The Watch was deleted while this Run was in progress, so this Run was not recorded.",
+                    statusCode: HttpStatusCode.Conflict),
+                RunExecutionStatus.ScriptReplaced => Problem(
+                    detail: "A new Script version was uploaded while this Run was in progress, so this Run was not recorded.",
+                    statusCode: HttpStatusCode.Conflict),
+                _ => Problem(
+                    detail: "Another Run of this Watch finished first, so this Run was not recorded.",
+                    statusCode: HttpStatusCode.Conflict)
+            };
+        }
+
+        throw new UnreachableException();
     }
 }

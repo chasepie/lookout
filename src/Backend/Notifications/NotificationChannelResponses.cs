@@ -9,8 +9,11 @@ internal static class NotificationChannelResponses
     /// Throws if the service refused the notification, saying why in its own words where it gave any. The message never
     /// includes the request's URL or body, which hold the Notification channel's secrets.
     /// </summary>
-    public static async Task EnsureAcceptedAsync(HttpResponseMessage response, string service,
-        Func<JsonElement, string?> reason, CancellationToken cancellationToken)
+    public static async Task EnsureAcceptedAsync(
+        HttpResponseMessage response,
+        string service,
+        Func<JsonElement, string?> reason,
+        CancellationToken cancellationToken)
     {
         if (response.IsSuccessStatusCode)
         {
@@ -21,7 +24,8 @@ internal static class NotificationChannelResponses
         try
         {
             using var body = await response.Content.ReadFromJsonAsync<JsonDocument>(cancellationToken);
-            if (body?.RootElement.ValueKind == JsonValueKind.Object && reason(body.RootElement) is { Length: > 0 } detail)
+            if (body?.RootElement.ValueKind == JsonValueKind.Object
+                && reason(body.RootElement) is { Length: > 0 } detail)
             {
                 throw new HttpRequestException($"{message}: {detail}", null, response.StatusCode);
             }

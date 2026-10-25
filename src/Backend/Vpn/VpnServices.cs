@@ -23,36 +23,49 @@ public static class VpnServices
             services.AddSingleton<IVpnRotator, DisabledVpnRotator>();
             return;
         }
+
         // Deployment writes the key into gluetun's TOML auth file, where quotes or backslashes would change it.
         if (!apiKey.All(character => char.IsAsciiLetterOrDigit(character) || character is '-' or '_'))
         {
             throw new InvalidOperationException("Vpn:ApiKey must contain only letters, digits, '-' and '_', such as from openssl rand -hex 32");
         }
-        var controlAddress = HttpUrls.ConfiguredBaseAddress(configuration, "Vpn:ControlUrl", "http://gluetun-control:8000");
-        var proxyAddress = HttpUrls.ConfiguredBaseAddress(configuration, "Vpn:ProxyUrl", "http://gluetun:8888");
+
+        var proxyAddress = HttpUrls.ConfiguredBaseAddress(
+            configuration: configuration,
+            key: "Vpn:ProxyUrl",
+            defaultUrl: "http://gluetun:8888");
+
         // Chromium doesn't use credentials written into the proxy's address.
         if (proxyAddress.UserInfo != "")
         {
             throw new InvalidOperationException("Vpn:ProxyUrl must not contain credentials; set Vpn:ProxyUsername and Vpn:ProxyPassword instead");
         }
+
         // A proxy is a host and port; ConfiguredBaseAddress adds the trailing slash.
         if (proxyAddress.AbsolutePath != "/" || proxyAddress.Query != "")
         {
             throw new InvalidOperationException($"Vpn:ProxyUrl must be only a scheme, host and port, such as http://gluetun:8888, not '{configuration["Vpn:ProxyUrl"]}'");
         }
-        var proxy = new ProxySettings(
-            Server: proxyAddress.GetLeftPart(UriPartial.Authority),
-            Username: NullIfEmpty(configuration["Vpn:ProxyUsername"]),
-            Password: NullIfEmpty(configuration["Vpn:ProxyPassword"]));
-        services.AddSingleton(new GluetunSettings(apiKey, proxy));
-        services.AddSingleton(provider => new ProxiedExitIp(
-            provider.GetRequiredService<IRunnerClient>, provider.GetRequiredService<TimeProvider>()));
-        services.AddHttpClient<IVpnRotator, GluetunVpnRotator>(client =>
-        {
-            client.BaseAddress = controlAddress;
-            // Reading the status has a shorter deadline of its own (GluetunSettings.StatusTimeout); this bounds a Rotation.
-            client.Timeout = TimeSpan.FromSeconds(30);
-        });
+
+        var controlAddress = HttpUrls.ConfiguredBaseAddress(
+            configuration: configuration,
+            key: "Vpn:ControlUrl",
+            defaultUrl: "http://gluetun-control:8000");
+
+        services
+            .AddSingleton(() => new GluetunSettings(apiKey, new ProxySettings(
+                Server: proxyAddress.GetLeftPart(UriPartial.Authority),
+                Username: NullIfEmpty(configuration["Vpn:ProxyUsername"]),
+                Password: NullIfEmpty(configuration["Vpn:ProxyPassword"]))))
+            .AddSingleton(provider => new ProxiedExitIp(
+                runner: provider.GetRequiredService<IRunnerClient>,
+                timeProvider: provider.GetRequiredService<TimeProvider>()))
+            .AddHttpClient<IVpnRotator, GluetunVpnRotator>(client =>
+            {
+                client.BaseAddress = controlAddress;
+                // Reading the status has a shorter deadline of its own (GluetunSettings.StatusTimeout); this bounds a Rotation.
+                client.Timeout = TimeSpan.FromSeconds(30);
+            });
 
         static string? NullIfEmpty(string? value) => string.IsNullOrEmpty(value) ? null : value;
     }

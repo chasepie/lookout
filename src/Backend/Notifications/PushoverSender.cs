@@ -15,7 +15,10 @@ public sealed class PushoverSender(HttpClient client) : INotificationChannelSend
 
     public NotificationChannelKind Kind => NotificationChannelKind.Pushover;
 
-    public async Task SendAsync(NotificationChannel notificationChannel, Notification notification, CancellationToken cancellationToken)
+    public async Task SendAsync(
+        NotificationChannel notificationChannel,
+        Notification notification,
+        CancellationToken cancellationToken)
     {
         var fields = new Dictionary<string, string>
         {

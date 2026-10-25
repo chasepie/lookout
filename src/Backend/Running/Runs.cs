@@ -50,7 +50,9 @@ public sealed partial class Runs(
         var existing = _running.GetOrAdd(watchId, entry);
         if (existing != entry)
         {
-            return new Refused(existing.Executing ? RunRefusal.Executing : RunRefusal.WaitingForSlot, existing.Gated);
+            return new Refused(
+                Reason: existing.Executing ? RunRefusal.Executing : RunRefusal.WaitingForSlot,
+                Gated: existing.Gated);
         }
 
         // Queued now rather than in the background, so Runs admitted one after another take slots in that order.
@@ -79,7 +81,12 @@ public sealed partial class Runs(
         {
             var watch = await scope.ServiceProvider.GetRequiredService<LookoutDbContext>().Watches.AsNoTracking()
                 .Where(watch => watch.Id == watchId)
-                .Select(watch => new { watch.NotificationUrl, watch.TimeoutSeconds, watch.UsesVpn })
+                .Select(watch => new
+                {
+                    watch.NotificationUrl,
+                    watch.TimeoutSeconds,
+                    watch.UsesVpn
+                })
                 .SingleOrDefaultAsync(cancellationToken);
             if (watch is null)
             {
@@ -102,10 +109,12 @@ public sealed partial class Runs(
                         return RefusedTestRun("The VPN is rotating to a new exit IP, so this Test run was not started. Try again in a minute.");
                     }
                 }
-                if (vpnStatus?.RefusalOf("Test run") is { } refusal)
+
+                if (vpnStatus?.GetNotStartedReason("Test run") is { } refusal)
                 {
                     return RefusedTestRun(refusal);
                 }
+
                 result = await scope.ServiceProvider.GetRequiredService<IRunnerClient>().ExecuteAsync(new RunnerRequest(
                     Source: source,
                     FileKind: fileKind,
@@ -122,7 +131,10 @@ public sealed partial class Runs(
         }
 
         // Shows the outcome a Run would record for the same result.
-        var (outcome, errorMessage) = RunEvaluation.RecordedOutcome(result.Outcome, result.Content, result.ErrorMessage);
+        var (outcome, errorMessage) = RunEvaluation.RecordedOutcome(
+            result.Outcome,
+            result.Content,
+            result.ErrorMessage);
         return new TestRun(
             Outcome: outcome,
             Content: result.Content,
@@ -198,7 +210,8 @@ public sealed partial class Runs(
                 // Sent while the Watch is still Running, so another of its Runs can't notify before this one has. Like
                 // the save, notifications of a finished Run still go out if shutdown started; senders time out by
                 // themselves.
-                await scope.ServiceProvider.GetRequiredService<NotificationDispatcher>()
+                await scope.ServiceProvider
+                    .GetRequiredService<NotificationDispatcher>()
                     .NotifyAsync(watchId, toSend, CancellationToken.None);
                 await FinishAsync(watchId, entry, recorded);
                 // Read back, as the tracked Watch misses the user pausing or resuming it while the Run executed. A Run
@@ -262,7 +275,7 @@ public sealed partial class Runs(
         RunnerResult result;
         using (vpnRun)
         {
-            if (vpnStatus?.RefusalOf("VPN Run") is { } refusal)
+            if (vpnStatus?.GetNotStartedReason("VPN Run") is { } refusal)
             {
                 result = new RunnerResult
                 {

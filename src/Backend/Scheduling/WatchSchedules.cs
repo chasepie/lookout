@@ -80,7 +80,9 @@ public sealed class WatchSchedules(IServiceScopeFactory scopes, TimeProvider tim
             // only if the scheduler started no Run since the read, as the next Run must stay clear of the last one.
             var nextRunAt = NextRunAt(schedule, jitterMinutes, current.LastScheduledRunAt);
             var updated = await database.Watches
-                .Where(watch => watch.Id == watchId && watch.LastScheduledRunAt == current.LastScheduledRunAt)
+                .Where(watch =>
+                    watch.Id == watchId
+                    && watch.LastScheduledRunAt == current.LastScheduledRunAt)
                 .ExecuteUpdateAsync(setters => setters
                     .SetProperty(watch => watch.Schedule, schedule)
                     .SetProperty(watch => watch.JitterMinutes, jitterMinutes)
@@ -174,7 +176,11 @@ public sealed class WatchSchedules(IServiceScopeFactory scopes, TimeProvider tim
         return await database.Watches.AsNoTracking()
             .Where(watch => watch.NextRunAt <= now && !watch.IsPaused)
             .OrderBy(watch => watch.NextRunAt)
-            .Select(watch => new DueRun(watch.Id, watch.NextRunAt!.Value, watch.Schedule, watch.JitterMinutes))
+            .Select(watch => new DueRun(
+                WatchId: watch.Id,
+                NextRunAt: watch.NextRunAt!.Value,
+                Schedule: watch.Schedule,
+                JitterMinutes: watch.JitterMinutes))
             .ToListAsync(cancellationToken);
     }
 
@@ -213,7 +219,8 @@ public sealed class WatchSchedules(IServiceScopeFactory scopes, TimeProvider tim
             .Where(watch =>
                 watch.NextRunAt == null
                 || watch.NextRunAt <= now
-                || (watch.Schedule.Kind != ScheduleKind.Interval && watch.NextRunTimeZone != timeZone))
+                || (watch.Schedule.Kind != ScheduleKind.Interval
+                    && watch.NextRunTimeZone != timeZone))
             .ToListAsync(cancellationToken);
         foreach (var watch in stale)
         {
@@ -223,11 +230,17 @@ public sealed class WatchSchedules(IServiceScopeFactory scopes, TimeProvider tim
         await database.SaveChangesAsync(cancellationToken);
     }
 
-    private string? Validate(Schedule schedule, int jitterMinutes) =>
-        schedule.Validate(timeProvider.GetUtcNow(), _timeZone)
-            ?? (jitterMinutes is < 0 or > MaximumJitterMinutes
-                ? $"Jitter must be between 0 and {MaximumJitterMinutes} minutes."
-                : null);
+    private string? Validate(Schedule schedule, int jitterMinutes)
+    {
+        if (schedule.GetInvalidReason(timeProvider.GetUtcNow(), _timeZone) is { } reason)
+        {
+            return reason;
+        }
+
+        return jitterMinutes is < 0 or > MaximumJitterMinutes
+            ? $"Jitter must be between 0 and {MaximumJitterMinutes} minutes."
+            : null;
+    }
 
     /// <summary>
     /// The schedule's next occurrence after now, delayed by up to <paramref name="jitterMinutes"/>, in whole seconds.

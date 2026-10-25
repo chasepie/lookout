@@ -8,15 +8,28 @@ using Microsoft.EntityFrameworkCore;
 
 namespace ChasePie.Lookout.Backend.Controllers;
 
-public sealed record ScriptVersionSummary(Guid Id, int Number, string FileKind, DateTimeOffset UploadedAt, bool IsCurrent);
+public sealed record ScriptVersionSummary(
+    Guid Id,
+    int Number,
+    string FileKind,
+    DateTimeOffset UploadedAt,
+    bool IsCurrent);
 
-public sealed record ScriptVersionSource(Guid Id, int Number, string FileKind, DateTimeOffset UploadedAt, bool IsCurrent,
+public sealed record ScriptVersionSource(
+    Guid Id,
+    int Number,
+    string FileKind,
+    DateTimeOffset UploadedAt,
+    bool IsCurrent,
     string Source);
 
 public sealed class UploadScriptRequest
 {
     public required IFormFile Script { get; init; }
-    /// <summary>Keeps the Baseline and failure streak, for a new version that reports its content the same way.</summary>
+
+    /// <summary>
+    /// Keeps the Baseline and failure streak, for a new version that reports its content the same way.
+    /// </summary>
     public bool KeepBaseline { get; init; }
 }
 
@@ -89,8 +102,13 @@ public sealed class ScriptVersionsController(
             await watchEvents.StatusChangedAsync(id, status);
         }
 
-        return StatusCode(StatusCodes.Status201Created,
-            new ScriptVersionSummary(version.Id, version.Number, version.FileKind, version.UploadedAt, IsCurrent: true));
+        var summary = new ScriptVersionSummary(
+            Id: version.Id,
+            Number: version.Number,
+            FileKind: version.FileKind,
+            UploadedAt: version.UploadedAt,
+            IsCurrent: true);
+        return StatusCode(StatusCodes.Status201Created, summary);
     }
 
     [HttpGet("{id:guid}/script-versions")]
@@ -105,7 +123,9 @@ public sealed class ScriptVersionsController(
                 Number: version.Number,
                 FileKind: version.FileKind,
                 UploadedAt: version.UploadedAt,
-                IsCurrent: database.Watches.Any(watch => watch.Id == id && watch.CurrentScriptVersionId == version.Id)))
+                IsCurrent: database.Watches.Any(watch =>
+                    watch.Id == id
+                    && watch.CurrentScriptVersionId == version.Id)))
             .ToListAsync(cancellationToken);
 
         // Every Watch has at least the Script version it was created with.
@@ -122,7 +142,9 @@ public sealed class ScriptVersionsController(
                 Number: version.Number,
                 FileKind: version.FileKind,
                 UploadedAt: version.UploadedAt,
-                IsCurrent: database.Watches.Any(watch => watch.Id == id && watch.CurrentScriptVersionId == version.Id),
+                IsCurrent: database.Watches.Any(watch =>
+                    watch.Id == id
+                    && watch.CurrentScriptVersionId == version.Id),
                 Source: version.Source))
             .SingleOrDefaultAsync(cancellationToken);
         return version is null ? NotFound() : version;

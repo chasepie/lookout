@@ -23,21 +23,23 @@ public sealed record WatchSummary(
 {
     /// <summary>Maps a Watch in a database query; <see cref="From"/> applies the same mapping in memory.</summary>
     public static readonly Expression<Func<Watch, WatchSummary>> Projection = WatchStatuses.WithStatus((watch, status) => new WatchSummary(
-        watch.Id,
-        watch.Name,
-        watch.NotificationUrl,
-        watch.CurrentScriptVersionId,
-        watch.Baseline,
-        status,
-        watch.IsPaused,
-        watch.UsesVpn,
-        watch.FailureStreak,
-        watch.TimeoutSeconds,
-        watch.Runs.OrderByDescending(run => run.Id).FirstOrDefault(),
-        watch.Schedule,
-        watch.JitterMinutes,
-        watch.NextRunAt,
-        watch.NotificationChannels.Select(notificationChannel => notificationChannel.Id).ToList()));
+        Id: watch.Id,
+        Name: watch.Name,
+        NotificationUrl: watch.NotificationUrl,
+        CurrentScriptVersionId: watch.CurrentScriptVersionId,
+        Baseline: watch.Baseline,
+        Status: status,
+        IsPaused: watch.IsPaused,
+        UsesVpn: watch.UsesVpn,
+        FailureStreak: watch.FailureStreak,
+        TimeoutSeconds: watch.TimeoutSeconds,
+        LastRun: watch.Runs.OrderByDescending(run => run.Id).FirstOrDefault(),
+        Schedule: watch.Schedule,
+        JitterMinutes: watch.JitterMinutes,
+        NextRunAt: watch.NextRunAt,
+        NotificationChannelIds: watch.NotificationChannels
+            .Select(notificationChannel => notificationChannel.Id)
+            .ToList()));
 
     /// <summary>Whether the Watch is Running, which is shown alongside its <see cref="Status"/>.</summary>
     public bool IsRunning { get; init; }

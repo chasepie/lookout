@@ -31,24 +31,38 @@ public static class SessionCookie
         options.Events.OnValidatePrincipal = RejectEndedSessions;
     }
 
-    public static async Task SignInAsync(HttpContext context, LookoutDbContext database, Account account,
-        TimeProvider timeProvider, CancellationToken cancellationToken)
+    public static async Task SignInAsync(
+        HttpContext context,
+        LookoutDbContext database,
+        Account account,
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken)
     {
-        var session = new Session { AccountId = account.Id, CreatedAt = timeProvider.GetUtcNow() };
+        var session = new Session
+        {
+            AccountId = account.Id,
+            CreatedAt = timeProvider.GetUtcNow()
+        };
         database.Sessions.Add(session);
         await database.SaveChangesAsync(cancellationToken);
 
-        var identity = new ClaimsIdentity(
-            [new Claim(ClaimTypes.Name, account.UserName), new Claim(SessionIdClaim, session.Id.ToString())],
-            CookieAuthenticationDefaults.AuthenticationScheme);
-        await context.SignInAsync(new ClaimsPrincipal(identity), new AuthenticationProperties { IsPersistent = true });
+        var claims = new[] {
+            new Claim(ClaimTypes.Name, account.UserName),
+            new Claim(SessionIdClaim, session.Id.ToString())
+        };
+        var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
+        await context.SignInAsync(
+            new ClaimsPrincipal(identity),
+            new AuthenticationProperties { IsPersistent = true });
     }
 
     public static async Task SignOutAsync(HttpContext context, LookoutDbContext database, CancellationToken cancellationToken)
     {
         if (SessionId(context.User) is { } id)
         {
-            await database.Sessions.Where(session => session.Id == id).ExecuteDeleteAsync(cancellationToken);
+            await database.Sessions
+                .Where(session => session.Id == id)
+                .ExecuteDeleteAsync(cancellationToken);
         }
         await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
     }

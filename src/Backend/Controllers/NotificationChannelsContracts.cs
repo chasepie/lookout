@@ -7,11 +7,11 @@ public sealed record NotificationChannelSummary(Guid Id, string Name, Notificati
 {
     /// <summary>Maps a Notification channel in a database query, leaving its secrets behind; <see cref="From"/> does the same in memory.</summary>
     public static readonly Expression<Func<NotificationChannel, NotificationChannelSummary>> Projection =
-        notificationChannel => new NotificationChannelSummary(notificationChannel.Id, notificationChannel.Name, notificationChannel.Kind);
+        nc => new NotificationChannelSummary(nc.Id, nc.Name, nc.Kind);
 
     private static readonly Func<NotificationChannel, NotificationChannelSummary> CompiledProjection = Projection.Compile();
 
-    public static NotificationChannelSummary From(NotificationChannel notificationChannel) => CompiledProjection(notificationChannel);
+    public static NotificationChannelSummary From(NotificationChannel nc) => CompiledProjection(nc);
 }
 
 public sealed class NotificationChannelRequest

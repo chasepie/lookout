@@ -16,7 +16,10 @@ public sealed class HttpRunnerClient(HttpClient client, TimeProvider timeProvide
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeout.Token);
         try
         {
-            using var response = await client.PostAsJsonAsync(new Uri("execute", UriKind.Relative), request, linked.Token);
+            using var response = await client.PostAsJsonAsync(
+                requestUri: new Uri("execute", UriKind.Relative),
+                value: request,
+                cancellationToken: linked.Token);
             if (!response.IsSuccessStatusCode)
             {
                 var message = $"Runner returned HTTP {(int)response.StatusCode} ({response.ReasonPhrase}).";

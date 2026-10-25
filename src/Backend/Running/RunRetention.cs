@@ -8,7 +8,10 @@ namespace ChasePie.Lookout.Backend.Running;
 /// Changes and each Watch's latest Run are kept forever, as are Watches' Baselines, which live on the Watch rather
 /// than its Runs.
 /// </summary>
-public sealed partial class RunRetention(IServiceScopeFactory scopes, TimeProvider timeProvider, ILogger<RunRetention> logger)
+public sealed partial class RunRetention(
+    IServiceScopeFactory scopes,
+    TimeProvider timeProvider,
+    ILogger<RunRetention> logger)
     : BackgroundService
 {
     /// <summary>How often Runs are pruned; a Run outlives the retention period by at most this long.</summary>
@@ -23,7 +26,7 @@ public sealed partial class RunRetention(IServiceScopeFactory scopes, TimeProvid
             {
                 try
                 {
-                    await Prune(stoppingToken);
+                    await PruneOldRuns(stoppingToken);
                 }
                 catch (Exception error) when (!stoppingToken.IsCancellationRequested)
                 {
@@ -38,11 +41,13 @@ public sealed partial class RunRetention(IServiceScopeFactory scopes, TimeProvid
         }
     }
 
-    private async Task Prune(CancellationToken cancellationToken)
+    private async Task PruneOldRuns(CancellationToken cancellationToken)
     {
         await using var scope = scopes.CreateAsyncScope();
         var database = scope.ServiceProvider.GetRequiredService<LookoutDbContext>();
-        var retentionDays = await database.Settings.Select(settings => settings.RetentionDays).SingleAsync(cancellationToken);
+        var retentionDays = await database.Settings
+            .Select(settings => settings.RetentionDays)
+            .SingleAsync(cancellationToken);
         var cutoff = timeProvider.GetUtcNow().AddDays(-retentionDays);
         // EF can't compare DateTimeOffsets in SQLite, which stores them as text. Lookout stores UTC throughout, so every
         // value has the same offset and sorts as text in time order. Each Watch keeps its latest Run, however old, so

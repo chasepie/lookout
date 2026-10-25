@@ -51,7 +51,7 @@ public sealed partial class NotificationChannelsController(LookoutDbContext data
     public async Task<IActionResult> SendTest(Guid id, CancellationToken cancellationToken)
     {
         var notificationChannel = await database.NotificationChannels.AsNoTracking()
-            .SingleOrDefaultAsync(notificationChannel => notificationChannel.Id == id, cancellationToken);
+            .SingleOrDefaultAsync(nc => nc.Id == id, cancellationToken);
         if (notificationChannel is null)
         {
             return NotFound();
@@ -65,17 +65,21 @@ public sealed partial class NotificationChannelsController(LookoutDbContext data
         catch (Exception error) when (error is HttpRequestException or TaskCanceledException
             && !cancellationToken.IsCancellationRequested)
         {
-            return Problem($"Could not send the test notification: {error.Message}", statusCode: HttpStatusCode.BadGateway);
+            return Problem(
+                detail: $"Could not send the test notification: {error.Message}",
+                statusCode: HttpStatusCode.BadGateway);
         }
         return NoContent();
     }
 
     private bool TryBuildNotificationChannel(
         NotificationChannelRequest request,
-        [NotNullWhen(true)] out NotificationChannel? notificationChannel,
+        [NotNullWhen(true)] out NotificationChannel? nc,
         [NotNullWhen(false)] out ObjectResult? problem)
     {
-        notificationChannel = null;
+        nc = null;
+        problem = null;
+
         var name = request.Name?.Trim() ?? "";
         string? message = null;
         if (name.Length is < 1 or > 100)
@@ -91,7 +95,12 @@ public sealed partial class NotificationChannelsController(LookoutDbContext data
             }
             else
             {
-                notificationChannel = new NotificationChannel { Name = name, Kind = NotificationChannelKind.Discord, WebhookUrl = webhookUrl };
+                nc = new NotificationChannel
+                {
+                    Name = name,
+                    Kind = NotificationChannelKind.Discord,
+                    WebhookUrl = webhookUrl
+                };
             }
         }
         else if (request.Kind == NotificationChannelKind.Pushover)
@@ -104,7 +113,13 @@ public sealed partial class NotificationChannelsController(LookoutDbContext data
             }
             else
             {
-                notificationChannel = new NotificationChannel { Name = name, Kind = NotificationChannelKind.Pushover, UserKey = userKey, AppToken = appToken };
+                nc = new NotificationChannel
+                {
+                    Name = name,
+                    Kind = NotificationChannelKind.Pushover,
+                    UserKey = userKey,
+                    AppToken = appToken
+                };
             }
         }
         else
@@ -112,8 +127,12 @@ public sealed partial class NotificationChannelsController(LookoutDbContext data
             message = "Choose a Discord or Pushover Notification channel.";
         }
 
-        problem = message is null ? null : Problem(message, statusCode: HttpStatusCode.BadRequest);
-        return notificationChannel is not null;
+        if (message is not null)
+        {
+            problem = Problem(detail: message, statusCode: HttpStatusCode.BadRequest);
+        }
+
+        return nc is not null;
     }
 
     [GeneratedRegex("^[A-Za-z0-9]{30}$")]

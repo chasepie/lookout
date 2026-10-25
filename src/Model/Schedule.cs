@@ -59,7 +59,7 @@ public sealed record Schedule
     };
 
     /// <summary>Explains why this schedule can't be used, or returns null when it can.</summary>
-    public string? Validate(DateTimeOffset now, TimeZoneInfo timeZone)
+    public string? GetInvalidReason(DateTimeOffset now, TimeZoneInfo timeZone)
     {
         string? ValidateInterval()
         {

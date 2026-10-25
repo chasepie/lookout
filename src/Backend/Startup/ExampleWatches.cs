@@ -31,6 +31,7 @@ public static class ExampleWatches
         {
             throw new InvalidOperationException($"The example Watch's schedule can't be used: {problem}");
         }
+
         var version = new ScriptVersion
         {
             WatchId = watch.Id,

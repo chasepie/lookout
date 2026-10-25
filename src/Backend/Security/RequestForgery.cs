@@ -40,13 +40,16 @@ public static class RequestForgery
     public static void IssueToken(HttpContext context, IAntiforgery antiforgery)
     {
         var tokens = antiforgery.GetAndStoreTokens(context);
-        context.Response.Cookies.Append(TokenCookieName, tokens.RequestToken!, new CookieOptions
-        {
-            // The app reads this cookie to send its value back in a header, which a page on another origin can't.
-            HttpOnly = false,
-            SameSite = SameSiteMode.Strict,
-            Secure = context.Request.IsHttps
-        });
+        context.Response.Cookies.Append(
+            key: TokenCookieName,
+            value: tokens.RequestToken!,
+            options: new CookieOptions
+            {
+                // The app reads this cookie to send its value back in a header, which a page on another origin can't.
+                HttpOnly = false,
+                SameSite = SameSiteMode.Strict,
+                Secure = context.Request.IsHttps
+            });
     }
 
     /// <summary>
@@ -57,31 +60,34 @@ public static class RequestForgery
     /// </summary>
     public static void ProtectHub(WebApplication app, PathString path)
     {
-        app.UseWhen(context => context.Request.Path.StartsWithSegments(path), branch => branch.Use(async (context, next) =>
-        {
-            var negotiating = context.Request.Path.StartsWithSegments(path.Add("/negotiate"));
-            if (negotiating && !await context.RequestServices.GetRequiredService<IAntiforgery>().IsRequestValidAsync(context))
+        app.UseWhen(context =>
+            context.Request.Path.StartsWithSegments(path),
+            branch => branch.Use(async (context, next) =>
             {
-                await Results
-                    .Problem(
-                        type: MissingTokenProblemType,
-                        statusCode: StatusCodes.Status400BadRequest,
-                        detail: "This connection is missing Lookout's request token. Reload the page and try again.")
-                    .ExecuteAsync(context);
-                return;
-            }
-            // The same test SignalR applies to the connection ID, which starts a new connection when it's missing or empty.
-            if (!negotiating && StringValues.IsNullOrEmpty(context.Request.Query["id"]))
-            {
-                await Results
-                    .Problem(
-                        statusCode: StatusCodes.Status400BadRequest,
-                        detail: "Negotiate a connection before connecting.")
-                    .ExecuteAsync(context);
-                return;
-            }
-            await next(context);
-        }));
+                var negotiating = context.Request.Path.StartsWithSegments(path.Add("/negotiate"));
+                if (negotiating && !await context.RequestServices.GetRequiredService<IAntiforgery>().IsRequestValidAsync(context))
+                {
+                    await Results
+                        .Problem(
+                            type: MissingTokenProblemType,
+                            statusCode: StatusCodes.Status400BadRequest,
+                            detail: "This connection is missing Lookout's request token. Reload the page and try again.")
+                        .ExecuteAsync(context);
+                    return;
+                }
+
+                // The same test SignalR applies to the connection ID, which starts a new connection when it's missing or empty.
+                if (!negotiating && StringValues.IsNullOrEmpty(context.Request.Query["id"]))
+                {
+                    await Results
+                        .Problem(
+                            statusCode: StatusCodes.Status400BadRequest,
+                            detail: "Negotiate a connection before connecting.")
+                        .ExecuteAsync(context);
+                    return;
+                }
+                await next(context);
+            }));
     }
 
     /// <summary>
@@ -93,7 +99,10 @@ public static class RequestForgery
         public async Task OnAuthorizationAsync(AuthorizationFilterContext context)
         {
             var method = context.HttpContext.Request.Method;
-            if (HttpMethods.IsGet(method) || HttpMethods.IsHead(method) || HttpMethods.IsOptions(method) || HttpMethods.IsTrace(method))
+            if (HttpMethods.IsGet(method)
+                || HttpMethods.IsHead(method)
+                || HttpMethods.IsOptions(method)
+                || HttpMethods.IsTrace(method))
             {
                 return;
             }
@@ -104,10 +113,15 @@ public static class RequestForgery
             }
             catch (AntiforgeryValidationException)
             {
-                var problem = problemDetails.CreateProblemDetails(context.HttpContext, StatusCodes.Status400BadRequest,
+                var problem = problemDetails.CreateProblemDetails(
+                    httpContext: context.HttpContext,
+                    statusCode: StatusCodes.Status400BadRequest,
                     type: MissingTokenProblemType,
                     detail: "This request is missing Lookout's request token. Reload the page and try again.");
-                context.Result = new ObjectResult(problem) { StatusCode = problem.Status };
+                context.Result = new ObjectResult(problem)
+                {
+                    StatusCode = problem.Status
+                };
             }
         }
     }

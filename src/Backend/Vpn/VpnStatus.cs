@@ -8,20 +8,28 @@ public sealed record VpnStatus
 {
     /// <summary>Whether Lookout is configured with a VPN at all.</summary>
     public bool Enabled { get; private init; }
+
     /// <summary>Whether VPN Runs can go through it now.</summary>
     public bool Connected => Proxy is not null;
+
     /// <summary>Whether Lookout is rotating the VPN to a new exit IP, during which no VPN Run starts.</summary>
     public bool Rotating { get; private init; }
+
     public string? Region { get; private init; }
+
     public string? ExitIp { get; private init; }
+
     /// <summary>Why the VPN isn't connected, if that's known.</summary>
     public string? Error { get; private init; }
+
     /// <summary>The proxy a VPN Run's browser goes through. Left out of the API, as it may carry a password.</summary>
     [JsonIgnore]
     public ProxySettings? Proxy { get; private init; }
+
     /// <summary>Whether the VPN can't connect until its setup is fixed, such as a key gluetun refuses, so waiting is no use.</summary>
     [JsonIgnore]
     public bool Misconfigured { get; private init; }
+
     /// <summary>Whether Lookout reached the VPN to read this, rather than it not answering, such as before it starts.</summary>
     [JsonIgnore]
     public bool Reached { get; private init; }
@@ -46,7 +54,12 @@ public sealed record VpnStatus
     /// Why <paramref name="run"/>, such as a VPN Run, can't go ahead, or nothing when it can go through the VPN. It
     /// fails closed: without the VPN it would go out from the home IP, or hang until its timeout.
     /// </summary>
-    public string? RefusalOf(string run) => Connected
-        ? null
-        : $"{(Enabled ? "The VPN is not connected" : "No VPN is configured")}, so this {run} was not started. {Error}".TrimEnd();
+    public string? GetNotStartedReason(string run)
+    {
+        if (Connected)
+        {
+            return null;
+        }
+        return $"{(Enabled ? "The VPN is not connected" : "No VPN is configured")}, so this {run} was not started. {Error}".TrimEnd();
+    }
 }

@@ -13,7 +13,10 @@ public sealed class DiscordSender(HttpClient client) : INotificationChannelSende
 
     public NotificationChannelKind Kind => NotificationChannelKind.Discord;
 
-    public async Task SendAsync(NotificationChannel notificationChannel, Notification notification, CancellationToken cancellationToken)
+    public async Task SendAsync(
+        NotificationChannel notificationChannel,
+        Notification notification,
+        CancellationToken cancellationToken)
     {
         var embed = new Embed(
             Title: Notification.Fit(notification.Title, MaxTitleLength),
@@ -27,8 +30,17 @@ public sealed class DiscordSender(HttpClient client) : INotificationChannelSende
             AllowedMentions: new AllowedMentions([]));
 
         using var response = await client.PostAsJsonAsync(notificationChannel.WebhookUrl, message, cancellationToken);
-        await NotificationChannelResponses.EnsureAcceptedAsync(response, "Discord", body =>
-            body.TryGetProperty("message", out var reason) && reason.ValueKind == JsonValueKind.String ? reason.GetString() : null,
+        await NotificationChannelResponses.EnsureAcceptedAsync(response, "Discord",
+            body =>
+            {
+                if (body.TryGetProperty("message", out var reason)
+                    && reason.ValueKind == JsonValueKind.String)
+                {
+                    return reason.GetString();
+                }
+
+                return null;
+            },
             cancellationToken);
     }
 
@@ -42,5 +54,6 @@ public sealed class DiscordSender(HttpClient client) : INotificationChannelSende
         [property: JsonPropertyName("description")] string Description,
         [property: JsonPropertyName("url"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Url);
 
-    private sealed record AllowedMentions([property: JsonPropertyName("parse")] IReadOnlyList<string> Parse);
+    private sealed record AllowedMentions(
+        [property: JsonPropertyName("parse")] IReadOnlyList<string> Parse);
 }

@@ -89,7 +89,9 @@ public sealed class WatchesController(
         catch (DbUpdateException) when (notificationChannels.Count > 0)
         {
             // A chosen Notification channel was deleted since it was read, failing its join row's foreign key.
-            return Problem("One of the chosen Notification channels was deleted while the Watch was being created.", statusCode: HttpStatusCode.Conflict);
+            return Problem(
+                detail: "One of the chosen Notification channels was deleted while the Watch was being created.",
+                statusCode: HttpStatusCode.Conflict);
         }
 
         watch.CurrentScriptVersionId = version.Id;
@@ -113,8 +115,12 @@ public sealed class WatchesController(
             // Read back, unless the Watch was deleted since.
             ScheduleUpdateStatus.Changed => await Get(id, cancellationToken),
             ScheduleUpdateStatus.NotFound => NotFound(),
-            ScheduleUpdateStatus.Invalid => Problem(update.Problem!, statusCode: HttpStatusCode.BadRequest),
-            ScheduleUpdateStatus.KeptChanging => Problem("Runs of this Watch kept starting while its schedule was being saved. Please try again.", statusCode: HttpStatusCode.Conflict),
+            ScheduleUpdateStatus.Invalid => Problem(
+                detail: update.Problem!,
+                statusCode: HttpStatusCode.BadRequest),
+            ScheduleUpdateStatus.KeptChanging => Problem(
+                detail: "Runs of this Watch kept starting while its schedule was being saved. Please try again.",
+                statusCode: HttpStatusCode.Conflict),
             _ => throw new UnreachableException()
         };
     }
@@ -163,40 +169,41 @@ public sealed class WatchesController(
     [HttpPost("{id:guid}/pause")]
     public async Task<IActionResult> Pause(Guid id, CancellationToken cancellationToken)
     {
-        switch ((await schedules.PauseAsync(id, cancellationToken)).Status)
+        var status = (await schedules.PauseAsync(id, cancellationToken)).Status;
+        if (status == ScheduleUpdateStatus.Changed)
         {
-            case ScheduleUpdateStatus.Changed:
-                await watchEvents.StatusChangedAsync(id, WatchStatus.Paused);
-                return NoContent();
-            case ScheduleUpdateStatus.Unchanged:
-                return NoContent();
-            case ScheduleUpdateStatus.NotFound:
-                return NotFound();
-            default:
-                throw new UnreachableException();
+            await watchEvents.StatusChangedAsync(id, WatchStatus.Paused);
         }
+
+        return status switch
+        {
+            ScheduleUpdateStatus.Changed => NoContent(),
+            ScheduleUpdateStatus.Unchanged => NoContent(),
+            ScheduleUpdateStatus.NotFound => NotFound(),
+            _ => throw new UnreachableException()
+        };
     }
 
     [HttpPost("{id:guid}/resume")]
     public async Task<IActionResult> Resume(Guid id, CancellationToken cancellationToken)
     {
-        switch ((await schedules.ResumeAsync(id, cancellationToken)).Status)
+        var status = (await schedules.ResumeAsync(id, cancellationToken)).Status;
+        if (status == ScheduleUpdateStatus.Changed
+            && await WatchStatuses.ReadAsync(database.Watches, id, CancellationToken.None) is { } resumed)
         {
-            case ScheduleUpdateStatus.Changed:
-                if (await WatchStatuses.ReadAsync(database.Watches, id, CancellationToken.None) is { } resumed)
-                {
-                    await watchEvents.StatusChangedAsync(id, resumed);
-                }
-                return NoContent();
-            case ScheduleUpdateStatus.Unchanged:
-                return NoContent();
-            case ScheduleUpdateStatus.NotFound:
-                return NotFound();
-            case ScheduleUpdateStatus.KeptChanging:
-                return Problem("The schedule of this Watch kept changing while it was being resumed. Please try again.", statusCode: HttpStatusCode.Conflict);
-            default:
-                throw new UnreachableException();
+            await watchEvents.StatusChangedAsync(id, resumed);
         }
+
+        return status switch
+        {
+            ScheduleUpdateStatus.Changed => NoContent(),
+            ScheduleUpdateStatus.Unchanged => NoContent(),
+            ScheduleUpdateStatus.NotFound => NotFound(),
+            ScheduleUpdateStatus.KeptChanging => Problem(
+                detail: "The schedule of this Watch kept changing while it was being resumed. Please try again.",
+                statusCode: HttpStatusCode.Conflict),
+            _ => throw new UnreachableException(),
+        };
     }
 
     [HttpPut("{id:guid}/notification-channels")]
@@ -221,14 +228,23 @@ public sealed class WatchesController(
             await database.WatchNotificationChannels
                 .Where(choice => choice.WatchId == id)
                 .ExecuteDeleteAsync(cancellationToken);
-            database.WatchNotificationChannels.AddRange(notificationChannels.Select(notificationChannel => new WatchNotificationChannel { WatchId = id, NotificationChannelId = notificationChannel.Id }));
+
+            database.WatchNotificationChannels
+                .AddRange(notificationChannels
+                .Select(notificationChannel => new WatchNotificationChannel
+                {
+                    WatchId = id,
+                    NotificationChannelId = notificationChannel.Id
+                }));
             await database.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
         }
         catch (DbUpdateException)
         {
             // The Watch or a chosen Notification channel was deleted since they were read.
-            return Problem("The Watch or one of the chosen Notification channels no longer exists.", statusCode: HttpStatusCode.Conflict);
+            return Problem(
+                detail: "The Watch or one of the chosen Notification channels no longer exists.",
+                statusCode: HttpStatusCode.Conflict);
         }
         return NoContent();
     }
@@ -248,7 +264,9 @@ public sealed class WatchesController(
     }
 
     private ObjectResult NotificationChannelMissing() =>
-        Problem("One of the chosen Notification channels no longer exists.", statusCode: HttpStatusCode.BadRequest);
+        Problem(
+            detail: "One of the chosen Notification channels no longer exists.",
+            statusCode: HttpStatusCode.BadRequest);
 
     private WatchSummary WithRunning(WatchSummary watch) => watch with { IsRunning = runs.IsRunning(watch.Id) };
 
@@ -256,17 +274,23 @@ public sealed class WatchesController(
     {
         if (name.Length is < 1 or > 200)
         {
-            return Problem("Name must contain between 1 and 200 characters.", statusCode: HttpStatusCode.BadRequest);
+            return Problem(
+                detail: "Name must contain between 1 and 200 characters.",
+                statusCode: HttpStatusCode.BadRequest);
         }
 
         if (!HttpUrls.IsValid(notificationUrl))
         {
-            return Problem("Notification URL must be an HTTP or HTTPS URL.", statusCode: HttpStatusCode.BadRequest);
+            return Problem(
+                detail: "Notification URL must be an HTTP or HTTPS URL.",
+                statusCode: HttpStatusCode.BadRequest);
         }
 
         if (timeoutSeconds is < 1 or > Watch.MaxTimeoutSeconds)
         {
-            return Problem($"Timeout must be between 1 and {Watch.MaxTimeoutSeconds} seconds.", statusCode: HttpStatusCode.BadRequest);
+            return Problem(
+                detail: $"Timeout must be between 1 and {Watch.MaxTimeoutSeconds} seconds.",
+                statusCode: HttpStatusCode.BadRequest);
         }
 
         return null;
@@ -275,7 +299,12 @@ public sealed class WatchesController(
     /// <summary>The requested Schedule, which <see cref="WatchSchedules"/> checks, or null if no kind was chosen.</summary>
     private static Schedule? ScheduleOf(ScheduleRequest request) => request.ScheduleKind switch
     {
-        ScheduleKind.Interval => new Schedule { Kind = ScheduleKind.Interval, Every = request.Every, Unit = request.Unit },
+        ScheduleKind.Interval => new Schedule
+        {
+            Kind = ScheduleKind.Interval,
+            Every = request.Every,
+            Unit = request.Unit
+        },
         ScheduleKind.Daily when request.TimeOfDay is { } timeOfDay => Schedule.DailyAt(timeOfDay),
         ScheduleKind.Daily => new Schedule { Kind = ScheduleKind.Daily },
         ScheduleKind.Cron => Schedule.FromCron(request.Cron ?? ""),
@@ -283,5 +312,7 @@ public sealed class WatchesController(
     };
 
     private ObjectResult ScheduleMissing() =>
-        Problem("Choose an interval, daily or cron schedule.", statusCode: HttpStatusCode.BadRequest);
+        Problem(
+            detail: "Choose an interval, daily or cron schedule.",
+            statusCode: HttpStatusCode.BadRequest);
 }
