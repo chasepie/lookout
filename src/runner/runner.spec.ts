@@ -744,79 +744,6 @@ test('a connecting runner asks for a headless Chromium with the flags that hide 
   }
 });
 
-test('a request whose proxy is null runs without one', { timeout: 30_000 }, async () => {
-  const response = await fetch(`${runnerUrl}/execute`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ ...validRequest, proxy: null }),
-  });
-
-  expect(response.status).toBe(200);
-  expect(await response.json()).toMatchObject({ outcome: 'succeeded' });
-});
-
-test('a request whose alwaysScreenshot is null runs as if it were left out', { timeout: 30_000 }, async () => {
-  const response = await fetch(`${runnerUrl}/execute`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ ...validRequest, alwaysScreenshot: null }),
-  });
-
-  expect(response.status).toBe(200);
-  const body = await response.json() as Record<string, unknown>;
-  expect(body).toMatchObject({ outcome: 'succeeded' });
-  expect(body['screenshot']).toBeUndefined();
-});
-
-test.each([
-  ['no Content-Type', undefined],
-  ['a text Content-Type', 'text/plain;charset=UTF-8'],
-])('a request with %s is refused, so a web page can only send one after a CORS preflight', { timeout: 30_000 }, async (_, contentType) => {
-  const response = await fetch(`${runnerUrl}/execute`, {
-    method: 'POST',
-    // fetch gives a string body text/plain unless told otherwise, as a page's no-cors request would have
-    body: contentType === undefined ? new Blob([JSON.stringify(validRequest)]) : JSON.stringify(validRequest),
-    ...(contentType !== undefined && { headers: { 'content-type': contentType } }),
-  });
-
-  expect(response.status).toBe(415);
-  expect(await response.json()).toEqual({ error: 'Content-Type must be application/json' });
-});
-
-test('a request from a web page is refused, even one the page counts as same-origin', { timeout: 30_000 }, async () => {
-  const response = await fetch(`${runnerUrl}/execute`, {
-    method: 'POST',
-    // As a page on a domain rebound to the runner's address would send
-    headers: { 'content-type': 'application/json', origin: 'http://rebound.example' },
-    body: JSON.stringify(validRequest),
-  });
-
-  expect(response.status).toBe(403);
-  expect(await response.json()).toEqual({ error: 'Requests from web pages are refused' });
-});
-
-test('a request whose Content-Type has parameters is accepted', { timeout: 30_000 }, async () => {
-  const response = await fetch(`${runnerUrl}/execute`, {
-    method: 'POST',
-    headers: { 'content-type': 'Application/JSON; charset=utf-8' },
-    body: JSON.stringify(validRequest),
-  });
-
-  expect(response.status).toBe(200);
-});
-
-test('a request body over 1 MiB is rejected as too large', { timeout: 30_000 }, async () => {
-  const response = await fetch(`${runnerUrl}/execute`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ ...validRequest, source: `// ${'x'.repeat(1024 * 1024)}` }),
-  });
-
-  expect(response.status).toBe(413);
-  expect(await response.json()).toEqual({ error: 'Request body must be at most 1048576 bytes' });
-  expect(await execute('read-price.ts')).toMatchObject({ outcome: 'succeeded' });
-});
-
 const portError = 'PORT must be an integer from 0 to 65535';
 const browserlessUrlError = 'BROWSERLESS_URL must be a ws:// or wss:// URL';
 
@@ -843,34 +770,4 @@ test.each([
 
   expect(code).toBe(1);
   expect(stderr).toContain(error);
-});
-
-const validRequest = {
-  source: 'export default { run: async () => ({ success: true }) };',
-  fileKind: 'js',
-  context: { notificationUrl: 'https://example.com/' },
-  timeoutMs: 20_000,
-};
-
-test.each([
-  ['malformed JSON', '{"source":', 'Request body must be JSON'],
-  ['a missing source', { ...validRequest, source: undefined }, 'source must be a string'],
-  ['an unknown file kind', { ...validRequest, fileKind: 'py' }, "fileKind must be 'ts' or 'js'"],
-  ['a missing Notification URL', { ...validRequest, context: {} }, 'context.notificationUrl must be a string'],
-  ['a non-positive timeout', { ...validRequest, timeoutMs: 0 }, 'timeoutMs must be an integer from 1 to 2147483647'],
-  ['a timeout too long for a timer', { ...validRequest, timeoutMs: 2_147_483_648 },
-    'timeoutMs must be an integer from 1 to 2147483647'],
-  ['a proxy without a server', { ...validRequest, proxy: { username: 'lookout' } }, 'proxy.server must be a string'],
-  ['a non-string proxy password', { ...validRequest, proxy: { server: 'http://gluetun:8888', password: 1 } },
-    'proxy.password must be a string'],
-])('a request with %s is rejected', { timeout: 30_000 }, async (_, body, error) => {
-  const response = await fetch(`${runnerUrl}/execute`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: typeof body === 'string' ? body : JSON.stringify(body),
-  });
-
-  expect(response.status).toBe(400);
-  expect(await response.json()).toEqual({ error });
-  expect(await execute('read-price.ts')).toMatchObject({ outcome: 'succeeded' });
 });

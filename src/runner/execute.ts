@@ -15,12 +15,6 @@ import {
   type ScriptResult,
 } from './protocol.ts';
 
-export interface RunnerConfig {
-  browser: BrowserSettings;
-  /** What a Script's process may do on top of what every one may, for its browser; see {@link createRunnerConfig} */
-  browserPermissionArgs: string[];
-}
-
 /** The languages a Script may be written in */
 export const fileKinds = ['ts', 'js'] as const;
 
@@ -47,6 +41,12 @@ type DebugOutput = Screenshot & { consoleOutput: string };
 /** The outcome, with how long the execution took and what to debug it by */
 export type ExecuteResponse = ScriptResult & DebugOutput & { durationMs: number };
 
+/**
+ * Executes a Script in its own child Node process and reports its outcome. Aborting `signal`, as when the caller
+ * goes away, stops the Script.
+ */
+export type ExecuteScript = (request: ExecuteRequest, signal: AbortSignal) => Promise<ExecuteResponse>;
+
 const scriptProcessPath = fileURLToPath(new URL('./script-process.ts', import.meta.url));
 
 /** The heap each Script's process gets; one that needs more is Errored rather than taking memory from the others */
@@ -66,24 +66,17 @@ const packagesDirectory = dirname(dirname(findPackageJSON('playwright', import.m
 const playwrightSystemFiles = ['/proc/version', '/proc/sys/fs/binfmt_misc/WSLInterop', '/run/WSL'];
 
 /**
- * The runner's configuration for getting browsers from `browser`. Worked out as the runner starts, so an install
- * it can't launch from stops it there.
- */
-export const createRunnerConfig = async (browser: BrowserSettings): Promise<RunnerConfig> =>
-  ({ browser, browserPermissionArgs: await browserPermissionArgs(browser) });
-
-/**
  * Node's permission model for a Script's process. It may read only its own directory, the runner's code and
  * packages and the system files Playwright needs, and write only to its temp directory, with what its browser needs
  * on top. Node doesn't treat its permission model as a security boundary; the runner's container is what contains a
  * Script (ADR-0003).
  */
-const permissionArgs = (config: RunnerConfig, scriptDirectory: string, tempDirectory: string) => [
+const permissionArgs = (browserArgs: string[], scriptDirectory: string, tempDirectory: string) => [
   '--permission',
   ...[scriptDirectory, runnerDirectory, packagesDirectory, ...playwrightSystemFiles]
     .map((path) => `--allow-fs-read=${path}`),
   `--allow-fs-write=${tempDirectory}`,
-  ...config.browserPermissionArgs,
+  ...browserArgs,
 ];
 
 /**
@@ -102,20 +95,6 @@ function scriptEnvironment(tempDirectory: string) {
   return environment;
 }
 
-/** How to stop each Script that is running */
-const runningScripts = new Set<() => void>();
-
-/**
- * Stops every running Script, with everything it started. For the runner to call as it stops itself: the Scripts'
- * processes lead process groups of their own, which a signal to the runner's group doesn't reach, and one whose
- * Script blocks it can't notice the runner going.
- */
-export function stopAllScripts() {
-  for (const stop of runningScripts) {
-    stop();
-  }
-}
-
 /** Kills the process group `pid` leads, if it's still there */
 function killProcessGroup(pid: number) {
   try {
@@ -130,13 +109,14 @@ function killProcessGroup(pid: number) {
  * screenshot, at the timeout. The process reports its result over IPC (see protocol.ts), so the Script's console
  * output can't be mistaken for it, and exits after reporting even if the Script left a handle open. Whichever way
  * it ends, anything it started goes with it. It runs with `execArgv`, its limits, and its temp files go in
- * `tempDirectory`, since a killed process can't clean up after itself.
+ * `tempDirectory`, since a killed process can't clean up after itself. While it runs, how to stop it is in `running`.
  */
 const runScriptProcess = (
   job: ScriptJob,
   execArgv: string[],
   timeoutMs: number,
   tempDirectory: string,
+  running: Set<() => void>,
   signal: AbortSignal,
 ) =>
   new Promise<ScriptResult & DebugOutput>((resolve) => {
@@ -171,7 +151,7 @@ const runScriptProcess = (
       // Windows has no process groups, so there this at least kills the Script's own process
       child.kill('SIGKILL');
     };
-    runningScripts.add(stop);
+    running.add(stop);
     signal.addEventListener('abort', stop);
     // A caller that went away before the process started won't abort again
     if (signal.aborted) {
@@ -197,7 +177,7 @@ const runScriptProcess = (
       stop();
       // Nothing is left to stop, and the process group's ID may soon be another's
       signal.removeEventListener('abort', stop);
-      runningScripts.delete(stop);
+      running.delete(stop);
       clearTimeout(timer);
       clearTimeout(killTimer);
       drainTimer = setTimeout(() => {
@@ -215,43 +195,65 @@ const runScriptProcess = (
     });
   });
 
-/**
- * Executes a Script in its own child Node process and reports its outcome. Aborting `signal`, as when the caller
- * goes away, stops the Script.
- */
-export async function execute(
-  request: ExecuteRequest,
-  config: RunnerConfig,
-  signal: AbortSignal,
-): Promise<ExecuteResponse> {
-  const started = performance.now();
-  // Without symlinks, as the Script's module path is, since Node checks permissions against the path as given
-  const directory = await realpath(await mkdtemp(join(tmpdir(), 'lookout-script-')));
-  try {
-    const scriptPath = join(directory, request.fileKind === 'ts' ? 'script.mts' : 'script.mjs');
-    await writeFile(scriptPath, request.source);
-    // Where Playwright puts the browser profile and artifacts, so they go when the directory does
-    const tempDirectory = join(directory, 'tmp');
-    await mkdir(tempDirectory);
+/** The runner: what executes Scripts, and stops them all when the runner itself stops */
+export interface Runner {
+  execute: ExecuteScript;
+  /**
+   * Stops every running Script, with everything it started. For the runner to call as it stops itself: the
+   * Scripts' processes lead process groups of their own, which a signal to the runner's group doesn't reach, and one
+   * whose Script blocks it can't notice the runner going.
+   */
+  stopAll: () => void;
+}
 
-    const job: ScriptJob = {
-      scriptPath,
-      context: request.context,
-      browser: config.browser,
-      ...(request.proxy && { proxy: request.proxy }),
-      alwaysScreenshot: request.alwaysScreenshot,
-    };
-    const execArgv = [
-      `--max-old-space-size=${memoryLimitMb}`,
-      ...permissionArgs(config, directory, tempDirectory),
-    ];
-    const result = await runScriptProcess(job, execArgv, request.timeoutMs, tempDirectory, signal);
-    return { ...result, durationMs: Math.round(performance.now() - started) };
-  } finally {
-    // A killed Script's browser may still be writing its profile as it exits, so retry while it's busy.
-    // Failing even so must not replace the Script's result.
-    await rm(directory, { recursive: true, force: true, maxRetries: 5 }).catch((error: unknown) => {
-      console.error(`Removing ${directory} failed`, error);
-    });
-  }
+/**
+ * Creates a runner whose Scripts get their browsers from `browser`. What a Script's process may do for its browser
+ * is worked out here, as the runner starts, so an install it can't launch from stops it there.
+ */
+export async function createRunner(browser: BrowserSettings): Promise<Runner> {
+  const browserArgs = await browserPermissionArgs(browser);
+  /** How to stop each Script that is running */
+  const running = new Set<() => void>();
+
+  const execute: ExecuteScript = async (request, signal) => {
+    const started = performance.now();
+    // Without symlinks, as the Script's module path is, since Node checks permissions against the path as given
+    const directory = await realpath(await mkdtemp(join(tmpdir(), 'lookout-script-')));
+    try {
+      const scriptPath = join(directory, request.fileKind === 'ts' ? 'script.mts' : 'script.mjs');
+      await writeFile(scriptPath, request.source);
+      // Where Playwright puts the browser profile and artifacts, so they go when the directory does
+      const tempDirectory = join(directory, 'tmp');
+      await mkdir(tempDirectory);
+
+      const job: ScriptJob = {
+        scriptPath,
+        context: request.context,
+        browser,
+        ...(request.proxy && { proxy: request.proxy }),
+        alwaysScreenshot: request.alwaysScreenshot,
+      };
+      const execArgv = [
+        `--max-old-space-size=${memoryLimitMb}`,
+        ...permissionArgs(browserArgs, directory, tempDirectory),
+      ];
+      const result = await runScriptProcess(job, execArgv, request.timeoutMs, tempDirectory, running, signal);
+      return { ...result, durationMs: Math.round(performance.now() - started) };
+    } finally {
+      // A killed Script's browser may still be writing its profile as it exits, so retry while it's busy.
+      // Failing even so must not replace the Script's result.
+      await rm(directory, { recursive: true, force: true, maxRetries: 5 }).catch((error: unknown) => {
+        console.error(`Removing ${directory} failed`, error);
+      });
+    }
+  };
+
+  return {
+    execute,
+    stopAll: () => {
+      for (const stop of running) {
+        stop();
+      }
+    },
+  };
 }

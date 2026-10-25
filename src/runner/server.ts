@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { execute, fileKinds, type ExecuteRequest, type FileKind, type RunnerConfig } from './execute.ts';
+import { fileKinds, type ExecuteRequest, type ExecuteScript, type FileKind } from './execute.ts';
 import { isObject } from './guards.ts';
 
 /** A request the runner can't execute, reported to the caller with a 4xx status */
@@ -105,7 +105,7 @@ const sendJson = (response: ServerResponse, status: number, body: unknown) => {
 const isJsonRequest = (request: IncomingMessage) =>
   request.headers['content-type']?.split(';')[0]?.trim().toLowerCase() === 'application/json';
 
-async function handleExecute(request: IncomingMessage, response: ServerResponse, config: RunnerConfig) {
+async function handleExecute(request: IncomingMessage, response: ServerResponse, execute: ExecuteScript) {
   // Browsers send an Origin with every POST, and the backend doesn't. This refuses a page whose domain was rebound
   // to the runner's address, which counts as same-origin and so needs no preflight.
   if (request.headers.origin !== undefined) {
@@ -122,17 +122,17 @@ async function handleExecute(request: IncomingMessage, response: ServerResponse,
       callerGone.abort();
     }
   });
-  sendJson(response, 200, await execute(executeRequest, config, callerGone.signal));
+  sendJson(response, 200, await execute(executeRequest, callerGone.signal));
 }
 
-/** The runner's HTTP API: `POST /execute` runs one Script and responds with its outcome */
-export const createRunnerServer = (config: RunnerConfig) =>
+/** The runner's HTTP API: `POST /execute` runs one Script with `execute` and responds with its outcome */
+export const createRunnerServer = (execute: ExecuteScript) =>
   createServer((request, response) => {
     if (request.method !== 'POST' || request.url !== '/execute') {
       sendJson(response, 404, { error: 'Not found' });
       return;
     }
-    handleExecute(request, response, config).catch((error: unknown) => {
+    handleExecute(request, response, execute).catch((error: unknown) => {
       if (error instanceof InvalidRequestError) {
         sendJson(response, error.status, { error: error.message });
         return;

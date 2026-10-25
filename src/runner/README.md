@@ -138,6 +138,8 @@ npm test -w src/runner
 
 `runner.spec.ts` is Seam 2. It starts a real runner process with `HEADLESS=true`, serves its own pages and proxy from local servers, and posts the Scripts in `test/fixtures/` to `/execute`. No internet is needed.
 
+`server.spec.ts` covers the HTTP API on its own: it starts `server.ts` in-process with a fake runner, so checking how each request is parsed, refused or rejected needs no child process or browser. `runner.spec.ts` still covers how the real runner starts up, and that a caller going away stops the Script and everything it started.
+
 `protocol.spec.ts` wires a runner end and a child end to each other in memory, without a process or a browser. It covers the orderings that are hard to bring about end to end: an outcome arriving after the timeout, a second outcome or `finished`, a report a Script forged, and each way an ending without an outcome is worded. `runner.spec.ts` still covers what only a real child shows, such as a Script being unable to forge its report from inside its own process.
 
 - **Temp files:** the runner gets its own `TMPDIR`, so a test can check that nothing is left behind after an execution, even one killed at its timeout.
