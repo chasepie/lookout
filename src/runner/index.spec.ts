@@ -11,6 +11,7 @@ import {
   fixtureRequest,
   hasMarkedProcesses,
   isAlive,
+  runnerEnvironment,
   runnerPath,
   scriptSubprocesses,
   servePages,
@@ -50,9 +51,13 @@ test('a runner executes Scripts through its HTTP API', { timeout: 30_000 }, asyn
   }
 });
 
-test('a runner listens only on the loopback address unless given a host', async () => {
-  const { runner, url } = await startRunner({ HEADLESS: 'true' });
+test.each([
+  ['without a host', {}],
+  ['given an empty host, as compose passes an unset variable', { RUNNER_HOST: '' }],
+])('a runner %s listens only on the loopback address', { timeout: 30_000 }, async (_, env) => {
+  const { runner, url } = await startRunner({ HEADLESS: 'true', ...env });
   try {
+    // The runner logs the address it bound, not the one it was asked for
     expect(new URL(url).hostname).toBe('127.0.0.1');
   } finally {
     runner.kill();
@@ -115,21 +120,29 @@ test.each(['SIGINT', 'SIGTERM'] as const)('a runner stopped by %s takes a Script
 });
 
 const portError = 'PORT must be an integer from 0 to 65535';
+const hostError = 'RUNNER_HOST must be an IP address';
+const tokenError = 'RUNNER_TOKEN must be set when RUNNER_HOST is';
 const browserlessUrlError = 'BROWSERLESS_URL must be a ws:// or wss:// URL';
 
 test.each([
   ['a PORT that is empty', { PORT: '' }, portError],
   ['a PORT that is not a number', { PORT: 'http' }, portError],
   ['a PORT that is out of range', { PORT: '70000' }, portError],
+  ['a RUNNER_HOST that is a name', { RUNNER_HOST: 'runner.local' }, hostError],
+  ['a RUNNER_HOST other machines can reach, and no RUNNER_TOKEN', { RUNNER_HOST: '0.0.0.0' }, tokenError],
+  ['a RUNNER_HOST other machines can reach, and an empty RUNNER_TOKEN', { RUNNER_HOST: '::', RUNNER_TOKEN: '' }, tokenError],
+  // An address reserved for documentation, which is no machine's
+  ['a RUNNER_HOST that is not this machine\'s', { RUNNER_HOST: '192.0.2.1', RUNNER_TOKEN: 'runner-secret' },
+    "The runner can't listen on 192.0.2.1"],
   ['a BROWSERLESS_URL that is not a URL', { BROWSERLESS_URL: 'browserless:3000' }, browserlessUrlError],
   ['a BROWSERLESS_URL that is not a WebSocket URL', { BROWSERLESS_URL: 'http://browserless:3000/chromium/playwright' },
     browserlessUrlError],
 ])('a runner with %s refuses to start', { timeout: 30_000 }, async (_, env, error) => {
   const badRunner = spawn(process.execPath, [runnerPath], {
-    env: { ...process.env, PORT: '0', ...env },
+    env: runnerEnvironment(env),
     stdio: ['ignore', 'pipe', 'pipe'],
-    // A runner that starts anyway is killed, rather than left listening
-    timeout: 5_000,
+    // A runner that starts anyway is killed, rather than left listening. One that can't listen first loads Playwright.
+    timeout: 20_000,
   });
   let stderr = '';
   badRunner.stderr.on('data', (chunk) => {

@@ -23,6 +23,7 @@ public sealed class RunnerClientTests(TestContext testContext)
         await using var host = factory.WithWebHostBuilder(builder =>
         {
             builder.UseSetting("Runner:BaseUrl", baseUrl);
+            builder.UseSetting("Runner:Token", "runner-secret");
             builder.ConfigureTestServices(services => services.AddHttpClient<IRunnerClient, HttpRunnerClient>()
                 .ConfigurePrimaryHttpMessageHandler(() => new RunnerPathHandler()));
         });
@@ -57,6 +58,23 @@ public sealed class RunnerClientTests(TestContext testContext)
     {
         await using var factory = new LookoutWebApplicationFactory();
         await using var host = factory.WithWebHostBuilder(builder => builder.UseSetting("Runner:Token", "secret\r\nX-Other: 1"));
+
+        var error = Assert.ThrowsExactly<InvalidOperationException>(() => host.CreateClient());
+
+        Assert.Contains("Runner:Token", error.Message);
+    }
+
+    [TestMethod]
+    [DataRow(null, DisplayName = "No token")]
+    [DataRow("", DisplayName = "An empty token, as compose passes an unset variable")]
+    public async Task RefusesToStartWithoutARunnerTokenForARunnerOnAnotherMachine(string? token)
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        await using var host = factory.WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("Runner:BaseUrl", "http://runner:3000");
+            builder.UseSetting("Runner:Token", token);
+        });
 
         var error = Assert.ThrowsExactly<InvalidOperationException>(() => host.CreateClient());
 
@@ -207,6 +225,9 @@ public sealed class RunnerClientTests(TestContext testContext)
         start.ArgumentList.Add(Path.Combine(RepositoryRoot.Find(), "src/runner/index.ts"));
         start.Environment["PORT"] = "0";
         start.Environment["HEADLESS"] = "true";
+        // A developer may have set these for running the runner themselves; this one takes requests without a token.
+        start.Environment.Remove("RUNNER_HOST");
+        start.Environment.Remove("RUNNER_TOKEN");
         using var process = Process.Start(start)!;
         try
         {

@@ -88,6 +88,9 @@ public sealed class RequestForgeryTests(TestContext testContext)
         var create = await client.PostAsync(new Uri("/api/watches", UriKind.Relative), form, testContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.BadRequest, create.StatusCode);
+        // Refused for its token, rather than failing validation
+        var problem = await create.Content.ReadFromJsonAsync<JsonObject>(testContext.CancellationToken);
+        Assert.AreEqual("urn:lookout:problem:request-token", problem!["type"]!.GetValue<string>());
         var watches = await client.GetFromJsonAsync<JsonArray>("/api/watches", testContext.CancellationToken);
         Assert.IsEmpty(watches!);
     }

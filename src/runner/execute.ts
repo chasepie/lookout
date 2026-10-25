@@ -89,7 +89,8 @@ const outputDrainMs = 1_000;
 /**
  * The runner's environment for a Script's process, with its temp files in `tempDirectory`. NODE_OPTIONS is left
  * out: what it preloads, such as a debugger's bootloader, is the runner's, and the Script's process may not read it.
- * So is RUNNER_TOKEN, which a Script could otherwise pass to a page.
+ * So is RUNNER_TOKEN, which a Script could otherwise pass to a page. With `launch`, a Script may start processes, and
+ * one could read it from the runner's own environment, so only with `connect` is it kept from Scripts.
  */
 function scriptEnvironment(tempDirectory: string) {
   const environment: NodeJS.ProcessEnv = {

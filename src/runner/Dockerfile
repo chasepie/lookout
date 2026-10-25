@@ -15,8 +15,8 @@ RUN npm install --omit=dev --ignore-scripts --no-save --no-package-lock "playwri
 COPY src/runner src/runner
 WORKDIR /app/src/runner
 USER node
-# Lookout reaches it from another container. Only its networks, which reach nothing but Lookout and Browserless
-# (compose.yaml), stop anything else sending it a Script.
-ENV HOST=0.0.0.0
+# Lookout reaches it from another container, so it listens on every interface, and refuses to start without
+# RUNNER_TOKEN. Its networks (compose.yaml) also keep anything but Lookout and Browserless from reaching it.
+ENV RUNNER_HOST=0.0.0.0
 EXPOSE 3000
 CMD ["node", "index.ts"]

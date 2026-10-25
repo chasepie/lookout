@@ -86,6 +86,3 @@ jobs:
       # the stack against the real Browserless is the README's manual smoke test.
       - name: Build
         run: docker compose build
-        env:
-          # compose.yaml requires one, though building doesn't use it
-          LOOKOUT_RUNNER_TOKEN: ci

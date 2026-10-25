@@ -6,10 +6,12 @@ import { isObject } from './guards.ts';
 /** A request the runner can't execute, reported to the caller with a 4xx status */
 class InvalidRequestError extends Error {
   readonly status: number;
+  readonly headers: Record<string, string>;
 
-  constructor(message: string, status = 400) {
+  constructor(message: string, status = 400, headers: Record<string, string> = {}) {
     super(message);
     this.status = status;
+    this.headers = headers;
   }
 }
 
@@ -104,8 +106,8 @@ function parseExecuteRequest(body: unknown): ExecuteRequest {
   };
 }
 
-function sendJson(response: ServerResponse, status: number, body: unknown) {
-  response.writeHead(status, { 'content-type': 'application/json' });
+function sendJson(response: ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}) {
+  response.writeHead(status, { ...headers, 'content-type': 'application/json' });
   response.end(JSON.stringify(body));
 }
 
@@ -117,20 +119,29 @@ function isJsonRequest(request: IncomingMessage) {
   return request.headers['content-type']?.split(';')[0]?.trim().toLowerCase() === 'application/json';
 }
 
+const digest = (value: string) => createHash('sha256').update(value).digest();
+
 /**
- * Whether the request carries `Authorization: Bearer <token>`. Comparing digests takes the same time however much of
- * the header matches, and whatever its length.
+ * Refuses a request unless it carries the `Authorization` header whose digest is `expected`, telling one without the
+ * header from one with the wrong token, as RFC 6750 does. Comparing digests takes the same time however much of the
+ * header matches, and whatever its length.
  */
-function hasToken(request: IncomingMessage, token: string) {
-  const digest = (value: string) => createHash('sha256').update(value).digest();
-  return timingSafeEqual(digest(request.headers.authorization ?? ''), digest(`Bearer ${token}`));
+function requireToken(request: IncomingMessage, expected: Buffer) {
+  const { authorization } = request.headers;
+  if (authorization === undefined) {
+    throw new InvalidRequestError('Requests must carry the runner token', 401, { 'www-authenticate': 'Bearer' });
+  }
+  if (!timingSafeEqual(digest(authorization), expected)) {
+    throw new InvalidRequestError("The request's runner token is wrong", 401,
+      { 'www-authenticate': 'Bearer error="invalid_token"' });
+  }
 }
 
-async function handleExecute(request: IncomingMessage, response: ServerResponse, execute: ExecuteScript, token?: string) {
+async function handleExecute(request: IncomingMessage, response: ServerResponse, execute: ExecuteScript, expectedToken?: Buffer) {
   // Anything that can reach the runner could otherwise have it run a Script, including Browserless, which loads
   // whatever pages Scripts visit
-  if (token !== undefined && !hasToken(request, token)) {
-    throw new InvalidRequestError('Requests without the runner token are refused', 401);
+  if (expectedToken !== undefined) {
+    requireToken(request, expectedToken);
   }
   // Browsers send an Origin with every POST, and the backend doesn't. This refuses a page whose domain was rebound
   // to the runner's address, which counts as same-origin and so needs no preflight.
@@ -156,15 +167,16 @@ async function handleExecute(request: IncomingMessage, response: ServerResponse,
  * `token`, it refuses requests that don't carry it as a bearer token.
  */
 export function createRunnerServer(execute: ExecuteScript, token?: string) {
+  const expectedToken = token === undefined ? undefined : digest(`Bearer ${token}`);
   return createServer((request, response) => {
     if (request.method !== 'POST' || request.url !== '/execute') {
       sendJson(response, 404, { error: 'Not found' });
       return;
     }
 
-    handleExecute(request, response, execute, token).catch((error: unknown) => {
+    handleExecute(request, response, execute, expectedToken).catch((error: unknown) => {
       if (error instanceof InvalidRequestError) {
-        sendJson(response, error.status, { error: error.message });
+        sendJson(response, error.status, { error: error.message }, error.headers);
         return;
       }
       console.error('Executing a Script failed', error);

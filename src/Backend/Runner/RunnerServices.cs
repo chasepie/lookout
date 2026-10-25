@@ -6,22 +6,24 @@ public static class RunnerServices
 {
     /// <summary>
     /// The runner at <c>Runner:BaseUrl</c>, which executes Scripts (ADR-0001), sent <c>Runner:Token</c>, if set, as a
-    /// bearer token with every request.
+    /// bearer token with every request. A runner anywhere but this machine requires one.
     /// </summary>
     public static void AddRunner(this IServiceCollection services, IConfiguration configuration)
     {
-        var baseAddress = HttpUrls.ConfiguredBaseAddress(configuration, "Runner:BaseUrl", "http://localhost:3000");
-        var token = configuration["Runner:Token"];
-        // A bearer token can hold a few other characters, but these are all one needs, as with the VPN's key.
-        if (!string.IsNullOrEmpty(token) && !token.All(character => char.IsAsciiLetterOrDigit(character) || character is '-' or '_'))
+        // The address the runner listens on by default. localhost could reach whatever else holds port 3000 on ::1.
+        var baseAddress = HttpUrls.ConfiguredBaseAddress(configuration, "Runner:BaseUrl", "http://127.0.0.1:3000");
+        var token = ConfiguredTokens.Read(configuration, "Runner:Token");
+        // The runner refuses to start without one there, so this is a mistake, such as a deployment's unset token.
+        if (token is null && !baseAddress.IsLoopback)
         {
-            throw new InvalidOperationException("Runner:Token must contain only letters, digits, '-' and '_', such as from openssl rand -hex 32");
+            throw new InvalidOperationException(
+                $"Runner:Token must be set, such as from openssl rand -hex 32, since the runner at {baseAddress} isn't on this machine");
         }
 
         services.AddHttpClient<IRunnerClient, HttpRunnerClient>(client =>
         {
             client.BaseAddress = baseAddress;
-            if (!string.IsNullOrEmpty(token))
+            if (token is not null)
             {
                 client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
             }

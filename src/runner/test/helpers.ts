@@ -126,10 +126,24 @@ export async function scriptSubprocesses(runnerPid: number) {
   return found;
 }
 
+/**
+ * The environment for a real runner process: this one's, without the runner's own settings, which a developer may have
+ * set for running it, and on a free port, with `env` over the top
+ */
+export function runnerEnvironment(env: Record<string, string>) {
+  const environment: NodeJS.ProcessEnv = { ...process.env, PORT: '0', ...env };
+  for (const name of ['RUNNER_HOST', 'RUNNER_TOKEN']) {
+    if (!(name in env)) {
+      delete environment[name];
+    }
+  }
+  return environment;
+}
+
 /** Starts a real runner process and resolves with its base URL once it is listening */
 export async function startRunner(env: Record<string, string>) {
   const runner = spawn(process.execPath, [runnerPath], {
-    env: { ...process.env, PORT: '0', ...env },
+    env: runnerEnvironment(env),
     stdio: ['ignore', 'pipe', 'inherit'],
   });
   let output = '';

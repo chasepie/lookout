@@ -147,9 +147,13 @@ test('given a token, a request is refused unless it carries that token, and exec
     const wrong = await postWith({ authorization: 'Bearer runner-secreT' });
     const prefixed = await postWith({ authorization: 'Bearer runner-secret-and-more' });
 
-    for (const response of [missing, wrong, prefixed]) {
+    expect(missing.status).toBe(401);
+    expect(missing.headers.get('www-authenticate')).toBe('Bearer');
+    expect(await missing.json()).toEqual({ error: 'Requests must carry the runner token' });
+    for (const response of [wrong, prefixed]) {
       expect(response.status).toBe(401);
-      expect(await response.json()).toEqual({ error: 'Requests without the runner token are refused' });
+      expect(response.headers.get('www-authenticate')).toBe('Bearer error="invalid_token"');
+      expect(await response.json()).toEqual({ error: "The request's runner token is wrong" });
     }
     expect(executed).toEqual([]);
 
