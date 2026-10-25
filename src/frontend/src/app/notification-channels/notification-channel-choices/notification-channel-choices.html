@@ -1,0 +1,19 @@
+@if (notificationChannels.list.error()) {
+  <p class="error" role="alert">Could not load your Notification channels. <button type="button" (click)="notificationChannels.list.reload()">Try again</button></p>
+} @else if (notificationChannels.list.hasValue()) {
+  @if (notificationChannels.list.value().length) {
+    <fieldset>
+      <legend>Notification channels to notify</legend>
+      @for (notificationChannel of notificationChannels.list.value(); track notificationChannel.id) {
+        <label class="choice">
+          <input #box type="checkbox" [checked]="chosen().has(notificationChannel.id)" (change)="toggle(notificationChannel.id, box.checked)" />
+          <span>{{ notificationChannel.name }}</span>
+          <small>{{ kinds[notificationChannel.kind] }}</small>
+        </label>
+      }
+    </fieldset>
+    <ng-content />
+  } @else {
+    <p class="details">No Notification channels yet. <a routerLink="/settings">Add one in Settings</a> to be notified of Changes.</p>
+  }
+} @else { <p class="details">Loading Notification channels…</p> }

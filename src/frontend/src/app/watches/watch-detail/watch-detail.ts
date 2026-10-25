@@ -14,7 +14,7 @@ import { StatusBadge } from '../status-badge/status-badge';
 import { WatchEvents } from '../watch-events';
 import { type Run, type ScriptVersion, type Watch, type WatchSettings, outcomeLabels } from '../watch.model';
 import { defaultTimeoutSeconds, maxTimeoutSeconds, nameAndNotificationUrlRules, timeoutRules } from '../watch-settings';
-import { WatchChannels } from '../watch-channels/watch-channels';
+import { WatchNotificationChannels } from '../watch-notification-channels/watch-notification-channels';
 import { Watches } from '../watches';
 
 const historyPageSize = 50;
@@ -32,7 +32,7 @@ const noOlderRuns: OlderRuns = { runs: [], ended: false, loading: false };
 
 @Component({
   selector: 'app-watch-detail',
-  imports: [DatePipe, FormField, OutcomeBadge, RouterLink, RunDebugOutput, RunTiming, ScheduleEditor, StatusBadge, WatchChannels],
+  imports: [DatePipe, FormField, OutcomeBadge, RouterLink, RunDebugOutput, RunTiming, ScheduleEditor, StatusBadge, WatchNotificationChannels],
   templateUrl: './watch-detail.html',
   styleUrl: './watch-detail.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -165,9 +165,9 @@ export class WatchDetail {
     this.refreshWatch();
   }
 
-  protected channelsSaved() {
+  protected notificationChannelsSaved() {
     this.clearMessages();
-    this.notice.set('Channels saved.');
+    this.notice.set('Notification channels saved.');
     this.refreshWatch();
   }
 

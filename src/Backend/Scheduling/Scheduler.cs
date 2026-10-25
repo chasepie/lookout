@@ -1,3 +1,5 @@
+using ChasePie.Lookout.Backend.Running;
+
 namespace ChasePie.Lookout.Backend.Scheduling;
 
 /// <summary>
@@ -66,7 +68,9 @@ public sealed partial class Scheduler(
         var due = await schedules.DueAsync(cancellationToken);
 
         // Every due Watch is admitted or refused before any skip is claimed, as Runs admits without waiting.
-        var admissions = due.Select(run => runs.Run(run.WatchId, token => schedules.ClaimAsync(run, token))).ToList();
+        var admissions = due
+            .Select(run => runs.Run(run.WatchId, token => schedules.ClaimAsync(run, token)))
+            .ToList();
         foreach (var (run, admission) in due.Zip(admissions))
         {
             if (admission is Admitted admitted)

@@ -30,8 +30,8 @@ public sealed class Watch
     public long Revision { get; set; }
     /// <summary>Whether the current failure streak has notified, so its end notifies that the Watch recovered.</summary>
     public bool FailureStreakNotified { get; set; }
-    /// <summary>The Channels this Watch notifies.</summary>
-    public ICollection<Channel> Channels { get; set; } = [];
+    /// <summary>The Notification channels this Watch notifies.</summary>
+    public ICollection<NotificationChannel> NotificationChannels { get; set; } = [];
     public ICollection<ScriptVersion> ScriptVersions { get; set; } = [];
     public ICollection<Run> Runs { get; set; } = [];
 }

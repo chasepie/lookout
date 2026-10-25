@@ -24,8 +24,8 @@ public sealed class NotificationsTests(TestContext testContext)
 
         await RunNow(client, watch, times: 2);
 
-        var sent = factory.Channels.Sent.Single();
-        Assert.AreEqual("Phone", sent.ChannelName);
+        var sent = factory.NotificationChannels.Sent.Single();
+        Assert.AreEqual("Phone", sent.NotificationChannelName);
         Assert.AreEqual(NotificationKind.Change, sent.Notification.Kind);
         Assert.AreEqual("Widget price changed", sent.Notification.Title);
         Assert.AreEqual("£20 → £19", sent.Notification.Message);
@@ -42,10 +42,10 @@ public sealed class NotificationsTests(TestContext testContext)
         var watch = await CreateWatchNotifying(client, "Phone");
 
         await RunNow(client, watch, times: 2);
-        var afterFirst = factory.Channels.Sent.ToList();
+        var afterFirst = factory.NotificationChannels.Sent.ToList();
         await RunNow(client, watch, times: 3);
 
-        var sent = factory.Channels.Sent.Single();
+        var sent = factory.NotificationChannels.Sent.Single();
         Assert.AreSame(sent, afterFirst.Single());
         Assert.AreEqual(NotificationKind.Errored, sent.Notification.Kind);
         Assert.AreEqual("Widget price errored", sent.Notification.Title);
@@ -63,14 +63,14 @@ public sealed class NotificationsTests(TestContext testContext)
         var watch = await CreateWatchNotifying(client, "Phone");
 
         await RunNow(client, watch, times: 3);
-        var afterTwo = factory.Channels.Sent.ToList();
+        var afterTwo = factory.NotificationChannels.Sent.ToList();
         await RunNow(client, watch);
-        var afterThree = factory.Channels.Sent.ToList();
+        var afterThree = factory.NotificationChannels.Sent.ToList();
         await RunNow(client, watch, times: 2);
 
         Assert.IsEmpty(afterTwo);
         var sent = afterThree.Single();
-        Assert.AreSame(sent, factory.Channels.Sent.Single());
+        Assert.AreSame(sent, factory.NotificationChannels.Sent.Single());
         Assert.AreEqual(NotificationKind.KnownFailures, sent.Notification.Kind);
         Assert.AreEqual("Widget price failed 3 times in a row", sent.Notification.Title);
         Assert.AreEqual("Access denied", sent.Notification.Message);
@@ -88,7 +88,7 @@ public sealed class NotificationsTests(TestContext testContext)
 
         await RunNow(client, watch, times: 6);
 
-        Assert.IsEmpty(factory.Channels.Sent);
+        Assert.IsEmpty(factory.NotificationChannels.Sent);
     }
 
     [TestMethod]
@@ -108,7 +108,7 @@ public sealed class NotificationsTests(TestContext testContext)
 
         await RunNow(client, watch, times: failures + 4);
 
-        var sent = factory.Channels.Sent.Select(item => item.Notification).ToList();
+        var sent = factory.NotificationChannels.Sent.Select(item => item.Notification).ToList();
         Assert.HasCount(2, sent);
         Assert.AreEqual(NotificationKind.Recovered, sent[1].Kind);
         Assert.AreEqual("Widget price recovered", sent[1].Title);
@@ -127,8 +127,8 @@ public sealed class NotificationsTests(TestContext testContext)
         await RunNow(client, watch, times: 3);
 
         Assert.AreSequenceEqual([NotificationKind.Errored, NotificationKind.Recovered, NotificationKind.Change],
-            factory.Channels.Sent.Select(item => item.Notification.Kind));
-        Assert.AreEqual("£20 → £19", factory.Channels.Sent.Last().Notification.Message);
+            factory.NotificationChannels.Sent.Select(item => item.Notification.Kind));
+        Assert.AreEqual("£20 → £19", factory.NotificationChannels.Sent.Last().Notification.Message);
     }
 
     [TestMethod]
@@ -141,7 +141,7 @@ public sealed class NotificationsTests(TestContext testContext)
 
         await RunNow(client, watch, times: 2);
 
-        Assert.IsEmpty(factory.Channels.Sent);
+        Assert.IsEmpty(factory.NotificationChannels.Sent);
     }
 
     [TestMethod]
@@ -156,52 +156,52 @@ public sealed class NotificationsTests(TestContext testContext)
 
         // The first Run sets no Baseline, and the second sets it silently; the third starts a new streak.
         Assert.AreSequenceEqual(["Selector .price not found", "Timed out"],
-            factory.Channels.Sent.Select(item => item.Notification.Message));
+            factory.NotificationChannels.Sent.Select(item => item.Notification.Message));
     }
 
     [TestMethod]
-    public async Task OnlyTheWatchsChosenChannelsReceiveItsNotifications()
+    public async Task OnlyTheWatchsChosenNotificationChannelsReceiveItsNotifications()
     {
         await using var factory = new LookoutWebApplicationFactory();
         Arrange(factory, Succeeded("£20"), Succeeded("£19"), Succeeded("£20"), Succeeded("£18"));
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
-        var phone = await CreateChannel(client, "Phone");
-        var server = await CreateChannel(client, "Deals server");
-        await CreateChannel(client, "Unused");
+        var phone = await CreateNotificationChannel(client, "Phone");
+        var server = await CreateNotificationChannel(client, "Deals server");
+        await CreateNotificationChannel(client, "Unused");
         var gadget = await CreateWatch(client);
         var widget = await CreateWatch(client);
-        await SetChannels(client, widget, phone, server);
-        await SetChannels(client, gadget, server);
+        await SetNotificationChannels(client, widget, phone, server);
+        await SetNotificationChannels(client, gadget, server);
 
         await RunNow(client, widget, times: 2);
-        await SetChannels(client, widget, phone);
+        await SetNotificationChannels(client, widget, phone);
         await RunNow(client, widget, times: 2);
 
         Assert.AreSequenceEqual(["Deals server", "Phone", "Phone", "Phone"],
-            factory.Channels.Sent.Select(item => item.ChannelName).Order(StringComparer.Ordinal));
+            factory.NotificationChannels.Sent.Select(item => item.NotificationChannelName).Order(StringComparer.Ordinal));
         var watch = await client.GetFromJsonAsync<JsonObject>($"/api/watches/{widget}", testContext.CancellationToken);
-        Assert.AreSequenceEqual([phone], watch!["channelIds"]!.AsArray().Select(id => id!.GetValue<string>()));
+        Assert.AreSequenceEqual([phone], watch!["notificationChannelIds"]!.AsArray().Select(id => id!.GetValue<string>()));
     }
 
     [TestMethod]
-    public async Task AWatchCanChooseItsChannelsWhenItIsCreated()
+    public async Task AWatchCanChooseItsNotificationChannelsWhenItIsCreated()
     {
         await using var factory = new LookoutWebApplicationFactory();
         Arrange(factory, Succeeded("£20"), Succeeded("£19"));
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
-        var phone = await CreateChannel(client, "Phone");
-        await CreateChannel(client, "Deals server");
+        var phone = await CreateNotificationChannel(client, "Phone");
+        await CreateNotificationChannel(client, "Deals server");
 
         var created = await CreateWatch(client, phone);
         await RunNow(client, created, times: 2);
 
-        Assert.AreEqual("Phone", factory.Channels.Sent.Single().ChannelName);
+        Assert.AreEqual("Phone", factory.NotificationChannels.Sent.Single().NotificationChannelName);
         var watch = await client.GetFromJsonAsync<JsonObject>($"/api/watches/{created}", testContext.CancellationToken);
-        Assert.AreSequenceEqual([phone], watch!["channelIds"]!.AsArray().Select(id => id!.GetValue<string>()));
+        Assert.AreSequenceEqual([phone], watch!["notificationChannelIds"]!.AsArray().Select(id => id!.GetValue<string>()));
     }
 
     [TestMethod]
-    public async Task CreatingAWatchWithAChannelThatDoesNotExistIsRejected()
+    public async Task CreatingAWatchWithANotificationChannelThatDoesNotExistIsRejected()
     {
         await using var factory = new LookoutWebApplicationFactory();
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
@@ -224,7 +224,7 @@ public sealed class NotificationsTests(TestContext testContext)
         await RunNow(client, watch, times: 2);
 
         // Short enough for Pushover's 1024 characters, with both sides shortened rather than the new content cut off.
-        var message = factory.Channels.Sent.Single().Notification.Message;
+        var message = factory.NotificationChannels.Sent.Single().Notification.Message;
         Assert.IsLessThanOrEqualTo(1024, message.Length);
         Assert.Contains("a… → bbb", message);
         Assert.EndsWith("b…", message);
@@ -242,17 +242,17 @@ public sealed class NotificationsTests(TestContext testContext)
 
         await RunNow(client, watch, times: 2);
 
-        var message = factory.Channels.Sent.Single().Notification.Message;
+        var message = factory.NotificationChannels.Sent.Single().Notification.Message;
         Assert.DoesNotContain(Rune.ReplacementChar, message.EnumerateRunes().ToList());
         Assert.EndsWith(new string('a', 478) + "…", message);
     }
 
     [TestMethod]
-    public async Task AChannelThatFailsToSendNeitherFailsTheRunNorStopsOtherChannels()
+    public async Task ANotificationChannelThatFailsToSendNeitherFailsTheRunNorStopsOtherNotificationChannels()
     {
         await using var factory = new LookoutWebApplicationFactory();
         Arrange(factory, Succeeded("£20"), Succeeded("£19"));
-        factory.Channels.OnSend = (channel, _) => channel.Name == "Broken"
+        factory.NotificationChannels.OnSend = (notificationChannel, _) => notificationChannel.Name == "Broken"
             ? throw new HttpRequestException("Discord returned HTTP 404 (Not Found).")
             : Task.CompletedTask;
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
@@ -260,46 +260,46 @@ public sealed class NotificationsTests(TestContext testContext)
 
         await RunNow(client, watch, times: 2);
 
-        Assert.AreEqual("Phone", factory.Channels.Sent.Single().ChannelName);
+        Assert.AreEqual("Phone", factory.NotificationChannels.Sent.Single().NotificationChannelName);
         var runs = await client.GetFromJsonAsync<JsonArray>($"/api/watches/{watch}/runs", testContext.CancellationToken);
         Assert.IsTrue(runs![0]!["isChange"]!.GetValue<bool>());
     }
 
     [TestMethod]
-    public async Task ADeletedChannelIsNoLongerChosenByAnyWatch()
+    public async Task ADeletedNotificationChannelIsNoLongerChosenByAnyWatch()
     {
         await using var factory = new LookoutWebApplicationFactory();
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
-        var phone = await CreateChannel(client, "Phone");
-        var server = await CreateChannel(client, "Deals server");
+        var phone = await CreateNotificationChannel(client, "Phone");
+        var server = await CreateNotificationChannel(client, "Deals server");
         var watch = await CreateWatch(client);
-        await SetChannels(client, watch, phone, server);
+        await SetNotificationChannels(client, watch, phone, server);
 
-        var response = await client.DeleteAsync(new Uri($"/api/channels/{phone}", UriKind.Relative), testContext.CancellationToken);
+        var response = await client.DeleteAsync(new Uri($"/api/notification-channels/{phone}", UriKind.Relative), testContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.NoContent, response.StatusCode);
         var updated = await client.GetFromJsonAsync<JsonObject>($"/api/watches/{watch}", testContext.CancellationToken);
-        Assert.AreSequenceEqual([server], updated!["channelIds"]!.AsArray().Select(id => id!.GetValue<string>()));
-        var channels = await client.GetFromJsonAsync<JsonArray>("/api/channels", testContext.CancellationToken);
-        Assert.AreSequenceEqual(["Deals server"], channels!.Select(channel => channel!["name"]!.GetValue<string>()));
+        Assert.AreSequenceEqual([server], updated!["notificationChannelIds"]!.AsArray().Select(id => id!.GetValue<string>()));
+        var notificationChannels = await client.GetFromJsonAsync<JsonArray>("/api/notification-channels", testContext.CancellationToken);
+        Assert.AreSequenceEqual(["Deals server"], notificationChannels!.Select(notificationChannel => notificationChannel!["name"]!.GetValue<string>()));
     }
 
     [TestMethod]
-    public async Task OverlappingChangesToAWatchsChannelsNeverCombine()
+    public async Task OverlappingChangesToAWatchsNotificationChannelsNeverCombine()
     {
         await using var factory = new LookoutWebApplicationFactory();
-        var interceptor = new HoldFirstWriteInterceptor("WatchChannels");
+        var interceptor = new HoldFirstWriteInterceptor("WatchNotificationChannels");
         await using var host = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
             services.ConfigureDbContext<LookoutDbContext>(options => options.AddInterceptors(interceptor))));
         using var client = await host.CreateSignedInClientAsync(testContext.CancellationToken);
-        var phone = await CreateChannel(client, "Phone");
-        var server = await CreateChannel(client, "Deals server");
+        var phone = await CreateNotificationChannel(client, "Phone");
+        var server = await CreateNotificationChannel(client, "Deals server");
         var watch = await CreateWatch(client);
 
-        var first = client.PutAsJsonAsync($"/api/watches/{watch}/channels", new { channelIds = new[] { phone } },
+        var first = client.PutAsJsonAsync($"/api/watches/{watch}/notification-channels", new { notificationChannelIds = new[] { phone } },
             testContext.CancellationToken);
         await interceptor.FirstHeld.Task.WaitAsync(TimeSpan.FromSeconds(10), testContext.CancellationToken);
-        var second = client.PutAsJsonAsync($"/api/watches/{watch}/channels", new { channelIds = new[] { server } },
+        var second = client.PutAsJsonAsync($"/api/watches/{watch}/notification-channels", new { notificationChannelIds = new[] { server } },
             testContext.CancellationToken);
         // The second change either reaches its own write or waits behind the first, which is then let go.
         await Task.WhenAny(interceptor.OtherArrived.Task, Task.Delay(500, testContext.CancellationToken));
@@ -307,22 +307,22 @@ public sealed class NotificationsTests(TestContext testContext)
         var responses = await Task.WhenAll(first, second);
 
         var saved = (await client.GetFromJsonAsync<JsonObject>($"/api/watches/{watch}", testContext.CancellationToken))!
-            ["channelIds"]!.AsArray().Select(id => id!.GetValue<string>()).ToList();
+            ["notificationChannelIds"]!.AsArray().Select(id => id!.GetValue<string>()).ToList();
         var succeeded = responses.Count(response => response.StatusCode == HttpStatusCode.NoContent);
         Assert.IsGreaterThanOrEqualTo(1, succeeded, "At least one of the changes is saved.");
         Assert.HasCount(1, saved, $"Saved {string.Join(", ", saved)}, a combination of the two changes.");
     }
 
     [TestMethod]
-    public async Task ChangingAWatchsChannelsWhileItRunsKeepsTheRunAndNotifiesTheNewChoice()
+    public async Task ChangingAWatchsNotificationChannelsWhileItRunsKeepsTheRunAndNotifiesTheNewChoice()
     {
         await using var factory = new LookoutWebApplicationFactory();
         factory.Runner.Results.Enqueue(Succeeded("£20"));
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
-        var phone = await CreateChannel(client, "Phone");
-        var server = await CreateChannel(client, "Deals server");
+        var phone = await CreateNotificationChannel(client, "Phone");
+        var server = await CreateNotificationChannel(client, "Deals server");
         var watch = await CreateWatch(client);
-        await SetChannels(client, watch, phone);
+        await SetNotificationChannels(client, watch, phone);
         await RunNow(client, watch);
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var finished = new TaskCompletionSource<RunnerResult>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -330,31 +330,31 @@ public sealed class NotificationsTests(TestContext testContext)
         var run = client.PostAsync(new Uri($"/api/watches/{watch}/runs", UriKind.Relative), null, testContext.CancellationToken);
         await started.Task.WaitAsync(TimeSpan.FromSeconds(10), testContext.CancellationToken);
 
-        await SetChannels(client, watch, server);
+        await SetNotificationChannels(client, watch, server);
         finished.SetResult(Succeeded("£19"));
 
         Assert.AreEqual(HttpStatusCode.OK, (await run).StatusCode);
-        Assert.AreEqual("Deals server", factory.Channels.Sent.Single().ChannelName);
+        Assert.AreEqual("Deals server", factory.NotificationChannels.Sent.Single().NotificationChannelName);
     }
 
     [TestMethod]
-    public async Task ChoosingAChannelThatDoesNotExistIsRejectedWithoutChangingTheWatch()
+    public async Task ChoosingANotificationChannelThatDoesNotExistIsRejectedWithoutChangingTheWatch()
     {
         await using var factory = new LookoutWebApplicationFactory();
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
-        var phone = await CreateChannel(client, "Phone");
+        var phone = await CreateNotificationChannel(client, "Phone");
         var watch = await CreateWatch(client);
-        await SetChannels(client, watch, phone);
+        await SetNotificationChannels(client, watch, phone);
 
-        var response = await client.PutAsJsonAsync($"/api/watches/{watch}/channels",
-            new { channelIds = new[] { Guid.NewGuid() } }, testContext.CancellationToken);
-        var missingWatch = await client.PutAsJsonAsync($"/api/watches/{Guid.NewGuid()}/channels",
-            new { channelIds = Array.Empty<Guid>() }, testContext.CancellationToken);
+        var response = await client.PutAsJsonAsync($"/api/watches/{watch}/notification-channels",
+            new { notificationChannelIds = new[] { Guid.NewGuid() } }, testContext.CancellationToken);
+        var missingWatch = await client.PutAsJsonAsync($"/api/watches/{Guid.NewGuid()}/notification-channels",
+            new { notificationChannelIds = Array.Empty<Guid>() }, testContext.CancellationToken);
 
         Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.AreEqual(HttpStatusCode.NotFound, missingWatch.StatusCode);
         var unchanged = await client.GetFromJsonAsync<JsonObject>($"/api/watches/{watch}", testContext.CancellationToken);
-        Assert.AreSequenceEqual([phone], unchanged!["channelIds"]!.AsArray().Select(id => id!.GetValue<string>()));
+        Assert.AreSequenceEqual([phone], unchanged!["notificationChannelIds"]!.AsArray().Select(id => id!.GetValue<string>()));
     }
 
     [TestMethod]
@@ -370,11 +370,11 @@ public sealed class NotificationsTests(TestContext testContext)
 
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(testContext.CancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(10));
-        while (factory.Channels.Sent.IsEmpty)
+        while (factory.NotificationChannels.Sent.IsEmpty)
         {
             await Task.Delay(20, timeout.Token);
         }
-        Assert.AreEqual("£20 → £19", factory.Channels.Sent.Single().Notification.Message);
+        Assert.AreEqual("£20 → £19", factory.NotificationChannels.Sent.Single().Notification.Message);
     }
 
     private static void Arrange(LookoutWebApplicationFactory factory, params RunnerResult[] results)
@@ -394,36 +394,36 @@ public sealed class NotificationsTests(TestContext testContext)
     private static RunnerResult Errored(string errorMessage) =>
         new() { Outcome = RunOutcome.Errored, ErrorMessage = errorMessage, DurationMs = 1 };
 
-    /// <summary>Creates a Watch that notifies new Channels of the given names, and returns its ID.</summary>
-    private async Task<string> CreateWatchNotifying(HttpClient client, params string[] channelNames)
+    /// <summary>Creates a Watch that notifies new Notification channels of the given names, and returns its ID.</summary>
+    private async Task<string> CreateWatchNotifying(HttpClient client, params string[] notificationChannelNames)
     {
-        var channelIds = new List<string>();
-        foreach (var name in channelNames)
+        var notificationChannelIds = new List<string>();
+        foreach (var name in notificationChannelNames)
         {
-            channelIds.Add(await CreateChannel(client, name));
+            notificationChannelIds.Add(await CreateNotificationChannel(client, name));
         }
         var watch = await CreateWatch(client);
-        await SetChannels(client, watch, [.. channelIds]);
+        await SetNotificationChannels(client, watch, [.. notificationChannelIds]);
         return watch;
     }
 
-    private async Task<string> CreateChannel(HttpClient client, string name)
+    private async Task<string> CreateNotificationChannel(HttpClient client, string name)
     {
-        var response = await client.PostAsJsonAsync("/api/channels",
+        var response = await client.PostAsJsonAsync("/api/notification-channels",
             new { name, kind = "discord", webhookUrl = "https://discord.com/api/webhooks/123/token" }, testContext.CancellationToken);
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<JsonObject>(testContext.CancellationToken))!["id"]!.GetValue<string>();
     }
 
-    private async Task<string> CreateWatch(HttpClient client, params string[] channelIds)
+    private async Task<string> CreateWatch(HttpClient client, params string[] notificationChannelIds)
     {
-        using var form = WatchForm(channelIds);
+        using var form = WatchForm(notificationChannelIds);
         var response = await client.PostAsync(new Uri("/api/watches", UriKind.Relative), form, testContext.CancellationToken);
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<JsonObject>(testContext.CancellationToken))!["id"]!.GetValue<string>();
     }
 
-    private static MultipartFormDataContent WatchForm(params string[] channelIds)
+    private static MultipartFormDataContent WatchForm(params string[] notificationChannelIds)
     {
         var form = new MultipartFormDataContent
         {
@@ -434,16 +434,16 @@ public sealed class NotificationsTests(TestContext testContext)
             { new StringContent("1"), "every" },
             { new StringContent("hours"), "unit" }
         };
-        foreach (var id in channelIds)
+        foreach (var id in notificationChannelIds)
         {
-            form.Add(new StringContent(id), "channelIds");
+            form.Add(new StringContent(id), "notificationChannelIds");
         }
         return form;
     }
 
-    private async Task SetChannels(HttpClient client, string watch, params string[] channelIds)
+    private async Task SetNotificationChannels(HttpClient client, string watch, params string[] notificationChannelIds)
     {
-        var response = await client.PutAsJsonAsync($"/api/watches/{watch}/channels", new { channelIds }, testContext.CancellationToken);
+        var response = await client.PutAsJsonAsync($"/api/watches/{watch}/notification-channels", new { notificationChannelIds }, testContext.CancellationToken);
         Assert.AreEqual(HttpStatusCode.NoContent, response.StatusCode);
     }
 

@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { execute, fileKinds, type ExecuteRequest, type FileKind, type RunnerConfig } from './execute.ts';
+import { fileKinds, type ExecuteRequest, type ExecuteScript, type FileKind } from './execute.ts';
 import { isObject } from './guards.ts';
 
 /** A request the runner can't execute, reported to the caller with a 4xx status */
@@ -39,7 +39,9 @@ async function readJson(request: IncomingMessage): Promise<unknown> {
   }
 }
 
-const isFileKind = (value: unknown): value is FileKind => (fileKinds as readonly unknown[]).includes(value);
+function isFileKind(value: unknown): value is FileKind {
+  return (fileKinds as readonly unknown[]).includes(value);
+}
 
 function requireString(value: unknown, name: string): string {
   if (typeof value !== 'string') {
@@ -49,8 +51,11 @@ function requireString(value: unknown, name: string): string {
 }
 
 /** Copies an optional proxy field across only when it's present, as `exactOptionalPropertyTypes` requires */
-const optionalProxyField = (proxy: Record<string, unknown>, key: 'username' | 'password' | 'bypass') =>
-  proxy[key] === undefined ? {} : { [key]: requireString(proxy[key], `proxy.${key}`) };
+function optionalProxyField(proxy: Record<string, unknown>, key: 'username' | 'password' | 'bypass') {
+  return proxy[key] === undefined
+    ? {}
+    : { [key]: requireString(proxy[key], `proxy.${key}`) };
+}
 
 /** The longest delay `setTimeout` honours; it fires longer ones after 1 ms */
 const maxTimeoutMs = 2_147_483_647;
@@ -59,21 +64,26 @@ function parseExecuteRequest(body: unknown): ExecuteRequest {
   if (!isObject(body)) {
     throw new InvalidRequestError('Request body must be a JSON object');
   }
+
   const { source, fileKind, context, timeoutMs, proxy, alwaysScreenshot } = body;
   if (!isFileKind(fileKind)) {
     throw new InvalidRequestError(`fileKind must be ${fileKinds.map((kind) => `'${kind}'`).join(' or ')}`);
   }
+
   if (typeof timeoutMs !== 'number' || !Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > maxTimeoutMs) {
     throw new InvalidRequestError(`timeoutMs must be an integer from 1 to ${maxTimeoutMs}`);
   }
+
   // A serializer may write a missing proxy as null
   if (proxy !== undefined && proxy !== null && !isObject(proxy)) {
     throw new InvalidRequestError('proxy must be an object');
   }
+
   // As with proxy, a serializer may write a missing alwaysScreenshot as null
   if (alwaysScreenshot !== undefined && alwaysScreenshot !== null && typeof alwaysScreenshot !== 'boolean') {
     throw new InvalidRequestError('alwaysScreenshot must be a boolean');
   }
+
   return {
     source: requireString(source, 'source'),
     fileKind,
@@ -93,19 +103,20 @@ function parseExecuteRequest(body: unknown): ExecuteRequest {
   };
 }
 
-const sendJson = (response: ServerResponse, status: number, body: unknown) => {
+function sendJson(response: ServerResponse, status: number, body: unknown) {
   response.writeHead(status, { 'content-type': 'application/json' });
   response.end(JSON.stringify(body));
-};
+}
 
 /**
  * Whether the request says its body is JSON. A web page can send a request without a CORS preflight only with a
  * text or form body, so requiring JSON keeps a page that Browserless's Chromium loads from running a Script here.
  */
-const isJsonRequest = (request: IncomingMessage) =>
-  request.headers['content-type']?.split(';')[0]?.trim().toLowerCase() === 'application/json';
+function isJsonRequest(request: IncomingMessage) {
+  return request.headers['content-type']?.split(';')[0]?.trim().toLowerCase() === 'application/json';
+}
 
-async function handleExecute(request: IncomingMessage, response: ServerResponse, config: RunnerConfig) {
+async function handleExecute(request: IncomingMessage, response: ServerResponse, execute: ExecuteScript) {
   // Browsers send an Origin with every POST, and the backend doesn't. This refuses a page whose domain was rebound
   // to the runner's address, which counts as same-origin and so needs no preflight.
   if (request.headers.origin !== undefined) {
@@ -122,17 +133,18 @@ async function handleExecute(request: IncomingMessage, response: ServerResponse,
       callerGone.abort();
     }
   });
-  sendJson(response, 200, await execute(executeRequest, config, callerGone.signal));
+  sendJson(response, 200, await execute(executeRequest, callerGone.signal));
 }
 
-/** The runner's HTTP API: `POST /execute` runs one Script and responds with its outcome */
-export const createRunnerServer = (config: RunnerConfig) =>
-  createServer((request, response) => {
+/** The runner's HTTP API: `POST /execute` runs one Script with `execute` and responds with its outcome */
+export function createRunnerServer(execute: ExecuteScript) {
+  return createServer((request, response) => {
     if (request.method !== 'POST' || request.url !== '/execute') {
       sendJson(response, 404, { error: 'Not found' });
       return;
     }
-    handleExecute(request, response, config).catch((error: unknown) => {
+
+    handleExecute(request, response, execute).catch((error: unknown) => {
       if (error instanceof InvalidRequestError) {
         sendJson(response, error.status, { error: error.message });
         return;
@@ -143,3 +155,4 @@ export const createRunnerServer = (config: RunnerConfig) =>
       }
     });
   });
+}

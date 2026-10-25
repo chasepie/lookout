@@ -9,5 +9,6 @@ namespace ChasePie.Lookout.Backend.Controllers;
 public sealed class VpnController(VpnRotation rotation) : LookoutControllerBase
 {
     [HttpGet]
-    public Task<VpnStatus> Status(CancellationToken cancellationToken) => rotation.GetStatusAsync(cancellationToken);
+    public Task<VpnStatus> Status(CancellationToken cancellationToken) =>
+        rotation.GetStatusAsync(cancellationToken);
 }

@@ -1,12 +1,12 @@
 using System.Diagnostics;
-using System.Linq.Expressions;
-using ChasePie.Lookout.Database;
+using System.Net;
 using ChasePie.Lookout.Backend.Events;
+using ChasePie.Lookout.Backend.Running;
 using ChasePie.Lookout.Backend.Scheduling;
+using ChasePie.Lookout.Database;
 using ChasePie.Lookout.Model;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using System.Net;
 
 namespace ChasePie.Lookout.Backend.Controllers;
 
@@ -41,10 +41,10 @@ public sealed class WatchesController(
             return invalid;
         }
 
-        var (script, scriptProblem) = await ReadScriptAsync(request.Script, cancellationToken);
+        var (script, scriptProblem) = await UploadedScript.ReadAsync(request.Script, cancellationToken);
         if (script is null)
         {
-            return scriptProblem!;
+            return Problem(scriptProblem!, statusCode: HttpStatusCode.BadRequest);
         }
 
         if (ScheduleOf(request) is not { } schedule)
@@ -65,11 +65,11 @@ public sealed class WatchesController(
             return Problem(scheduleProblem, statusCode: HttpStatusCode.BadRequest);
         }
 
-        if (await FindChannels(request.ChannelIds, cancellationToken) is not { } channels)
+        if (await FindNotificationChannels(request.NotificationChannelIds, cancellationToken) is not { } notificationChannels)
         {
-            return ChannelMissing();
+            return NotificationChannelMissing();
         }
-        watch.Channels = channels;
+        watch.NotificationChannels = notificationChannels;
         var version = new ScriptVersion
         {
             WatchId = watch.Id,
@@ -86,10 +86,12 @@ public sealed class WatchesController(
         {
             await database.SaveChangesAsync(cancellationToken);
         }
-        catch (DbUpdateException) when (channels.Count > 0)
+        catch (DbUpdateException) when (notificationChannels.Count > 0)
         {
-            // A chosen Channel was deleted since it was read, failing its join row's foreign key.
-            return Problem("One of the chosen Channels was deleted while the Watch was being created.", statusCode: HttpStatusCode.Conflict);
+            // A chosen Notification channel was deleted since it was read, failing its join row's foreign key.
+            return Problem(
+                detail: "One of the chosen Notification channels was deleted while the Watch was being created.",
+                statusCode: HttpStatusCode.Conflict);
         }
 
         watch.CurrentScriptVersionId = version.Id;
@@ -113,8 +115,12 @@ public sealed class WatchesController(
             // Read back, unless the Watch was deleted since.
             ScheduleUpdateStatus.Changed => await Get(id, cancellationToken),
             ScheduleUpdateStatus.NotFound => NotFound(),
-            ScheduleUpdateStatus.Invalid => Problem(update.Problem!, statusCode: HttpStatusCode.BadRequest),
-            ScheduleUpdateStatus.KeptChanging => Problem("Runs of this Watch kept starting while its schedule was being saved. Please try again.", statusCode: HttpStatusCode.Conflict),
+            ScheduleUpdateStatus.Invalid => Problem(
+                detail: update.Problem!,
+                statusCode: HttpStatusCode.BadRequest),
+            ScheduleUpdateStatus.KeptChanging => Problem(
+                detail: "Runs of this Watch kept starting while its schedule was being saved. Please try again.",
+                statusCode: HttpStatusCode.Conflict),
             _ => throw new UnreachableException()
         };
     }
@@ -163,53 +169,54 @@ public sealed class WatchesController(
     [HttpPost("{id:guid}/pause")]
     public async Task<IActionResult> Pause(Guid id, CancellationToken cancellationToken)
     {
-        switch ((await schedules.PauseAsync(id, cancellationToken)).Status)
+        var status = (await schedules.PauseAsync(id, cancellationToken)).Status;
+        if (status == ScheduleUpdateStatus.Changed)
         {
-            case ScheduleUpdateStatus.Changed:
-                await watchEvents.StatusChangedAsync(id, WatchStatus.Paused);
-                return NoContent();
-            case ScheduleUpdateStatus.Unchanged:
-                return NoContent();
-            case ScheduleUpdateStatus.NotFound:
-                return NotFound();
-            default:
-                throw new UnreachableException();
+            await watchEvents.StatusChangedAsync(id, WatchStatus.Paused);
         }
+
+        return status switch
+        {
+            ScheduleUpdateStatus.Changed => NoContent(),
+            ScheduleUpdateStatus.Unchanged => NoContent(),
+            ScheduleUpdateStatus.NotFound => NotFound(),
+            _ => throw new UnreachableException()
+        };
     }
 
     [HttpPost("{id:guid}/resume")]
     public async Task<IActionResult> Resume(Guid id, CancellationToken cancellationToken)
     {
-        switch ((await schedules.ResumeAsync(id, cancellationToken)).Status)
+        var status = (await schedules.ResumeAsync(id, cancellationToken)).Status;
+        if (status == ScheduleUpdateStatus.Changed
+            && await WatchStatuses.ReadAsync(database.Watches, id, CancellationToken.None) is { } resumed)
         {
-            case ScheduleUpdateStatus.Changed:
-                if (await WatchSummary.StatusAsync(database.Watches, id, CancellationToken.None) is { } resumed)
-                {
-                    await watchEvents.StatusChangedAsync(id, resumed);
-                }
-                return NoContent();
-            case ScheduleUpdateStatus.Unchanged:
-                return NoContent();
-            case ScheduleUpdateStatus.NotFound:
-                return NotFound();
-            case ScheduleUpdateStatus.KeptChanging:
-                return Problem("The schedule of this Watch kept changing while it was being resumed. Please try again.", statusCode: HttpStatusCode.Conflict);
-            default:
-                throw new UnreachableException();
+            await watchEvents.StatusChangedAsync(id, resumed);
         }
+
+        return status switch
+        {
+            ScheduleUpdateStatus.Changed => NoContent(),
+            ScheduleUpdateStatus.Unchanged => NoContent(),
+            ScheduleUpdateStatus.NotFound => NotFound(),
+            ScheduleUpdateStatus.KeptChanging => Problem(
+                detail: "The schedule of this Watch kept changing while it was being resumed. Please try again.",
+                statusCode: HttpStatusCode.Conflict),
+            _ => throw new UnreachableException(),
+        };
     }
 
-    [HttpPut("{id:guid}/channels")]
-    public async Task<IActionResult> ChangeChannels(Guid id, ChannelsRequest request, CancellationToken cancellationToken)
+    [HttpPut("{id:guid}/notification-channels")]
+    public async Task<IActionResult> ChangeNotificationChannels(Guid id, NotificationChannelsRequest request, CancellationToken cancellationToken)
     {
         if (!await database.Watches.AnyAsync(watch => watch.Id == id, cancellationToken))
         {
             return NotFound();
         }
 
-        if (await FindChannels(request.ChannelIds, cancellationToken) is not { } channels)
+        if (await FindNotificationChannels(request.NotificationChannelIds, cancellationToken) is not { } notificationChannels)
         {
-            return ChannelMissing();
+            return NotificationChannelMissing();
         }
 
         // The choice is replaced whole in a transaction that writes before anything else, so SQLite runs overlapping
@@ -218,228 +225,48 @@ public sealed class WatchesController(
         await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
         try
         {
-            await database.WatchChannels
+            await database.WatchNotificationChannels
                 .Where(choice => choice.WatchId == id)
                 .ExecuteDeleteAsync(cancellationToken);
-            database.WatchChannels.AddRange(channels.Select(channel => new WatchChannel { WatchId = id, ChannelId = channel.Id }));
+
+            database.WatchNotificationChannels
+                .AddRange(notificationChannels
+                .Select(notificationChannel => new WatchNotificationChannel
+                {
+                    WatchId = id,
+                    NotificationChannelId = notificationChannel.Id
+                }));
             await database.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
         }
         catch (DbUpdateException)
         {
-            // The Watch or a chosen Channel was deleted since they were read.
-            return Problem("The Watch or one of the chosen Channels no longer exists.", statusCode: HttpStatusCode.Conflict);
+            // The Watch or a chosen Notification channel was deleted since they were read.
+            return Problem(
+                detail: "The Watch or one of the chosen Notification channels no longer exists.",
+                statusCode: HttpStatusCode.Conflict);
         }
         return NoContent();
     }
 
-    [HttpPost("{id:guid}/script-versions")]
-    [RequestSizeLimit(128 * 1024)]
-    public async Task<ActionResult<ScriptVersionSummary>> UploadScript(
-        Guid id,
-        [FromForm] UploadScriptRequest request,
-        CancellationToken cancellationToken)
-    {
-        var (script, scriptProblem) = await ReadScriptAsync(request.Script, cancellationToken);
-        if (script is null)
-        {
-            return scriptProblem!;
-        }
-
-        await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
-        if (await WatchSummary.StatusAsync(database.Watches, id, cancellationToken) is not { } previousStatus)
-        {
-            return NotFound();
-        }
-
-        // The transaction holds SQLite's write lock from the start, so no other upload can take the same number.
-        var latestNumber = await database.ScriptVersions
-            .Where(version => version.WatchId == id)
-            .MaxAsync(version => (int?)version.Number, cancellationToken);
-        var version = new ScriptVersion
-        {
-            WatchId = id,
-            Number = (latestNumber ?? 0) + 1,
-            UploadedAt = timeProvider.GetUtcNow(),
-            Source = script.Source,
-            FileKind = script.FileKind
-        };
-        database.ScriptVersions.Add(version);
-        await database.SaveChangesAsync(cancellationToken);
-
-        // Advancing the Revision discards a Run of the replaced version still in progress, which would otherwise set
-        // the Baseline from the old Script's content. A set-based update leaves the Watch's other settings alone.
-        await database.Watches
-            .Where(watch => watch.Id == id)
-            .ExecuteUpdateAsync(setters =>
-            {
-                setters
-                    .SetProperty(watch => watch.CurrentScriptVersionId, version.Id)
-                    .SetProperty(watch => watch.Revision, watch => watch.Revision + 1);
-                // A new Script may report its content differently, so by default it starts afresh, as Pending.
-                // Its failures are a new streak, which notifies afresh.
-                if (!request.KeepBaseline)
-                {
-                    setters
-                        .SetProperty(watch => watch.Baseline, (string?)null)
-                        .SetProperty(watch => watch.FailureStreak, 0)
-                        .SetProperty(watch => watch.FailureStreakNotified, false);
-                }
-            }, cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
-
-        if (await WatchSummary.StatusAsync(database.Watches, id, CancellationToken.None) is { } status && status != previousStatus)
-        {
-            await watchEvents.StatusChangedAsync(id, status);
-        }
-
-        return StatusCode(StatusCodes.Status201Created,
-            new ScriptVersionSummary(version.Id, version.Number, version.FileKind, version.UploadedAt, IsCurrent: true));
-    }
-
-    [HttpGet("{id:guid}/script-versions")]
-    public async Task<ActionResult<IReadOnlyList<ScriptVersionSummary>>> ListScriptVersions(Guid id, CancellationToken cancellationToken)
-    {
-        // One query, so an upload committing meanwhile can't leave the list and its current version out of step.
-        var versions = await database.ScriptVersions.AsNoTracking()
-            .Where(version => version.WatchId == id)
-            .OrderByDescending(version => version.Number)
-            .Select(version => new ScriptVersionSummary(
-                Id: version.Id,
-                Number: version.Number,
-                FileKind: version.FileKind,
-                UploadedAt: version.UploadedAt,
-                IsCurrent: database.Watches.Any(watch => watch.Id == id && watch.CurrentScriptVersionId == version.Id)))
-            .ToListAsync(cancellationToken);
-
-        // Every Watch has at least the Script version it was created with.
-        return versions.Count == 0 ? NotFound() : versions;
-    }
-
-    [HttpGet("{id:guid}/script-versions/{versionId:guid}")]
-    public async Task<ActionResult<ScriptVersionSource>> GetScriptVersion(Guid id, Guid versionId, CancellationToken cancellationToken)
-    {
-        var version = await database.ScriptVersions.AsNoTracking()
-            .Where(version => version.Id == versionId && version.WatchId == id)
-            .Select(version => new ScriptVersionSource(
-                Id: version.Id,
-                Number: version.Number,
-                FileKind: version.FileKind,
-                UploadedAt: version.UploadedAt,
-                IsCurrent: database.Watches.Any(watch => watch.Id == id && watch.CurrentScriptVersionId == version.Id),
-                Source: version.Source))
-            .SingleOrDefaultAsync(cancellationToken);
-        return version is null ? NotFound() : version;
-    }
-
-    [HttpPost("{id:guid}/test-runs")]
-    [RequestSizeLimit(128 * 1024)]
-    public async Task<ActionResult<TestRun>> RunTest(Guid id, [FromForm] TestRunRequest request, CancellationToken cancellationToken)
-    {
-        var (script, scriptProblem) = await ReadScriptAsync(request.Script, cancellationToken);
-        if (script is null)
-        {
-            return scriptProblem!;
-        }
-
-        // Leaving the page cancels the request, which stops the Script.
-        var testRun = await runs.TestAsync(id, script.Source, script.FileKind, cancellationToken);
-        return testRun is null ? NotFound() : testRun;
-    }
-
-    [HttpGet("{id:guid}/runs")]
-    public async Task<ActionResult<IReadOnlyList<Run>>> History(Guid id, CancellationToken cancellationToken,
-        [FromQuery] int limit = 50, [FromQuery] long? before = null)
-    {
-        if (limit is < 1 or > 100 || before is <= 0)
-        {
-            return Problem("History limit must be between 1 and 100; before must be a positive Run ID.", statusCode: HttpStatusCode.BadRequest);
-        }
-
-        if (!await database.Watches.AnyAsync(watch => watch.Id == id, cancellationToken))
-        {
-            return NotFound();
-        }
-
-        return await database.Runs.AsNoTracking()
-            .Where(run => run.WatchId == id)
-            .Where(run => before == null || run.Id < before)
-            .OrderByDescending(run => run.Id)
-            .Take(limit)
-            .ToListAsync(cancellationToken);
-    }
-
-    /// <summary>A Known failure or Errored Run's console output, and whether it has a screenshot, while it is one that keeps them.</summary>
-    [HttpGet("{id:guid}/runs/{runId:long}/debug-output")]
-    public async Task<ActionResult<DebugOutputSummary>> DebugOutput(Guid id, long runId, CancellationToken cancellationToken)
-    {
-        var debugOutput = await DebugOutputOf(id, runId)
-            .Select(item => new DebugOutputSummary(item.ConsoleOutput, item.Screenshot != null))
-            .SingleOrDefaultAsync(cancellationToken);
-        return debugOutput is null ? NotFound() : debugOutput;
-    }
-
-    [HttpGet("{id:guid}/runs/{runId:long}/screenshot")]
-    public async Task<IActionResult> Screenshot(Guid id, long runId, CancellationToken cancellationToken)
-    {
-        var screenshot = await DebugOutputOf(id, runId)
-            .Select(item => item.Screenshot)
-            .SingleOrDefaultAsync(cancellationToken);
-        if (screenshot is null)
-        {
-            return NotFound();
-        }
-        // A Run's screenshot never changes, so reopening its debug output needn't download it again.
-        Response.Headers.CacheControl = "private, max-age=31536000, immutable";
-        return File(screenshot, "image/png");
-    }
-
-    private IQueryable<RunDebugOutput> DebugOutputOf(Guid watchId, long runId) =>
-        database.RunDebugOutputs.AsNoTracking()
-            .Where(item => item.RunId == runId && item.Run!.WatchId == watchId);
-
-    [HttpPost("{id:guid}/runs")]
-    public async Task<ActionResult<Run>> RunNow(Guid id)
-    {
-        switch (runs.Run(id))
-        {
-            case Refused { Reason: RunRefusal.WaitingForSlot }:
-                return Problem("This Watch is waiting for a free slot to run.", statusCode: HttpStatusCode.Conflict);
-            case Refused:
-                return Problem("This Watch is already running.", statusCode: HttpStatusCode.Conflict);
-            case Admitted { Finished: var finished }:
-                // Not cancelled by the request: a Run the user started carries on if they leave the page.
-                var execution = await finished;
-                return execution.Status switch
-                {
-                    RunExecutionStatus.Recorded => Ok(execution.Run),
-                    RunExecutionStatus.WatchNotFound => NotFound(),
-                    RunExecutionStatus.NoScriptVersion => Problem("This Watch has no current Script version.", statusCode: HttpStatusCode.Conflict),
-                    RunExecutionStatus.Deleted => Problem("The Watch was deleted while this Run was in progress, so this Run was not recorded.", statusCode: HttpStatusCode.Conflict),
-                    RunExecutionStatus.ScriptReplaced => Problem("A new Script version was uploaded while this Run was in progress, so this Run was not recorded.", statusCode: HttpStatusCode.Conflict),
-                    _ => Problem("Another Run of this Watch finished first, so this Run was not recorded.", statusCode: HttpStatusCode.Conflict)
-                };
-            default:
-                throw new UnreachableException();
-        }
-    }
-
-    /// <summary>The chosen Channels, or null if any of them doesn't exist.</summary>
-    private async Task<List<Channel>?> FindChannels(IReadOnlyList<Guid> ids, CancellationToken cancellationToken)
+    /// <summary>The chosen Notification channels, or null if any of them doesn't exist.</summary>
+    private async Task<List<NotificationChannel>?> FindNotificationChannels(IReadOnlyList<Guid> ids, CancellationToken cancellationToken)
     {
         var chosen = ids.Distinct().ToList();
         if (chosen.Count == 0)
         {
             return [];
         }
-        var channels = await database.Channels
-            .Where(channel => chosen.Contains(channel.Id))
+        var notificationChannels = await database.NotificationChannels
+            .Where(notificationChannel => chosen.Contains(notificationChannel.Id))
             .ToListAsync(cancellationToken);
-        return channels.Count == chosen.Count ? channels : null;
+        return notificationChannels.Count == chosen.Count ? notificationChannels : null;
     }
 
-    private ObjectResult ChannelMissing() =>
-        Problem("One of the chosen Channels no longer exists.", statusCode: HttpStatusCode.BadRequest);
+    private ObjectResult NotificationChannelMissing() =>
+        Problem(
+            detail: "One of the chosen Notification channels no longer exists.",
+            statusCode: HttpStatusCode.BadRequest);
 
     private WatchSummary WithRunning(WatchSummary watch) => watch with { IsRunning = runs.IsRunning(watch.Id) };
 
@@ -447,49 +274,37 @@ public sealed class WatchesController(
     {
         if (name.Length is < 1 or > 200)
         {
-            return Problem("Name must contain between 1 and 200 characters.", statusCode: HttpStatusCode.BadRequest);
+            return Problem(
+                detail: "Name must contain between 1 and 200 characters.",
+                statusCode: HttpStatusCode.BadRequest);
         }
 
         if (!HttpUrls.IsValid(notificationUrl))
         {
-            return Problem("Notification URL must be an HTTP or HTTPS URL.", statusCode: HttpStatusCode.BadRequest);
+            return Problem(
+                detail: "Notification URL must be an HTTP or HTTPS URL.",
+                statusCode: HttpStatusCode.BadRequest);
         }
 
         if (timeoutSeconds is < 1 or > Watch.MaxTimeoutSeconds)
         {
-            return Problem($"Timeout must be between 1 and {Watch.MaxTimeoutSeconds} seconds.", statusCode: HttpStatusCode.BadRequest);
+            return Problem(
+                detail: $"Timeout must be between 1 and {Watch.MaxTimeoutSeconds} seconds.",
+                statusCode: HttpStatusCode.BadRequest);
         }
 
         return null;
     }
 
-    /// <summary>Reads an uploaded Script, or explains why it can't be used.</summary>
-    private async Task<(UploadedScript? Script, ObjectResult? Problem)> ReadScriptAsync(
-        IFormFile file,
-        CancellationToken cancellationToken)
-    {
-        var fileKind = Path.GetExtension(file.FileName).ToLowerInvariant();
-        if (fileKind is not (".ts" or ".js") || file.Length is < 1 or > 65536)
-        {
-            return (null, Problem("Upload a .ts or .js Script between 1 byte and 64 KiB.", statusCode: HttpStatusCode.BadRequest));
-        }
-
-        using var reader = new StreamReader(file.OpenReadStream());
-        var source = await reader.ReadToEndAsync(cancellationToken);
-        if (string.IsNullOrWhiteSpace(source))
-        {
-            return (null, Problem("Script source must not be empty.", statusCode: HttpStatusCode.BadRequest));
-        }
-
-        return (new UploadedScript(source, fileKind[1..]), null);
-    }
-
-    private sealed record UploadedScript(string Source, string FileKind);
-
     /// <summary>The requested Schedule, which <see cref="WatchSchedules"/> checks, or null if no kind was chosen.</summary>
     private static Schedule? ScheduleOf(ScheduleRequest request) => request.ScheduleKind switch
     {
-        ScheduleKind.Interval => new Schedule { Kind = ScheduleKind.Interval, Every = request.Every, Unit = request.Unit },
+        ScheduleKind.Interval => new Schedule
+        {
+            Kind = ScheduleKind.Interval,
+            Every = request.Every,
+            Unit = request.Unit
+        },
         ScheduleKind.Daily when request.TimeOfDay is { } timeOfDay => Schedule.DailyAt(timeOfDay),
         ScheduleKind.Daily => new Schedule { Kind = ScheduleKind.Daily },
         ScheduleKind.Cron => Schedule.FromCron(request.Cron ?? ""),
@@ -497,141 +312,7 @@ public sealed class WatchesController(
     };
 
     private ObjectResult ScheduleMissing() =>
-        Problem("Choose an interval, daily or cron schedule.", statusCode: HttpStatusCode.BadRequest);
-}
-
-public sealed record WatchSummary(
-    Guid Id,
-    string Name,
-    string NotificationUrl,
-    Guid? CurrentScriptVersionId,
-    string? Baseline,
-    WatchStatus Status,
-    bool IsPaused,
-    bool UsesVpn,
-    int FailureStreak,
-    int TimeoutSeconds,
-    Run? LastRun,
-    Schedule Schedule,
-    int JitterMinutes,
-    DateTimeOffset? NextRunAt,
-    IReadOnlyList<Guid> ChannelIds)
-{
-    /// <summary>
-    /// A Watch's status, as an expression rather than a method, so EF translates it to SQL. A failure streak outranks
-    /// Pending, since a Watch whose Script never Succeeded needs attention too.
-    /// </summary>
-    private static readonly Expression<Func<Watch, WatchStatus>> StatusProjection = watch =>
-        watch.IsPaused
-            ? WatchStatus.Paused
-            : watch.FailureStreak > 0
-                ? WatchStatus.Failing
-                : watch.Baseline == null
-                    ? WatchStatus.Pending
-                    : WatchStatus.Healthy;
-
-    /// <summary>Maps a Watch in a database query; <see cref="From"/> applies the same mapping in memory.</summary>
-    public static readonly Expression<Func<Watch, WatchSummary>> Projection = WithStatus((watch, status) => new WatchSummary(
-        watch.Id,
-        watch.Name,
-        watch.NotificationUrl,
-        watch.CurrentScriptVersionId,
-        watch.Baseline,
-        status,
-        watch.IsPaused,
-        watch.UsesVpn,
-        watch.FailureStreak,
-        watch.TimeoutSeconds,
-        watch.Runs.OrderByDescending(run => run.Id).FirstOrDefault(),
-        watch.Schedule,
-        watch.JitterMinutes,
-        watch.NextRunAt,
-        watch.Channels.Select(channel => channel.Id).ToList()));
-
-    /// <summary>Whether the Watch is Running, which is shown alongside its <see cref="Status"/>.</summary>
-    public bool IsRunning { get; init; }
-
-    private static readonly Func<Watch, WatchSummary> CompiledProjection = Projection.Compile();
-    private static readonly Func<Watch, WatchStatus> CompiledStatus = StatusProjection.Compile();
-
-    public static WatchSummary From(Watch watch) => CompiledProjection(watch);
-
-    public static WatchStatus StatusOf(Watch watch) => CompiledStatus(watch);
-
-    /// <summary>The Watch's status as stored, or null if it doesn't exist.</summary>
-    public static Task<WatchStatus?> StatusAsync(IQueryable<Watch> watches, Guid id, CancellationToken cancellationToken) =>
-        watches.Where(watch => watch.Id == id)
-            .Select(StatusProjection)
-            .Select(status => (WatchStatus?)status)
-            .SingleOrDefaultAsync(cancellationToken);
-
-    /// <summary>Puts <see cref="StatusProjection"/> in the shape's status, so EF translates the whole projection.</summary>
-    private static Expression<Func<Watch, WatchSummary>> WithStatus(Expression<Func<Watch, WatchStatus, WatchSummary>> shape)
-    {
-        var watch = shape.Parameters[0];
-        var status = new ReplaceParameter(StatusProjection.Parameters[0], watch)
-            .Visit(StatusProjection.Body);
-        return Expression.Lambda<Func<Watch, WatchSummary>>(
-            new ReplaceParameter(shape.Parameters[1], status).Visit(shape.Body), watch);
-    }
-
-    private sealed class ReplaceParameter(ParameterExpression parameter, Expression replacement) : ExpressionVisitor
-    {
-        protected override Expression VisitParameter(ParameterExpression node) => node == parameter ? replacement : node;
-    }
-}
-
-public sealed class ChannelsRequest
-{
-    public required IReadOnlyList<Guid> ChannelIds { get; init; }
-}
-
-public sealed record DebugOutputSummary(string? ConsoleOutput, bool HasScreenshot);
-
-public sealed class EditWatchRequest
-{
-    public required string Name { get; init; }
-    public required string NotificationUrl { get; init; }
-    public required int TimeoutSeconds { get; init; }
-    /// <summary>Required, so a client that leaves it out can't send a VPN Watch's Runs from the home IP.</summary>
-    public required bool UsesVpn { get; init; }
-}
-
-public sealed record ScriptVersionSummary(Guid Id, int Number, string FileKind, DateTimeOffset UploadedAt, bool IsCurrent);
-
-public sealed record ScriptVersionSource(Guid Id, int Number, string FileKind, DateTimeOffset UploadedAt, bool IsCurrent,
-    string Source);
-
-public sealed class TestRunRequest
-{
-    public required IFormFile Script { get; init; }
-}
-
-public sealed class UploadScriptRequest
-{
-    public required IFormFile Script { get; init; }
-    /// <summary>Keeps the Baseline and failure streak, for a new version that reports its content the same way.</summary>
-    public bool KeepBaseline { get; init; }
-}
-
-public sealed class CreateWatchRequest : ScheduleRequest
-{
-    public required string Name { get; init; }
-    public required string NotificationUrl { get; init; }
-    public required IFormFile Script { get; init; }
-    public List<Guid> ChannelIds { get; init; } = [];
-    /// <summary>Whether the Watch's Runs go through the VPN rather than direct.</summary>
-    public bool UsesVpn { get; init; }
-}
-
-public class ScheduleRequest
-{
-    public ScheduleKind? ScheduleKind { get; init; }
-    /// <summary>For an interval schedule, how many <see cref="Unit"/>s apart its Runs are.</summary>
-    public int? Every { get; init; }
-    public IntervalUnit? Unit { get; init; }
-    /// <summary>For a daily schedule, the time of day in the install's time zone.</summary>
-    public TimeOnly? TimeOfDay { get; init; }
-    public string? Cron { get; init; }
-    public int JitterMinutes { get; init; }
+        Problem(
+            detail: "Choose an interval, daily or cron schedule.",
+            statusCode: HttpStatusCode.BadRequest);
 }

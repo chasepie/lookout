@@ -6,6 +6,13 @@ using Microsoft.EntityFrameworkCore;
 
 namespace ChasePie.Lookout.Backend.Controllers;
 
+public sealed record SettingsResponse(int RetentionDays);
+
+public sealed class SettingsRequest
+{
+    public required int RetentionDays { get; init; }
+}
+
 [ApiController]
 [Route("api/settings")]
 public sealed class SettingsController(LookoutDbContext database) : LookoutControllerBase
@@ -23,7 +30,8 @@ public sealed class SettingsController(LookoutDbContext database) : LookoutContr
     {
         if (request.RetentionDays is < Settings.MinRetentionDays or > Settings.MaxRetentionDays)
         {
-            return Problem($"Keep Runs for between {Settings.MinRetentionDays} and {Settings.MaxRetentionDays} days.",
+            return Problem(
+                detail: $"Keep Runs for between {Settings.MinRetentionDays} and {Settings.MaxRetentionDays} days.",
                 statusCode: HttpStatusCode.BadRequest);
         }
 
@@ -32,16 +40,10 @@ public sealed class SettingsController(LookoutDbContext database) : LookoutContr
         // Migrations create the only row, so a database without one isn't Lookout's, and nothing could be saved.
         if (updated != 1)
         {
-            return Problem("Lookout's settings are missing from its database, so they could not be saved.",
+            return Problem(
+                detail: "Lookout's settings are missing from its database, so they could not be saved.",
                 statusCode: HttpStatusCode.InternalServerError);
         }
         return new SettingsResponse(request.RetentionDays);
     }
-}
-
-public sealed record SettingsResponse(int RetentionDays);
-
-public sealed class SettingsRequest
-{
-    public required int RetentionDays { get; init; }
 }

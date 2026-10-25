@@ -20,7 +20,7 @@ p { line-height: 1.6; }
   @include mixins.narrow { grid-template-columns: 1fr; }
 }
 
-// Further settings line up under the Channel form.
+// Further settings line up under the Notification channel form.
 .more-settings { margin-top: 30px; }
 
 .panel { @include mixins.panel; padding: 25px; }
@@ -42,10 +42,10 @@ select {
 input::placeholder { color: tokens.$text-placeholder; font-size: 12px; }
 .secret-note { margin-top: 23px; }
 
-.channel-list { display: grid; gap: 16px; }
-.channel-heading { display: flex; justify-content: space-between; align-items: center; gap: 15px; }
+.notification-channel-list { display: grid; gap: 16px; }
+.notification-channel-heading { display: flex; justify-content: space-between; align-items: center; gap: 15px; }
 .kind-badge { @include mixins.badge; }
-.channel .details { margin: 14px 0 0; }
+.notification-channel .details { margin: 14px 0 0; }
 .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
 
 button {

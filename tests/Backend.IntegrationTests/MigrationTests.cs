@@ -68,10 +68,10 @@ public sealed class MigrationTests(TestContext testContext)
                 .WithWebHostBuilder(builder => builder.UseSetting("ConnectionStrings:Lookout", connectionString))
                 .CreateSignedInClientAsync(testContext.CancellationToken);
             var id = (await client.GetFromJsonAsync<JsonArray>("/api/watches", testContext.CancellationToken))![0]!["id"]!.GetValue<string>();
-            var channel = await client.PostAsJsonAsync("/api/channels",
+            var notificationChannel = await client.PostAsJsonAsync("/api/notification-channels",
                 new { name = "Phone", kind = "discord", webhookUrl = "https://discord.com/api/webhooks/1/a" }, testContext.CancellationToken);
-            var channelId = (await channel.Content.ReadFromJsonAsync<JsonObject>(testContext.CancellationToken))!["id"]!.GetValue<string>();
-            (await client.PutAsJsonAsync($"/api/watches/{id}/channels", new { channelIds = new[] { channelId } },
+            var notificationChannelId = (await notificationChannel.Content.ReadFromJsonAsync<JsonObject>(testContext.CancellationToken))!["id"]!.GetValue<string>();
+            (await client.PutAsJsonAsync($"/api/watches/{id}/notification-channels", new { notificationChannelIds = new[] { notificationChannelId } },
                 testContext.CancellationToken)).EnsureSuccessStatusCode();
 
             for (var run = 0; run < 3; run++)
@@ -81,7 +81,7 @@ public sealed class MigrationTests(TestContext testContext)
             }
 
             // Its streak of four Errored Runs neither counts as Known failures in a row nor starts over; it only recovers.
-            Assert.AreSequenceEqual([NotificationKind.Recovered], factory.Channels.Sent.Select(sent => sent.Notification.Kind));
+            Assert.AreSequenceEqual([NotificationKind.Recovered], factory.NotificationChannels.Sent.Select(sent => sent.Notification.Kind));
         }
         finally
         {
@@ -117,6 +117,51 @@ public sealed class MigrationTests(TestContext testContext)
             Assert.AreEqual(1, neverRan.Single()!["number"]!.GetValue<int>());
             Assert.IsLessThan(TimeSpan.FromMinutes(5),
                 (DateTimeOffset.UtcNow - neverRan.Single()!["uploadedAt"]!.GetValue<DateTimeOffset>()).Duration());
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    [TestMethod]
+    public async Task ChannelsCreatedBeforeTheyWereRenamedAreKeptAsNotificationChannelsWithTheirSecretsAndChoices()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"lookout-test-{Guid.NewGuid():N}.db");
+        var connectionString = $"Data Source={databasePath};Pooling=False";
+        // EF Core stores Guids as upper-case text in SQLite.
+        var channelId = Guid.NewGuid().ToString().ToUpperInvariant();
+        try
+        {
+            await using (var database = new LookoutDbContext(new DbContextOptionsBuilder<LookoutDbContext>().UseSqlite(connectionString).Options))
+            {
+                await database.GetService<IMigrator>().MigrateAsync("CreateWatches", testContext.CancellationToken);
+                await InsertWatch(database, "Notifies", "Succeeded");
+                await database.GetService<IMigrator>().MigrateAsync("Channels", testContext.CancellationToken);
+                await database.Database.ExecuteSqlAsync(
+                    $"INSERT INTO Channels (Id, Name, Kind, WebhookUrl) VALUES ({channelId}, 'Phone', 'Discord', 'https://discord.com/api/webhooks/1/a')",
+                    testContext.CancellationToken);
+                await database.Database.ExecuteSqlAsync(
+                    $"INSERT INTO WatchChannels (WatchId, ChannelId) SELECT Id, {channelId} FROM Watches",
+                    testContext.CancellationToken);
+            }
+            await using var factory = new LookoutWebApplicationFactory();
+            using var client = await factory
+                .WithWebHostBuilder(builder => builder.UseSetting("ConnectionStrings:Lookout", connectionString))
+                .CreateSignedInClientAsync(testContext.CancellationToken);
+
+            var notificationChannels = await client.GetFromJsonAsync<JsonArray>("/api/notification-channels", testContext.CancellationToken);
+            var watches = await client.GetFromJsonAsync<JsonArray>("/api/watches", testContext.CancellationToken);
+
+            var notificationChannel = notificationChannels!.Single()!;
+            Assert.AreEqual(channelId, notificationChannel["id"]!.GetValue<string>(), ignoreCase: true);
+            Assert.AreEqual("Phone", notificationChannel["name"]!.GetValue<string>());
+            Assert.AreEqual("discord", notificationChannel["kind"]!.GetValue<string>());
+            Assert.AreSequenceEqual([channelId],
+                watches!.Single()!["notificationChannelIds"]!.AsArray().Select(id => id!.GetValue<string>().ToUpperInvariant()));
+            await using var migrated = new LookoutDbContext(new DbContextOptionsBuilder<LookoutDbContext>().UseSqlite(connectionString).Options);
+            Assert.AreEqual("https://discord.com/api/webhooks/1/a",
+                (await migrated.NotificationChannels.SingleAsync(testContext.CancellationToken)).WebhookUrl);
         }
         finally
         {

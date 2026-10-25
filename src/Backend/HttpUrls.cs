@@ -19,7 +19,8 @@ public static class HttpUrls
     public static Uri ConfiguredBaseAddress(IConfiguration configuration, string key, string defaultUrl)
     {
         var url = configuration[key] ?? defaultUrl;
-        if (!Uri.TryCreate(url.TrimEnd('/') + "/", UriKind.Absolute, out var baseAddress) || baseAddress.Scheme is not ("http" or "https"))
+        if (!Uri.TryCreate(url.TrimEnd('/') + "/", UriKind.Absolute, out var baseAddress)
+            || baseAddress.Scheme is not ("http" or "https"))
         {
             throw new InvalidOperationException($"{key} must be an absolute HTTP or HTTPS URL, not '{url}'");
         }

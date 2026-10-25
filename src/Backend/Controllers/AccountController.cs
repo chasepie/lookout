@@ -1,5 +1,6 @@
 using System.Net;
 using ChasePie.Lookout.Backend.Events;
+using ChasePie.Lookout.Backend.Security;
 using ChasePie.Lookout.Database;
 using ChasePie.Lookout.Model;
 using Microsoft.AspNetCore.Antiforgery;
@@ -9,6 +10,10 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace ChasePie.Lookout.Backend.Controllers;
+
+public sealed record SessionStatus(bool AccountExists, string? UserName);
+
+public sealed record Credentials(string UserName, string Password);
 
 /// <summary>First-launch setup of the single local account, and logging in and out of it (ADR-0002).</summary>
 [ApiController]
@@ -30,31 +35,39 @@ public sealed class AccountController(
     public async Task<SessionStatus> Status(CancellationToken cancellationToken)
     {
         RequestForgery.IssueToken(HttpContext, antiforgery);
-        var accountExists = await database.Accounts.AnyAsync(cancellationToken);
-        return new SessionStatus(accountExists, User.Identity?.IsAuthenticated == true ? User.Identity.Name : null);
+        return new SessionStatus(
+            AccountExists: await database.Accounts.AnyAsync(cancellationToken),
+            UserName: User.Identity?.IsAuthenticated == true ? User.Identity.Name : null);
     }
 
     [HttpPost("setup")]
     [AllowAnonymous]
     public async Task<IActionResult> Setup(Credentials credentials, CancellationToken cancellationToken)
     {
-        var userName = credentials.UserName.Trim();
-        if (userName.Length is < 1 or > 100)
-        {
-            return Problem("User name must contain between 1 and 100 characters.", statusCode: HttpStatusCode.BadRequest);
-        }
-        if (credentials.Password.Length is < 8 or > 1024)
-        {
-            return Problem("Password must contain between 8 and 1024 characters.", statusCode: HttpStatusCode.BadRequest);
-        }
         if (await database.Accounts.AnyAsync(cancellationToken))
         {
             return AccountAlreadyExists();
         }
 
+        var userName = credentials.UserName.Trim();
+        if (userName.Length is < 1 or > 100)
+        {
+            return Problem(
+                detail: "User name must contain between 1 and 100 characters.",
+                statusCode: HttpStatusCode.BadRequest);
+        }
+
+        if (credentials.Password.Length is < 8 or > 1024)
+        {
+            return Problem(
+                detail: "Password must contain between 8 and 1024 characters.",
+                statusCode: HttpStatusCode.BadRequest);
+        }
+
         var account = new Account { UserName = userName, PasswordHash = "" };
         account.PasswordHash = passwordHasher.HashPassword(account, credentials.Password);
         database.Accounts.Add(account);
+
         try
         {
             await database.SaveChangesAsync(cancellationToken);
@@ -76,16 +89,24 @@ public sealed class AccountController(
         var account = await database.Accounts.SingleOrDefaultAsync(cancellationToken);
         if (account is null)
         {
-            return Problem("Set up Lookout's account before logging in.", statusCode: HttpStatusCode.Unauthorized);
+            return Problem(
+                detail: "Set up Lookout's account before logging in.",
+                statusCode: HttpStatusCode.Unauthorized);
         }
 
         // Check the password even for the wrong user name, so the response time doesn't reveal which was wrong.
-        var verification = passwordHasher.VerifyHashedPassword(account, account.PasswordHash, credentials.Password);
+        var verification = passwordHasher.VerifyHashedPassword(
+            user: account,
+            hashedPassword: account.PasswordHash,
+            providedPassword: credentials.Password);
         if (verification == PasswordVerificationResult.Failed
             || !string.Equals(account.UserName, credentials.UserName.Trim(), StringComparison.OrdinalIgnoreCase))
         {
-            return Problem("Incorrect user name or password.", statusCode: HttpStatusCode.Unauthorized);
+            return Problem(
+                detail: "Incorrect user name or password.",
+                statusCode: HttpStatusCode.Unauthorized);
         }
+
         if (verification == PasswordVerificationResult.SuccessRehashNeeded)
         {
             account.PasswordHash = passwordHasher.HashPassword(account, credentials.Password);
@@ -110,7 +131,3 @@ public sealed class AccountController(
     private ObjectResult AccountAlreadyExists() =>
         Problem("Lookout's account is already set up. Log in instead.", statusCode: HttpStatusCode.Conflict);
 }
-
-public sealed record SessionStatus(bool AccountExists, string? UserName);
-
-public sealed record Credentials(string UserName, string Password);

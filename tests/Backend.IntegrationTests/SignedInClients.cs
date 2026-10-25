@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using ChasePie.Lookout.Backend.Security;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Net.Http.Headers;
 

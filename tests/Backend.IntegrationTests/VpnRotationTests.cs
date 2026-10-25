@@ -1,10 +1,13 @@
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 using ChasePie.Lookout.Backend.Runner;
+using ChasePie.Lookout.Backend.Running;
 using ChasePie.Lookout.Backend.Vpn;
 using ChasePie.Lookout.Model;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+// MSTest has a TestRun of its own.
+using TestRun = ChasePie.Lookout.Backend.Running.TestRun;
 
 namespace ChasePie.Lookout.Backend.IntegrationTests;
 

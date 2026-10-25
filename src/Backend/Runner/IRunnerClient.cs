@@ -10,8 +10,13 @@ public interface IRunnerClient
 
 /// <param name="AlwaysScreenshot">Screenshots a Succeeded Script's page too, as a Test run shows; otherwise only others'.</param>
 /// <param name="Proxy">The proxy a VPN Run's browser goes through; Direct Runs have none.</param>
-public sealed record RunnerRequest(string Source, string FileKind, ScriptContext Context, int TimeoutMs = 120_000,
-    bool AlwaysScreenshot = false, ProxySettings? Proxy = null);
+public sealed record RunnerRequest(
+    string Source,
+    string FileKind,
+    ScriptContext Context,
+    int TimeoutMs = 120_000,
+    bool AlwaysScreenshot = false,
+    ProxySettings? Proxy = null);
 public sealed record ScriptContext(string NotificationUrl);
 
 /// <summary>Playwright's proxy option. The runner refuses a null username or password, so they're left out instead.</summary>

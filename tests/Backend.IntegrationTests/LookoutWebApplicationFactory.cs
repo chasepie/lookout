@@ -20,9 +20,9 @@ public sealed class LookoutWebApplicationFactory : WebApplicationFactory<Program
 {
     private readonly List<string> _databasePaths = [];
     public FakeRunnerClient Runner { get; } = new();
-    public RecordingChannels Channels { get; } = new();
-    /// <summary>Delivers notifications through the real Discord and Pushover senders instead of <see cref="Channels"/>.</summary>
-    public bool UseRealChannels { get; init; }
+    public RecordingNotificationChannels NotificationChannels { get; } = new();
+    /// <summary>Delivers notifications through the real Discord and Pushover senders instead of <see cref="NotificationChannels"/>.</summary>
+    public bool UseRealNotificationChannels { get; init; }
     public FakeVpnRotator Vpn { get; } = new();
     public FakeTimeProvider Time { get; } = new(new DateTimeOffset(2026, 10, 19, 12, 0, 0, TimeSpan.Zero));
     /// <summary>Uses the real clock instead of <see cref="Time"/>, for a host that a browser uses interactively.</summary>
@@ -55,10 +55,10 @@ public sealed class LookoutWebApplicationFactory : WebApplicationFactory<Program
                 services.AddSingleton<IVpnRotator>(Vpn);
             }
             services.AddSingleton(UseSystemTime ? TimeProvider.System : Time);
-            if (!UseRealChannels)
+            if (!UseRealNotificationChannels)
             {
-                services.RemoveAll<IChannelSender>();
-                foreach (var sender in Channels.Senders())
+                services.RemoveAll<INotificationChannelSender>();
+                foreach (var sender in NotificationChannels.Senders())
                 {
                     services.AddSingleton(sender);
                 }

@@ -10,9 +10,12 @@ public sealed class RunDebugOutput
     public const int KeptPerWatch = 20;
 
     public long RunId { get; set; }
+
     public Run? Run { get; set; }
+
     /// <summary>What the Script wrote to stdout and stderr.</summary>
     public string? ConsoleOutput { get; set; }
+
     /// <summary>A PNG of the Script's page, if the runner could take one.</summary>
     public byte[]? Screenshot { get; set; }
 }

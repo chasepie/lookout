@@ -19,7 +19,9 @@ public sealed record WatchStatusChangedEvent(Guid WatchId, WatchStatus Status);
 /// Pushing never fails or holds up a Run for long: a failed or stalled push is logged, and the app catches up when
 /// it next reads.
 /// </summary>
-public sealed partial class WatchEvents(IHubContext<WatchEventsHub, IWatchEventsClient> hub, ILogger<WatchEvents> logger)
+public sealed partial class WatchEvents(
+    IHubContext<WatchEventsHub, IWatchEventsClient> hub,
+    ILogger<WatchEvents> logger)
 {
     /// <summary>How long a push may wait on connections that aren't reading, such as a stalled browser tab.</summary>
     private static readonly TimeSpan SendTimeout = TimeSpan.FromSeconds(5);

@@ -59,7 +59,7 @@ public sealed record Schedule
     };
 
     /// <summary>Explains why this schedule can't be used, or returns null when it can.</summary>
-    public string? Validate(DateTimeOffset now, TimeZoneInfo timeZone)
+    public string? GetInvalidReason(DateTimeOffset now, TimeZoneInfo timeZone)
     {
         string? ValidateInterval()
         {
@@ -103,6 +103,7 @@ public sealed record Schedule
                 {
                     break;
                 }
+
                 if (next.Value - previous.Value < MinimumInterval)
                 {
                     return MinimumIntervalMessage;
@@ -127,9 +128,12 @@ public sealed record Schedule
         var occurrence = Kind switch
         {
             ScheduleKind.Interval => now + IntervalLength(Every!.Value, Unit!.Value),
-            ScheduleKind.Daily => CronExpression.Parse($"{TimeOfDay!.Value.Minute} {TimeOfDay.Value.Hour} * * *")
+            ScheduleKind.Daily => CronExpression
+                .Parse($"{TimeOfDay!.Value.Minute} {TimeOfDay.Value.Hour} * * *")
                 .GetNextOccurrence(now, timeZone),
-            ScheduleKind.Cron => CronExpression.Parse(Cron!).GetNextOccurrence(now, timeZone),
+            ScheduleKind.Cron => CronExpression
+                .Parse(Cron!)
+                .GetNextOccurrence(now, timeZone),
             _ => throw new InvalidOperationException($"Unknown schedule kind {Kind}.")
         };
         return occurrence?.ToUniversalTime();

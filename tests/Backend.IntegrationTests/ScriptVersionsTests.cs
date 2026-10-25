@@ -182,7 +182,7 @@ public sealed class ScriptVersionsTests(TestContext testContext)
         factory.Runner.Results.Enqueue(new RunnerResult { Outcome = RunOutcome.Succeeded, Content = "£20", DurationMs = 1 });
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         var id = await CreateWatch(client);
-        await ChooseAChannel(client, id);
+        await ChooseANotificationChannel(client, id);
         await RunNow(client, id);
         var before = await GetWatch(client, id);
         RunnerRequest? executed = null;
@@ -218,7 +218,7 @@ public sealed class ScriptVersionsTests(TestContext testContext)
         var versions = await client.GetFromJsonAsync<JsonArray>($"/api/watches/{id}/script-versions", testContext.CancellationToken);
         Assert.HasCount(1, versions!);
         // A Run with the same content would have notified a Change.
-        Assert.IsEmpty(factory.Channels.Sent);
+        Assert.IsEmpty(factory.NotificationChannels.Sent);
     }
 
     [TestMethod]
@@ -228,7 +228,7 @@ public sealed class ScriptVersionsTests(TestContext testContext)
         factory.Runner.DefaultResult = new RunnerResult { Outcome = RunOutcome.Errored, ErrorMessage = "No price", DurationMs = 1 };
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         var id = await CreateWatch(client);
-        await ChooseAChannel(client, id);
+        await ChooseANotificationChannel(client, id);
         await RunNow(client, id);
         await RunNow(client, id);
 
@@ -237,7 +237,7 @@ public sealed class ScriptVersionsTests(TestContext testContext)
 
         // The first streak notifies once; the new version's streak is a new one, so it notifies too.
         Assert.AreSequenceEqual([NotificationKind.Errored, NotificationKind.Errored],
-            factory.Channels.Sent.Select(sent => sent.Notification.Kind));
+            factory.NotificationChannels.Sent.Select(sent => sent.Notification.Kind));
     }
 
     [TestMethod]
@@ -247,13 +247,13 @@ public sealed class ScriptVersionsTests(TestContext testContext)
         factory.Runner.DefaultResult = new RunnerResult { Outcome = RunOutcome.Errored, ErrorMessage = "No price", DurationMs = 1 };
         using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
         var id = await CreateWatch(client);
-        await ChooseAChannel(client, id);
+        await ChooseANotificationChannel(client, id);
         await RunNow(client, id);
 
         await UploadScript(client, id, NewScript, keepBaseline: true);
         await RunNow(client, id);
 
-        Assert.AreSequenceEqual([NotificationKind.Errored], factory.Channels.Sent.Select(sent => sent.Notification.Kind));
+        Assert.AreSequenceEqual([NotificationKind.Errored], factory.NotificationChannels.Sent.Select(sent => sent.Notification.Kind));
     }
 
     [TestMethod]
@@ -370,14 +370,14 @@ public sealed class ScriptVersionsTests(TestContext testContext)
         return client.PostAsync(new Uri($"/api/watches/{id}/script-versions", UriKind.Relative), form, testContext.CancellationToken);
     }
 
-    /// <summary>Has the Watch notify a new Channel, whose notifications the factory records.</summary>
-    private async Task ChooseAChannel(HttpClient client, string id)
+    /// <summary>Has the Watch notify a new Notification channel, whose notifications the factory records.</summary>
+    private async Task ChooseANotificationChannel(HttpClient client, string id)
     {
-        using var created = await client.PostAsJsonAsync("/api/channels",
+        using var created = await client.PostAsJsonAsync("/api/notification-channels",
             new { name = "Phone", kind = "discord", webhookUrl = "https://discord.com/api/webhooks/1/a" }, testContext.CancellationToken);
         created.EnsureSuccessStatusCode();
-        var channelId = (await created.Content.ReadFromJsonAsync<JsonObject>(testContext.CancellationToken))!["id"]!.GetValue<string>();
-        using var chosen = await client.PutAsJsonAsync($"/api/watches/{id}/channels", new { channelIds = new[] { channelId } },
+        var notificationChannelId = (await created.Content.ReadFromJsonAsync<JsonObject>(testContext.CancellationToken))!["id"]!.GetValue<string>();
+        using var chosen = await client.PutAsJsonAsync($"/api/watches/{id}/notification-channels", new { notificationChannelIds = new[] { notificationChannelId } },
             testContext.CancellationToken);
         chosen.EnsureSuccessStatusCode();
     }

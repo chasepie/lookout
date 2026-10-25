@@ -51,6 +51,7 @@ public sealed record RunEvaluation(
         var isChange = watch.Baseline is not null
             && !string.Equals(watch.Baseline.Trim(), content!.Trim(), StringComparison.Ordinal);
         List<Notification> notifications = [];
+
         // Setting the Baseline never notifies, even after a failure streak that did.
         if (watch.FailureStreakNotified && watch.Baseline is not null)
         {
@@ -60,6 +61,7 @@ public sealed record RunEvaluation(
         {
             notifications.Add(Notification.Change(watch.Name, watch.Baseline!, content!, watch.NotificationUrl));
         }
+
         return new RunEvaluation(
             Baseline: content,
             FailureStreak: 0,

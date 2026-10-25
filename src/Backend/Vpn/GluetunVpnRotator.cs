@@ -51,6 +51,7 @@ public sealed class GluetunVpnRotator(
                     proxiedExitIp.Forget();
                     return VpnStatus.Disconnected($"gluetun's VPN is {status ?? "in an unknown state"}.");
             }
+
             // gluetun clears its public IP whenever the VPN stops or restarts, and has none until the tunnel is up, or
             // if its lookup of it fails, when one found through the proxy counts.
             var exit = await GetAsync<PublicIp>("v1/publicip/ip", linked.Token);
@@ -75,15 +76,18 @@ public sealed class GluetunVpnRotator(
         // Anything but the caller cancelling means gluetun can't be read, which leaves VPN Runs refused.
         catch (Exception error) when (!cancellationToken.IsCancellationRequested)
         {
-            return error switch
+            if (timeout.IsCancellationRequested)
             {
-                _ when timeout.IsCancellationRequested => VpnStatus.Unreachable(
-                    $"gluetun's control server did not respond within {settings.StatusTimeout.TotalSeconds:0.#} seconds."),
-                // gluetun answered, though not as it should
-                HttpRequestException { StatusCode: { } status } =>
-                    VpnStatus.Disconnected($"gluetun's control server returned HTTP {(int)status}."),
-                _ => VpnStatus.Unreachable($"Could not reach gluetun's control server: {error.Message}")
-            };
+                return VpnStatus.Unreachable($"gluetun's control server did not respond within {settings.StatusTimeout.TotalSeconds:0.#} seconds.");
+            }
+
+            // gluetun answered, though not as it should
+            if (error is HttpRequestException { StatusCode: { } status })
+            {
+                return VpnStatus.Disconnected($"gluetun's control server returned HTTP {(int)status}.");
+            }
+
+            return VpnStatus.Unreachable($"Could not reach gluetun's control server: {error.Message}");
         }
     }
 
@@ -95,6 +99,7 @@ public sealed class GluetunVpnRotator(
         // The old exit is going, and the new tunnel needs time for gluetun to find its exit before a check is worth it.
         proxiedExitIp.Forget();
         await PutVpnStatusAsync("stopped", cancellationToken);
+
         // gluetun picks a random server among its SERVER_REGIONS each time it starts the VPN. Once it's stopped, nothing
         // else starts it again, so this goes ahead even if the caller gives up, and tries more than once.
         for (var attempt = 1; ; attempt++)
@@ -125,16 +130,14 @@ public sealed class GluetunVpnRotator(
             while (true)
             {
                 await Task.Delay(settings.UpdaterCheckInterval, timeProvider, linked.Token);
-                switch ((await GetAsync<VpnState>("v1/updater/status", linked.Token))?.Status)
+                var status = (await GetAsync<VpnState>("v1/updater/status", linked.Token))?.Status;
+                if (status == "running")
                 {
-                    case "running":
-                        continue;
-                    case "completed":
-                        return true;
-                    // Crashed, or stopped by something else
-                    default:
-                        return false;
+                    continue;
                 }
+
+                // false means crashed, or stopped by something else
+                return status == "completed";
             }
         }
         catch (OperationCanceledException) when (timeout.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
