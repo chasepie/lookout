@@ -36,9 +36,12 @@ public class Program
         // Every POST, PUT, PATCH and DELETE to a controller must carry the request token (see RequestForgery).
         services.AddControllers(options => options.Filters.Add<RequestForgery.ValidateTokenFilter>());
         services.AddSingleton(TimeProvider.System);
+
         services.AddSignalR();
-        services.AddSingleton<WatchEvents>();
-        services.AddSingleton<EventConnections>();
+        services
+            .AddSingleton<WatchEvents>()
+            .AddSingleton<EventConnections>();
+
         services.AddHostedService<RunRetention>();
         ConfigureScheduling(services, configuration);
         ConfigureNotifications(services, configuration);
