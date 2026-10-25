@@ -4,16 +4,17 @@
  */
 import type { LookoutScript, LookoutScriptExport, ScriptOutcome } from '@chasepie/lookout-scripting';
 import { isBuiltin, registerHooks } from 'node:module';
-import { setTimeout as delay } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
 import { chromium, type Browser, type BrowserContextOptions, type Page } from 'playwright';
 import { isObject, isOptionalString } from './guards.ts';
 import {
+  createChildEnd,
   erroredResult,
-  timedOutMessage,
+  keepsScreenshot,
+  screenshotTimeoutMs,
+  type ChildEnd,
   type Screenshot,
   type ScriptJob,
-  type ScriptReport,
   type ScriptResult,
 } from './protocol.ts';
 
@@ -97,9 +98,6 @@ async function loadScript(scriptPath: string): Promise<LookoutScript> {
 
 const errored = (error: unknown) => erroredResult(error instanceof Error ? error.message : String(error));
 
-/** Long beyond what a screenshot needs. With `flushTimeoutMs`, it fits well within the runner's `timeoutGraceMs`. */
-const screenshotTimeoutMs = 2_000;
-
 /**
  * A screenshot of the Script's page, to tell an "Access Denied" page from a changed selector. There's none if the
  * page can't take one, such as when the Script has closed it.
@@ -114,16 +112,6 @@ async function screenshotOf(page: Page): Promise<Screenshot> {
 
 /** The Script's page, once it has one, so there's something to screenshot if it runs past its timeout */
 let scriptPage: Page | undefined;
-
-let hasReportedOutcome = false;
-
-/** Reports the Script's outcome, only once, as soon as it has one */
-function reportOutcome(token: string, result: ScriptResult) {
-  if (!hasReportedOutcome) {
-    hasReportedOutcome = true;
-    sendReport?.({ token, type: 'outcome', result } satisfies ScriptReport);
-  }
-}
 
 /**
  * Chromium's flags, whichever way it's started. The first hides that it's automated (`navigator.webdriver`). The
@@ -143,12 +131,12 @@ interface ScriptBrowser {
  * Launches a local Chromium as a server, since only that tells which process is Chromium. It's reported for the
  * runner to kill if need be, since Playwright puts it in a process group of its own.
  */
-async function launchBrowser(token: string, headless: boolean): Promise<ScriptBrowser> {
+async function launchBrowser(headless: boolean): Promise<ScriptBrowser> {
   const browserServer = await chromium.launchServer({ headless, args: browserArgs });
   const { pid } = browserServer.process();
   if (pid !== undefined) {
     browserPid = pid;
-    sendReport?.({ token, type: 'browser', pid } satisfies ScriptReport);
+    childEnd.reportBrowser(pid);
   }
   // Closing the server closes Chromium, and with it its contexts
   const close = () => browserServer.close();
@@ -199,7 +187,7 @@ async function runJob(job: ScriptJob): Promise<Screenshot> {
   const script = await Promise.race([loadScript(job.scriptPath), backgroundError]);
   const { browser, contextOptions, close } = job.browser.provider === 'connect'
     ? await connectBrowser(job.browser.url)
-    : await launchBrowser(job.token, job.browser.headless);
+    : await launchBrowser(job.browser.headless);
   try {
     const browserContext = await browser.newContext({ ...contextOptions, ...(job.proxy && { proxy: job.proxy }) });
     const page = await browserContext.newPage();
@@ -207,8 +195,8 @@ async function runJob(job: ScriptJob): Promise<Screenshot> {
     // Promise.try, so that a run that throws rather than rejecting is Errored with a screenshot too
     const running = Promise.try(() => script.run(page, job.context));
     const result = await Promise.race([running, backgroundError]).then(toResult).catch(errored);
-    reportOutcome(job.token, result);
-    return result.outcome === 'succeeded' && !job.alwaysScreenshot ? {} : await screenshotOf(page);
+    childEnd.reportOutcome(result);
+    return keepsScreenshot(result, job.alwaysScreenshot) ? await screenshotOf(page) : {};
   } finally {
     // A failure to clean up must not replace the Script's own result
     await close().catch(() => undefined);
@@ -234,50 +222,33 @@ function toResult(outcome: unknown): ScriptResult {
   };
 }
 
-/** Long enough to write out all the console output the runner keeps; a bound in case the Script broke the streams */
-const flushTimeoutMs = 1_000;
-
 /** Resolves once everything written to `stream` so far has been handed on */
 const flushed = (stream: NodeJS.WriteStream) =>
   new Promise<void>((resolve) => {
     stream.write('', () => resolve());
   });
 
-let hasFinished = false;
-
-/**
- * Sends the last report, only once, with the screenshot if there is one, then exits, so a timer or socket the
- * Script left open can't keep the process alive
- */
-async function finish(token: string, screenshot: Screenshot) {
-  if (hasFinished) {
-    return;
-  }
-  hasFinished = true;
-  // Writes to a pipe are asynchronous, so exiting straight away could lose the end of the Script's output. This
-  // comes before the report, since the runner may kill the process once it has it.
-  await Promise.race([Promise.all([flushed(process.stdout), flushed(process.stderr)]), delay(flushTimeoutMs)]);
-  sendReport?.({ token, type: 'finished', ...screenshot } satisfies ScriptReport, () => process.exit());
-}
-
-let jobToken: string | undefined;
-
-// The runner's first message is the job, and a second, if there is one, says the Script has run past its timeout.
-// Both can arrive in one read from the channel, so a listener added once the job has arrived could miss the second.
-process.on('message', (message: unknown) => {
-  if (jobToken === undefined) {
-    const job = message as ScriptJob;
-    jobToken = job.token;
+const childEnd: ChildEnd = createChildEnd({
+  send: (message, sent) => {
+    sendReport?.(message, sent);
+  },
+  flush: async () => {
+    await Promise.all([flushed(process.stdout), flushed(process.stderr)]);
+  },
+  exit: () => process.exit(),
+  onJob: (job) => {
     void runJob(job)
-      .catch((error: unknown) => {
+      .catch((error: unknown): Screenshot => {
         // Failing before the Script has a page, as when it can't be loaded, leaves nothing to screenshot
-        reportOutcome(job.token, errored(error));
+        childEnd.reportOutcome(errored(error));
         return {};
       })
-      .then((screenshot) => finish(job.token, screenshot));
-  } else if (message === timedOutMessage) {
+      .then((screenshot) => childEnd.finish(screenshot));
+  },
+  onTimedOut: () => {
     // The runner words the timeout itself; all it needs from here is the screenshot
-    const token = jobToken;
-    void (scriptPage ? screenshotOf(scriptPage) : Promise.resolve({})).then((screenshot) => finish(token, screenshot));
-  }
+    void (scriptPage ? screenshotOf(scriptPage) : Promise.resolve({})).then((screenshot) => childEnd.finish(screenshot));
+  },
 });
+
+process.on('message', childEnd.receive);

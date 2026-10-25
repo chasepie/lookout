@@ -1,15 +1,13 @@
 import type { ScriptContext } from '@chasepie/lookout-scripting';
-import { fork, type ChildProcess } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { fork } from 'node:child_process';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { findPackageJSON } from 'node:module';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { collectConsoleOutput } from './console-output.ts';
 import {
-  erroredResult,
-  isReportFor,
-  timedOutMessage,
+  createRunnerEnd,
   timeoutGraceMs,
   type BrowserSettings,
   type ProxySettings,
@@ -54,12 +52,6 @@ const scriptProcessPath = fileURLToPath(new URL('./script-process.ts', import.me
 
 /** The heap each Script's process gets; one that needs more is Errored rather than taking memory from the others */
 const memoryLimitMb = 512;
-
-/** What V8 writes to stderr as it aborts a process, with SIGABRT, once it has reached its heap limit */
-const outOfMemoryMessage = 'JavaScript heap out of memory';
-
-/** How much of a Script's stderr to search for that message, which V8 follows with a native stack trace */
-const stderrTailLength = 16 * 1024;
 
 /** The runner's own code, which the Script's process runs */
 const runnerDirectory = fileURLToPath(new URL('.', import.meta.url));
@@ -126,57 +118,11 @@ const permissionArgs = (config: RunnerConfig, scriptDirectory: string, tempDirec
   ...config.browserPermissionArgs,
 ];
 
-/** How many characters of a Script's console output the runner keeps, so a Script that logs without end can't exhaust it */
-const maxConsoleOutputLength = 256 * 1024;
-
-const cutOutputMarker = '[Earlier output was cut]\n';
-
 /**
  * How long to wait for the end of a process's stdout and stderr once it has exited. A subprocess the Script started
  * can hold them open long after, and mustn't hold up the response.
  */
 const outputDrainMs = 1_000;
-
-/** Keeps the end of the text appended to it once there's more than `maxLength` characters, marking the cut */
-function textTail(maxLength: number) {
-  let text = '';
-  let cut = false;
-  return {
-    append: (chunk: string) => {
-      text += chunk;
-      // Trimming only once there's twice too much, so heavy output isn't copied on every chunk
-      if (text.length > 2 * maxLength) {
-        text = text.slice(-maxLength);
-        cut = true;
-      }
-    },
-    text: () => {
-      if (!cut && text.length <= maxLength) {
-        return text;
-      }
-      const kept = text.slice(-maxLength);
-      // Without the second half of a character the cut went through, which on its own isn't valid text
-      return cutOutputMarker + (/^[\uDC00-\uDFFF]/.test(kept) ? kept.slice(1) : kept);
-    },
-  };
-}
-
-/**
- * Collects a process's stdout and stderr as they arrive, keeping only the end once there's too much. The end is
- * what explains a failure. The end of stderr is kept apart as well, since only there can V8 say the process ran
- * out of memory.
- */
-function collectConsoleOutput(child: ChildProcess) {
-  const output = textTail(maxConsoleOutputLength);
-  const stderr = textTail(stderrTailLength);
-  // Decoding as a stream, so a character split across chunks survives
-  child.stdout?.setEncoding('utf8').on('data', output.append);
-  child.stderr?.setEncoding('utf8').on('data', (chunk: string) => {
-    output.append(chunk);
-    stderr.append(chunk);
-  });
-  return { consoleOutput: output.text, stderr: stderr.text };
-}
 
 /**
  * The runner's environment for a Script's process, with its temp files in `tempDirectory`. NODE_OPTIONS is left
@@ -213,10 +159,10 @@ function killProcessGroup(pid: number) {
 
 /**
  * Runs a Script's child process to completion, killing it when `signal` aborts or, after a grace period for a
- * screenshot, at the timeout. The process reports its result over IPC, so the Script's console output can't be
- * mistaken for it, and exits after reporting even if the Script left a handle open. Whichever way it ends,
- * anything it started goes with it. It runs with `execArgv`, its limits, and its temp files go in `tempDirectory`,
- * since a killed process can't clean up after itself.
+ * screenshot, at the timeout. The process reports its result over IPC (see protocol.ts), so the Script's console
+ * output can't be mistaken for it, and exits after reporting even if the Script left a handle open. Whichever way
+ * it ends, anything it started goes with it. It runs with `execArgv`, its limits, and its temp files go in
+ * `tempDirectory`, since a killed process can't clean up after itself.
  */
 const runScriptProcess = (
   job: ScriptJob,
@@ -233,13 +179,23 @@ const runScriptProcess = (
       // In a process group of its own, which everything it starts joins, so they can all be killed together
       detached: true,
     });
-    let browserPid: number | undefined;
+    const runnerEnd = createRunnerEnd({
+      job,
+      // A process that has gone can't be told it timed out, and needn't be
+      send: (message) => {
+        if (child.connected) {
+          child.send(message);
+        }
+      },
+      timeoutMs,
+      memoryLimitMb,
+    });
     /**
      * Kills the Script's process and everything it started. Its subprocesses join the group it leads, unless one
      * leaves on purpose, and Chromium leads a group of its own.
      */
     const stop = () => {
-      for (const pid of [child.pid, browserPid]) {
+      for (const pid of [child.pid, runnerEnd.browserPid]) {
         if (pid !== undefined) {
           killProcessGroup(pid);
         }
@@ -254,57 +210,20 @@ const runScriptProcess = (
       stop();
     }
     const { consoleOutput, stderr } = collectConsoleOutput(child);
-    let outcome: ScriptResult | undefined;
-    let screenshot: Screenshot = {};
     let failure: Error | undefined;
-    let timedOut = false;
     let killTimer: NodeJS.Timeout | undefined;
     let drainTimer: NodeJS.Timeout | undefined;
     const timer = setTimeout(() => {
-      // A Script with an outcome is only finishing up, and that outcome stands
-      if (!outcome) {
-        timedOut = true;
-        if (child.connected) {
-          child.send(timedOutMessage);
-        }
-      }
+      runnerEnd.timeOut();
       killTimer = setTimeout(stop, timeoutGraceMs);
     }, timeoutMs);
 
-    child.on('message', (message) => {
-      if (!isReportFor(job.token, message)) {
-        return;
-      }
-      if (message.type === 'browser') {
-        browserPid = message.pid;
-      } else if (message.type === 'outcome') {
-        // One that comes after the timeout is too late, whatever it is
-        if (!timedOut) {
-          outcome ??= message.result;
-        }
-      } else if (message.screenshot !== undefined) {
-        screenshot = { screenshot: message.screenshot };
-      }
-    });
+    child.on('message', runnerEnd.receive);
     // Failing to spawn or to send the job: 'close' still follows, once the process is gone
     child.on('error', (error) => {
       failure ??= error;
       stop();
     });
-    /** Why a process that ended without reporting in time did so */
-    const unreportedResult = (code: number | null, exitSignal: NodeJS.Signals | null) => {
-      if (timedOut) {
-        return erroredResult(`Script timed out after ${timeoutMs} ms`);
-      }
-      if (exitSignal === 'SIGABRT' && stderr().includes(outOfMemoryMessage)) {
-        return erroredResult(`Script exceeded its memory limit of ${memoryLimitMb} MB`);
-      }
-      if (failure) {
-        return erroredResult(`Script process failed: ${failure.message}`);
-      }
-      const ending = exitSignal ? `was killed by ${exitSignal}` : `exited with code ${code}`;
-      return erroredResult(`Script process ${ending} before reporting an outcome`);
-    };
     child.once('exit', () => {
       // Anything the Script left running, now that its Run is over
       stop();
@@ -323,11 +242,9 @@ const runScriptProcess = (
       clearTimeout(timer);
       clearTimeout(killTimer);
       clearTimeout(drainTimer);
-      const result = outcome ?? unreportedResult(code, exitSignal);
-      const keepsScreenshot = job.alwaysScreenshot || result.outcome !== 'succeeded';
-      resolve({ ...result, ...(keepsScreenshot && screenshot), consoleOutput: consoleOutput() });
+      const result = runnerEnd.result({ code, signal: exitSignal, stderr: stderr(), failure });
+      resolve({ ...result, consoleOutput: consoleOutput() });
     });
-    child.send(job);
   });
 
 /**
@@ -350,7 +267,6 @@ export async function execute(
     await mkdir(tempDirectory);
 
     const job: ScriptJob = {
-      token: randomUUID(),
       scriptPath,
       context: request.context,
       browser: config.browser,
