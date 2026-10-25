@@ -7,17 +7,8 @@
 import type { ScriptContext } from '@chasepie/lookout-scripting';
 import type { Serializable } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import type { BrowserContextOptions } from 'playwright';
+import type { BrowserSettings, ProxySettings } from './browser.ts';
 import { isObject, isOptionalString } from './guards.ts';
-
-export type ProxySettings = NonNullable<BrowserContextOptions['proxy']>;
-
-/** Where a Script's browser comes from */
-export type BrowserSettings =
-  /** A Chromium the Script's process launches itself, for local development and tests; non-headless is for debugging */
-  | { provider: 'launch'; headless: boolean }
-  /** A headless Chromium from Browserless, at its Playwright endpoint `url`, as in deployment */
-  | { provider: 'connect'; url: string };
 
 /** The Script a child process runs, and how to run it */
 export interface ScriptJob {

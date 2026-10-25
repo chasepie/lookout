@@ -5,7 +5,8 @@
 import type { LookoutScript, LookoutScriptExport, ScriptOutcome } from '@chasepie/lookout-scripting';
 import { isBuiltin, registerHooks } from 'node:module';
 import { pathToFileURL } from 'node:url';
-import { chromium, type Browser, type BrowserContextOptions, type Page } from 'playwright';
+import type { Page } from 'playwright';
+import { openPage } from './browser.ts';
 import { isObject, isOptionalString } from './guards.ts';
 import {
   createChildEnd,
@@ -113,84 +114,17 @@ async function screenshotOf(page: Page): Promise<Screenshot> {
 /** The Script's page, once it has one, so there's something to screenshot if it runs past its timeout */
 let scriptPage: Page | undefined;
 
-/**
- * Chromium's flags, whichever way it's started. The first hides that it's automated (`navigator.webdriver`). The
- * second keeps WebRTC from revealing the home IP around a VPN Run's proxy, and is harmless without one
- * (docs/research/browser-and-vpn-prototype.md).
- */
-const browserArgs = ['--disable-blink-features=AutomationControlled', '--webrtc-ip-handling-policy=disable_non_proxied_udp'];
-
-/** A browser for the Script, with what its context needs, and how to be done with it */
-interface ScriptBrowser {
-  browser: Browser;
-  contextOptions: BrowserContextOptions;
-  close: () => Promise<void>;
-}
-
-/**
- * Launches a local Chromium as a server, since only that tells which process is Chromium. It's reported for the
- * runner to kill if need be, since Playwright puts it in a process group of its own.
- */
-async function launchBrowser(headless: boolean): Promise<ScriptBrowser> {
-  const browserServer = await chromium.launchServer({ headless, args: browserArgs });
-  const { pid } = browserServer.process();
-  if (pid !== undefined) {
-    browserPid = pid;
-    childEnd.reportBrowser(pid);
-  }
-  // Closing the server closes Chromium, and with it its contexts
-  const close = () => browserServer.close();
-  try {
-    return { browser: await chromium.connect(browserServer.wsEndpoint()), contextOptions: {}, close };
-  } catch (error) {
-    await close();
-    throw error;
-  }
-}
-
-/**
- * The browser's user agent as headful Chrome's. Browserless's Chromium is headless, so its user agent says
- * `HeadlessChrome`, which on its own makes bot detection take it for a robot
- * (docs/research/browser-and-vpn-prototype.md). It's read from the browser, so it keeps up with Browserless
- * upgrades, and its version cut to the major one, as Chrome's own is.
- */
-async function headfulUserAgent(browser: Browser) {
-  const session = await browser.newBrowserCDPSession();
-  try {
-    const { userAgent } = await session.send('Browser.getVersion');
-    return userAgent.replace(/HeadlessChrome\/(\d+)[\d.]*/, 'Chrome/$1.0.0.0');
-  } finally {
-    await session.detach();
-  }
-}
-
-/**
- * Connects to a headless Chromium in Browserless, which launches one per connection with the options in its
- * `launch` query parameter. Chromium isn't this process's to kill: Browserless closes it once the connection
- * closes, even when this process is killed.
- */
-async function connectBrowser(url: string): Promise<ScriptBrowser> {
-  const endpoint = new URL(url);
-  endpoint.searchParams.set('launch', JSON.stringify({ headless: true, args: browserArgs }));
-  const browser = await chromium.connect(endpoint.href);
-  const close = () => browser.close();
-  try {
-    return { browser, contextOptions: { userAgent: await headfulUserAgent(browser) }, close };
-  } catch (error) {
-    await close();
-    throw error;
-  }
-}
-
 /** Runs the job's Script, reporting its outcome, and resolves to a screenshot if the Run didn't Succeed or the job asks */
 async function runJob(job: ScriptJob): Promise<Screenshot> {
   const script = await Promise.race([loadScript(job.scriptPath), backgroundError]);
-  const { browser, contextOptions, close } = job.browser.provider === 'connect'
-    ? await connectBrowser(job.browser.url)
-    : await launchBrowser(job.browser.headless);
+  const { page, close } = await openPage(job.browser, {
+    proxy: job.proxy,
+    onProcess: (pid) => {
+      browserPid = pid;
+      childEnd.reportBrowser(pid);
+    },
+  });
   try {
-    const browserContext = await browser.newContext({ ...contextOptions, ...(job.proxy && { proxy: job.proxy }) });
-    const page = await browserContext.newPage();
     scriptPage = page;
     // Promise.try, so that a run that throws rather than rejecting is Errored with a screenshot too
     const running = Promise.try(() => script.run(page, job.context));

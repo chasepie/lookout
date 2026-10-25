@@ -104,14 +104,17 @@ execute.ts          write the source to a fresh temp directory
                     collect its stdout and stderr (console-output.ts)
                     at timeoutMs without an outcome, ask it for a screenshot, then kill it
   script-process.ts   import the Script, limiting its imports, and check its default export
-                      launch: launch Chromium → report its pid
-                      connect: connect to a Chromium in Browserless
-                      run(page, context) in a new browser context, with the request's proxy
+    browser.ts          launch: launch Chromium → report its pid
+                        connect: connect to a Chromium in Browserless
+                        open a page in a new browser context, with the request's proxy
+                      run(page, context)
                       check the outcome → report it
                       screenshot the page unless it Succeeded, close Chromium or the connection
                       write out its console output → report it's finished, with the screenshot, then exit
 execute.ts          kill what the Script left running, delete the temp directory → respond
 ```
+
+`browser.ts` holds what each provider means, on both sides: what a Script's process must be allowed to do for its browser, which the runner works out as it starts, and how the child opens a page in that browser.
 
 `protocol.ts` holds both ends of what the runner and the child say to each other: a runner end that `execute.ts` passes the child's messages to, and a child end that `script-process.ts` reports through. The rules below about which report counts, the timeout and its 5 seconds of grace, when a screenshot is kept, and how an ending without an outcome is worded all live there.
 

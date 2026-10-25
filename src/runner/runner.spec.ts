@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium, type BrowserServer } from 'playwright';
 import { afterAll, beforeAll, describe, expect, onTestFinished, test } from 'vitest';
 import type { FileKind } from './execute.ts';
-import type { ProxySettings } from './protocol.ts';
+import type { ProxySettings } from './browser.ts';
 
 const runnerPath = fileURLToPath(new URL('./index.ts', import.meta.url));
 const fixtureSource = (name: string) =>

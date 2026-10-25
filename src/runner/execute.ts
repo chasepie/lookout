@@ -3,14 +3,13 @@ import { fork } from 'node:child_process';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { findPackageJSON } from 'node:module';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { browserPermissionArgs, type BrowserSettings, type ProxySettings } from './browser.ts';
 import { collectConsoleOutput } from './console-output.ts';
 import {
   createRunnerEnd,
   timeoutGraceMs,
-  type BrowserSettings,
-  type ProxySettings,
   type Screenshot,
   type ScriptJob,
   type ScriptResult,
@@ -59,50 +58,19 @@ const runnerDirectory = fileURLToPath(new URL('.', import.meta.url));
 /** The node_modules the runner's playwright is installed in, which a Script's playwright imports resolve to */
 const packagesDirectory = dirname(dirname(findPackageJSON('playwright', import.meta.url)!));
 
-/** Where Playwright installs its browsers, which it reads from to launch Chromium */
-async function findBrowsersDirectory() {
-  // Imported only here, since a runner that connects to Browserless needs none of it
-  const { chromium } = await import('playwright');
-  // The executable is nested in a directory for its build, such as chromium-1248, inside the install directory
-  for (let directory = chromium.executablePath(); directory !== dirname(directory); directory = dirname(directory)) {
-    if (basename(directory).startsWith('chromium-')) {
-      return dirname(directory);
-    }
-  }
-  throw new Error(`Can't find Playwright's browsers directory from ${chromium.executablePath()}`);
-}
-
 /**
- * System files Playwright reads on Linux as it's imported: the signs of running under WSL. These, and the one it
- * reads to launch Chromium, are granted even where they don't exist, since under the permission model even checking
- * whether a file exists throws for a path that isn't granted.
+ * System files Playwright reads on Linux as it's imported: the signs of running under WSL. These are granted even
+ * where they don't exist, since under the permission model even checking whether a file exists throws for a path
+ * that isn't granted.
  */
 const playwrightSystemFiles = ['/proc/version', '/proc/sys/fs/binfmt_misc/WSLInterop', '/run/WSL'];
 
-/** The OS's name, which Playwright reads on Linux to tell which build of Chromium to launch */
-const osReleaseFile = '/etc/os-release';
-
 /**
- * The runner's configuration for getting browsers from `browser`. To launch Chromium, a Script's process needs to
- * read the browsers and the OS's name, and to start processes, since Chromium is one. That allowance lets a Script
- * get around the file limits, and start a process that outlives it, so a process that connects to Browserless
- * doesn't get it. Worked out as the runner starts, so an install it can't launch from stops it there.
+ * The runner's configuration for getting browsers from `browser`. Worked out as the runner starts, so an install
+ * it can't launch from stops it there.
  */
-export async function createRunnerConfig(browser: BrowserSettings): Promise<RunnerConfig> {
-  if (browser.provider === 'connect') {
-    return { browser, browserPermissionArgs: [] };
-  }
-  const browsersDirectory = await findBrowsersDirectory();
-  return {
-    browser,
-    browserPermissionArgs: [
-      ...[browsersDirectory, osReleaseFile].map((path) => `--allow-fs-read=${path}`),
-      '--allow-child-process',
-      // Node warns about that allowance on every start, which would end up in every Script's console output
-      '--disable-warning=PERM0002',
-    ],
-  };
-}
+export const createRunnerConfig = async (browser: BrowserSettings): Promise<RunnerConfig> =>
+  ({ browser, browserPermissionArgs: await browserPermissionArgs(browser) });
 
 /**
  * Node's permission model for a Script's process. It may read only its own directory, the runner's code and
