@@ -67,6 +67,32 @@ public sealed class RequestForgeryTests(TestContext testContext)
     }
 
     [TestMethod]
+    public async Task RejectsARequestTokenSentAsAFormField()
+    {
+        await using var factory = new LookoutWebApplicationFactory();
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
+        // A page on another port can read the token cookie and post a form without a CORS preflight, but can't send the header.
+        var token = client.DefaultRequestHeaders.GetValues(SignedInClients.RequestTokenHeader).Single();
+        client.DefaultRequestHeaders.Remove(SignedInClients.RequestTokenHeader);
+        using var form = new MultipartFormDataContent
+        {
+            { new StringContent(token), "__RequestVerificationToken" },
+            { new StringContent("Widget"), "name" },
+            { new StringContent("https://example.com"), "notificationUrl" },
+            { new StringContent("interval"), "scheduleKind" },
+            { new StringContent("1"), "every" },
+            { new StringContent("hours"), "unit" },
+            { new StringContent("export default {}"), "script", "price.ts" }
+        };
+
+        var create = await client.PostAsync(new Uri("/api/watches", UriKind.Relative), form, testContext.CancellationToken);
+
+        Assert.AreEqual(HttpStatusCode.BadRequest, create.StatusCode);
+        var watches = await client.GetFromJsonAsync<JsonArray>("/api/watches", testContext.CancellationToken);
+        Assert.IsEmpty(watches!);
+    }
+
+    [TestMethod]
     public async Task RejectsARequestTokenIssuedBeforeLogin()
     {
         await using var factory = new LookoutWebApplicationFactory();

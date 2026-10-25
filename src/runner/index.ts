@@ -1,6 +1,8 @@
 /**
  * Starts the runner's HTTP API. Configured through the environment:
  * - `PORT`: the port to listen on (default 3000; 0 picks a free one).
+ * - `HOST`: the address to listen on (default `127.0.0.1`). The runner runs any Script it's sent, so only the
+ *   runner's container, whose networks reach nothing but Lookout and Browserless, listens on every interface.
  * - `BROWSERLESS_URL`: Browserless's Playwright endpoint, such as `ws://browserless:3000/chromium/playwright`, to
  *   connect to for each Script's browser, as in deployment. Without it, each Script launches a local Chromium.
  * - `HEADLESS`: `true` runs the launched Chromium headless, as tests do; otherwise it is visible, for local debugging.
@@ -37,8 +39,10 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
 
 const server = createRunnerServer(runner.execute);
 
-server.listen(Number(portText), () => {
+const host = process.env['HOST'] ?? '127.0.0.1';
+
+server.listen(Number(portText), host, () => {
   const address = server.address();
   const port = typeof address === 'object' && address !== null ? address.port : address;
-  console.log(`Runner listening on http://localhost:${port}`);
+  console.log(`Runner listening on http://${host.includes(':') ? `[${host}]` : host}:${port}`);
 });

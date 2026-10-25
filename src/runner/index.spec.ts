@@ -50,6 +50,15 @@ test('a runner executes Scripts through its HTTP API', { timeout: 30_000 }, asyn
   }
 });
 
+test('a runner listens only on the loopback address unless given a host', async () => {
+  const { runner, url } = await startRunner({ HEADLESS: 'true' });
+  try {
+    expect(new URL(url).hostname).toBe('127.0.0.1');
+  } finally {
+    runner.kill();
+  }
+});
+
 test("a Script's process exits when the runner dies, with the subprocesses it started", { timeout: 30_000 }, async () => {
   const { marker, notificationUrl } = subprocessScript('hang');
   const { runner: doomedRunner, url } = await startRunner({ HEADLESS: 'true' });

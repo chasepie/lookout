@@ -7,13 +7,14 @@ The runner holds no state. In deployment it runs in its own container, with no i
 ## Running it
 
 ```sh
-npm start -w src/runner                  # http://localhost:3000, with a visible browser
+npm start -w src/runner                  # http://127.0.0.1:3000, with a visible browser
 HEADLESS=true npm start -w src/runner    # headless, as the tests run it
 ```
 
 | Variable   | Default | Meaning |
 |------------|---------|---------|
 | `PORT`     | `3000`  | The port to listen on, 0 to 65535. `0` picks a free one. Anything else stops the runner at startup. |
+| `HOST`     | `127.0.0.1` | The address to listen on. The runner runs any Script it's sent, without a login, so by default only the same machine can reach it. Its [`Dockerfile`](Dockerfile) sets `0.0.0.0`, for Lookout to reach it from another container; only the container's networks then stop anything else reaching it. |
 | `BROWSERLESS_URL` | unset | Browserless's Playwright endpoint, such as `ws://browserless:3000/chromium/playwright`, which may include a `token`. Each Script then connects to its own headful Chromium there, as in deployment (the `connect` provider). Otherwise each Script launches a local Chromium (the `launch` provider). A URL that isn't `ws://` or `wss://` stops the runner at startup. |
 | `HEADLESS` | unset   | `true` runs a launched Chromium headless. Otherwise it is visible, for debugging Scripts locally. Browserless's is always headful, on the virtual display its image starts. |
 
@@ -21,7 +22,7 @@ Either way, Chromium gets `--disable-blink-features=AutomationControlled`, so `n
 
 In deployment, the runner runs from [`Dockerfile`](Dockerfile), which installs only `playwright` and no browser.
 
-On startup it logs `Runner listening on http://localhost:<port>`.
+On startup it logs `Runner listening on http://<host>:<port>`.
 
 ## API
 
