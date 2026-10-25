@@ -59,8 +59,11 @@ public sealed record Notification(NotificationKind Kind, string Title, string Me
         {
             return text;
         }
+
         // A cut between the two halves of a surrogate pair, such as an emoji's, would leave half a character.
-        var kept = char.IsHighSurrogate(text[maxLength - 2]) ? maxLength - 2 : maxLength - 1;
+        var kept = char.IsHighSurrogate(text[maxLength - 2])
+            ? maxLength - 2
+            : maxLength - 1;
         return string.Concat(text.AsSpan(0, kept), "…");
     }
 

@@ -85,12 +85,13 @@ type ScriptReport = { token: string } & (
 
 const outcomes: readonly unknown[] = ['succeeded', 'knownFailure', 'errored'] satisfies ScriptResult['outcome'][];
 
-const isScriptResult = (value: unknown): value is ScriptResult =>
-  isObject(value)
-  && outcomes.includes(value['outcome'])
-  && isOptionalString(value['content'])
-  && isOptionalString(value['details'])
-  && isOptionalString(value['errorMessage']);
+function isScriptResult(value: unknown): value is ScriptResult {
+  return isObject(value)
+    && outcomes.includes(value['outcome'])
+    && isOptionalString(value['content'])
+    && isOptionalString(value['details'])
+    && isOptionalString(value['errorMessage']);
+}
 
 /** Whether an IPC message is a report for the job with this token, rather than something the Script sent */
 function isReportFor(token: string, message: unknown): message is ScriptReport {
@@ -159,10 +160,12 @@ export function createRunnerEnd({ job, send, timeoutMs, memoryLimitMb }: {
     if (timedOut) {
       return erroredResult(`Script timed out after ${timeoutMs} ms`);
     }
+
     // Both must hold, so a Script that only writes V8's message isn't taken to have run out of memory
     if (signal === 'SIGABRT' && stderr.includes(outOfMemoryMessage)) {
       return erroredResult(`Script exceeded its memory limit of ${memoryLimitMb} MB`);
     }
+
     if (failure) {
       return erroredResult(`Script process failed: ${failure.message}`);
     }
@@ -199,7 +202,10 @@ export function createRunnerEnd({ job, send, timeoutMs, memoryLimitMb }: {
     result: (ending) => {
       const result = outcome ?? unreportedResult(ending);
       // The child takes a screenshot only when it's kept; this keeps a stray one out of the response all the same
-      return { ...result, ...(keepsScreenshot(result, job.alwaysScreenshot) && screenshot) };
+      return {
+        ...result,
+        ...(keepsScreenshot(result, job.alwaysScreenshot) && screenshot)
+      };
     },
   };
 }

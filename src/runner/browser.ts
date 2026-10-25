@@ -21,15 +21,18 @@ export type BrowserSettings =
  * second keeps WebRTC from revealing the home IP around a VPN Run's proxy, and is harmless without one
  * (docs/research/browser-and-vpn-prototype.md).
  */
-const browserArgs = ['--disable-blink-features=AutomationControlled', '--webrtc-ip-handling-policy=disable_non_proxied_udp'];
+const browserArgs = [
+  '--disable-blink-features=AutomationControlled',
+  '--webrtc-ip-handling-policy=disable_non_proxied_udp'
+];
 
 /** Where Playwright installs its browsers, which it reads from to launch Chromium */
 async function findBrowsersDirectory() {
   const { chromium } = await import('playwright');
   // The executable is nested in a directory for its build, such as chromium-1248, inside the install directory
-  for (let directory = chromium.executablePath(); directory !== dirname(directory); directory = dirname(directory)) {
-    if (basename(directory).startsWith('chromium-')) {
-      return dirname(directory);
+  for (let dir = chromium.executablePath(); dir !== dirname(dir); dir = dirname(dir)) {
+    if (basename(dir).startsWith('chromium-')) {
+      return dirname(dir);
     }
   }
   throw new Error(`Can't find Playwright's browsers directory from ${chromium.executablePath()}`);
@@ -52,6 +55,7 @@ export async function browserPermissionArgs(settings: BrowserSettings): Promise<
   if (settings.provider === 'connect') {
     return [];
   }
+
   const browsersDirectory = await findBrowsersDirectory();
   return [
     ...[browsersDirectory, osReleaseFile].map((path) => `--allow-fs-read=${path}`),
@@ -73,15 +77,24 @@ interface OpenBrowser {
  */
 async function launchBrowser(headless: boolean, onProcess: (pid: number) => void): Promise<OpenBrowser> {
   const { chromium } = await import('playwright');
-  const browserServer = await chromium.launchServer({ headless, args: browserArgs });
+
+  const browserServer = await chromium.launchServer({
+    headless,
+    args: browserArgs
+  });
+
   const { pid } = browserServer.process();
   if (pid !== undefined) {
     onProcess(pid);
   }
+
   // Closing the server closes Chromium, and with it its contexts
   const close = () => browserServer.close();
   try {
-    return { browser: await chromium.connect(browserServer.wsEndpoint()), close };
+    return {
+      browser: await chromium.connect(browserServer.wsEndpoint()),
+      close
+    };
   } catch (error) {
     await close();
     throw error;
@@ -97,10 +110,19 @@ async function launchBrowser(headless: boolean, onProcess: (pid: number) => void
  */
 async function connectBrowser(url: string): Promise<OpenBrowser> {
   const { chromium } = await import('playwright');
+
   const endpoint = new URL(url);
-  endpoint.searchParams.set('launch', JSON.stringify({ headless: false, args: browserArgs }));
+  const launchOptions = {
+    headless: false,
+    args: browserArgs
+  };
+  endpoint.searchParams.set('launch', JSON.stringify(launchOptions));
+
   const browser = await chromium.connect(endpoint.href);
-  return { browser, close: () => browser.close() };
+  return {
+    browser,
+    close: () => browser.close()
+  };
 }
 
 /** A page for a Script, and how to be done with its browser */
@@ -120,9 +142,15 @@ export async function openPage(settings: BrowserSettings, { proxy, onProcess }: 
   const { browser, close } = settings.provider === 'connect'
     ? await connectBrowser(settings.url)
     : await launchBrowser(settings.headless, onProcess);
+
   try {
-    const browserContext = await browser.newContext({ ...(proxy && { proxy }) });
-    return { page: await browserContext.newPage(), close };
+    const browserContext = await browser.newContext({
+      ...(proxy && { proxy })
+    });
+    return {
+      page: await browserContext.newPage(),
+      close
+    };
   } catch (error) {
     // A failure to clean up must not replace the one that stopped the page opening
     await close().catch(() => undefined);

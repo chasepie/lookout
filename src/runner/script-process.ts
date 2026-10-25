@@ -47,7 +47,9 @@ const backgroundError = new Promise<never>((_, reject) => {
   process.on('unhandledRejection', reject);
 });
 
-const isPackage = (specifier: string, name: string) => specifier === name || specifier.startsWith(`${name}/`);
+function isPackage(specifier: string, name: string) {
+  return specifier === name || specifier.startsWith(`${name}/`);
+}
 
 /**
  * Limits what the Script at `scriptUrl` may import to Node built-ins and playwright, the only package the runner
@@ -77,27 +79,34 @@ function restrictImports(scriptUrl: string) {
 type ScriptClass = Exclude<LookoutScriptExport, LookoutScript>;
 
 /** Whether a default export is a class; what it constructs is checked separately */
-const isScriptClass = (value: unknown): value is ScriptClass =>
-  typeof value === 'function' && /^class\b/.test(Function.prototype.toString.call(value));
+function isScriptClass(value: unknown): value is ScriptClass {
+  return typeof value === 'function'
+    && /^class\b/.test(Function.prototype.toString.call(value));
+}
 
-const isLookoutScript = (value: unknown): value is LookoutScript =>
-  isObject(value) && typeof value['run'] === 'function';
+function isLookoutScript(value: unknown): value is LookoutScript {
+  return isObject(value)
+    && typeof value['run'] === 'function';
+}
 
 /** Loads a script file, whose default export is a LookoutScript object or a class implementing one */
 async function loadScript(scriptPath: string): Promise<LookoutScript> {
   const scriptUrl = pathToFileURL(scriptPath).href;
   restrictImports(scriptUrl);
+
   const scriptModule = await import(scriptUrl) as { default?: unknown };
   const exported = scriptModule.default;
   const script: unknown = isScriptClass(exported) ? new exported() : exported;
-
   if (!isLookoutScript(script)) {
     throw new Error('Script must default-export a LookoutScript object or a class implementing it');
   }
+
   return script;
 }
 
-const errored = (error: unknown) => erroredResult(error instanceof Error ? error.message : String(error));
+function errored(error: unknown) {
+  return erroredResult(error instanceof Error ? error.message : String(error));
+}
 
 /**
  * A screenshot of the Script's page, to tell an "Access Denied" page from a changed selector. There's none if the
@@ -116,7 +125,11 @@ let scriptPage: Page | undefined;
 
 /** Runs the job's Script, reporting its outcome, and resolves to a screenshot if the Run didn't Succeed or the job asks */
 async function runJob(job: ScriptJob): Promise<Screenshot> {
-  const script = await Promise.race([loadScript(job.scriptPath), backgroundError]);
+  const script = await Promise.race([
+    loadScript(job.scriptPath),
+    backgroundError
+  ]);
+
   const { page, close } = await openPage(job.browser, {
     proxy: job.proxy,
     onProcess: (pid) => {
@@ -124,6 +137,7 @@ async function runJob(job: ScriptJob): Promise<Screenshot> {
       childEnd.reportBrowser(pid);
     },
   });
+
   try {
     scriptPage = page;
     // Promise.try, so that a run that throws rather than rejecting is Errored with a screenshot too

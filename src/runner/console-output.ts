@@ -16,6 +16,7 @@ const stderrTailLength = 16 * 1024;
 function textTail(maxLength: number) {
   let text = '';
   let cut = false;
+
   return {
     append: (chunk: string) => {
       text += chunk;
@@ -29,6 +30,7 @@ function textTail(maxLength: number) {
       if (!cut && text.length <= maxLength) {
         return text;
       }
+
       const kept = text.slice(-maxLength);
       // Without the second half of a character the cut went through, which on its own isn't valid text
       return cutOutputMarker + (/^[\uDC00-\uDFFF]/.test(kept) ? kept.slice(1) : kept);
@@ -44,11 +46,16 @@ function textTail(maxLength: number) {
 export function collectConsoleOutput(child: ChildProcess) {
   const output = textTail(maxConsoleOutputLength);
   const stderr = textTail(stderrTailLength);
+
   // Decoding as a stream, so a character split across chunks survives
   child.stdout?.setEncoding('utf8').on('data', output.append);
   child.stderr?.setEncoding('utf8').on('data', (chunk: string) => {
     output.append(chunk);
     stderr.append(chunk);
   });
-  return { consoleOutput: output.text, stderr: stderr.text };
+
+  return {
+    consoleOutput: output.text,
+    stderr: stderr.text
+  };
 }
