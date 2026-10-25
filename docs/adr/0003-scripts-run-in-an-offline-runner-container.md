@@ -11,5 +11,6 @@ Scripts run in a long-lived `runner` container that is connected only to an inte
 
 - Scripts can only import Node built-ins and `playwright`, the only package installed in the runner.
 - Scripts that need data from an API must get it through the browser (e.g. `page.request` or by navigating to it), not through Node.
+- The runner's one secret is the token Lookout must send it, so that Browserless, which can reach it, can't have it run a Script. It comes in the runner's environment, not mounted. Scripts' processes aren't given it, and, connecting to Browserless, can't start a process to read it from the runner's.
 
 Sources: [docs/research/script-execution-and-vpn.md](../research/script-execution-and-vpn.md)

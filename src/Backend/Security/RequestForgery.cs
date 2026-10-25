@@ -9,7 +9,8 @@ namespace ChasePie.Lookout.Backend.Security;
 /// <summary>
 /// Protects state-changing requests from cross-site request forgery. SameSite cookies alone don't: browsers ignore ports
 /// when judging "same site", and a homelab runs many services side by side on one host.
-/// Every POST, PUT, PATCH and DELETE to a controller must carry the request token, which only Lookout's own app can read.
+/// Every POST, PUT, PATCH and DELETE to a controller must carry the request token in a header, which only Lookout's own
+/// app can send.
 /// </summary>
 public static class RequestForgery
 {
@@ -28,6 +29,9 @@ public static class RequestForgery
     public static void Configure(AntiforgeryOptions options)
     {
         options.HeaderName = TokenHeaderName;
+        // A page on another port can read the token cookie, and could otherwise post it as a form field, which needs no
+        // CORS preflight. Only the header can't be sent cross-origin without one, which Lookout never answers.
+        options.SuppressReadingTokenFromFormBody = true;
         options.Cookie.Name = "Lookout.Antiforgery";
         options.Cookie.SameSite = SameSiteMode.Strict;
         options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
@@ -45,7 +49,8 @@ public static class RequestForgery
             value: tokens.RequestToken!,
             options: new CookieOptions
             {
-                // The app reads this cookie to send its value back in a header, which a page on another origin can't.
+                // The app reads this cookie to send its value back in a header. A page on another port of the host can
+                // read it too, but can't send that header to Lookout.
                 HttpOnly = false,
                 SameSite = SameSiteMode.Strict,
                 Secure = context.Request.IsHttps

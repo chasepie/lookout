@@ -17,17 +17,12 @@ public static class VpnServices
 
     private static void AddRotator(IServiceCollection services, IConfiguration configuration)
     {
-        var apiKey = configuration["Vpn:ApiKey"];
-        if (string.IsNullOrEmpty(apiKey))
+        // Deployment writes the key into gluetun's TOML auth file, where quotes or backslashes would change it.
+        var apiKey = ConfiguredTokens.Read(configuration, "Vpn:ApiKey");
+        if (apiKey is null)
         {
             services.AddSingleton<IVpnRotator, DisabledVpnRotator>();
             return;
-        }
-
-        // Deployment writes the key into gluetun's TOML auth file, where quotes or backslashes would change it.
-        if (!apiKey.All(character => char.IsAsciiLetterOrDigit(character) || character is '-' or '_'))
-        {
-            throw new InvalidOperationException("Vpn:ApiKey must contain only letters, digits, '-' and '_', such as from openssl rand -hex 32");
         }
 
         var proxyAddress = HttpUrls.ConfiguredBaseAddress(

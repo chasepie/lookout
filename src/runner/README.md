@@ -7,13 +7,15 @@ The runner holds no state. In deployment it runs in its own container, with no i
 ## Running it
 
 ```sh
-npm start -w src/runner                  # http://localhost:3000, with a visible browser
+npm start -w src/runner                  # http://127.0.0.1:3000, with a visible browser
 HEADLESS=true npm start -w src/runner    # headless, as the tests run it
 ```
 
 | Variable   | Default | Meaning |
 |------------|---------|---------|
 | `PORT`     | `3000`  | The port to listen on, 0 to 65535. `0` picks a free one. Anything else stops the runner at startup. |
+| `RUNNER_HOST` | `127.0.0.1` | The IP address to listen on. Empty counts as unset. The runner runs any Script it's sent, so by default only the same machine can reach it, and on any address but a loopback one it refuses to start without `RUNNER_TOKEN`. Its [`Dockerfile`](Dockerfile) sets `0.0.0.0`, for Lookout to reach it from another container; the token, and the container's networks, then stop anything else having it run a Script. Not `HOST`, which a shell or another tool may have set for its own reasons. |
+| `RUNNER_TOKEN` | unset | The bearer token every request must carry, in `Authorization: Bearer <token>`, which Lookout sends when given it as `Runner__Token`. Unset or empty, requests need none. Scripts' processes aren't given it. With `connect` that keeps it from them, but with `launch` a Script may start a process, which can read it from the runner's own environment. |
 | `BROWSERLESS_URL` | unset | Browserless's Playwright endpoint, such as `ws://browserless:3000/chromium/playwright`, which may include a `token`. Each Script then connects to its own headful Chromium there, as in deployment (the `connect` provider). Otherwise each Script launches a local Chromium (the `launch` provider). A URL that isn't `ws://` or `wss://` stops the runner at startup. |
 | `HEADLESS` | unset   | `true` runs a launched Chromium headless. Otherwise it is visible, for debugging Scripts locally. Browserless's is always headful, on the virtual display its image starts. |
 
@@ -21,7 +23,7 @@ Either way, Chromium gets `--disable-blink-features=AutomationControlled`, so `n
 
 In deployment, the runner runs from [`Dockerfile`](Dockerfile), which installs only `playwright` and no browser.
 
-On startup it logs `Runner listening on http://localhost:<port>`.
+On startup it logs `Runner listening on http://<address>:<port>`, with the address and port it bound. A `RUNNER_HOST` that isn't an IP address, or one it can't listen on, stops it at startup.
 
 ## API
 
@@ -48,7 +50,7 @@ Runs one Script and responds once it has finished. If the caller disconnects fir
 | `proxy` | Optional. The proxy for the Script's browser context, as Playwright's `proxy` option: `server`, and optionally `username`, `password` and `bypass`. VPN Runs set this. Direct Runs leave it out or send `null`. |
 | `alwaysScreenshot` | Optional, `false` when left out or `null`. Whether a `succeeded` response has a `screenshot` too. Test runs set this. |
 
-A malformed request gets a `400` with `{ "error": "<what is wrong>" }`, and a body over 1 MiB a `413`. A request with an `Origin` header gets a `403`, and one whose `Content-Type` isn't `application/json` a `415`. Browsers send `Origin` with every POST, and a web page can only send JSON after a CORS preflight, which the runner never answers. So a page Browserless loads can't run a Script here, even one whose domain was rebound to the runner's address. A failure inside the runner itself gets a `500` with `{ "error": "Internal runner error" }`, and any other route a `404`.
+With `RUNNER_TOKEN` set, a request without that token, or with another, gets a `401` with a `WWW-Authenticate: Bearer` challenge, so nothing else that can reach the runner, such as Browserless, can have it run a Script. A malformed request gets a `400` with `{ "error": "<what is wrong>" }`, and a body over 1 MiB a `413`. A request with an `Origin` header gets a `403`, and one whose `Content-Type` isn't `application/json` a `415`. Browsers send `Origin` with every POST, and a web page can only send JSON after a CORS preflight, which the runner never answers. So a page Browserless loads can't run a Script here, even one whose domain was rebound to the runner's address. A failure inside the runner itself gets a `500` with `{ "error": "Internal runner error" }`, and any other route a `404`.
 
 Otherwise the response is a `200`, whatever the Script did:
 
