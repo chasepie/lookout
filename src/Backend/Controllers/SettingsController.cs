@@ -6,6 +6,13 @@ using Microsoft.EntityFrameworkCore;
 
 namespace ChasePie.Lookout.Backend.Controllers;
 
+public sealed record SettingsResponse(int RetentionDays);
+
+public sealed class SettingsRequest
+{
+    public required int RetentionDays { get; init; }
+}
+
 [ApiController]
 [Route("api/settings")]
 public sealed class SettingsController(LookoutDbContext database) : LookoutControllerBase

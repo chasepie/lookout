@@ -24,6 +24,7 @@ public sealed class PushoverSender(HttpClient client) : IChannelSender
             ["title"] = Notification.Fit(notification.Title, MaxTitleLength),
             ["message"] = Notification.Fit(notification.Message, MaxMessageLength)
         };
+
         // A link that doesn't fit would be broken, so it's left out rather than shortened.
         if (notification.Url is { Length: <= MaxUrlLength } url)
         {
@@ -32,12 +33,22 @@ public sealed class PushoverSender(HttpClient client) : IChannelSender
         }
 
         using var content = new FormUrlEncodedContent(fields);
-        using var response = await client.PostAsync(new Uri("1/messages.json", UriKind.Relative), content, cancellationToken);
-        await ChannelResponses.EnsureAcceptedAsync(response, "Pushover", body =>
-            body.TryGetProperty("errors", out var errors) && errors.ValueKind == JsonValueKind.Array
-                ? string.Join("; ", errors.EnumerateArray().Where(error => error.ValueKind == JsonValueKind.String)
-                    .Select(error => error.GetString()))
-                : null,
+        var uri = new Uri("1/messages.json", UriKind.Relative);
+        using var response = await client.PostAsync(uri, content, cancellationToken);
+        await ChannelResponses.EnsureAcceptedAsync(response, "Pushover",
+            body =>
+            {
+                if (body.TryGetProperty("errors", out var errors)
+                    && errors.ValueKind == JsonValueKind.Array)
+                {
+                    var errorStrings = errors.EnumerateArray()
+                        .Where(error => error.ValueKind == JsonValueKind.String)
+                        .Select(error => error.GetString());
+                    return string.Join("; ", errorStrings);
+                }
+
+                return null;
+            },
             cancellationToken);
     }
 }

@@ -11,6 +11,10 @@ using Microsoft.EntityFrameworkCore;
 
 namespace ChasePie.Lookout.Backend.Controllers;
 
+public sealed record SessionStatus(bool AccountExists, string? UserName);
+
+public sealed record Credentials(string UserName, string Password);
+
 /// <summary>First-launch setup of the single local account, and logging in and out of it (ADR-0002).</summary>
 [ApiController]
 [Route("api")]

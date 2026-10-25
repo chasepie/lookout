@@ -8,6 +8,13 @@ using Microsoft.EntityFrameworkCore;
 
 namespace ChasePie.Lookout.Backend.Controllers;
 
+public sealed record DebugOutputSummary(string? ConsoleOutput, bool HasScreenshot);
+
+public sealed class TestRunRequest
+{
+    public required IFormFile Script { get; init; }
+}
+
 /// <summary>A Watch's Runs: starting one now, its history and debug output, and Test runs of an uploaded Script.</summary>
 [ApiController]
 [Route("api/watches")]
