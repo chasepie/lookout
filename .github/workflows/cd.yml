@@ -14,7 +14,7 @@ jobs:
   # Works out the version, and refuses a release tag that isn't a version on main, before anything is published
   version:
     name: Version
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -50,7 +50,7 @@ jobs:
           - image: lookout-runner
             dockerfile: src/runner/Dockerfile
           - arch: amd64
-            runner: ubuntu-latest
+            runner: ubuntu-24.04
           - arch: arm64
             runner: ubuntu-24.04-arm
     steps:
@@ -104,7 +104,7 @@ jobs:
   tag-images:
     name: Tag images
     needs: build-images
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -162,7 +162,7 @@ jobs:
   publish-scripting:
     name: Publish scripting package
     needs: version
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read
