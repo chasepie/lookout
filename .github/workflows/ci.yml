@@ -89,28 +89,52 @@ jobs:
       - name: Build
         run: docker compose build
 
-  # Publishing, once every check above has passed. Pull requests skip it. A push to main publishes edge builds, and a
-  # release tag (v*) publishes that version; see "Releasing" in README.md. A newer push to main cancels this run (see
-  # concurrency), so an older commit can't finish last and overwrite edge.
-  publish-images:
-    name: Publish ${{ matrix.image }} image
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
-    needs: [backend, node, images]
+  # Publishing, for pushes only: the triggers limit them to main and v* tags. A push to main publishes edge builds, and
+  # a release tag publishes its version; see "Releasing" in README.md. The publishing jobs wait for every check above.
+  # A newer push to main cancels this run (see concurrency), so the newest push's builds end up as edge. Re-running an
+  # older run publishes its builds as edge again, until the next push.
+  version:
+    name: Version
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
-    # The arm64 build runs partly under emulation, which takes longer than the images job
-    timeout-minutes: 30
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      npm-tag: ${{ steps.version.outputs.npm-tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Every tag, for the latest release, and main, to check a release tag is on it
+          fetch-depth: 0
+          persist-credentials: false
+
+      - id: version
+        run: .github/workflows/scripts/version.sh
+
+  publish-images:
+    name: Publish images
+    if: github.event_name == 'push'
+    needs: [backend, node, images, version]
+    runs-on: ubuntu-latest
+    # Two images for two platforms, arm64 partly under emulation
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: write
-    strategy:
-      matrix:
-        include:
-          - image: lookout
-            dockerfile: src/Backend/Dockerfile
-          - image: lookout-runner
-            dockerfile: src/runner/Dockerfile
+    env:
+      # For a multi-platform image, GHCR reads the description from the index
+      DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
+      # Both images' tags. From main: edge, and the commit's sha-<short SHA> to pin or roll back to. From a release tag
+      # such as v0.2.0: 0.2.0, 0.2 and latest. A pre-release such as v0.2.0-rc.1 gets only 0.2.0-rc.1.
+      IMAGE_TAGS: |
+        type=raw,value=edge,enable={{is_default_branch}}
+        type=sha,enable={{is_default_branch}}
+        type=semver,pattern={{version}}
+        type=semver,pattern={{major}}.{{minor}}
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       # arm64 too, for homelabs on a Raspberry Pi. The lookout image's build stages run on the build machine's own
       # platform; only its last stage and the runner image's build run under emulation.
@@ -123,50 +147,77 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # From main: edge, and the commit's sha-<short SHA> to pin or roll back to. From a release tag such as v0.2.0:
-      # 0.2.0, 0.2 and latest. A pre-release such as v0.2.0-rc.1 gets only 0.2.0-rc.1. Lookout and the runner are
-      # released together, so a release's two images always match. The labels include the source repository, which
-      # links the package to this repository on GitHub.
-      - id: meta
+      # The labels include the source repository, which links each package to this repository on GitHub
+      - id: lookout-meta
         uses: docker/metadata-action@v6
-        env:
-          # For a multi-platform image, GHCR reads the description from the index
-          DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
         with:
-          images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
-          tags: |
-            type=raw,value=edge,enable={{is_default_branch}}
-            type=sha,enable={{is_default_branch}}
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+          images: ghcr.io/${{ github.repository_owner }}/lookout
+          tags: ${{ env.IMAGE_TAGS }}
 
-      # Built from the repository root with .dockerignore, as compose.yaml builds it
-      - uses: docker/build-push-action@v7
+      - id: runner-meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/lookout-runner
+          tags: ${{ env.IMAGE_TAGS }}
+
+      # Lookout and the runner must match, so both are built, for both platforms, before either is pushed: a run
+      # that fails can't publish one without the other. The pushes reuse these builds from the builder's cache.
+      # Built from the repository root with .dockerignore, as compose.yaml builds them. The GitHub Actions cache keeps
+      # only the images' own layers, as every stage's would crowd out the npm cache.
+      - name: Build lookout
+        uses: docker/build-push-action@v7
         with:
           context: .
-          file: ${{ matrix.dockerfile }}
+          file: src/Backend/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha,scope=lookout
+          cache-to: type=gha,mode=min,scope=lookout
+
+      - name: Build lookout-runner
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: src/runner/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha,scope=lookout-runner
+          cache-to: type=gha,mode=min,scope=lookout-runner
+
+      - name: Push lookout
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: src/Backend/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          annotations: ${{ steps.meta.outputs.annotations }}
-          cache-from: type=gha,scope=${{ matrix.image }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+          tags: ${{ steps.lookout-meta.outputs.tags }}
+          labels: ${{ steps.lookout-meta.outputs.labels }}
+          annotations: ${{ steps.lookout-meta.outputs.annotations }}
 
-  # Publishes the types Scripts import, with the same conditions as the images job above
+      - name: Push lookout-runner
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: src/runner/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.runner-meta.outputs.tags }}
+          labels: ${{ steps.runner-meta.outputs.labels }}
+          annotations: ${{ steps.runner-meta.outputs.annotations }}
+
+  # The types Scripts import, at the version the Version job worked out
   publish-scripting:
     name: Publish scripting package
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
-    needs: [backend, node, images]
+    if: github.event_name == 'push'
+    needs: [backend, node, images, version]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
       packages: write
-    env:
-      NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v7
         with:
@@ -174,21 +225,13 @@ jobs:
           cache: npm
           registry-url: https://npm.pkg.github.com
 
-      # The root's devDependencies hold the TypeScript that builds the package's types
+      # The root's devDependencies hold the TypeScript that builds the package's types. Only the publish step has the
+      # token, so dependencies' install scripts can't publish with it.
       - run: npm ci --workspace src/scripting --include-workspace-root
 
-      # Only when the package's published output changed since the last edge
-      - name: Publish edge
-        if: github.ref == 'refs/heads/main'
-        run: .github/workflows/scripts/publish-scripting-edge.sh
-
-      # At the release's version, whether or not the types changed, so a Script's types match the Lookout it runs on.
-      # The tag sets the version; package.json's isn't bumped for a release.
-      - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: |
-          version=${GITHUB_REF_NAME#v}
-          npm pkg set version="$version" --workspace src/scripting
-          # npm publishes a pre-release, such as 0.2.0-rc.1, only under a tag other than latest
-          if [[ $version == *-* ]]; then tag=next; else tag=latest; fi
-          npm publish --workspace src/scripting --tag "$tag"
+      - name: Publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.version.outputs.version }}
+          DIST_TAG: ${{ needs.version.outputs.npm-tag }}
+        run: .github/workflows/scripts/publish-scripting.sh "$VERSION" "$DIST_TAG"

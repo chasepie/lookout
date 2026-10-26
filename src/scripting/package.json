@@ -14,8 +14,9 @@
     "dist"
   ],
   "scripts": {
-    "prepack": "tsc -p tsconfig.build.json",
-    "postpack": "node --eval \"fs.rmSync('dist', { recursive: true, force: true })\""
+    "prepack": "npm run clean && tsc -p tsconfig.build.json && node --eval \"fs.copyFileSync('../../LICENSE', 'LICENSE')\"",
+    "postpack": "npm run clean",
+    "clean": "node --eval \"for (const path of ['dist', 'LICENSE']) fs.rmSync(path, { recursive: true, force: true })\""
   },
   "publishConfig": {
     "registry": "https://npm.pkg.github.com"
