@@ -9,10 +9,16 @@ public static class SchedulingServices
     {
         var timeZoneId = configuration["Scheduling:TimeZone"];
         TimeZoneInfo? timeZone = null;
-        if (!string.IsNullOrWhiteSpace(timeZoneId)
-            && !TimeZoneInfo.TryFindSystemTimeZoneById(timeZoneId.Trim(), out timeZone))
+        if (!string.IsNullOrWhiteSpace(timeZoneId))
         {
-            throw new InvalidOperationException($"Scheduling:TimeZone must be a time zone ID such as Europe/London, not '{timeZoneId}'");
+            // A Windows time zone, such as Eastern Standard Time, is saved as its IANA one, which Settings can save.
+            timeZone = TimeZoneInfo.TryFindSystemTimeZoneById(timeZoneId.Trim(), out var configured)
+                ? WatchSchedules.WithIanaId(configured)
+                : null;
+            if (timeZone is null)
+            {
+                throw new InvalidOperationException($"Scheduling:TimeZone must be a time zone ID such as Europe/London, not '{timeZoneId}'");
+            }
         }
         services.AddSingleton(provider => new WatchSchedules(
             provider.GetRequiredService<IServiceScopeFactory>(),

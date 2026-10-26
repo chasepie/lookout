@@ -4,6 +4,7 @@ import { FormField, form, hidden, maxLength, pattern, required, submit } from '@
 import { type NotificationChannel, type NewNotificationChannel, notificationChannelKindLabels } from '../notification-channels/notification-channel.model';
 import { NotificationChannels } from '../notification-channels/notification-channels';
 import { problemMessage } from '../shared/problem';
+import { InstallSettings } from './install-settings';
 import { RetentionSettings } from './retention-settings/retention-settings';
 import { TimeZoneSettings } from './time-zone-settings/time-zone-settings';
 import { VpnStatus } from './vpn-status/vpn-status';
@@ -13,7 +14,7 @@ type NotificationChannelAction = 'testing' | 'deleting';
 const emptyNotificationChannel = (): NewNotificationChannel => ({ kind: 'discord', name: '', webhookUrl: '', userKey: '', appToken: '' });
 
 /**
- * Lookout's settings: the Notification channels Watches can notify, how long Runs are kept, the time zone schedules use,
+ * Lookout's settings: the Notification channels Watches can notify, how long Runs are kept, the time zone Schedules use,
  * and the VPN's status.
  */
 @Component({
@@ -48,8 +49,9 @@ export class Settings {
   protected readonly confirmingDelete = signal<string | undefined>(undefined);
 
   constructor() {
-    // Notification channels may have changed in another tab since the list was last read.
+    // Notification channels and settings may have changed in another tab since they were last read.
     this.notificationChannels.list.refresh();
+    inject(InstallSettings).resource.refresh();
   }
 
   protected async addNotificationChannel() {

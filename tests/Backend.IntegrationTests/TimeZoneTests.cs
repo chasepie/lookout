@@ -44,6 +44,71 @@ public sealed class TimeZoneTests(TestContext testContext)
     }
 
     [TestMethod]
+    public async Task SavesAConfiguredWindowsTimeZoneAsItsIanaTimeZone()
+    {
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
+        await using var host = factory.WithWebHostBuilder(builder => builder.UseSetting("Scheduling:TimeZone", "Eastern Standard Time"));
+        using var client = await host.CreateSignedInClientAsync(testContext.CancellationToken);
+
+        Assert.AreEqual("America/New_York", await TimeZone(client));
+        Assert.AreEqual(HttpStatusCode.OK, (await ChangeTimeZone(client, await TimeZone(client))).StatusCode);
+    }
+
+    [TestMethod]
+    public async Task SavesTheHostsWindowsTimeZoneAsItsIanaTimeZone()
+    {
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
+        factory.Time.SetLocalTimeZone(TimeZoneInfo.FindSystemTimeZoneById("Tokyo Standard Time"));
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
+
+        Assert.AreEqual("Asia/Tokyo", await TimeZone(client));
+        Assert.AreEqual(HttpStatusCode.OK, (await ChangeTimeZone(client, await TimeZone(client))).StatusCode);
+    }
+
+    [TestMethod]
+    public async Task StartsInUtcWhenTheHostsTimeZoneHasNoIanaTimeZone()
+    {
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
+        factory.Time.SetLocalTimeZone(TimeZoneInfo.CreateCustomTimeZone("Lookout Test Time", TimeSpan.FromHours(3), "Test", "Test"));
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
+
+        Assert.AreEqual("UTC", await TimeZone(client));
+    }
+
+    [TestMethod]
+    public async Task ShowsTheTimeZoneSchedulesFallBackToWhenTheHostDoesNotKnowTheSavedOne()
+    {
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
+        await using var host = factory.WithWebHostBuilder(builder => builder.UseSetting("Scheduling:TimeZone", "Asia/Tokyo"));
+        using var client = await host.CreateSignedInClientAsync(testContext.CancellationToken);
+        // As if the host's time zone data no longer has the one saved.
+        await using (var scope = host.Services.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<LookoutDbContext>().Settings.ExecuteUpdateAsync(
+                setters => setters.SetProperty(settings => settings.TimeZone, "Mars/Olympus_Mons"), testContext.CancellationToken);
+        }
+
+        var settings = await client.GetFromJsonAsync<JsonObject>("/api/settings", testContext.CancellationToken);
+        var id = (await CreateWatch(client, Daily("09:00")))["id"]!.GetValue<string>();
+
+        Assert.AreEqual("Mars/Olympus_Mons", settings!["timeZone"]!.GetValue<string>());
+        Assert.AreEqual("Asia/Tokyo", settings["effectiveTimeZone"]!.GetValue<string>());
+        Assert.AreEqual(At("2026-10-20T00:00:00Z"), await NextRunAt(client, id));
+    }
+
+    [TestMethod]
+    public async Task SchedulesInTheSavedTimeZoneWhenTheHostKnowsIt()
+    {
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
+        (await ChangeTimeZone(client, "Europe/London")).EnsureSuccessStatusCode();
+
+        var settings = await client.GetFromJsonAsync<JsonObject>("/api/settings", testContext.CancellationToken);
+
+        Assert.AreEqual("Europe/London", settings!["effectiveTimeZone"]!.GetValue<string>());
+    }
+
+    [TestMethod]
     public async Task KeepsASavedTimeZoneThroughRestartsWhateverIsConfigured()
     {
         await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
@@ -170,6 +235,77 @@ public sealed class TimeZoneTests(TestContext testContext)
         factory.Time.Advance(At(expected) - factory.Time.GetUtcNow());
         await StartAndFinishDueRuns(factory);
         Assert.AreEqual(At(expected), Assert.ContainsSingle(await History(client, id))!["startedAt"]!.GetValue<DateTimeOffset>());
+    }
+
+    [TestMethod]
+    [DataRow("daily", "01:30")]
+    [DataRow("cron", "30 1 * * *")]
+    public async Task RunsOnceAtTheEndOfAGapWhenTheClocksGoForwardOverItsTime(string kind, string time)
+    {
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
+        factory.Runner.DefaultResult = BlockingRunner.Succeeded;
+        // London goes from 01:00 GMT to 02:00 BST on Sunday 28 March 2027, so that night has no 01:30.
+        factory.Time.Advance(At("2027-03-27T12:00:00Z") - factory.Time.GetUtcNow());
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
+        (await ChangeTimeZone(client, "Europe/London")).EnsureSuccessStatusCode();
+        var id = (await CreateWatch(client, kind == "daily" ? Daily(time) : Cron(time)))["id"]!.GetValue<string>();
+
+        // 02:00 BST, when the gap ends.
+        Assert.AreEqual(At("2027-03-28T01:00:00Z"), await NextRunAt(client, id));
+        factory.Time.Advance(At("2027-03-28T01:00:00Z") - factory.Time.GetUtcNow());
+        await StartAndFinishDueRuns(factory);
+
+        Assert.HasCount(1, await History(client, id));
+        // 01:30 BST the next day.
+        Assert.AreEqual(At("2027-03-29T00:30:00Z"), await NextRunAt(client, id));
+    }
+
+    [TestMethod]
+    [DataRow("daily", "01:30")]
+    [DataRow("cron", "30 1 * * *")]
+    public async Task RunsOnceWhenTheClocksGoBackOverItsTime(string kind, string time)
+    {
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
+        factory.Runner.DefaultResult = BlockingRunner.Succeeded;
+        // London goes from 02:00 BST back to 01:00 GMT on Sunday 25 October 2026, so that night has 01:30 twice.
+        factory.Time.Advance(At("2026-10-24T12:00:00Z") - factory.Time.GetUtcNow());
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
+        (await ChangeTimeZone(client, "Europe/London")).EnsureSuccessStatusCode();
+        var id = (await CreateWatch(client, kind == "daily" ? Daily(time) : Cron(time)))["id"]!.GetValue<string>();
+
+        // The first 01:30, in BST.
+        Assert.AreEqual(At("2026-10-25T00:30:00Z"), await NextRunAt(client, id));
+        factory.Time.Advance(At("2026-10-25T00:30:00Z") - factory.Time.GetUtcNow());
+        await StartAndFinishDueRuns(factory);
+
+        Assert.HasCount(1, await History(client, id));
+        // Not the second 01:30, in GMT, an hour later, but 01:30 GMT the next day.
+        Assert.AreEqual(At("2026-10-26T01:30:00Z"), await NextRunAt(client, id));
+        factory.Time.Advance(TimeSpan.FromHours(1));
+        Assert.IsEmpty(await StartDueRuns(factory));
+    }
+
+    [TestMethod]
+    public async Task AWatchPausedWhileTheTimeZoneChangesStaysPausedAndResumesInTheNewTimeZone()
+    {
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
+        HttpClient? client = null;
+        // The pause's update, which pauses the Watch only if it isn't already.
+        var changeTimeZone = new BeforeCommand("NOT (\"w\".\"IsPaused\")",
+            async () => (await ChangeTimeZone(client!, "Asia/Tokyo")).EnsureSuccessStatusCode());
+        await using var host = WithInterceptor(factory, changeTimeZone);
+        client = await host.CreateSignedInClientAsync(testContext.CancellationToken);
+        var id = (await CreateWatch(client, Daily("09:00")))["id"]!.GetValue<string>();
+
+        await PostWatchAction(client, id, "pause");
+
+        Assert.IsTrue(changeTimeZone.Fired);
+        Assert.IsTrue((await Watch(client, id))["isPaused"]!.GetValue<bool>());
+        Assert.IsNull(await NextRunAt(client, id));
+        await PostWatchAction(client, id, "resume");
+        // 09:00 in Tokyo is 00:00 UTC.
+        Assert.AreEqual(At("2026-10-20T00:00:00Z"), await NextRunAt(client, id));
+        client.Dispose();
     }
 
     [TestMethod]

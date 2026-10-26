@@ -172,7 +172,7 @@ Exits seen, all in the US: `151.241.119.218` (New Jersey), `151.240.205.35` and 
 
 ### Host sleep
 
-While the Mac slept (02:59:27–04:20:24), Docker Desktop's VM ran only during dark wakes. OpenVPN's keepalive timed out (`Inactivity timeout (--ping-restart)`) and reconnected over and over. Lookout still reported the VPN connected, as gluetun keeps its exit IP through a soft restart, so 14 scheduled VPN Runs went ahead and were Errored with `net::ERR_TUNNEL_CONNECTION_FAILED`. None went out through the home IP. Timers didn't count the sleep, so a scheduled Rotation came 44 minutes after the one before (at 03:35:37), and gluetun reconnected to a new exit on its own at 03:59:51. Within a minute of the host waking, the VPN was healthy and Runs Succeeded again. A homelab host that never sleeps won't see this, and none of it counts toward the results above.
+While the Mac slept (02:59:27–04:20:24), Docker Desktop's VM ran only during dark wakes. OpenVPN's keepalive timed out (`Inactivity timeout (--ping-restart)`) and reconnected over and over. Lookout still reported the VPN connected, as gluetun keeps its exit IP through a soft restart, so 14 scheduled VPN Runs went ahead and were Errored with `net::ERR_TUNNEL_CONNECTION_FAILED`. None went out through the home IP. Timers didn't count the sleep, so a scheduled Rotation came 44 minutes after the one before (at 03:35:37), and gluetun reconnected to a new exit on its own at 03:59:51. Within a minute of the host waking, the VPN was healthy and Runs Succeeded again. A homelab host that never sleeps won't see this, and none of it counts toward the results above. Followed up in [#45](https://github.com/chasepie/lookout/issues/45).
 
 ## Reproduction
 

@@ -37,13 +37,33 @@ public sealed class WatchSchedules(IServiceScopeFactory scopes, TimeProvider tim
     /// <summary>How many times an update reads the Watch again after it changed underneath, before giving up.</summary>
     private const int Attempts = 3;
 
+    /// <summary>The longest time zone ID a change accepts, longer than any IANA time zone.</summary>
     private const int MaximumTimeZoneLength = 100;
 
     /// <summary>
     /// The time zone an install without one saved starts with: the configured one (<c>Scheduling:TimeZone</c>), or the
-    /// host's local one (set by <c>TZ</c> in a container).
+    /// host's local one (set by <c>TZ</c> in a container), as its IANA time zone, so it is one Settings can save. A host
+    /// time zone without one, such as a custom one, is read as UTC.
     /// </summary>
-    private TimeZoneInfo InitialTimeZone => configuredTimeZone ?? timeProvider.LocalTimeZone;
+    private TimeZoneInfo InitialTimeZone =>
+        WithIanaId(configuredTimeZone ?? timeProvider.LocalTimeZone) ?? TimeZoneInfo.Utc;
+
+    /// <summary>
+    /// The IANA time zone that <paramref name="zone"/> is, such as America/New_York for Eastern Standard Time, or null
+    /// if it has none.
+    /// </summary>
+    public static TimeZoneInfo? WithIanaId(TimeZoneInfo zone)
+    {
+        if (zone.HasIanaId)
+        {
+            return zone;
+        }
+        return TimeZoneInfo.TryConvertWindowsIdToIanaId(zone.Id, out var ianaId)
+            && TimeZoneInfo.TryFindSystemTimeZoneById(ianaId, out var ianaZone)
+            && ianaZone.HasIanaId
+                ? ianaZone
+                : null;
+    }
 
     /// <summary>
     /// Saves the initial time zone as the install's, unless it already has one, which then outlasts any change to
@@ -81,8 +101,7 @@ public sealed class WatchSchedules(IServiceScopeFactory scopes, TimeProvider tim
         // SQLite's transactions are immediate, so nothing else is written between saving the time zone and rescheduling
         // for it. Writes made meanwhile check that the time zone they used is still the install's, and if not try again.
         await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
-        var saved = await database.Settings.Select(settings => settings.TimeZone).SingleAsync(cancellationToken);
-        if (saved == zone.Id)
+        if (await ReadSavedTimeZoneIdAsync(database, cancellationToken) == zone.Id)
         {
             return new ScheduleUpdate(ScheduleUpdateStatus.Unchanged);
         }
@@ -90,16 +109,8 @@ public sealed class WatchSchedules(IServiceScopeFactory scopes, TimeProvider tim
             .SetProperty(settings => settings.TimeZone, zone.Id), cancellationToken);
 
         // Daily and cron times are wall-clock times, so they move with the time zone.
-        var timeZone = new InstallTimeZone(zone.Id, zone);
-        var wallClock = await database.Watches
-            .Where(watch => !watch.IsPaused && watch.Schedule.Kind != ScheduleKind.Interval)
-            .ToListAsync(cancellationToken);
-        foreach (var watch in wallClock)
-        {
-            watch.NextRunAt = NextRunAt(timeZone, watch.Schedule, watch.JitterMinutes, watch.LastScheduledRunAt);
-            watch.NextRunTimeZone = zone.Id;
-        }
-        await database.SaveChangesAsync(cancellationToken);
+        await RescheduleAsync(database, new SavedTimeZone(zone.Id, zone),
+            watch => !watch.IsPaused && watch.Schedule.Kind != ScheduleKind.Interval, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return new ScheduleUpdate(ScheduleUpdateStatus.Changed);
     }
@@ -292,18 +303,26 @@ public sealed class WatchSchedules(IServiceScopeFactory scopes, TimeProvider tim
         var timeZoneId = timeZone.Zone.Id;
 
         // Daily and cron times are wall-clock times, so they move when the install's time zone changes.
-        var stale = await database.Watches
-            .Where(watch => !watch.IsPaused)
-            .Where(watch =>
-                watch.NextRunAt == null
+        await RescheduleAsync(database, timeZone, watch =>
+            !watch.IsPaused
+            && (watch.NextRunAt == null
                 || watch.NextRunAt <= now
-                || (watch.Schedule.Kind != ScheduleKind.Interval
-                    && watch.NextRunTimeZone != timeZoneId))
-            .ToListAsync(cancellationToken);
-        foreach (var watch in stale)
+                || (watch.Schedule.Kind != ScheduleKind.Interval && watch.NextRunTimeZone != timeZoneId)),
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Schedules each Watch that <paramref name="needsRescheduling"/> picks afresh from now in the time zone, without
+    /// catching up and still clear of its last Run.
+    /// </summary>
+    private async Task RescheduleAsync(LookoutDbContext database, SavedTimeZone timeZone,
+        Expression<Func<Watch, bool>> needsRescheduling, CancellationToken cancellationToken)
+    {
+        var watches = await database.Watches.Where(needsRescheduling).ToListAsync(cancellationToken);
+        foreach (var watch in watches)
         {
             watch.NextRunAt = NextRunAt(timeZone, watch.Schedule, watch.JitterMinutes, watch.LastScheduledRunAt);
-            watch.NextRunTimeZone = timeZoneId;
+            watch.NextRunTimeZone = timeZone.Zone.Id;
         }
         await database.SaveChangesAsync(cancellationToken);
     }
@@ -312,21 +331,29 @@ public sealed class WatchSchedules(IServiceScopeFactory scopes, TimeProvider tim
     /// The install's saved time zone. One this host doesn't know, such as after its time zone data changed, is read as
     /// the initial time zone, while writes still check against the one saved.
     /// </summary>
-    private async Task<InstallTimeZone> ReadTimeZoneAsync(LookoutDbContext database, CancellationToken cancellationToken)
-    {
-        var id = await database.Settings.Select(settings => settings.TimeZone).SingleAsync(cancellationToken);
-        return new InstallTimeZone(id,
-            id is not null && TimeZoneInfo.TryFindSystemTimeZoneById(id, out var zone) ? zone : InitialTimeZone);
-    }
+    private async Task<SavedTimeZone> ReadTimeZoneAsync(LookoutDbContext database, CancellationToken cancellationToken) =>
+        Resolve(await ReadSavedTimeZoneIdAsync(database, cancellationToken));
+
+    private static Task<string?> ReadSavedTimeZoneIdAsync(LookoutDbContext database, CancellationToken cancellationToken) =>
+        database.Settings.Select(settings => settings.TimeZone).SingleAsync(cancellationToken);
+
+    /// <summary>
+    /// The time zone daily and cron Schedules use when <paramref name="savedTimeZoneId"/> is the install's: that one, or
+    /// the initial time zone when this host doesn't know it.
+    /// </summary>
+    public string EffectiveTimeZone(string? savedTimeZoneId) => Resolve(savedTimeZoneId).Zone.Id;
+
+    private SavedTimeZone Resolve(string? id) => new(id,
+        id is not null && TimeZoneInfo.TryFindSystemTimeZoneById(id, out var zone) ? zone : InitialTimeZone);
 
     /// <summary>Whether the install's time zone is still the one read, so a next Run worked out in it is current.</summary>
-    private static Expression<Func<Watch, bool>> StillIn(LookoutDbContext database, InstallTimeZone timeZone)
+    private static Expression<Func<Watch, bool>> StillIn(LookoutDbContext database, SavedTimeZone timeZone)
     {
         var id = timeZone.Id;
         return watch => database.Settings.Any(settings => settings.TimeZone == id);
     }
 
-    private string? Validate(InstallTimeZone timeZone, Schedule schedule, int jitterMinutes)
+    private string? Validate(SavedTimeZone timeZone, Schedule schedule, int jitterMinutes)
     {
         if (schedule.GetInvalidReason(timeProvider.GetUtcNow(), timeZone.Zone) is { } reason)
         {
@@ -343,7 +370,7 @@ public sealed class WatchSchedules(IServiceScopeFactory scopes, TimeProvider tim
     /// Jitter can delay a Run until just before the schedule's next occurrence, so the next Run is also held at least
     /// <see cref="Schedule.MinimumInterval"/> after <paramref name="lastRunAt"/>.
     /// </summary>
-    private DateTimeOffset? NextRunAt(InstallTimeZone timeZone, Schedule schedule, int jitterMinutes,
+    private DateTimeOffset? NextRunAt(SavedTimeZone timeZone, Schedule schedule, int jitterMinutes,
         DateTimeOffset? lastRunAt = null)
     {
         var jitter = TimeSpan.FromSeconds(Random.Shared.Next(jitterMinutes * 60 + 1));
@@ -369,5 +396,5 @@ public sealed class WatchSchedules(IServiceScopeFactory scopes, TimeProvider tim
     }
 
     /// <summary>The install's time zone as saved, which a write checks is still current, and the zone it names.</summary>
-    private sealed record InstallTimeZone(string? Id, TimeZoneInfo Zone);
+    private sealed record SavedTimeZone(string? Id, TimeZoneInfo Zone);
 }
