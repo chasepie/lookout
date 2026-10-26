@@ -17,7 +17,7 @@ One uploaded revision of a Watch's Script. Every Run records the Script version 
 _Avoid_: Revision, Upload
 
 **Rotation**:
-Switching the VPN to a new exit IP, either on a timer or early after a Known failure.
+Switching the VPN to a new exit IP, either on a timer or early after a Known failure. Any exit IP other than the one before counts, even in the same subnet or region.
 _Avoid_: Reconnect, IP change
 
 **Notification URL**:
@@ -29,7 +29,7 @@ One execution of a Watch, whether scheduled or on demand, recorded in the Watch'
 _Avoid_: Scrape, Check, Execution
 
 **VPN Run**:
-A Run of a Watch that uses the VPN, whose browser goes out through the VPN's exit IP. It records the region and exit IP it went through, and is refused unless the VPN is connected.
+A Run of a Watch that uses the VPN, whose browser goes out through the VPN's exit IP. It records the region and exit IP it went through. It waits for the VPN to connect, and for any Rotation to end, and is Errored rather than sent from the homelab's own IP if the VPN doesn't connect.
 _Avoid_: Proxied Run
 
 **Direct Run**:

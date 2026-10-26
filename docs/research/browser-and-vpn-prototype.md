@@ -1,5 +1,7 @@
 # Browser and VPN prototype: findings (2026-10-18)
 
+> **Superseded in part.** Lookout runs Browserless headful instead of overriding the user agent ([ADR-0005](../adr/0005-headful-browserless.md)), and the questions this prototype left open are resolved in [ADR-0004](../adr/0004-gluetun-for-vpn-rotation.md). [The v1 decision checklist](../spec/v1-decisions.md) maps each finding to where Lookout implements it. The findings below are kept as recorded.
+
 Answers to the three questions in issue #2, from running code. The prototype and its raw evidence (logs and screenshots) are on the [`prototype/browser-and-vpn`](https://github.com/chasepie/lookout/tree/prototype/browser-and-vpn/prototype/browser-and-vpn) branch, which is never merged. Links below marked *evidence* point into its `results/` folder. The home IP, ZIP code, store and time zone are masked in all of it.
 
 **Setup:**
