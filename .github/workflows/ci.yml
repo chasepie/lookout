@@ -111,34 +111,36 @@ jobs:
       - id: version
         run: .github/workflows/scripts/version.sh
 
-  publish-images:
-    name: Publish images
+  # Each image for each platform, on a runner of that platform, so nothing runs under emulation. A build is pushed by
+  # digest alone, without a tag, so nothing pulls it until Tag images has every build.
+  build-images:
+    name: Build ${{ matrix.image }} (${{ matrix.arch }})
     if: github.event_name == 'push'
     needs: [backend, node, images, version]
-    runs-on: ubuntu-latest
-    # Two images for two platforms, arm64 partly under emulation
-    timeout-minutes: 45
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
     permissions:
       contents: read
       packages: write
-    env:
-      # For a multi-platform image, GHCR reads the description from the index
-      DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
-      # Both images' tags. From main: edge, and the commit's sha-<short SHA> to pin or roll back to. From a release tag
-      # such as v0.2.0: 0.2.0, 0.2 and latest. A pre-release such as v0.2.0-rc.1 gets only 0.2.0-rc.1.
-      IMAGE_TAGS: |
-        type=raw,value=edge,enable={{is_default_branch}}
-        type=sha,enable={{is_default_branch}}
-        type=semver,pattern={{version}}
-        type=semver,pattern={{major}}.{{minor}}
+    strategy:
+      matrix:
+        image: [lookout, lookout-runner]
+        # arm64 too, for homelabs on a Raspberry Pi
+        arch: [amd64, arm64]
+        include:
+          - image: lookout
+            dockerfile: src/Backend/Dockerfile
+          - image: lookout-runner
+            dockerfile: src/runner/Dockerfile
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
-      # arm64 too, for homelabs on a Raspberry Pi. The lookout image's build stages run on the build machine's own
-      # platform; only its last stage and the runner image's build run under emulation.
-      - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v4
 
       - uses: docker/login-action@v4
@@ -148,6 +150,74 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # The labels include the source repository, which links each package to this repository on GitHub
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+
+      # Built from the repository root with .dockerignore, as compose.yaml builds them. The GitHub Actions cache keeps
+      # only the images' own layers, as every stage's would crowd out the npm cache.
+      - id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/${{ matrix.arch }}
+          labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/${{ matrix.image }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=min,scope=${{ matrix.image }}-${{ matrix.arch }}
+
+      - name: Record the digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/digest"
+          touch "$RUNNER_TEMP/digest/${DIGEST#sha256:}"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: digest-${{ matrix.image }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digest/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # Joins each image's builds into one for both platforms, and tags it. Only once every build has succeeded, so
+  # Lookout and the runner, which must match, are tagged together or not at all.
+  tag-images:
+    name: Tag images
+    if: github.event_name == 'push'
+    needs: build-images
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    env:
+      # For a multi-platform image, GHCR reads the description from the index
+      DOCKER_METADATA_ANNOTATIONS_LEVELS: index
+      # Both images' tags. From main: edge, and the commit's sha-<short SHA> to pin or roll back to. From a release tag
+      # such as v0.2.0: 0.2.0, 0.2 and latest. A pre-release such as v0.2.0-rc.1 gets only 0.2.0-rc.1.
+      IMAGE_TAGS: |
+        type=raw,value=edge,enable={{is_default_branch}}
+        type=sha,enable={{is_default_branch}}
+        type=semver,pattern={{version}}
+        type=semver,pattern={{major}}.{{minor}}
+    steps:
+      # Each build's digest, in a directory named after its artifact
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: digest-*
+          path: ${{ runner.temp }}/digests
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - id: lookout-meta
         uses: docker/metadata-action@v6
         with:
@@ -160,49 +230,26 @@ jobs:
           images: ghcr.io/${{ github.repository_owner }}/lookout-runner
           tags: ${{ env.IMAGE_TAGS }}
 
-      # Lookout and the runner must match, so both are built, for both platforms, before either is pushed: a run
-      # that fails can't publish one without the other. The pushes reuse these builds from the builder's cache.
-      # Built from the repository root with .dockerignore, as compose.yaml builds them. The GitHub Actions cache keeps
-      # only the images' own layers, as every stage's would crowd out the npm cache.
-      - name: Build lookout
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: src/Backend/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          cache-from: type=gha,scope=lookout
-          cache-to: type=gha,mode=min,scope=lookout
-
-      - name: Build lookout-runner
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: src/runner/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          cache-from: type=gha,scope=lookout-runner
-          cache-to: type=gha,mode=min,scope=lookout-runner
-
-      - name: Push lookout
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: src/Backend/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.lookout-meta.outputs.tags }}
-          labels: ${{ steps.lookout-meta.outputs.labels }}
-          annotations: ${{ steps.lookout-meta.outputs.annotations }}
-
-      - name: Push lookout-runner
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: src/runner/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.runner-meta.outputs.tags }}
-          labels: ${{ steps.runner-meta.outputs.labels }}
-          annotations: ${{ steps.runner-meta.outputs.annotations }}
+      - name: Tag
+        env:
+          OWNER: ${{ github.repository_owner }}
+          LOOKOUT_META: ${{ steps.lookout-meta.outputs.json }}
+          RUNNER_META: ${{ steps.runner-meta.outputs.json }}
+        run: |
+          # tag <image> <metadata-action's JSON>
+          tag() {
+            local repository="ghcr.io/$OWNER/$1" args sources=()
+            mapfile -t args < <(jq --raw-output '(.tags[] | "--tag", .), (.annotations[] | "--annotation", .)' <<< "$2")
+            for arch in amd64 arm64; do
+              for digest in "$RUNNER_TEMP/digests/digest-$1-$arch"/*; do
+                sources+=("$repository@sha256:$(basename "$digest")")
+              done
+            done
+            docker buildx imagetools create "${args[@]}" "${sources[@]}"
+            docker buildx imagetools inspect "$(jq --raw-output '.tags[0]' <<< "$2")"
+          }
+          tag lookout "$LOOKOUT_META"
+          tag lookout-runner "$RUNNER_META"
 
   # The types Scripts import, at the version the Version job worked out
   publish-scripting:
