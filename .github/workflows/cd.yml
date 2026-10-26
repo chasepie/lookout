@@ -10,6 +10,16 @@ on:
 permissions:
   contents: read
 
+env:
+  # Both images' tags, for metadata-action. From main: edge, and the commit's sha-<short SHA> to pin or roll back to.
+  # From a release tag such as v0.2.0: 0.2.0, 0.2 and latest. A pre-release such as v0.2.0-rc.1 gets only 0.2.0-rc.1.
+  # The build jobs' labels give the version from them too.
+  IMAGE_TAGS: |
+    type=raw,value=edge,enable={{is_default_branch}}
+    type=sha,enable={{is_default_branch}}
+    type=semver,pattern={{version}}
+    type=semver,pattern={{major}}.{{minor}}
+
 jobs:
   # Works out the version, and refuses a release tag that isn't a version on main, before anything is published
   version:
@@ -71,6 +81,7 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+          tags: ${{ env.IMAGE_TAGS }}
 
       # Built from the repository root with .dockerignore, as compose.yaml builds them. The GitHub Actions cache keeps
       # only the images' own layers, as every stage's would crowd out the npm cache.
@@ -99,8 +110,9 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  # Joins each image's builds into one for both platforms, and tags it. Only once every build has succeeded, so
-  # Lookout and the runner, which must match, are tagged together or not at all.
+  # Joins each image's builds into one for both platforms, and tags it. Only once every build of both has succeeded,
+  # so a run can't tag Lookout without the runner it must match. The registry can't tag both at once, so they're tagged
+  # one after the other, seconds apart.
   tag-images:
     name: Tag images
     needs: build-images
@@ -112,13 +124,6 @@ jobs:
     env:
       # For a multi-platform image, GHCR reads the description from the index
       DOCKER_METADATA_ANNOTATIONS_LEVELS: index
-      # Both images' tags. From main: edge, and the commit's sha-<short SHA> to pin or roll back to. From a release tag
-      # such as v0.2.0: 0.2.0, 0.2 and latest. A pre-release such as v0.2.0-rc.1 gets only 0.2.0-rc.1.
-      IMAGE_TAGS: |
-        type=raw,value=edge,enable={{is_default_branch}}
-        type=sha,enable={{is_default_branch}}
-        type=semver,pattern={{version}}
-        type=semver,pattern={{major}}.{{minor}}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -158,10 +163,11 @@ jobs:
           .github/workflows/scripts/tag-image.sh lookout "$LOOKOUT_META"
           .github/workflows/scripts/tag-image.sh lookout-runner "$RUNNER_META"
 
-  # The types Scripts import, at the version the Version job worked out
+  # The types Scripts import, at the version the Version job worked out. After the images, so a release's types aren't
+  # published without its images.
   publish-scripting:
     name: Publish scripting package
-    needs: version
+    needs: [version, tag-images]
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
@@ -178,13 +184,22 @@ jobs:
           cache: npm
           registry-url: https://npm.pkg.github.com
 
-      # The root's devDependencies hold the TypeScript that builds the package's types. Only the publish step has the
-      # token, so dependencies' install scripts can't publish with it.
+      # Only the publish step has the token, which runs nothing from the repository or its dependencies: not their
+      # install scripts here, nor the TypeScript that builds the package's types as it's packed.
+      # The root's devDependencies hold that TypeScript.
       - run: npm ci --workspace src/scripting --include-workspace-root
+
+      - name: Pack
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          npm pkg set version="$VERSION" --workspace src/scripting
+          # npm pack doesn't create its destination
+          mkdir "$RUNNER_TEMP/scripting"
+          npm pack --workspace src/scripting --pack-destination "$RUNNER_TEMP/scripting"
 
       - name: Publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ needs.version.outputs.version }}
           DIST_TAG: ${{ needs.version.outputs.npm-tag }}
-        run: .github/workflows/scripts/publish-scripting.sh "$VERSION" "$DIST_TAG"
+        run: .github/workflows/scripts/publish-scripting.sh "$RUNNER_TEMP"/scripting/*.tgz "$DIST_TAG"

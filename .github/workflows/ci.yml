@@ -87,10 +87,11 @@ jobs:
       - name: Build
         run: docker compose build
 
-  # Publishing, for pushes only: the triggers limit them to main and v* tags. Once every check above has passed.
+  # Publishing, for pushes only: the triggers limit them to main and v* tags. Once every check above has passed. Not in
+  # forks, whose pushes would publish to their owner's registries, or fail to.
   cd:
     name: CD
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && github.repository == 'chasepie/lookout'
     needs: [backend, node, images]
     # What CD's jobs may have at most
     permissions:

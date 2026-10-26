@@ -1,52 +1,48 @@
 #!/usr/bin/env bash
-# Publishes the scripting package at a version under a dist-tag, from version.sh, for CD (see "Releasing" in
-# README.md). Run from the repository root, with dependencies installed and npm logged in to the package's registry:
-#   publish-scripting.sh <version> <dist-tag>
+# Publishes the scripting package's tarball, packed at a version from version.sh, under a dist-tag, for CD (see
+# "Releasing" in README.md). Needs npm logged in to the package's registry, and runs nothing from the repository or
+# its dependencies, so it can be given the token that publishes:
+#   publish-scripting.sh <tarball> <dist-tag>
 #
-# A release publishes whether or not the types changed, so a Script's types match the Lookout it runs on, and is
-# skipped if its version is already published, so a release's run can be re-run. An edge is only published when what
-# users would install differs from the last edge (its files, and its package.json but for the version and scripts),
-# or the last edge was for an earlier release. Comparing what's published, rather than which files a push changed,
-# ignores changes that don't reach users, and catches up after a run that was cancelled.
+# A version that's already published is skipped, so a run can be re-run: a release's, or an older edge's. A release
+# publishes whether or not the types changed, so a Script's types match the Lookout it runs on. An edge is only
+# published when what users would install differs from the last edge (its files, and its package.json but for the
+# version and scripts), or the last edge was for an earlier release. Comparing what's published, rather than which
+# files a push changed, ignores changes that don't reach users, and catches up after a run that was cancelled.
 set -euo pipefail
 
-version=$1
+tarball=$1
 dist_tag=$2
-dir=src/scripting
-name=$(node --print "require('./$dir/package.json').name")
+work=$(mktemp -d)
+mkdir "$work/new" "$work/old"
+tar -xzf "$tarball" -C "$work/new"
+name=$(node --print "require(process.argv[1]).name" "$work/new/package/package.json")
+version=$(node --print "require(process.argv[1]).version" "$work/new/package/package.json")
 
 # The version a spec resolves to, or nothing if none is published. Any error but E404, such as the registry not
-# answering, stops the script, rather than being taken for nothing published.
+# answering, stops the script, rather than being taken for nothing published. Only the version is read from npm's
+# output, as it may warn on stderr even when it succeeds.
 published() {
   local out
-  if out=$(npm view "$1" version 2>&1); then
+  if out=$(npm view "$1" version 2> "$work/view-error"); then
     echo "$out"
-  elif ! grep --quiet E404 <<< "$out"; then
-    echo "$out" >&2
+  elif ! grep --quiet E404 "$work/view-error"; then
+    cat "$work/view-error" >&2
     return 1
   fi
 }
 
-if [ "$dist_tag" != edge ]; then
-  # Assigned first: set -e ignores a failure inside a test's arguments
-  release=$(published "$name@$version")
-  if [ -n "$release" ]; then
-    echo "$name@$version is already published"
-    exit 0
-  fi
+# Assigned first: set -e ignores a failure inside a test's arguments
+existing=$(published "$name@$version")
+if [ -n "$existing" ]; then
+  echo "$name@$version is already published"
+  exit 0
 fi
-
-work=$(mktemp -d)
-npm pkg set version="$version" --workspace "$dir"
-npm pack --workspace "$dir" --pack-destination "$work"
-tarball=$(echo "$work"/*.tgz)
 
 if [ "$dist_tag" = edge ]; then
   edge=$(published "$name@edge")
   # Edges for the same release share everything before the run number
   if [ "${edge%.*}" = "${version%.*}" ]; then
-    mkdir "$work/new" "$work/old"
-    tar -xzf "$tarball" -C "$work/new"
     npm pack "$name@$edge" --pack-destination "$work/old"
     tar -xzf "$work"/old/*.tgz -C "$work/old"
     manifest() {
