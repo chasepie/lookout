@@ -90,7 +90,7 @@ npm test
 
 ## Releasing
 
-Once every check passes, CI publishes the images and the scripting package from each push to `main`, as edge builds, and from each release:
+Once every check passes, CI calls CD ([`cd.yml`](.github/workflows/cd.yml)), which publishes the images and the scripting package from each push to `main`, as edge builds, and from each release:
 
 |                                                                                       | Push to `main`                                                                                                                         | Release `v0.2.0`            |
 | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |

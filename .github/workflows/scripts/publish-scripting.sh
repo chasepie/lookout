@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Publishes the scripting package at a version under a dist-tag, from version.sh, for CI (see "Releasing" in
+# Publishes the scripting package at a version under a dist-tag, from version.sh, for CD (see "Releasing" in
 # README.md). Run from the repository root, with dependencies installed and npm logged in to the package's registry:
 #   publish-scripting.sh <version> <dist-tag>
 #

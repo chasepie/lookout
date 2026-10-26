@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Works out the version a push publishes, for CI (see "Releasing" in README.md), and writes it to $GITHUB_OUTPUT as
+# Works out the version a push publishes, for CD (see "Releasing" in README.md), and writes it to $GITHUB_OUTPUT as
 # version, with npm-tag, the dist-tag the scripting package is published under. Needs every tag and main fetched.
 #
 # A release tag publishes its own version, and must be one, such as v0.2.0 or v0.2.0-rc.1, on main: any other tag
