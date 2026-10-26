@@ -16,7 +16,8 @@
 #   LOOKOUT_VPN_REGIONS          the PIA regions gluetun picks from (default: eight in the US)
 #
 # Each pair of services that talk shares a network of its own, so Browserless's Chromium, which loads whatever pages
-# Scripts visit, can't reach Lookout. It can reach the runner, which refuses requests without the runner token and
+# Scripts visit, shares no network with Lookout. It can still reach Lookout's published port through the Docker host,
+# like any LAN device, directly or through gluetun's proxy (issue #44). It can reach the runner, which refuses requests without the runner token and
 # requests from web pages. gluetun's proxy forwards to every network gluetun is on, so gluetun and Lookout share none:
 # Lookout reaches gluetun's control server through a relay.
 name: lookout

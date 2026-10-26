@@ -8,7 +8,7 @@ Tests are linked by file and named by test. `Backend` tests are in [`tests/Backe
 
 ## Still open
 
-- [ ] **Smoke test of the real VPN stack**: [#42](https://github.com/chasepie/lookout/issues/42), pending. The automated tests use a fake gluetun and fake rotator; the real Rotation coordinator against gluetun and PIA has not yet been validated live. Items below that rest only on deployment configuration name #42 as their validation.
+- [ ] **Smoke test of the real VPN stack**: [#42](https://github.com/chasepie/lookout/issues/42), run on 2026-10-26 and recorded in [the VPN smoke test report](../research/vpn-smoke-test.md). Every VPN check passed live against gluetun and PIA: exits, scheduled and early Rotation with its 3-minute minimum, draining, refused Test runs, failing closed and recovery, WebRTC, headful Chromium, the control-server role, the bounded OpenVPN attempts and the server-list refresh. It stays open because the browser-to-backend isolation check failed: pages Browserless loads can reach Lookout through the Docker host's published port, directly and through gluetun's proxy ([#44](https://github.com/chasepie/lookout/issues/44)). Items below that rest only on deployment configuration name #42 as their validation.
 
 ## Prototype follow-up comment
 

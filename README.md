@@ -110,7 +110,7 @@ Lookout deploys to a homelab with one Docker Compose file, [`compose.yaml`](comp
 - **`browserless`:** runs the headful Chromium each Script drives, on a virtual display. It shares an internal network with the runner, and has one with internet access: it's the only part of a Run that reaches the internet.
 - **`gluetun`:** optional, in the `vpn` profile. The VPN that VPN Runs go through, as an HTTP proxy that Browserless reaches over an internal network of their own. Its proxy forwards to any network gluetun is on, so gluetun shares none with Lookout. Instead, **`gluetun-control`**, a relay, carries Lookout's requests to gluetun's control server, and a page loaded through the proxy can follow it only back to that server, which needs Lookout's key.
 
-Each pair of services that talk shares a network of its own, so Browserless's Chromium, which loads whatever pages Scripts visit, can't reach Lookout. It can reach the runner, which refuses requests without the runner token, which only Lookout has, and requests from web pages.
+Each pair of services that talk shares a network of its own, so Browserless's Chromium, which loads whatever pages Scripts visit, shares no network with Lookout. It can still reach Lookout through the Docker host, at the port Lookout is published on, like any device on your LAN, and so can a page loaded through gluetun's proxy. Such a page gets only what needs no login: `/health`, the session check, login, and first-launch setup ([#44](https://github.com/chasepie/lookout/issues/44)). It can reach the runner, which refuses requests without the runner token, which only Lookout has, and requests from web pages.
 
 On a host with Docker Compose, from a clone of this repository, copy [`example.env`](example.env) to `.env`, set `LOOKOUT_RUNNER_TOKEN` in it to a random value, such as from `openssl rand -hex 32`, and start Lookout:
 
@@ -262,3 +262,7 @@ With the VPN set up, also check that VPN Runs leave from the VPN's exit and dire
      docker compose exec gluetun wget -q -O /dev/null -T 5 -t 1 "http://$ip:8080/health" && echo "reached $ip" || echo "unreachable $ip"
    done
    ```
+
+   Pages can still reach Lookout through the Docker host ([#44](https://github.com/chasepie/lookout/issues/44)): a Test run of a Script that loads `http://<gateway>:<LOOKOUT_PORT>/health` gets `Healthy`, both through the VPN and directly, where `<gateway>` is what `docker network inspect lookout_internet --format '{{(index .IPAM.Config 0).Gateway}}'` prints.
+
+[The VPN smoke test report](docs/research/vpn-smoke-test.md) records a full run of these checks against PIA, including early Rotation, draining and fail-closed behavior.
