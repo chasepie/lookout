@@ -18,7 +18,7 @@ public sealed class Settings
 
     /// <summary>
     /// The IANA time zone daily and cron Schedules use. Startup sets it from configuration, or the host's time zone, when
-    /// the install has none yet; once saved, it is the install's whatever configuration says.
+    /// the install has none yet; once saved, it stays the install's even if configuration later names another.
     /// </summary>
     public string? TimeZone { get; set; }
 

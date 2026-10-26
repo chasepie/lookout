@@ -1,19 +1,18 @@
 import { HttpClient } from '@angular/common/http';
 import { Service, computed, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
-import { Session } from '../session/session';
-import { refreshableHttpResource } from '../shared/refreshable-http-resource';
+import { InstallSettings } from './install-settings';
 import type { LookoutSettings } from './settings.model';
 
-/** The install-wide time zone that daily and cron schedules use, which the user changes in Settings. */
+/** The install-wide time zone that daily and cron Schedules use, which the user changes in Settings. */
 @Service()
 export class InstallTimeZone {
   private readonly http = inject(HttpClient);
-  private readonly session = inject(Session);
-  // Loaded only while logged in, so it is fetched again for the next login.
-  readonly settings = refreshableHttpResource<LookoutSettings>(() => (this.session.userName() ? { url: '/api/settings' } : undefined));
-  /** The time zone, once loaded. */
+  readonly settings = inject(InstallSettings).resource;
+  /** The saved time zone, once loaded. */
   readonly current = computed(() => (this.settings.hasValue() ? this.settings.value().timeZone : undefined));
+  /** The time zone daily and cron Schedules run in, once loaded: the saved one, unless this host doesn't know it. */
+  readonly effective = computed(() => (this.settings.hasValue() ? this.settings.value().effectiveTimeZone : undefined));
 
   /** Saves the time zone, which reschedules daily and cron Watches in it, and returns the settings as saved. */
   async change(timeZone: string) {

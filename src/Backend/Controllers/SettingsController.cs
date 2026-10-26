@@ -8,8 +8,12 @@ using Microsoft.EntityFrameworkCore;
 namespace ChasePie.Lookout.Backend.Controllers;
 
 /// <param name="RetentionDays">How many days a Run is kept before it is pruned, unless it is a Change.</param>
-/// <param name="TimeZone">The IANA time zone daily and cron Schedules use.</param>
-public sealed record SettingsResponse(int RetentionDays, string? TimeZone);
+/// <param name="TimeZone">The install's saved IANA time zone.</param>
+/// <param name="EffectiveTimeZone">
+/// The time zone daily and cron Schedules use: the saved one, or the one Lookout falls back to while this host doesn't
+/// know it.
+/// </param>
+public sealed record SettingsResponse(int RetentionDays, string? TimeZone, string EffectiveTimeZone);
 
 public sealed class SettingsRequest
 {
@@ -24,14 +28,16 @@ public sealed class TimeZoneRequest
 
 [ApiController]
 [Route("api/settings")]
-public sealed class SettingsController(LookoutDbContext database) : LookoutControllerBase
+public sealed class SettingsController(LookoutDbContext database, WatchSchedules schedules) : LookoutControllerBase
 {
     [HttpGet]
     public async Task<SettingsResponse> Get(CancellationToken cancellationToken)
     {
-        return await database.Settings.AsNoTracking()
-            .Select(settings => new SettingsResponse(settings.RetentionDays, settings.TimeZone))
+        var settings = await database.Settings.AsNoTracking()
+            .Select(settings => new { settings.RetentionDays, settings.TimeZone })
             .SingleAsync(cancellationToken);
+        return new SettingsResponse(settings.RetentionDays, settings.TimeZone,
+            schedules.EffectiveTimeZone(settings.TimeZone));
     }
 
     [HttpPut]
@@ -61,7 +67,7 @@ public sealed class SettingsController(LookoutDbContext database) : LookoutContr
     /// whatever <c>Scheduling:TimeZone</c> says.
     /// </summary>
     [HttpPut("time-zone")]
-    public async Task<ActionResult<SettingsResponse>> ChangeTimeZone(TimeZoneRequest request, WatchSchedules schedules,
+    public async Task<ActionResult<SettingsResponse>> ChangeTimeZone(TimeZoneRequest request,
         CancellationToken cancellationToken)
     {
         var update = await schedules.ChangeTimeZoneAsync(request.TimeZone, cancellationToken);

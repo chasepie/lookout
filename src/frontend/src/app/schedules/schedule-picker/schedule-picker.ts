@@ -19,8 +19,8 @@ export class SchedulePicker {
   readonly schedule = input.required<FieldTree<ScheduleForm>>();
   /** Keeps labels pointing at their own inputs when a page shows more than one picker. */
   protected readonly id = `schedule-${++SchedulePicker.count}`;
-  private readonly timeZone = inject(InstallTimeZone).current;
-  /** Where daily and cron times are, naming the time zone once it has loaded. */
+  private readonly timeZone = inject(InstallTimeZone).effective;
+  /** Where daily and cron times are, naming the time zone they run in once it has loaded. */
   protected readonly zoneDescription = computed(() => {
     const timeZone = this.timeZone();
     return timeZone ? `Lookout's time zone, ${timeZone}` : 'Lookout\'s time zone';

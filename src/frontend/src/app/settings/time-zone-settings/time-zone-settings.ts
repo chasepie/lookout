@@ -8,7 +8,7 @@ import { InstallTimeZone } from '../install-time-zone';
 const suggestions = Intl.supportedValuesOf('timeZone');
 
 /**
- * The install-wide time zone that daily and cron schedules use. It reports saving through its outputs, for the page to
+ * The install-wide time zone that daily and cron Schedules use. It reports saving through its outputs, for the page to
  * show alongside its other settings' messages.
  */
 @Component({
@@ -31,11 +31,6 @@ export class TimeZoneSettings {
   });
   readonly saveSucceeded = output<string>();
   readonly saveFailed = output<string>();
-
-  constructor() {
-    // The time zone may have changed in another tab since it was last read.
-    this.timeZone.settings.refresh();
-  }
 
   protected async save() {
     await submit(this.timeZoneForm, async () => {
