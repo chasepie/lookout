@@ -110,7 +110,7 @@ Lookout deploys to a homelab with one Docker Compose file, [`compose.yaml`](comp
 - **`browserless`:** runs the headful Chromium each Script drives, on a virtual display. It shares an internal network with the runner, and has one with internet access: it's the only part of a Run that reaches the internet.
 - **`gluetun`:** optional, in the `vpn` profile. The VPN that VPN Runs go through, as an HTTP proxy that Browserless reaches over an internal network of their own. Its proxy forwards to any network gluetun is on, so gluetun shares none with Lookout. Instead, **`gluetun-control`**, a relay, carries Lookout's requests to gluetun's control server, and a page loaded through the proxy can follow it only back to that server, which needs Lookout's key.
 
-Each pair of services that talk shares a network of its own, so Browserless's Chromium, which loads whatever pages Scripts visit, shares no network with Lookout. It can still reach Lookout through the Docker host, at the port Lookout is published on, like any device on your LAN, and so can a page loaded through gluetun's proxy. Such a page gets only what needs no login: `/health`, the session check, login, and first-launch setup ([#44](https://github.com/chasepie/lookout/issues/44)). It can reach the runner, which refuses requests without the runner token, which only Lookout has, and requests from web pages.
+Each pair of services that talk shares a network of its own, so Browserless's Chromium, which loads whatever pages Scripts visit, shares no network with Lookout. It can still reach Lookout through the Docker host, at the port Lookout is published on, like any device on your LAN, and so can a page loaded through gluetun's proxy. Such a page gets only what needs no login: `/health`, the session check, login, and first-launch setup ([ADR-0006](docs/adr/0006-browser-pages-reach-lookout-like-a-lan-device.md)). So, as for any LAN device, use a strong password, as login isn't rate-limited, and set up the account as soon as Lookout first starts. It can reach the runner, which refuses requests without the runner token, which only Lookout has, and requests from web pages.
 
 On a host with Docker Compose, from a clone of this repository, copy [`example.env`](example.env) to `.env`, set `LOOKOUT_RUNNER_TOKEN` in it to a random value, such as from `openssl rand -hex 32`, and start Lookout:
 
@@ -234,6 +234,22 @@ The automated tests don't cover the real Browserless stack, so check a deploymen
 7. Check that a Script can run past Browserless's default timeout. Add `await page.waitForTimeout(45_000);` after `page.goto` in the Script, create a Watch with it and choose **Run now**. The Run Succeeds after about 45 seconds.
 8. Check that killed Scripts don't linger. Change the Script's wait to `await new Promise(() => {});`, so it never finishes, and choose **Run now** a few times. Each Run is Errored once its timeout passes. Afterwards, `docker compose top runner` lists only `docker-init` and `node index.ts`, with no `<defunct>` (zombie) process.
 9. Check that Lookout can reach your Notification channels. In **Settings**, add a Discord Notification channel with a webhook URL (or a Pushover Notification channel), and choose **Send test**. The test notification arrives.
+10. Check what pages can reach of Lookout through the Docker host ([ADR-0006](docs/adr/0006-browser-pages-reach-lookout-like-a-lan-device.md)). Find the host's gateway on Browserless's `internet` network with `docker network inspect lookout_internet --format '{{(index .IPAM.Config 0).Gateway}}'`, and upload this Script to a Watch, substituting it and your `LOOKOUT_PORT`, to start a Test run:
+
+    ```ts
+    import type { LookoutScript } from '@chasepie/lookout-scripting';
+
+    export default {
+      async run(page) {
+        const health = await page.goto('http://<gateway>:<LOOKOUT_PORT>/health', { timeout: 8000 });
+        const healthBody = await page.locator('body').innerText();
+        const watches = await page.goto('http://<gateway>:<LOOKOUT_PORT>/api/watches', { timeout: 8000 });
+        return { success: true, content: `${health?.status()} ${healthBody}, ${watches?.status()}` };
+      },
+    } satisfies LookoutScript;
+    ```
+
+    The Test run Succeeds with `200 Healthy, 401`: the page reaches Lookout like any LAN device, but gets nothing that needs a login.
 
 With the VPN set up, also check that VPN Runs leave from the VPN's exit and direct Runs from your own IP:
 
@@ -263,6 +279,6 @@ With the VPN set up, also check that VPN Runs leave from the VPN's exit and dire
    done
    ```
 
-   Pages can still reach Lookout through the Docker host ([#44](https://github.com/chasepie/lookout/issues/44)): a Test run of a Script that loads `http://<gateway>:<LOOKOUT_PORT>/health` gets `Healthy`, both through the VPN and directly, where `<gateway>` is what `docker network inspect lookout_internet --format '{{(index .IPAM.Config 0).Gateway}}'` prints.
+   Pages can still reach Lookout's published port through the Docker host, as any LAN device can ([ADR-0006](docs/adr/0006-browser-pages-reach-lookout-like-a-lan-device.md)). Repeat step 10 above on a Watch with **Send Runs through the VPN** turned on: the Test run, through gluetun's proxy, also Succeeds with `200 Healthy, 401`.
 
 [The VPN smoke test report](docs/research/vpn-smoke-test.md) records a full run of these checks against PIA, including early Rotation, draining and fail-closed behavior.

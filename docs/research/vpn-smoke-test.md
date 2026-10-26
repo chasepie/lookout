@@ -2,7 +2,7 @@
 
 A live smoke test of the real deployment, Lookout, runner, Browserless, gluetun and the relay, connected to Private Internet Access, for [#42](https://github.com/chasepie/lookout/issues/42). The automated tests cover the Rotation coordinator against a fake gluetun; this checks it against the real one. The home IP is written `HOME_IP` throughout. No credentials, keys or notification secrets appear here.
 
-**Result:** every VPN check passed. One isolation check failed: pages Browserless loads can reach Lookout through the Docker host's published port, directly and through gluetun's proxy, contradicting `compose.yaml`'s claim. That is [#44](https://github.com/chasepie/lookout/issues/44), so #42 isn't complete until #44 is decided.
+**Result:** every VPN check passed. One isolation check failed: pages Browserless loads can reach Lookout through the Docker host's published port, directly and through gluetun's proxy, contradicting `compose.yaml`'s claim. That was [#44](https://github.com/chasepie/lookout/issues/44), decided by accepting it as the same reach any LAN device has, and correcting the docs: [ADR-0006](../adr/0006-browser-pages-reach-lookout-like-a-lan-device.md).
 
 ## Setup
 
@@ -37,9 +37,9 @@ Evidence was gathered by a SignalR client on `/api/events` logging every push wi
 | 3 | VPN Known failure rotates early without a retry; 3-minute minimum; Direct Known failure doesn't rotate | **Pass** |
 | 4 | Rotation drains a VPN Run; a further VPN Run waits; a VPN Test run is refused; a Direct Run proceeds | **Pass** |
 | 5 | Fail closed with the VPN down, Errored within the bounded wait, Direct Runs usable, then recovery | **Pass** |
-| 6 | Headful Browserless, WebRTC through the proxy, runner isolation and browser-to-backend isolation | **Fail** on browser-to-backend isolation: [#44](https://github.com/chasepie/lookout/issues/44). The rest pass. |
+| 6 | Headful Browserless, WebRTC through the proxy, runner isolation and browser-to-backend isolation | **Fail** on browser-to-backend isolation as documented: [#44](https://github.com/chasepie/lookout/issues/44), accepted in [ADR-0006](../adr/0006-browser-pages-reach-lookout-like-a-lan-device.md), which corrects the docs and adds the check to README "Smoke test". The rest pass. |
 | 7 | Server-list refresh observed; real gluetun integration evidenced; unobserved edge cases mapped to tests | **Pass** |
-| 8 | Every check has a pass or a concrete failure with reproduction, reported as a linked follow-up | Done: one follow-up, #44 |
+| 8 | Every check has a pass or a concrete failure with reproduction, reported as a linked follow-up | Done: one follow-up, #44, decided in ADR-0006 |
 | 9 | Docs reflect what the test revealed; deployment and test data cleaned up | Done |
 
 ### 1. VPN and Direct exits
@@ -134,7 +134,7 @@ No candidate at all, not even an mDNS host candidate, means WebRTC offered no UD
 
 **Runner isolation** (README smoke steps 5, 6 and 8): the runner's `fetch('https://example.com')` failed with `EAI_AGAIN`; it has no mounts (`[]`); it's only on `browsers` and `runs`; requests from Browserless without the token, or with a wrong one, got HTTP 401; and `docker compose top runner` listed only `docker-init` and `node index.ts`.
 
-**Browser-to-backend isolation: fails** ([#44](https://github.com/chasepie/lookout/issues/44)).
+**Browser-to-backend isolation: fails** as `compose.yaml` then described it ([#44](https://github.com/chasepie/lookout/issues/44)). This reach is now accepted, as pages get only what any LAN device gets ([ADR-0006](../adr/0006-browser-pages-reach-lookout-like-a-lan-device.md)), and README "Smoke test" checks it.
 
 | From | Target | Result |
 | --- | --- | --- |
@@ -183,7 +183,7 @@ While the Mac slept (02:59:27–04:20:24), Docker Desktop's VM ran only during d
    - Run now on *VPN Known failure*, and watch Settings: it shows Rotating at once (if the last Rotation ended more than 3 minutes before). Run it again as soon as the Rotation ends: the next comes 3 minutes after.
    - More than 3 minutes later, Run now on *VPN Slow*, then within a few seconds on *VPN Known failure*. While Settings shows Rotating, Run now on *VPN IP* (it waits), upload a Script to *VPN Known failure* (the Test run is refused at once), and Run now on *Direct IP* (it Succeeds). *VPN Slow* Succeeds with the same IP twice, and gluetun logs `[vpn] stopping` only after it ends.
    - To stop the tunnel but not gluetun, send `PUT /v1/vpn/status` with `{"status":"stopped"}` and Lookout's key in `X-API-Key` to `http://gluetun:8000` from a container on the `vpn-proxy` network, such as `docker compose exec browserless curl …`, and `{"status":"running"}` afterwards. If you read the key from `.env` in a script, strip any quotes around it: compose does.
-5. For WebRTC, upload as a Test run a Script that creates an `RTCPeerConnection` with a STUN server and a data channel, makes an offer, and returns the ICE candidates it gathers after a few seconds. For browser-to-backend isolation, see [#44](https://github.com/chasepie/lookout/issues/44).
+5. For WebRTC, upload as a Test run a Script that creates an `RTCPeerConnection` with a STUN server and a data channel, makes an offer, and returns the ICE candidates it gathers after a few seconds. For browser-to-backend isolation, follow README "Smoke test" step 10, directly and through the VPN, and the reproduction in [#44](https://github.com/chasepie/lookout/issues/44).
 6. To log pushes as they happen, connect a `@microsoft/signalr` client to `/api/events` with the session's cookies and the `X-XSRF-TOKEN` header.
 7. Keep the host awake throughout (`caffeinate -ims` on macOS).
 8. Tear down: `docker compose -p lookout-smoke down -v --rmi local`.
