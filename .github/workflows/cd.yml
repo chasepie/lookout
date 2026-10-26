@@ -120,6 +120,10 @@ jobs:
         type=semver,pattern={{version}}
         type=semver,pattern={{major}}.{{minor}}
     steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
       # Each build's digest, in a directory named after its artifact
       - uses: actions/download-artifact@v8
         with:
@@ -148,24 +152,11 @@ jobs:
 
       - name: Tag
         env:
-          OWNER: ${{ github.repository_owner }}
           LOOKOUT_META: ${{ steps.lookout-meta.outputs.json }}
           RUNNER_META: ${{ steps.runner-meta.outputs.json }}
         run: |
-          # tag <image> <metadata-action's JSON>
-          tag() {
-            local repository="ghcr.io/$OWNER/$1" args sources=()
-            mapfile -t args < <(jq --raw-output '(.tags[] | "--tag", .), (.annotations[] | "--annotation", .)' <<< "$2")
-            for arch in amd64 arm64; do
-              for digest in "$RUNNER_TEMP/digests/digest-$1-$arch"/*; do
-                sources+=("$repository@sha256:$(basename "$digest")")
-              done
-            done
-            docker buildx imagetools create "${args[@]}" "${sources[@]}"
-            docker buildx imagetools inspect "$(jq --raw-output '.tags[0]' <<< "$2")"
-          }
-          tag lookout "$LOOKOUT_META"
-          tag lookout-runner "$RUNNER_META"
+          .github/workflows/scripts/tag-image.sh lookout "$LOOKOUT_META"
+          .github/workflows/scripts/tag-image.sh lookout-runner "$RUNNER_META"
 
   # The types Scripts import, at the version the Version job worked out
   publish-scripting:
