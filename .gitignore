@@ -437,3 +437,7 @@ playwright-report/
 *.db
 *.db-shm
 *.db-wal
+
+# The scripting package's types and licence, added when it's packed
+src/scripting/dist/
+src/scripting/LICENSE

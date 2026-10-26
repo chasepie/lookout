@@ -1,0 +1,234 @@
+name: CD
+
+# Publishes the images and the scripting package: edge builds from a push to main, and a release's version from a v*
+# tag (see "Releasing" in README.md). CI calls it once every check has passed on such a push, so it runs as part of
+# CI's run, with the push's ref and commit. A newer push to main cancels that run (see CI's concurrency), so the newest
+# push's builds end up as edge. Re-running an older run publishes its builds as edge again, until the next push.
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  # Both images' tags, for metadata-action. From main: edge, and the commit's sha-<short SHA> to pin or roll back to.
+  # From a release tag such as v0.2.0: 0.2.0, 0.2 and latest. A pre-release such as v0.2.0-rc.1 gets only 0.2.0-rc.1.
+  # The build jobs' labels give the version from them too.
+  IMAGE_TAGS: |
+    type=raw,value=edge,enable={{is_default_branch}}
+    type=sha,enable={{is_default_branch}}
+    type=semver,pattern={{version}}
+    type=semver,pattern={{major}}.{{minor}}
+
+jobs:
+  # Works out the version, and refuses a release tag that isn't a version on main, before anything is published
+  version:
+    name: Version
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      npm-tag: ${{ steps.version.outputs.npm-tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Every tag, for the latest release, and main, to check a release tag is on it
+          fetch-depth: 0
+          persist-credentials: false
+
+      - id: version
+        run: .github/workflows/scripts/version.sh
+
+  # Each image for each platform, on a runner of that platform, so nothing runs under emulation. A build is pushed by
+  # digest alone, without a tag, so nothing pulls it until Tag images has every build.
+  build-images:
+    name: Build ${{ matrix.image }} (${{ matrix.arch }})
+    needs: version
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        image: [lookout, lookout-runner]
+        # arm64 too, for homelabs on a Raspberry Pi. tag-image.sh lists these too.
+        arch: [amd64, arm64]
+        include:
+          - image: lookout
+            dockerfile: src/Backend/Dockerfile
+          - image: lookout-runner
+            dockerfile: src/runner/Dockerfile
+          - arch: amd64
+            runner: ubuntu-26.04
+          - arch: arm64
+            runner: ubuntu-26.04-arm
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The labels include the source repository, which links each package to this repository on GitHub
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+          tags: ${{ env.IMAGE_TAGS }}
+
+      # Built from the repository root with .dockerignore, as compose.yaml builds them. The GitHub Actions cache keeps
+      # only the images' own layers, as every stage's would crowd out the npm cache.
+      - id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/${{ matrix.arch }}
+          labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/${{ matrix.image }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=min,scope=${{ matrix.image }}-${{ matrix.arch }}
+
+      - name: Record the digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/digest"
+          touch "$RUNNER_TEMP/digest/${DIGEST#sha256:}"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: digest-${{ matrix.image }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digest/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # Joins each image's builds into one for both platforms, and tags it, only once every build of both has succeeded.
+  # The registry can't tag two images at once, so Lookout and the runner are tagged one after the other, seconds apart:
+  # a failure or cancellation between the two leaves Lookout's tags moved and the runner's not, until a later run.
+  tag-images:
+    name: Tag images
+    needs: build-images
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    env:
+      # For a multi-platform image, GHCR reads the description from the index
+      DOCKER_METADATA_ANNOTATIONS_LEVELS: index
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # Each build's digest, in a directory named after its artifact
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: digest-*
+          path: ${{ runner.temp }}/digests
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: lookout-meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/lookout
+          tags: ${{ env.IMAGE_TAGS }}
+
+      - id: runner-meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/lookout-runner
+          tags: ${{ env.IMAGE_TAGS }}
+
+      - name: Tag
+        env:
+          LOOKOUT_META: ${{ steps.lookout-meta.outputs.json }}
+          RUNNER_META: ${{ steps.runner-meta.outputs.json }}
+        run: |
+          .github/workflows/scripts/tag-image.sh lookout "$LOOKOUT_META"
+          .github/workflows/scripts/tag-image.sh lookout-runner "$RUNNER_META"
+
+  # The types Scripts import, packed at the version the Version job worked out. Packing runs the repository's
+  # dependencies, their install scripts and the TypeScript that builds the types, so it's a job of its own, without the
+  # token: steps in one job share its files, tools and environment, so a dependency could change what a later step
+  # runs.
+  pack-scripting:
+    name: Pack scripting package
+    needs: version
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      # The root's devDependencies hold the TypeScript that builds the package's types
+      - run: npm ci --workspace src/scripting --include-workspace-root
+
+      - name: Pack
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          npm pkg set version="$VERSION" --workspace src/scripting
+          # npm pack doesn't create its destination
+          mkdir "$RUNNER_TEMP/scripting"
+          npm pack --workspace src/scripting --pack-destination "$RUNNER_TEMP/scripting"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: scripting
+          path: ${{ runner.temp }}/scripting/*.tgz
+          if-no-files-found: error
+          retention-days: 1
+
+  # Publishes the packed package with the token, running only npm, Node and this repository's script: nothing from
+  # its dependencies. After the images, so a release's types aren't published without its images.
+  publish-scripting:
+    name: Publish scripting package
+    needs: [version, pack-scripting, tag-images]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # Without the npm cache, which the pack job fills
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          registry-url: https://npm.pkg.github.com
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: scripting
+          path: ${{ runner.temp }}/scripting
+
+      - name: Publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DIST_TAG: ${{ needs.version.outputs.npm-tag }}
+        run: .github/workflows/scripts/publish-scripting.sh "$RUNNER_TEMP"/scripting/*.tgz "$DIST_TAG"

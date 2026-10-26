@@ -1,0 +1,15 @@
+{
+  // Builds the published package before npm packs it: its types, and the empty module they compile to, so a Script's
+  // `import { type … }`, which keeps an empty import, also runs outside the runner. In this repository the package
+  // resolves to index.ts, which the root project checks: package.json's "types" names dist, and TypeScript falls back
+  // to index.ts without it.
+  "extends": "../../tsconfig.node.json",
+  "include": [
+    "index.ts"
+  ],
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "outDir": "dist"
+  }
+}
