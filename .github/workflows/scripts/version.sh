@@ -7,16 +7,26 @@
 # release it contains, such as 0.2.1-edge.<run number>, which a later release sorts above. Before the first release,
 # the next patch is the root package.json's version.
 set -euo pipefail
+# So a failure inside $(…), such as git's, stops the script too
+shopt -s inherit_errexit
 
 # SemVer 2.0.0, without build metadata: no leading zeros, and no empty pre-release identifiers
 core='(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)'
 identifier='(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)'
 prerelease="-$identifier(\.$identifier)*"
 
-# The newest release, without pre-releases, among the tags merged into a commit
+# The newest release, without pre-releases, among the tags merged into a commit, or nothing before the first
 newest_release() {
-  git tag --list 'v*' --merged "$1" | grep -E "^v$core\$" | sort -V | tail -n 1 || true
+  local tags
+  tags=$(git tag --list 'v*' --merged "$1")
+  grep -E "^v$core\$" <<< "$tags" | sort -V | tail -n 1 || true
 }
+
+# A shallow clone would have too few tags, so its edges would be numbered as if there were no release
+if [ "$(git rev-parse --is-shallow-repository)" = true ]; then
+  echo "::error::Needs the whole history, with every tag: check out with fetch-depth: 0"
+  exit 1
+fi
 
 if [[ $GITHUB_REF == refs/tags/* ]]; then
   tag=$GITHUB_REF_NAME

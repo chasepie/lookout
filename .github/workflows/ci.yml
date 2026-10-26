@@ -68,6 +68,11 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # Builds the scripting package as CD publishes it, so a change that breaks that fails here, not after a release's
+      # images are tagged
+      - name: Pack scripting package
+        run: npm pack --dry-run --workspace src/scripting
+
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 

@@ -13,12 +13,18 @@ repository="ghcr.io/$GITHUB_REPOSITORY_OWNER/$image"
 options=$(jq --raw-output '(.tags[] | "--tag", .), (.annotations[] | "--annotation", .)' <<< "$metadata")
 mapfile -t options <<< "$options"
 
-# The platforms Build images builds. Listed rather than matched, as digest-lookout-* would match lookout-runner's too.
+# The platforms Build images builds, as its matrix lists them. Listed rather than matched, as digest-lookout-* would
+# match lookout-runner's too, and so a missing build stops the script rather than leaving its platform out.
+shopt -s nullglob
 sources=()
 for arch in amd64 arm64; do
-  for digest in "$RUNNER_TEMP/digests/digest-$image-$arch"/*; do
-    sources+=("$repository@sha256:$(basename "$digest")")
-  done
+  digests=("$RUNNER_TEMP/digests/digest-$image-$arch"/*)
+  if [ "${#digests[@]}" -ne 1 ]; then
+    echo "::error::Expected one digest for $image on $arch, and found ${#digests[@]}. Build images keeps them for a day:" \
+      "after that, re-run all jobs."
+    exit 1
+  fi
+  sources+=("$repository@sha256:$(basename "${digests[0]}")")
 done
 
 docker buildx imagetools create "${options[@]}" "${sources[@]}"

@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # Publishes the scripting package's tarball, packed at a version from version.sh, under a dist-tag, for CD (see
-# "Releasing" in README.md). Needs npm logged in to the package's registry, and runs nothing from the repository or
-# its dependencies, so it can be given the token that publishes:
+# "Releasing" in README.md). Needs npm logged in to the package's registry, and runs nothing from the repository's
+# dependencies, so a job that hasn't installed them can give it the token that publishes:
 #   publish-scripting.sh <tarball> <dist-tag>
 #
-# A version that's already published is skipped, so a run can be re-run: a release's, or an older edge's. A release
-# publishes whether or not the types changed, so a Script's types match the Lookout it runs on. An edge is only
-# published when what users would install differs from the last edge (its files, and its package.json but for the
-# version and scripts), or the last edge was for an earlier release. Comparing what's published, rather than which
-# files a push changed, ignores changes that don't reach users, and catches up after a run that was cancelled.
+# A version that's already published is skipped, so a run can be re-run, as is an edge older than the last, so
+# re-running an older run doesn't move edge back. A release publishes whether or not the types changed, so a Script's
+# types match the Lookout it runs on. An edge is only published when what users would install differs from the last
+# edge (its files, and its package.json but for the version and scripts), or the last edge was for an earlier
+# release. Comparing what's published, rather than which files a push changed, ignores changes that don't reach
+# users, and catches up after a run that was cancelled.
 set -euo pipefail
 
 tarball=$1
@@ -41,6 +42,10 @@ fi
 
 if [ "$dist_tag" = edge ]; then
   edge=$(published "$name@edge")
+  if [ -n "$edge" ] && [ "$(printf '%s\n' "$edge" "$version" | sort -V | tail -n 1)" = "$edge" ]; then
+    echo "$name@$edge is newer than $version"
+    exit 0
+  fi
   # Edges for the same release share everything before the run number
   if [ "${edge%.*}" = "${version%.*}" ]; then
     npm pack "$name@$edge" --pack-destination "$work/old"

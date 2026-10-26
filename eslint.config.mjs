@@ -7,7 +7,9 @@ import tseslint from 'typescript-eslint';
 const ignores = globalIgnores([
   'src/Backend/wwwroot/**',
   '**/.angular/**',
-  '**/test-results/**'
+  '**/test-results/**',
+  // The scripting package's build, which only lasts while it's packed, unless packing stops partway
+  'src/scripting/dist/**'
 ]);
 export default defineConfig(ignores, {
   files: ['**/*.{js,ts}'],

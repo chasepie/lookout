@@ -52,7 +52,7 @@ jobs:
     strategy:
       matrix:
         image: [lookout, lookout-runner]
-        # arm64 too, for homelabs on a Raspberry Pi
+        # arm64 too, for homelabs on a Raspberry Pi. tag-image.sh lists these too.
         arch: [amd64, arm64]
         include:
           - image: lookout
@@ -110,9 +110,9 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  # Joins each image's builds into one for both platforms, and tags it. Only once every build of both has succeeded,
-  # so a run can't tag Lookout without the runner it must match. The registry can't tag both at once, so they're tagged
-  # one after the other, seconds apart.
+  # Joins each image's builds into one for both platforms, and tags it, only once every build of both has succeeded.
+  # The registry can't tag two images at once, so Lookout and the runner are tagged one after the other, seconds apart:
+  # a failure or cancellation between the two leaves Lookout's tags moved and the runner's not, until a later run.
   tag-images:
     name: Tag images
     needs: build-images
@@ -163,16 +163,15 @@ jobs:
           .github/workflows/scripts/tag-image.sh lookout "$LOOKOUT_META"
           .github/workflows/scripts/tag-image.sh lookout-runner "$RUNNER_META"
 
-  # The types Scripts import, at the version the Version job worked out. After the images, so a release's types aren't
-  # published without its images.
-  publish-scripting:
-    name: Publish scripting package
-    needs: [version, tag-images]
+  # The types Scripts import, packed at the version the Version job worked out. Packing runs the repository's
+  # dependencies, their install scripts and the TypeScript that builds the types, so it's a job of its own, without the
+  # token: steps in one job share its files, tools and environment, so a dependency could change what a later step
+  # runs.
+  pack-scripting:
+    name: Pack scripting package
+    needs: version
     runs-on: ubuntu-26.04
     timeout-minutes: 10
-    permissions:
-      contents: read
-      packages: write
     steps:
       - uses: actions/checkout@v7
         with:
@@ -182,11 +181,8 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
-          registry-url: https://npm.pkg.github.com
 
-      # Only the publish step has the token, which runs nothing from the repository or its dependencies: not their
-      # install scripts here, nor the TypeScript that builds the package's types as it's packed.
-      # The root's devDependencies hold that TypeScript.
+      # The root's devDependencies hold the TypeScript that builds the package's types
       - run: npm ci --workspace src/scripting --include-workspace-root
 
       - name: Pack
@@ -197,6 +193,39 @@ jobs:
           # npm pack doesn't create its destination
           mkdir "$RUNNER_TEMP/scripting"
           npm pack --workspace src/scripting --pack-destination "$RUNNER_TEMP/scripting"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: scripting
+          path: ${{ runner.temp }}/scripting/*.tgz
+          if-no-files-found: error
+          retention-days: 1
+
+  # Publishes the packed package with the token, running only npm, Node and this repository's script: nothing from
+  # its dependencies. After the images, so a release's types aren't published without its images.
+  publish-scripting:
+    name: Publish scripting package
+    needs: [version, pack-scripting, tag-images]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # Without the npm cache, which the pack job fills
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          registry-url: https://npm.pkg.github.com
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: scripting
+          path: ${{ runner.temp }}/scripting
 
       - name: Publish
         env:
