@@ -10,11 +10,13 @@ namespace ChasePie.Lookout.Backend.Startup;
 /// </summary>
 public static class ExampleWatches
 {
-    public static void Seed(LookoutDbContext database, WatchSchedules schedules)
+    public static async Task SeedAsync(LookoutDbContext database, WatchSchedules schedules)
     {
         using var script = typeof(ExampleWatches).Assembly.GetManifestResourceStream("ExampleScripts/bot-detection.ts")
             ?? throw new InvalidOperationException("The bot-detection example Script is not embedded in the backend.");
         using var reader = new StreamReader(script);
+        // The Watch and its current Script version refer to each other, so the version is saved before it is current.
+        await using var transaction = await database.Database.BeginTransactionAsync();
 
         var watch = new Watch
         {
@@ -27,7 +29,7 @@ public static class ExampleWatches
                 Unit = IntervalUnit.Hours
             }
         };
-        if (schedules.ScheduleFirstRun(watch) is { } problem)
+        if (await schedules.ScheduleFirstRunAsync(watch, database, CancellationToken.None) is { } problem)
         {
             throw new InvalidOperationException($"The example Watch's schedule can't be used: {problem}");
         }
@@ -35,17 +37,15 @@ public static class ExampleWatches
         var version = new ScriptVersion
         {
             WatchId = watch.Id,
-            Source = reader.ReadToEnd(),
+            Source = await reader.ReadToEndAsync(),
             FileKind = "ts"
         };
         watch.ScriptVersions.Add(version);
 
-        // The Watch and its current Script version refer to each other, so the version is saved before it is current.
-        using var transaction = database.Database.BeginTransaction();
         database.Watches.Add(watch);
-        database.SaveChanges();
+        await database.SaveChangesAsync();
         watch.CurrentScriptVersionId = version.Id;
-        database.SaveChanges();
-        transaction.Commit();
+        await database.SaveChangesAsync();
+        await transaction.CommitAsync();
     }
 }

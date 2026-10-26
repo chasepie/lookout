@@ -477,36 +477,6 @@ public sealed class SchedulingTests(TestContext testContext)
     }
 
     [TestMethod]
-    public async Task KeepsARunRescheduledForANewTimeZoneThreeMinutesAwayFromTheLastRun()
-    {
-        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
-        factory.Runner.DefaultResult = Succeeded;
-        var databasePath = Path.Combine(Path.GetTempPath(), $"lookout-test-{Guid.NewGuid():N}.db");
-        try
-        {
-            string id;
-            await using (var before = SharingDatabase(factory, databasePath))
-            {
-                using var client = await before.CreateSignedInClientAsync(testContext.CancellationToken);
-                // 12:05, 12:51, 17:05 and 17:51 in UTC; in Kathmandu (UTC+5:45), 17:51 local is 12:06 UTC.
-                id = (await CreateWatch(client, new() { ["scheduleKind"] = "cron", ["cron"] = "5,51 12,17 * * *" }))["id"]!.GetValue<string>();
-                factory.Time.Advance(TimeSpan.FromMinutes(5));
-                await StartAndFinishDueRuns(before);
-            }
-
-            await using var after = SharingDatabase(factory, databasePath, "Asia/Kathmandu");
-            using var restarted = await after.CreateLoggedInClientAsync(testContext.CancellationToken);
-
-            Assert.AreEqual(DateTimeOffset.Parse("2026-10-19T12:08:00Z", System.Globalization.CultureInfo.InvariantCulture),
-                (await Watch(restarted, id))["nextRunAt"]!.GetValue<DateTimeOffset>());
-        }
-        finally
-        {
-            File.Delete(databasePath);
-        }
-    }
-
-    [TestMethod]
     public async Task ReturnsTheNextRunAsStoredWhenCreatingAWatch()
     {
         await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
@@ -625,7 +595,7 @@ public sealed class SchedulingTests(TestContext testContext)
     [TestMethod]
     [DataRow("daily", "09:00", null)]
     [DataRow("cron", null, "0 9 * * *")]
-    public async Task ReschedulesWatchesForANewTimeZoneWhenLookoutRestarts(string kind, string? timeOfDay, string? cron)
+    public async Task ReschedulesWatchesForANewlyConfiguredTimeZoneWhenAnInstallFirstSavesOne(string kind, string? timeOfDay, string? cron)
     {
         await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
         factory.Runner.DefaultResult = Succeeded;
@@ -644,6 +614,8 @@ public sealed class SchedulingTests(TestContext testContext)
                 Assert.AreEqual(DateTimeOffset.Parse("2026-10-20T09:00:00Z", System.Globalization.CultureInfo.InvariantCulture),
                     watch["nextRunAt"]!.GetValue<DateTimeOffset>());
             }
+            // Upgraded from a version that didn't save its time zone, and configured with another at the same time.
+            await ForgetSavedTimeZone(databasePath);
 
             await using var after = SharingDatabase(factory, databasePath, "Asia/Tokyo");
             using var restarted = await after.CreateLoggedInClientAsync(testContext.CancellationToken);
@@ -841,8 +813,16 @@ public sealed class SchedulingTests(TestContext testContext)
         Assert.IsEmpty((await client.GetFromJsonAsync<JsonArray>("/api/watches", testContext.CancellationToken))!);
     }
 
+    /// <summary>Makes the database look like one from before Lookout saved its time zone, so its next start saves one.</summary>
+    internal static async Task ForgetSavedTimeZone(string databasePath)
+    {
+        await using var database = new LookoutDbContext(new DbContextOptionsBuilder<LookoutDbContext>()
+            .UseSqlite($"Data Source={databasePath};Pooling=False").Options);
+        await database.Settings.ExecuteUpdateAsync(setters => setters.SetProperty(settings => settings.TimeZone, (string?)null));
+    }
+
     /// <summary>A host that keeps its database when stopped, so another host can start against it like a restart.</summary>
-    private static WebApplicationFactory<Program> SharingDatabase(LookoutWebApplicationFactory factory, string databasePath,
+    internal static WebApplicationFactory<Program> SharingDatabase(LookoutWebApplicationFactory factory, string databasePath,
         string? timeZone = null) =>
         factory.WithWebHostBuilder(builder =>
         {
@@ -876,7 +856,7 @@ public sealed class SchedulingTests(TestContext testContext)
     }
 
     /// <summary>Runs an action once, just before the first command containing the fragment, as another request would.</summary>
-    private sealed class BeforeCommand(string fragment, Func<Task> action) : DbCommandInterceptor
+    internal sealed class BeforeCommand(string fragment, Func<Task> action) : DbCommandInterceptor
     {
         private int _fired;
         public bool Fired => _fired == 1;

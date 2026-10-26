@@ -17,6 +17,14 @@ export default defineConfig({
     {
       name: 'chromium',
       dependencies: ['first launch'],
+      testIgnore: /time-zone\.spec\.ts$/,
+      use: { ...devices['Desktop Chrome'], storageState: ownerStorageState },
+    },
+    // Changing the install-wide time zone would move the times other tests expect in the host's own, so it runs after them.
+    {
+      name: 'install time zone',
+      dependencies: ['chromium'],
+      testMatch: /time-zone\.spec\.ts$/,
       use: { ...devices['Desktop Chrome'], storageState: ownerStorageState },
     },
   ],

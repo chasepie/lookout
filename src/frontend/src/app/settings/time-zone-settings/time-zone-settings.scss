@@ -1,0 +1,19 @@
+@use 'tokens';
+@use 'mixins';
+
+:host { display: block; }
+
+@include mixins.stacked-form;
+@include mixins.messages;
+
+h2 { font-size: 19px; margin: 0; }
+p { line-height: 1.6; }
+
+.panel { @include mixins.panel; padding: 25px; }
+.panel > p:not(.error) { font-size: 14px; color: tokens.$text-muted; margin: 10px 0 25px; }
+
+button {
+  @include mixins.button;
+
+  &.primary { @include mixins.primary-button; }
+}

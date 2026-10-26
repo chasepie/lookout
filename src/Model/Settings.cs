@@ -16,6 +16,12 @@ public sealed class Settings
     /// <summary>How many days a Run is kept before it is pruned, unless it is a Change.</summary>
     public int RetentionDays { get; set; } = DefaultRetentionDays;
 
+    /// <summary>
+    /// The IANA time zone daily and cron Schedules use. Startup sets it from configuration, or the host's time zone, when
+    /// the install has none yet; once saved, it is the install's whatever configuration says.
+    /// </summary>
+    public string? TimeZone { get; set; }
+
     /// <summary>When Lookout last had the VPN refresh its list of servers, if it ever has.</summary>
     public DateTimeOffset? VpnServerListRefreshedAt { get; set; }
 }

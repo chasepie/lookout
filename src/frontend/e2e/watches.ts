@@ -21,6 +21,15 @@ export async function createWatch(page: Page, name: string, notificationUrl = 'h
   return ((await created.json()) as { id: string }).id;
 }
 
+/** Changes the install's time zone through the API, as another browser tab would. */
+export async function changeTimeZone(page: Page, timeZone: string) {
+  const response = await page.request.put('/api/settings/time-zone', {
+    headers: { 'X-XSRF-TOKEN': await requestToken(page) },
+    data: { timeZone },
+  });
+  expect(response.status()).toBe(200);
+}
+
 /** Edits a Watch's settings through the API, as another browser tab would. */
 export async function editWatch(page: Page, id: string,
   settings: { name: string; notificationUrl: string; timeoutSeconds: number; usesVpn: boolean }) {

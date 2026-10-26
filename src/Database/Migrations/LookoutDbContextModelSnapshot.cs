@@ -195,6 +195,9 @@ namespace ChasePie.Lookout.Database.Migrations
                     b.Property<int>("RetentionDays")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("TimeZone")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTimeOffset?>("VpnServerListRefreshedAt")
                         .HasColumnType("TEXT");
 

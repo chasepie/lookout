@@ -5,16 +5,20 @@ import { type NotificationChannel, type NewNotificationChannel, notificationChan
 import { NotificationChannels } from '../notification-channels/notification-channels';
 import { problemMessage } from '../shared/problem';
 import { RetentionSettings } from './retention-settings/retention-settings';
+import { TimeZoneSettings } from './time-zone-settings/time-zone-settings';
 import { VpnStatus } from './vpn-status/vpn-status';
 
 type NotificationChannelAction = 'testing' | 'deleting';
 
 const emptyNotificationChannel = (): NewNotificationChannel => ({ kind: 'discord', name: '', webhookUrl: '', userKey: '', appToken: '' });
 
-/** Lookout's settings: the Notification channels Watches can notify, how long Runs are kept, and the VPN's status. */
+/**
+ * Lookout's settings: the Notification channels Watches can notify, how long Runs are kept, the time zone schedules use,
+ * and the VPN's status.
+ */
 @Component({
   selector: 'app-settings',
-  imports: [FormField, KeyValuePipe, RetentionSettings, VpnStatus],
+  imports: [FormField, KeyValuePipe, RetentionSettings, TimeZoneSettings, VpnStatus],
   templateUrl: './settings.html',
   styleUrl: './settings.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
