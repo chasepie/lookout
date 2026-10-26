@@ -3,7 +3,8 @@
 #   LOOKOUT_RUNNER_TOKEN         required: the token Lookout sends the runner: letters, digits, '-' and '_' only,
 #                                such as from openssl rand -hex 32. Without it, Lookout and the runner stop at startup.
 #   LOOKOUT_PORT                 the host port Lookout is served on (default 8080)
-#   LOOKOUT_TIME_ZONE            the time zone schedules use, such as Europe/London (default UTC)
+#   LOOKOUT_TIME_ZONE            the time zone a new install's schedules start with, such as Europe/London (default
+#                                UTC); once saved, it is changed in Settings instead
 #   LOOKOUT_MAX_CONCURRENT_RUNS  how many Runs execute at once (default 2); raise the memory limits with it
 #   LOOKOUT_RUNNER_MEMORY        the runner's memory limit (default 1536m): 640m per concurrent Run, plus 256m
 #   LOOKOUT_BROWSERLESS_MEMORY   Browserless's memory limit (default 3g): about 1.5g per concurrent Run

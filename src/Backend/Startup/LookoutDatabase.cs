@@ -23,17 +23,22 @@ public static class LookoutDatabase
             });
     }
 
-    /// <summary>Migrates the database, seeding a new development database with <see cref="ExampleWatches"/>.</summary>
-    public static void Migrate(WebApplication app)
+    /// <summary>
+    /// Migrates the database and gives an install without a time zone its initial one, seeding a new development
+    /// database with <see cref="ExampleWatches"/>.
+    /// </summary>
+    public static async Task MigrateAsync(WebApplication app)
     {
-        using var scope = app.Services.CreateScope();
+        await using var scope = app.Services.CreateAsyncScope();
         var database = scope.ServiceProvider.GetRequiredService<LookoutDbContext>();
+        var schedules = scope.ServiceProvider.GetRequiredService<WatchSchedules>();
         // Seeding only a database this startup creates keeps a removed example from coming back.
-        var created = !database.Database.GetAppliedMigrations().Any();
-        database.Database.Migrate();
+        var created = !(await database.Database.GetAppliedMigrationsAsync()).Any();
+        await database.Database.MigrateAsync();
+        await schedules.InitializeTimeZoneAsync(database, CancellationToken.None);
         if (created && app.Environment.IsDevelopment())
         {
-            ExampleWatches.Seed(database, scope.ServiceProvider.GetRequiredService<WatchSchedules>());
+            await ExampleWatches.SeedAsync(database, schedules);
         }
     }
 

@@ -19,16 +19,16 @@ namespace ChasePie.Lookout.Backend;
 
 public class Program
 {
-    public static void Main(string[] args)
+    public static async Task Main(string[] args)
     {
         var builder = WebApplication.CreateBuilder(args);
         ConfigureServices(builder.Services, builder.Configuration, builder.Environment);
 
         var app = builder.Build();
-        LookoutDatabase.Migrate(app);
+        await LookoutDatabase.MigrateAsync(app);
         ConfigureApplication(app);
 
-        app.Run();
+        await app.RunAsync();
     }
 
     private static void ConfigureServices(

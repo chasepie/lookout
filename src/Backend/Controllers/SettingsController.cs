@@ -1,4 +1,5 @@
 using System.Net;
+using ChasePie.Lookout.Backend.Scheduling;
 using ChasePie.Lookout.Database;
 using ChasePie.Lookout.Model;
 using Microsoft.AspNetCore.Mvc;
@@ -6,11 +7,19 @@ using Microsoft.EntityFrameworkCore;
 
 namespace ChasePie.Lookout.Backend.Controllers;
 
-public sealed record SettingsResponse(int RetentionDays);
+/// <param name="RetentionDays">How many days a Run is kept before it is pruned, unless it is a Change.</param>
+/// <param name="TimeZone">The IANA time zone daily and cron Schedules use.</param>
+public sealed record SettingsResponse(int RetentionDays, string? TimeZone);
 
 public sealed class SettingsRequest
 {
     public required int RetentionDays { get; init; }
+}
+
+public sealed class TimeZoneRequest
+{
+    /// <summary>An IANA time zone, such as Europe/London.</summary>
+    public string? TimeZone { get; init; }
 }
 
 [ApiController]
@@ -21,7 +30,7 @@ public sealed class SettingsController(LookoutDbContext database) : LookoutContr
     public async Task<SettingsResponse> Get(CancellationToken cancellationToken)
     {
         return await database.Settings.AsNoTracking()
-            .Select(settings => new SettingsResponse(settings.RetentionDays))
+            .Select(settings => new SettingsResponse(settings.RetentionDays, settings.TimeZone))
             .SingleAsync(cancellationToken);
     }
 
@@ -44,6 +53,22 @@ public sealed class SettingsController(LookoutDbContext database) : LookoutContr
                 detail: "Lookout's settings are missing from its database, so they could not be saved.",
                 statusCode: HttpStatusCode.InternalServerError);
         }
-        return new SettingsResponse(request.RetentionDays);
+        return await Get(cancellationToken);
+    }
+
+    /// <summary>
+    /// Changes the install's time zone, rescheduling daily and cron Watches in it. Saved, it outlasts restarts and
+    /// whatever <c>Scheduling:TimeZone</c> says.
+    /// </summary>
+    [HttpPut("time-zone")]
+    public async Task<ActionResult<SettingsResponse>> ChangeTimeZone(TimeZoneRequest request, WatchSchedules schedules,
+        CancellationToken cancellationToken)
+    {
+        var update = await schedules.ChangeTimeZoneAsync(request.TimeZone, cancellationToken);
+        if (update.Status == ScheduleUpdateStatus.Invalid)
+        {
+            return Problem(detail: update.Problem!, statusCode: HttpStatusCode.BadRequest);
+        }
+        return await Get(cancellationToken);
     }
 }

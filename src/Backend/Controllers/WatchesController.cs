@@ -60,7 +60,9 @@ public sealed class WatchesController(
             UsesVpn = request.UsesVpn,
             JitterMinutes = request.JitterMinutes
         };
-        if (schedules.ScheduleFirstRun(watch) is { } scheduleProblem)
+        // Scheduled in the transaction that saves the Watch, so the install's time zone can't change in between.
+        await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
+        if (await schedules.ScheduleFirstRunAsync(watch, database, cancellationToken) is { } scheduleProblem)
         {
             return Problem(scheduleProblem, statusCode: HttpStatusCode.BadRequest);
         }
@@ -80,7 +82,6 @@ public sealed class WatchesController(
         };
         watch.ScriptVersions.Add(version);
 
-        await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
         database.Watches.Add(watch);
         try
         {
