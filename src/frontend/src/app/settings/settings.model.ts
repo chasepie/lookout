@@ -9,4 +9,6 @@ export interface LookoutSettings {
    * know the saved one
    */
   effectiveTimeZone: string;
+  /** Whether Lookout's host knows the saved time zone, so Schedules run in it rather than falling back */
+  timeZoneKnown: boolean;
 }

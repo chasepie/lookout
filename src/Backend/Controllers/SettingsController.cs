@@ -13,7 +13,8 @@ namespace ChasePie.Lookout.Backend.Controllers;
 /// The time zone daily and cron Schedules use: the saved one, or the one Lookout falls back to while this host doesn't
 /// know it.
 /// </param>
-public sealed record SettingsResponse(int RetentionDays, string? TimeZone, string EffectiveTimeZone);
+/// <param name="TimeZoneKnown">Whether this host knows the saved time zone, so Schedules run in it rather than falling back.</param>
+public sealed record SettingsResponse(int RetentionDays, string? TimeZone, string EffectiveTimeZone, bool TimeZoneKnown);
 
 public sealed class SettingsRequest
 {
@@ -37,7 +38,7 @@ public sealed class SettingsController(LookoutDbContext database, WatchSchedules
             .Select(settings => new { settings.RetentionDays, settings.TimeZone })
             .SingleAsync(cancellationToken);
         return new SettingsResponse(settings.RetentionDays, settings.TimeZone,
-            schedules.EffectiveTimeZone(settings.TimeZone));
+            schedules.EffectiveTimeZone(settings.TimeZone), WatchSchedules.KnowsTimeZone(settings.TimeZone));
     }
 
     [HttpPut]

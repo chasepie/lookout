@@ -50,20 +50,23 @@ public sealed class WatchSchedules(IServiceScopeFactory scopes, TimeProvider tim
 
     /// <summary>
     /// The IANA time zone that <paramref name="zone"/> is, such as America/New_York for Eastern Standard Time, or null
-    /// if it has none.
+    /// if it has none this host can find again by its ID. The host's own time zone may not be: when .NET can't name it,
+    /// its ID is <c>Local</c>, which saved would be refused by Settings and unknown to scheduling.
     /// </summary>
     public static TimeZoneInfo? WithIanaId(TimeZoneInfo zone)
     {
-        if (zone.HasIanaId)
+        if (CanBeSaved(zone))
         {
             return zone;
         }
         return TimeZoneInfo.TryConvertWindowsIdToIanaId(zone.Id, out var ianaId)
             && TimeZoneInfo.TryFindSystemTimeZoneById(ianaId, out var ianaZone)
-            && ianaZone.HasIanaId
+            && CanBeSaved(ianaZone)
                 ? ianaZone
                 : null;
     }
+
+    private static bool CanBeSaved(TimeZoneInfo zone) => zone.HasIanaId && FindSaved(zone.Id) is not null;
 
     /// <summary>
     /// Saves the initial time zone as the install's, unless it already has one, which then outlasts any change to
@@ -348,8 +351,17 @@ public sealed class WatchSchedules(IServiceScopeFactory scopes, TimeProvider tim
     /// </summary>
     public string EffectiveTimeZone(string? savedTimeZoneId) => Resolve(savedTimeZoneId).Zone.Id;
 
-    private SavedTimeZone Resolve(string? id) => new(id,
-        id is not null && TimeZoneInfo.TryFindSystemTimeZoneById(id, out var zone) ? zone : InitialTimeZone);
+    /// <summary>
+    /// Whether this host knows <paramref name="savedTimeZoneId"/>, so daily and cron Schedules run in it rather than
+    /// the time zone they fall back to. The app asks this rather than comparing IDs, as lookups ignore case, so the
+    /// two IDs can differ only in case.
+    /// </summary>
+    public static bool KnowsTimeZone(string? savedTimeZoneId) => FindSaved(savedTimeZoneId) is not null;
+
+    private SavedTimeZone Resolve(string? id) => new(id, FindSaved(id) ?? InitialTimeZone);
+
+    private static TimeZoneInfo? FindSaved(string? id) =>
+        id is not null && TimeZoneInfo.TryFindSystemTimeZoneById(id, out var zone) ? zone : null;
 
     /// <summary>Whether the install's time zone is still the one read, so a next Run worked out in it is current.</summary>
     private static Expression<Func<Watch, bool>> StillIn(LookoutDbContext database, SavedTimeZone timeZone)

@@ -13,6 +13,8 @@ export class InstallTimeZone {
   readonly current = computed(() => (this.settings.hasValue() ? this.settings.value().timeZone : undefined));
   /** The time zone daily and cron Schedules run in, once loaded: the saved one, unless this host doesn't know it. */
   readonly effective = computed(() => (this.settings.hasValue() ? this.settings.value().effectiveTimeZone : undefined));
+  /** Whether Lookout's host knows the saved time zone, once loaded. Its ID can differ in case from the effective one's. */
+  readonly known = computed(() => (this.settings.hasValue() ? this.settings.value().timeZoneKnown : undefined));
 
   /** Saves the time zone, which reschedules daily and cron Watches in it, and returns the settings as saved. */
   async change(timeZone: string) {

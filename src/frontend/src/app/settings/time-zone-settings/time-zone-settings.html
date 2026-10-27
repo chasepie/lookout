@@ -4,7 +4,7 @@
   @if (timeZone.settings.error()) {
     <p class="error" role="alert">Could not load the time zone. <button type="button" (click)="timeZone.settings.reload()">Try again</button></p>
   } @else if (timeZone.settings.hasValue()) {
-    @if (timeZone.effective() !== timeZone.current()) {
+    @if (timeZone.known() === false) {
       <p class="error" role="alert">
         Lookout's host doesn't know {{ timeZone.current() }}, so daily and cron Schedules run in {{ timeZone.effective() }}
         until you save a time zone it knows.

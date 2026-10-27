@@ -93,6 +93,7 @@ public sealed class TimeZoneTests(TestContext testContext)
 
         Assert.AreEqual("Mars/Olympus_Mons", settings!["timeZone"]!.GetValue<string>());
         Assert.AreEqual("Asia/Tokyo", settings["effectiveTimeZone"]!.GetValue<string>());
+        Assert.IsFalse(settings["timeZoneKnown"]!.GetValue<bool>());
         Assert.AreEqual(At("2026-10-20T00:00:00Z"), await NextRunAt(client, id));
     }
 
@@ -106,6 +107,7 @@ public sealed class TimeZoneTests(TestContext testContext)
         var settings = await client.GetFromJsonAsync<JsonObject>("/api/settings", testContext.CancellationToken);
 
         Assert.AreEqual("Europe/London", settings!["effectiveTimeZone"]!.GetValue<string>());
+        Assert.IsTrue(settings["timeZoneKnown"]!.GetValue<bool>());
     }
 
     [TestMethod]
