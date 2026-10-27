@@ -100,7 +100,7 @@ public sealed class WatchSchedules(IServiceScopeFactory scopes, TimeProvider tim
 
         if (id.Length > MaximumTimeZoneLength
             || !TimeZoneInfo.TryFindSystemTimeZoneById(id, out var zone)
-            || !zone.HasIanaId)
+            || !CanBeSaved(zone))
         {
             var shown = id.Length > MaximumTimeZoneLength ? id[..MaximumTimeZoneLength] + "…" : id;
             return new ScheduleUpdate(ScheduleUpdateStatus.Invalid,

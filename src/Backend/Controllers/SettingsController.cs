@@ -65,7 +65,8 @@ public sealed class SettingsController(LookoutDbContext database, WatchSchedules
                 detail: "Lookout's settings are missing from its database, so they could not be saved.",
                 statusCode: HttpStatusCode.InternalServerError);
         }
-        return await Get(cancellationToken);
+        // Saved already, so a request cancelled now isn't reported as failing to save.
+        return await Get(CancellationToken.None);
     }
 
     /// <summary>
@@ -82,7 +83,8 @@ public sealed class SettingsController(LookoutDbContext database, WatchSchedules
             return Problem(detail: update.Problem!, statusCode: HttpStatusCode.BadRequest);
         }
 
-        var settings = await Get(cancellationToken);
+        // The change is saved, so it is pushed even if the request is cancelled now.
+        var settings = await Get(CancellationToken.None);
         if (update.Status == ScheduleUpdateStatus.Changed)
         {
             // So other tabs and devices name the new time zone in their schedule inputs, and show the new next Runs.
