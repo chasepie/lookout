@@ -127,7 +127,7 @@ Then open `http://<host>:8080` and log in. Lookout sets the Account from `LOOKOU
 | Variable                      | Default          | Meaning                                                                                                                                                                          |
 | ----------------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `LOOKOUT_RUNNER_TOKEN`        | required         | The token Lookout sends the runner with every Script, without which the runner refuses it: letters, digits, `-` and `_` only. Without it, Lookout and the runner stop at startup |
-| `LOOKOUT_BROWSERLESS_TOKEN`   | required         | The token Browserless requires on every route of its API, which runs code, so the pages it loads can't use it: letters, digits, `-` and `_` only, and not `LOOKOUT_RUNNER_TOKEN`, as Scripts are given it. Without it, the runner stops at startup |
+| `LOOKOUT_BROWSERLESS_TOKEN`   | required         | Browserless's API token, required on every route so pages can't use it: letters, digits, `-` and `_` only, not `LOOKOUT_RUNNER_TOKEN`. Without it, the runner stops at startup   |
 | `LOOKOUT_USERNAME`            | unset            | The Account's user name, 1 to 100 characters, which Lookout sets the Account from on every start. Set with `LOOKOUT_PASSWORD`, or Lookout stops at startup                       |
 | `LOOKOUT_PASSWORD`            | unset            | The Account's password, 8 to 1024 characters, which Lookout sets the Account from on every start. Set with `LOOKOUT_USERNAME`, or Lookout stops at startup                       |
 | `LOOKOUT_PORT`                | `8080`           | The host port Lookout is served on                                                                                                                                               |
@@ -252,10 +252,10 @@ The automated tests don't cover the real Browserless stack, so check a deploymen
    } satisfies LookoutScript;
    ```
 
-8. Check that a Script can run past Browserless's default timeout. Add `await page.waitForTimeout(45_000);` after `page.goto` in the Script, create a Watch with it and choose **Run now**. The Run Succeeds after about 45 seconds.
-8. Check that killed Scripts don't linger. Change the Script's wait to `await new Promise(() => {});`, so it never finishes, and choose **Run now** a few times. Each Run is Errored once its timeout passes. Afterwards, `docker compose top runner` lists only `docker-init` and `node index.ts`, with no `<defunct>` (zombie) process.
-9. Check that Lookout can reach your Notification channels. In **Settings**, add a Discord Notification channel with a webhook URL (or a Pushover Notification channel), and choose **Send test**. The test notification arrives.
-10. Check what pages can reach of Lookout through the Docker host ([ADR-0007](docs/adr/0007-scripts-are-trusted-and-direct-runs-reach-the-lan.md)). Find the host's gateway on Browserless's `internet` network with `docker network inspect lookout_internet --format '{{(index .IPAM.Config 0).Gateway}}'`, and upload this Script to a Watch, substituting it and your `LOOKOUT_PORT`, to start a Test run:
+8. Check that a Script can run past Browserless's default timeout. Add `await page.waitForTimeout(45_000);` after `page.goto` in `title.ts`, create a Watch with it and choose **Run now**. The Run Succeeds after about 45 seconds.
+9. Check that killed Scripts don't linger. Change the Script's wait to `await new Promise(() => {});`, so it never finishes, and choose **Run now** a few times. Each Run is Errored once its timeout passes. Afterwards, `docker compose top runner` lists only `docker-init` and `node index.ts`, with no `<defunct>` (zombie) process.
+10. Check that Lookout can reach your Notification channels. In **Settings**, add a Discord Notification channel with a webhook URL (or a Pushover Notification channel), and choose **Send test**. The test notification arrives.
+11. Check what pages can reach of Lookout through the Docker host ([ADR-0007](docs/adr/0007-scripts-are-trusted-and-direct-runs-reach-the-lan.md)). Find the host's gateway on Browserless's `internet` network with `docker network inspect lookout_internet --format '{{(index .IPAM.Config 0).Gateway}}'`, and upload this Script to a Watch, substituting it and your `LOOKOUT_PORT`, to start a Test run:
 
     ```ts
     import type { LookoutScript } from '@chasepie/lookout-scripting';
@@ -273,7 +273,7 @@ The automated tests don't cover the real Browserless stack, so check a deploymen
 
     The Test run Succeeds with `200 Healthy, 401`: the page reaches Lookout like any LAN device, but gets nothing that needs a login.
 
-11. Check that a Direct Test run can reach a LAN device ([ADR-0007](docs/adr/0007-scripts-are-trusted-and-direct-runs-reach-the-lan.md)). Choose an **HTTPS** page on a device you control, such as your router, and confirm it responds from your own browser. Use its LAN IP address, outside Docker's subnets, rather than a Docker gateway or a service published on the Docker host. Choose a page that does not redirect elsewhere. HTTPS is required so VPN step 8 can distinguish a response from the device from an HTTP error generated by the proxy. If no LAN device serves HTTPS, these checks are inconclusive. Save this Script as `lan.ts`:
+12. Check that a Direct Test run can reach a LAN device ([ADR-0007](docs/adr/0007-scripts-are-trusted-and-direct-runs-reach-the-lan.md)). Choose an **HTTPS** page on a device you control, such as your router, and confirm it responds from your own browser. Use its LAN IP address, outside Docker's subnets, rather than a Docker gateway or a service published on the Docker host. Choose a page that does not redirect elsewhere. HTTPS is required so VPN step 8 can distinguish a response from the device from an HTTP error generated by the proxy. If no LAN device serves HTTPS, these checks are inconclusive. Save this Script as `lan.ts`:
 
     ```ts
     import type { LookoutScript } from '@chasepie/lookout-scripting';
@@ -342,9 +342,9 @@ With the VPN set up, also check that VPN Runs leave from the VPN's exit and dire
    done
    ```
 
-   Pages can still reach Lookout's published port through the Docker host, as any LAN device can ([ADR-0007](docs/adr/0007-scripts-are-trusted-and-direct-runs-reach-the-lan.md)). Repeat step 10 above on a Watch with **Send Runs through the VPN** turned on: the Test run, through gluetun's proxy, also Succeeds with `200 Healthy, 401`.
+   Pages can still reach Lookout's published port through the Docker host, as any LAN device can ([ADR-0007](docs/adr/0007-scripts-are-trusted-and-direct-runs-reach-the-lan.md)). Repeat step 11 above on a Watch with **Send Runs through the VPN** turned on: the Test run, through gluetun's proxy, also Succeeds with `200 Healthy, 401`.
 
-8. Check that a VPN Test run cannot reach the same HTTPS LAN address from step 11 above. First confirm a VPN Test run of `ip.ts` succeeds with the VPN's exit IP, so an unavailable VPN cannot count as a LAN block. On the Paused `LAN reach probe` Watch, enable **Send Runs through the VPN**, save its settings, then choose **Upload new version** and select `lan.ts` again.
+8. Check that a VPN Test run cannot reach the same HTTPS LAN address from step 12 above. First confirm a VPN Test run of `ip.ts` succeeds with the VPN's exit IP, so an unavailable VPN cannot count as a LAN block. On the Paused `LAN reach probe` Watch, enable **Send Runs through the VPN**, save its settings, then choose **Upload new version** and select `lan.ts` again.
 
    Expect an Errored navigation timeout, `ERR_ADDRESS_UNREACHABLE`, or `ERR_TUNNEL_CONNECTION_FAILED`. HTTPS requires the proxy to establish a tunnel to the device: a rejected tunnel produces an error with no navigation response to record, instead of an HTTP 5xx that might be mistaken for the device's response. An HTTPS response from the device, or its certificate error as in the Direct Test run, means it was reached and fails this check. Refusal because the VPN isn't connected, an unavailable proxy, or any other error is inconclusive.
 

@@ -39,9 +39,11 @@ const loopback = new BlockList();
 loopback.addSubnet('127.0.0.0', 8, 'ipv4');
 loopback.addAddress('::1', 'ipv6');
 
-/** Whether only this machine can be at `address`, an IP address or a name */
-function isLoopback(address: string) {
-  return address === 'localhost' || (isIP(address) !== 0 && loopback.check(address, isIP(address) === 6 ? 'ipv6' : 'ipv4'));
+/** Whether only this machine can be at `host`: an IP address, one in brackets as URLs write IPv6, or a name */
+function isLoopback(host: string) {
+  const address = host.replace(/^\[(.*)\]$/, '$1');
+  const version = isIP(address);
+  return address === 'localhost' || (version !== 0 && loopback.check(address, version === 6 ? 'ipv6' : 'ipv4'));
 }
 
 const token = getEnvSetting('RUNNER_TOKEN');
@@ -59,11 +61,10 @@ if (browserlessUrl && !['ws:', 'wss:'].includes(browserlessEndpoint?.protocol ??
 }
 
 // Without a token, Browserless serves its whole API, including /function, which runs code, to any page it loads
-// (the brackets are an IPv6 address's)
-if (browserlessEndpoint && !browserlessEndpoint.searchParams.get('token')
-  && !isLoopback(browserlessEndpoint.hostname.replace(/^\[(.*)\]$/, '$1'))) {
-  console.error(`BROWSERLESS_URL must have a token, which LOOKOUT_BROWSERLESS_TOKEN sets, when Browserless is at `
-    + `${browserlessEndpoint.hostname}, which other machines can reach, since Browserless requires it only if given one`);
+if (browserlessEndpoint && !browserlessEndpoint.searchParams.get('token') && !isLoopback(browserlessEndpoint.hostname)) {
+  console.error(`BROWSERLESS_URL must have a token when Browserless is at ${browserlessEndpoint.hostname}, which other `
+    + 'machines can reach, since Browserless requires one only if given it. In Docker Compose, set '
+    + 'LOOKOUT_BROWSERLESS_TOKEN');
   process.exit(1);
 }
 

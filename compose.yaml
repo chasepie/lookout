@@ -6,7 +6,7 @@
 #                                such as from openssl rand -hex 32. Without it, Lookout and the runner stop at startup.
 #   LOOKOUT_BROWSERLESS_TOKEN    required: the token Browserless requires on every route of its API, which runs code,
 #                                so pages it loads can't use it: letters, digits, '-' and '_' only, such as from
-#                                openssl rand -hex 32, and not LOOKOUT_RUNNER_TOKEN, as Scripts can read it. Without
+#                                openssl rand -hex 32, and not LOOKOUT_RUNNER_TOKEN, as Scripts are given it. Without
 #                                it, the runner stops at startup. An .env that predates it needs it added to upgrade.
 #   LOOKOUT_USERNAME             recommended: the Account's user name and password, which Lookout sets the Account from
 #   LOOKOUT_PASSWORD             on every start, before it accepts requests. Set both before the first docker compose
@@ -72,9 +72,9 @@ services:
 
   # Runs trusted Scripts. Its internal networks have no direct internet access, but may allow Node code to reach
   # the Docker host's published ports on Linux Docker Engine (expected, not verified; ADR-0007). Nothing is mounted:
-  # no database, secrets or backend configuration (ADR-0003). Its secrets are the token it requires of Lookout,
-  # which Scripts' processes aren't given, and, connecting to Browserless, can't start a process to read from the runner's,
-  # and Browserless's token, which they are given, as they drive the browser anyway.
+  # no database, secrets or backend configuration (ADR-0003). It holds two secrets.
+  # The token it requires of Lookout: Scripts' processes aren't given it, and, connecting to Browserless, can't start a
+  # process to read it from the runner's. Browserless's token: Scripts' processes are given it, to open their browser.
   runner:
     build:
       context: .
