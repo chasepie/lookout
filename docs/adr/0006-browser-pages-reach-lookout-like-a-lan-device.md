@@ -11,7 +11,6 @@ Browserless's Chromium shares no Docker network with Lookout, but the pages it l
 ## Consequences
 
 - A page Browserless loads, such as one a Script visits or one that redirects or embeds another, can do what any LAN device can:
-  - **Guess the password.** Login has no rate limiting or lockout (ADR-0002's list of what internet exposure would need). A strong password is the defence.
+  - **Guess the password.** Since [#48](https://github.com/chasepie/lookout/issues/48), 5 failed logins from an address refuse its logins for the rest of a 5-minute window, about 1,400 guesses a day at most, which a strong password makes impractical. Pages share the Docker host's address, so a page failing logins on purpose can hold up other pages' logins, and LAN devices' if they reach Lookout through the same address, 5 minutes at a time.
   - **Set up the Account on a fresh install before its owner does.** Setup is open until an Account exists, to whoever reaches it first. A fresh install has no Runs of its own, but another browser that reaches the host does, such as another Lookout, or a test deployment, on the same host. Set up the Account straight after the first `docker compose up`.
 - Docs mustn't claim Browserless can't reach Lookout. They say it shares no network with Lookout but can reach its published port through the host, and README's smoke test checks that a page gets `Healthy` from `/health` through the host, so that any change in this exposure is noticed.
-- If Lookout is ever hardened for wider exposure (ADR-0002), login rate limiting closes the first risk for pages and LAN devices alike.

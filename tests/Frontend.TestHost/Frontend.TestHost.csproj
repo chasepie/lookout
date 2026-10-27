@@ -7,6 +7,7 @@
     <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
     <ProjectReference Include="../../src/Backend/Backend.csproj" />
     <Compile Include="../Backend.IntegrationTests/LookoutWebApplicationFactory.cs" Link="LookoutWebApplicationFactory.cs" />
+    <Compile Include="../Backend.IntegrationTests/ClientAddressStartupFilter.cs" Link="ClientAddressStartupFilter.cs" />
     <Compile Include="../Backend.IntegrationTests/FakeRunnerClient.cs" Link="FakeRunnerClient.cs" />
     <Compile Include="../Backend.IntegrationTests/RecordingNotificationChannels.cs" Link="RecordingNotificationChannels.cs" />
     <Compile Include="../Backend.IntegrationTests/FakeVpnRotator.cs" Link="FakeVpnRotator.cs" />
