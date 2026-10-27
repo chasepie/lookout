@@ -26,9 +26,9 @@ public sealed class LoginLimit(TimeProvider timeProvider)
     /// so that attempts made at once can't get past the limit. Returns how long to wait instead, if the address has
     /// reached it.
     /// </summary>
-    public TimeSpan? TryStart(IPAddress? address)
+    public TimeSpan? StartAttempt(IPAddress? address)
     {
-        var client = Client(address);
+        var client = ClientKey(address);
         var now = timeProvider.GetUtcNow();
         lock (_lock)
         {
@@ -53,7 +53,7 @@ public sealed class LoginLimit(TimeProvider timeProvider)
     {
         lock (_lock)
         {
-            _failures.Remove(Client(address));
+            _failures.Remove(ClientKey(address));
         }
     }
 
@@ -68,7 +68,7 @@ public sealed class LoginLimit(TimeProvider timeProvider)
         }
     }
 
-    private static IPAddress Client(IPAddress? address)
+    private static IPAddress ClientKey(IPAddress? address)
     {
         if (address is null)
         {

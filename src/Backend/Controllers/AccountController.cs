@@ -100,7 +100,7 @@ public sealed class AccountController(
         }
 
         var client = HttpContext.Connection.RemoteIpAddress;
-        if (loginLimit.TryStart(client) is { } wait)
+        if (loginLimit.StartAttempt(client) is { } wait)
         {
             return TooManyFailedLogins(wait);
         }
