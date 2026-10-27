@@ -65,7 +65,7 @@ The content of a Watch's most recent Succeeded Run, which the next Succeeded Run
 _Avoid_: Last value, Previous result
 
 **Account**:
-The single local login that protects Lookout, created by first-launch setup.
+The single local login that protects Lookout, created by first-launch setup, or set from the deployment's settings on every start.
 _Avoid_: User, Admin
 
 **Session**:

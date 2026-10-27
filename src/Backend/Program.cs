@@ -23,9 +23,11 @@ public class Program
     {
         var builder = WebApplication.CreateBuilder(args);
         ConfigureServices(builder.Services, builder.Configuration, builder.Environment);
+        var configuredAccount = ConfiguredAccount.Read(builder.Configuration);
 
         var app = builder.Build();
         await LookoutDatabase.MigrateAsync(app);
+        await ConfiguredAccount.ApplyAsync(app, configuredAccount);
         ConfigureApplication(app);
 
         await app.RunAsync();

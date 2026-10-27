@@ -6,7 +6,6 @@ using ChasePie.Lookout.Backend.Runner;
 using ChasePie.Lookout.Backend.Running;
 using ChasePie.Lookout.Backend.Scheduling;
 using ChasePie.Lookout.Database;
-using ChasePie.Lookout.Model;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;

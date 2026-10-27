@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Net;
 using System.Text;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Extensions;
 using Microsoft.AspNetCore.TestHost;

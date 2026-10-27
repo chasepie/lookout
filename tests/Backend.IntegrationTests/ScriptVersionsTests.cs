@@ -4,7 +4,6 @@ using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 using ChasePie.Lookout.Backend.Runner;
 using ChasePie.Lookout.Model;
-using Microsoft.AspNetCore.Hosting;
 
 namespace ChasePie.Lookout.Backend.IntegrationTests;
 
@@ -191,8 +190,12 @@ public sealed class ScriptVersionsTests(TestContext testContext)
             executed = request;
             return Task.FromResult(new RunnerResult
             {
-                Outcome = RunOutcome.Succeeded, Content = "£19", Details = "In stock", DurationMs = 42,
-                Screenshot = "iVBORw0KGgo=", ConsoleOutput = "Found the price\n"
+                Outcome = RunOutcome.Succeeded,
+                Content = "£19",
+                Details = "In stock",
+                DurationMs = 42,
+                Screenshot = "iVBORw0KGgo=",
+                ConsoleOutput = "Found the price\n"
             });
         };
 
