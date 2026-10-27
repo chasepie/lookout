@@ -40,11 +40,16 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
 
+      # Tests run offline (see offline.sh), so one that reaches a public site fails rather than depending on it
       - name: Test backend and runner client
-        run: dotnet test --solution Lookout.slnx --no-build
+        run: .github/workflows/scripts/offline.sh dotnet test --solution Lookout.slnx --no-build
+
+      # test:e2e without its browser tests, which run offline
+      - name: Build frontend and its test host
+        run: npm run build:frontend && dotnet build tests/Frontend.TestHost
 
       - name: Test frontend against the backend with a fake runner
-        run: npm run test:e2e
+        run: .github/workflows/scripts/offline.sh npm run e2e -w src/frontend
 
   node:
     name: Runner and Scripting
@@ -76,9 +81,9 @@ jobs:
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
-      # These tests use local pages; examples/ contacts a real bot-detection site.
+      # These tests use local pages, and run offline (see offline.sh); examples/ contacts a real bot-detection site.
       - name: Test runner
-        run: npm run test:runner
+        run: .github/workflows/scripts/offline.sh npm run test:runner
 
   images:
     name: Docker images
