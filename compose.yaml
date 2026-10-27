@@ -1,5 +1,7 @@
 # Lookout's deployment: see "Deploying" in README.md. Settings come from the environment or an .env file beside
-# this one, which example.env shows how to write:
+# this one, which example.env shows how to write. Read docs/user/security-considerations.md before deploying:
+# Scripts are trusted code. Direct Runs and their pages can reach the LAN; VPN Runs can still reach services
+# published on the Docker host through gluetun's own networks (ADR-0007).
 #   LOOKOUT_RUNNER_TOKEN         required: the token Lookout sends the runner: letters, digits, '-' and '_' only,
 #                                such as from openssl rand -hex 32. Without it, Lookout and the runner stop at startup.
 #   LOOKOUT_PORT                 the host port Lookout is served on (default 8080)
@@ -17,7 +19,7 @@
 #
 # Each pair of services that talk shares a network of its own, so Browserless's Chromium, which loads whatever pages
 # Scripts visit, shares no network with Lookout. Its pages can still reach Lookout's published port through the Docker
-# host, directly or through gluetun's proxy, like any LAN device, and get only what needs no login (ADR-0006). It can
+# host, directly or through gluetun's proxy, like any LAN device, and get only what needs no login (ADR-0007). It can
 # reach the runner, which refuses requests without the runner token and requests from web pages. gluetun's proxy forwards to every network gluetun is on, so gluetun and Lookout share none:
 # Lookout reaches gluetun's control server through a relay.
 name: lookout
@@ -55,9 +57,10 @@ services:
       browserless:
         condition: service_healthy
 
-  # Runs Scripts. It reaches only Browserless and Lookout, which calls it, and has nothing mounted: no database,
-  # secrets or backend configuration (ADR-0003). Its only secret is the token it requires of Lookout. Scripts' processes
-  # aren't given it, and, connecting to Browserless, can't start a process to read it from the runner's.
+  # Runs trusted Scripts. Its internal networks have no direct internet access, but may allow Node code to reach
+  # the Docker host's published ports on Linux Docker Engine (expected, not verified; ADR-0007). Nothing is mounted:
+  # no database, secrets or backend configuration (ADR-0003). Its only secret is the token it requires of Lookout.
+  # Scripts' processes aren't given it, and, connecting to Browserless, can't start a process to read it from the runner's.
   runner:
     build:
       context: .
@@ -86,7 +89,7 @@ services:
     security_opt:
       - no-new-privileges:true
 
-  # Runs the browsers Scripts drive, the only part of a Run that reaches the internet
+  # Runs the browsers Scripts drive, with internet and, for Direct Runs, LAN access (ADR-0007)
   browserless:
     # Its Playwright must match the runner's at the major.minor level: v2.57.1 serves Playwright 1.60 to 1.64
     image: ghcr.io/browserless/chromium:v2.57.1
@@ -168,19 +171,20 @@ services:
       - no-new-privileges:true
 
 networks:
-  # Lookout and the runner. No route out, so a Script's own Node code can't reach the internet.
+  # Internal networks have no direct internet route; they may still allow access to the host's published ports.
+  # Lookout and the runner
   runs:
     internal: true
-  # The runner and Browserless, with no route out either
+  # The runner and Browserless
   browsers:
     internal: true
-  # Lookout and the relay to gluetun's control server, with no route out
+  # Lookout and the relay to gluetun's control server
   vpn-control:
     internal: true
-  # The relay and gluetun, with no route out but through the VPN
+  # The relay and gluetun
   gluetun-control:
     internal: true
-  # Browserless and gluetun's proxy, with no route out but through the VPN
+  # Browserless and gluetun's proxy
   vpn-proxy:
     internal: true
   lan:

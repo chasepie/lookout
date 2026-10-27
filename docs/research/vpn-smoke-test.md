@@ -4,6 +4,8 @@ A live smoke test of the real deployment, Lookout, runner, Browserless, gluetun 
 
 **Result:** every VPN check passed. One isolation check failed: pages Browserless loads can reach Lookout through the Docker host's published port, directly and through gluetun's proxy, contradicting `compose.yaml`'s claim. That was [#44](https://github.com/chasepie/lookout/issues/44), decided by accepting it as the same reach any LAN device has, and correcting the docs: [ADR-0006](../adr/0006-browser-pages-reach-lookout-like-a-lan-device.md).
 
+**Later decision:** [ADR-0007](../adr/0007-scripts-are-trusted-and-direct-runs-reach-the-lan.md) supersedes ADR-0006 and records the wider LAN and Docker-host exposure, with Scripts treated as trusted code. The original results below are preserved as the record of this smoke test.
+
 ## Setup
 
 | | |
