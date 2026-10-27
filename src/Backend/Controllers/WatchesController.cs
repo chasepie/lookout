@@ -60,9 +60,16 @@ public sealed class WatchesController(
             UsesVpn = request.UsesVpn,
             JitterMinutes = request.JitterMinutes
         };
-        if (schedules.ScheduleFirstRun(watch) is { } scheduleProblem)
+
+        // Scheduled in the transaction that saves the Watch, so the install's time zone can't change in between.
+        await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
+        var scheduled = await schedules.ScheduleFirstRunAsync(watch, database, request.TimeZone, cancellationToken);
+        if (scheduled.Status != ScheduleUpdateStatus.Changed)
         {
-            return Problem(scheduleProblem, statusCode: HttpStatusCode.BadRequest);
+            var statusCode = scheduled.Status == ScheduleUpdateStatus.TimeZoneChanged
+                ? HttpStatusCode.Conflict
+                : HttpStatusCode.BadRequest;
+            return Problem(scheduled.Problem!, statusCode);
         }
 
         if (await FindNotificationChannels(request.NotificationChannelIds, cancellationToken) is not { } notificationChannels)
@@ -80,7 +87,6 @@ public sealed class WatchesController(
         };
         watch.ScriptVersions.Add(version);
 
-        await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
         database.Watches.Add(watch);
         try
         {
@@ -109,7 +115,12 @@ public sealed class WatchesController(
             return ScheduleMissing();
         }
 
-        var update = await schedules.ChangeScheduleAsync(id, schedule, request.JitterMinutes, cancellationToken);
+        var update = await schedules.ChangeScheduleAsync(
+            watchId: id,
+            schedule: schedule,
+            jitterMinutes: request.JitterMinutes,
+            shownTimeZone: request.TimeZone,
+            cancellationToken: cancellationToken);
         return update.Status switch
         {
             // Read back, unless the Watch was deleted since.
@@ -120,6 +131,9 @@ public sealed class WatchesController(
                 statusCode: HttpStatusCode.BadRequest),
             ScheduleUpdateStatus.KeptChanging => Problem(
                 detail: "Runs of this Watch kept starting while its schedule was being saved. Please try again.",
+                statusCode: HttpStatusCode.Conflict),
+            ScheduleUpdateStatus.TimeZoneChanged => Problem(
+                detail: update.Problem!,
                 statusCode: HttpStatusCode.Conflict),
             _ => throw new UnreachableException()
         };

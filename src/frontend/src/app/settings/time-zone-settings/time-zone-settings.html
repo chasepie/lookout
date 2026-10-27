@@ -1,0 +1,31 @@
+<section class="panel" aria-labelledby="time-zone-heading">
+  <h2 id="time-zone-heading">Time zone</h2>
+  <p>Daily and cron Schedules run at their times in this time zone. Changing it reschedules them from now.</p>
+  @if (timeZone.settings.error()) {
+    <p class="error" role="alert">Could not load the time zone. <button type="button" (click)="timeZone.settings.reload()">Try again</button></p>
+  } @else if (timeZone.settings.hasValue()) {
+    @if (timeZone.known() === false) {
+      <p class="error" role="alert">
+        Lookout's host doesn't know {{ timeZone.current() }}, so daily and cron Schedules run in {{ timeZone.effective() }}
+        until you save a time zone it knows.
+      </p>
+    }
+    <form (submit)="$event.preventDefault(); save()">
+      <label for="time-zone">Time zone</label>
+      <input id="time-zone" [formField]="timeZoneForm.timeZone" list="time-zone-suggestions" autocomplete="off" spellcheck="false"
+        aria-describedby="time-zone-help" />
+      <datalist id="time-zone-suggestions">
+        @for (suggestion of suggestions; track suggestion) { <option [value]="suggestion"></option> }
+      </datalist>
+      <small id="time-zone-help">An IANA time zone, such as Europe/London. Interval schedules aren't affected.</small>
+      @if (timeZoneForm.timeZone().touched() && timeZoneForm.timeZone().errors()[0]; as error) {
+        <small class="error">{{ error.message }}</small>
+      }
+      <button class="primary" type="submit" [disabled]="timeZoneForm().submitting() || timeZoneForm().invalid()">
+        {{ timeZoneForm().submitting() ? 'Saving…' : 'Save' }}
+      </button>
+    </form>
+  } @else {
+    <p>Loading the time zone…</p>
+  }
+</section>

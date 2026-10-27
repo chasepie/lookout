@@ -29,7 +29,7 @@
     @case ('daily') {
       <label [for]="id + '-time'">Time of day</label>
       <input [id]="id + '-time'" type="time" [formField]="schedule().timeOfDay" [attr.aria-describedby]="id + '-zone-help'" />
-      <small [id]="id + '-zone-help'">In Lookout's time zone.</small>
+      <small [id]="id + '-zone-help'">In {{ zoneDescription() }}.</small>
       @if (schedule().timeOfDay().touched()) {
         @for (error of schedule().timeOfDay().errors(); track error.kind) { <small class="error">{{ error.message }}</small> }
       }
@@ -38,7 +38,7 @@
       <label [for]="id + '-cron'">Cron expression</label>
       <input [id]="id + '-cron'" [formField]="schedule().cron" placeholder="e.g. 30 9 * * 1-5" spellcheck="false"
         [attr.aria-describedby]="id + '-cron-help'" />
-      <small [id]="id + '-cron-help'">Five fields: minute, hour, day of month, month and day of week, in Lookout's time zone.</small>
+      <small [id]="id + '-cron-help'">Five fields: minute, hour, day of month, month and day of week, in {{ zoneDescription() }}.</small>
       @if (schedule().cron().touched()) {
         @for (error of schedule().cron().errors(); track error.kind) { <small class="error">{{ error.message }}</small> }
       }

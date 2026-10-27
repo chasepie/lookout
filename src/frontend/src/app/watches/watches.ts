@@ -1,15 +1,17 @@
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Service, inject } from '@angular/core';
-import { firstValueFrom, fromEvent, takeUntil } from 'rxjs';
+import { type Observable, firstValueFrom, fromEvent, takeUntil } from 'rxjs';
 import { refreshableHttpResource } from '../shared/refreshable-http-resource';
 import { type ScheduleForm, scheduleFields } from '../schedules/schedule';
 import { Session } from '../session/session';
+import { InstallTimeZone } from '../settings/install-time-zone';
 import type { Run, ScriptVersion, ScriptVersionSource, TestRun, Watch, WatchSettings } from './watch.model';
 
 @Service()
 export class Watches {
   private readonly http = inject(HttpClient);
   private readonly session = inject(Session);
+  private readonly timeZone = inject(InstallTimeZone);
   // Loaded only while logged in, so it is fetched again for the next login. Refreshing keeps the Watches on screen
   // until the new list arrives.
   readonly list = refreshableHttpResource<Watch[]>(() => (this.session.userName() ? { url: '/api/watches' } : undefined));
@@ -27,11 +29,15 @@ export class Watches {
       data.append('notificationChannelIds', id);
     }
     data.set('script', script);
-    return firstValueFrom(this.http.post<Watch>('/api/watches', data));
+    return this.inShownTimeZone((timeZone) => {
+      if (timeZone) {data.set('timeZone', timeZone);}
+      return this.http.post<Watch>('/api/watches', data);
+    });
   }
 
   changeSchedule(id: string, schedule: ScheduleForm) {
-    return firstValueFrom(this.http.put<Watch>(`/api/watches/${id}/schedule`, scheduleFields(schedule)));
+    return this.inShownTimeZone((timeZone) =>
+      this.http.put<Watch>(`/api/watches/${id}/schedule`, { ...scheduleFields(schedule), timeZone }));
   }
 
   edit(id: string, settings: WatchSettings) {
@@ -83,5 +89,19 @@ export class Watches {
 
   history(id: string, before: number, limit: number) {
     return firstValueFrom(this.http.get<Run[]>(`/api/watches/${id}/runs`, { params: { before, limit } }));
+  }
+
+  /**
+   * Sends a schedule with the time zone the form names its daily and cron times in, which Lookout refuses if it has
+   * changed since, such as in another tab whose change this one hasn't heard of yet. Refused, the time zone is read
+   * again, so the form names the one the schedule would now run in.
+   */
+  private async inShownTimeZone<T>(send: (timeZone: string | undefined) => Observable<T>) {
+    try {
+      return await firstValueFrom(send(this.timeZone.effective()));
+    } catch (error: unknown) {
+      if (error instanceof HttpErrorResponse && error.status === 409) {this.timeZone.settings.refresh();}
+      throw error;
+    }
   }
 }

@@ -30,6 +30,7 @@ export type WatchEvent =
   | ({ type: 'runFinished' } & RunFinished)
   | ({ type: 'watchStatusChanged' } & WatchStatusChanged)
   | { type: 'vpnStatusChanged'; vpn: Vpn }
+  | { type: 'timeZoneChanged'; timeZone: string }
   | { type: 'connected' };
 
 const maxRetryDelayMs = 30_000;
@@ -64,6 +65,8 @@ export class WatchEvents {
       connection.on('WatchStatusChanged', (event: WatchStatusChanged) =>
         this.subject.next({ type: 'watchStatusChanged', ...event }));
       connection.on('VpnStatusChanged', (vpn: Vpn) => this.subject.next({ type: 'vpnStatusChanged', vpn }));
+      connection.on('TimeZoneChanged', (event: { timeZone: string }) =>
+        this.subject.next({ type: 'timeZoneChanged', ...event }));
       const closed = new Promise<void>((resolve) => connection.onclose(() => resolve()));
       const stop = () => void connection.stop();
       stopped.addEventListener('abort', stop);

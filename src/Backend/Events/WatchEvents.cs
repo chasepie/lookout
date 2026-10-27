@@ -14,8 +14,11 @@ public sealed record RunFinishedEvent(Guid WatchId, long? RunId, RunOutcome? Out
 
 public sealed record WatchStatusChangedEvent(Guid WatchId, WatchStatus Status);
 
+/// <summary>The install's time zone has changed, and with it every daily and cron Watch's next Run.</summary>
+public sealed record TimeZoneChangedEvent(string TimeZone);
+
 /// <summary>
-/// Pushes what happens to Watches, and to the VPN they may go through, to the app over <see cref="WatchEventsHub"/>.
+/// Pushes what happens to Watches, to the VPN they may go through and to the time zone they run in, to the app over <see cref="WatchEventsHub"/>.
 /// Pushing never fails or holds up a Run for long: a failed or stalled push is logged, and the app catches up when
 /// it next reads.
 /// </summary>
@@ -42,6 +45,9 @@ public sealed partial class WatchEvents(
         SendAsync(clients => clients.WatchStatusChanged(new WatchStatusChangedEvent(watchId, status)));
 
     public Task VpnStatusChangedAsync(VpnStatus status) => SendAsync(clients => clients.VpnStatusChanged(status));
+
+    public Task TimeZoneChangedAsync(string timeZone) =>
+        SendAsync(clients => clients.TimeZoneChanged(new TimeZoneChangedEvent(timeZone)));
 
     private async Task SendAsync(Func<IWatchEventsClient, Task> send)
     {

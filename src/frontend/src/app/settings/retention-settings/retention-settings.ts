@@ -3,16 +3,12 @@ import { ChangeDetectionStrategy, Component, computed, inject, linkedSignal, out
 import { FormField, form, max, min, required, submit, validate } from '@angular/forms/signals';
 import { firstValueFrom } from 'rxjs';
 import { problemMessage } from '../../shared/problem';
-import { refreshableHttpResource } from '../../shared/refreshable-http-resource';
+import { InstallSettings } from '../install-settings';
+import type { LookoutSettings } from '../settings.model';
 
 /** The backend's limits on how many days Runs are kept */
 const minRetentionDays = 1;
 const maxRetentionDays = 3650;
-
-/** The settings at /api/settings */
-interface LookoutSettings {
-  retentionDays: number;
-}
 
 /**
  * How long Runs are kept before they are pruned. Changes are kept forever. It reports saving through its outputs, for
@@ -22,15 +18,15 @@ interface LookoutSettings {
   selector: 'app-retention-settings',
   imports: [FormField],
   templateUrl: './retention-settings.html',
-  styleUrl: './retention-settings.scss',
+  styleUrl: '../settings-form-panel.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class RetentionSettings {
   private readonly http = inject(HttpClient);
-  protected readonly settings = refreshableHttpResource<LookoutSettings>(() => ({ url: '/api/settings' }));
+  protected readonly settings = inject(InstallSettings).resource;
   private readonly saved = computed(() => (this.settings.hasValue() ? this.settings.value().retentionDays : undefined));
   // The form is shown only once the settings have loaded, so the placeholder before then is never seen.
-  protected readonly model = linkedSignal<number | undefined, LookoutSettings>({
+  protected readonly model = linkedSignal<number | undefined, Pick<LookoutSettings, 'retentionDays'>>({
     source: this.saved,
     computation: (retentionDays) => ({ retentionDays: retentionDays ?? 0 }),
   });

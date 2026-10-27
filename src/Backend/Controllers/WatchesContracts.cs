@@ -83,4 +83,9 @@ public class ScheduleRequest
     public TimeOnly? TimeOfDay { get; init; }
     public string? Cron { get; init; }
     public int JitterMinutes { get; init; }
+    /// <summary>
+    /// The time zone the app's form named the daily or cron times in. If given and no longer the install's, such as
+    /// after a change made in another tab, the schedule isn't used.
+    /// </summary>
+    public string? TimeZone { get; init; }
 }

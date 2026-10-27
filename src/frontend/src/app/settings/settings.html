@@ -1,7 +1,7 @@
 <div class="page-heading">
   <p class="eyebrow">LOOKOUT</p>
   <h1>Settings</h1>
-  <p>Choose where Lookout tells you about Changes and Watches that need attention, and how long it keeps their Run history. See whether the VPN is connected.</p>
+  <p>Choose where Lookout tells you about Changes and Watches that need attention, how long it keeps their Run history, and the time zone their schedules use. See whether the VPN is connected.</p>
 </div>
 <p class="notice" role="status">{{ notice() }}</p>
 @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
@@ -83,4 +83,5 @@
 <div class="workspace more-settings">
   <app-retention-settings (saveSucceeded)="showNotice($event)" (saveFailed)="showError($event)" />
   <app-vpn-status />
+  <app-time-zone-settings (saveSucceeded)="showNotice($event)" (saveFailed)="showError($event)" />
 </div>

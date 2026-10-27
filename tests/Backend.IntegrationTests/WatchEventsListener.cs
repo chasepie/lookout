@@ -23,7 +23,7 @@ public sealed class WatchEventsListener : IAsyncDisposable
     private static readonly string[] EventNames =
     [
         nameof(IWatchEventsClient.RunStarted), nameof(IWatchEventsClient.RunFinished),
-        nameof(IWatchEventsClient.WatchStatusChanged)
+        nameof(IWatchEventsClient.WatchStatusChanged), nameof(IWatchEventsClient.TimeZoneChanged)
     ];
     private static readonly TimeSpan EventTimeout = TimeSpan.FromSeconds(5);
 
