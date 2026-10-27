@@ -266,15 +266,28 @@ The automated tests don't cover the real Browserless stack, so check a deploymen
         if (new URL(context.notificationUrl).protocol !== 'https:') {
           throw new Error('Use an HTTPS LAN address for this probe.');
         }
-        const response = await page.goto(context.notificationUrl, { timeout: 8000, waitUntil: 'commit' });
-        return { success: true, content: `HTTPS response: HTTP ${response?.status()}` };
+        // Chromium can fail loading an empty 401 or 403 after reporting its response.
+        let status: number | undefined;
+        page.on('response', (response) => {
+          if (response.request().isNavigationRequest() && response.frame() === page.mainFrame()) {
+            status = response.status();
+          }
+        });
+        try {
+          await page.goto(context.notificationUrl, { timeout: 8000, waitUntil: 'commit' });
+        } catch (error) {
+          if (status === undefined) {
+            throw error;
+          }
+        }
+        return { success: true, content: `HTTPS response: HTTP ${status}` };
       },
     } satisfies LookoutScript;
     ```
 
     In **Create a Watch**, enter the name `LAN reach probe`, the HTTPS address as its Notification URL, and `lan.ts` as its Script. Set its Schedule to every 1 day with no Jitter, leave **Send Runs through the VPN** off, and select no Notification channels. Choose **Create Watch**, open its page, and immediately choose **Pause**. Then choose **Upload new version** and select `lan.ts` again: this selection starts the Test run. Creating the Watch alone does not.
 
-    Expect `HTTPS response: HTTP ...`; even a 401 or 403 proves the device was reached. `waitUntil: 'commit'` returns when response headers arrive, before Chromium can fail loading an empty authentication-error page. An Errored result with the device's certificate error (such as `ERR_CERT_COMMON_NAME_INVALID`) also proves reach. A timeout or unreachable-address error does not: check the address and network before continuing. Record the response or certificate error for comparison in VPN step 8.
+    Expect `HTTPS response: HTTP ...`; even a 401 or 403 proves the device was reached. The Script records the main-frame navigation response before Chromium can fail loading an empty authentication-error page, so those errors still report the device's HTTP status. An Errored result with the device's certificate error (such as `ERR_CERT_COMMON_NAME_INVALID`) also proves reach. A timeout or unreachable-address error does not: check the address and network before continuing. Record the response or certificate error for comparison in VPN step 8.
 
     Keep this Watch Paused for VPN step 8, then delete it. If no VPN is configured, delete it after this Direct Test run. This records the accepted exposure without leaving scheduled Runs against the device.
 
@@ -310,7 +323,7 @@ With the VPN set up, also check that VPN Runs leave from the VPN's exit and dire
 
 8. Check that a VPN Test run cannot reach the same HTTPS LAN address from step 11 above. First confirm a VPN Test run of `ip.ts` succeeds with the VPN's exit IP, so an unavailable VPN cannot count as a LAN block. On the Paused `LAN reach probe` Watch, enable **Send Runs through the VPN**, save its settings, then choose **Upload new version** and select `lan.ts` again.
 
-   Expect an Errored navigation timeout, `ERR_ADDRESS_UNREACHABLE`, or `ERR_TUNNEL_CONNECTION_FAILED`. HTTPS requires the proxy to establish a tunnel to the device: a rejected tunnel produces an error, instead of an HTTP 5xx that might be mistaken for the device's response. An HTTPS response from the device, or its certificate error as in the Direct Test run, means it was reached and fails this check. Refusal because the VPN isn't connected, an unavailable proxy, or any other error is inconclusive.
+   Expect an Errored navigation timeout, `ERR_ADDRESS_UNREACHABLE`, or `ERR_TUNNEL_CONNECTION_FAILED`. HTTPS requires the proxy to establish a tunnel to the device: a rejected tunnel produces an error with no navigation response to record, instead of an HTTP 5xx that might be mistaken for the device's response. An HTTPS response from the device, or its certificate error as in the Direct Test run, means it was reached and fails this check. Refusal because the VPN isn't connected, an unavailable proxy, or any other error is inconclusive.
 
    Repeat the public `ip.ts` VPN Test run to confirm the VPN still works. Then turn the VPN off on the Paused LAN Watch, save its settings, and repeat its Direct Test run to confirm the device still responds. Both controls must pass before counting the LAN block as verified. Delete `LAN reach probe` afterwards. Together these check that Direct Runs reach the LAN and VPN Runs do not, while step 7 separately checks the accepted host-port access.
 
