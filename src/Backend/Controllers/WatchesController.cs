@@ -115,7 +115,8 @@ public sealed class WatchesController(
             return ScheduleMissing();
         }
 
-        var update = await schedules.ChangeScheduleAsync(id, schedule, request.JitterMinutes, cancellationToken);
+        var update = await schedules.ChangeScheduleAsync(id, schedule, request.JitterMinutes, request.TimeZone,
+            cancellationToken);
         return update.Status switch
         {
             // Read back, unless the Watch was deleted since.
@@ -126,6 +127,9 @@ public sealed class WatchesController(
                 statusCode: HttpStatusCode.BadRequest),
             ScheduleUpdateStatus.KeptChanging => Problem(
                 detail: "Runs of this Watch kept starting while its schedule was being saved. Please try again.",
+                statusCode: HttpStatusCode.Conflict),
+            ScheduleUpdateStatus.TimeZoneChanged => Problem(
+                detail: update.Problem!,
                 statusCode: HttpStatusCode.Conflict),
             _ => throw new UnreachableException()
         };

@@ -244,6 +244,62 @@ public sealed class TimeZoneTests(TestContext testContext)
     }
 
     [TestMethod]
+    [DataRow("daily", "10:00")]
+    [DataRow("cron", "0 10 * * *")]
+    public async Task RefusesAScheduleEditGivenInATimeZoneThatIsNoLongerTheInstalls(string kind, string time)
+    {
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
+        var watch = await CreateWatch(client, Daily("09:00"));
+        var id = watch["id"]!.GetValue<string>();
+        // As if another tab changed it while this one's form still named UTC.
+        (await ChangeTimeZone(client, "Asia/Tokyo")).EnsureSuccessStatusCode();
+        var before = await Watch(client, id);
+        var fields = kind == "daily" ? Daily(time) : Cron(time);
+        fields["timeZone"] = "UTC";
+
+        var response = await client.PutAsJsonAsync($"/api/watches/{id}/schedule", fields, testContext.CancellationToken);
+
+        Assert.AreEqual(HttpStatusCode.Conflict, response.StatusCode);
+        var problem = await response.Content.ReadFromJsonAsync<JsonObject>(testContext.CancellationToken);
+        Assert.Contains("changed to Asia/Tokyo", problem!["detail"]!.GetValue<string>());
+        var after = await Watch(client, id);
+        Assert.AreEqual(before["schedule"]!.ToJsonString(), after["schedule"]!.ToJsonString());
+        Assert.AreEqual(before["nextRunAt"]!.GetValue<DateTimeOffset>(), after["nextRunAt"]!.GetValue<DateTimeOffset>());
+    }
+
+    [TestMethod]
+    public async Task SavesAScheduleEditGivenInTheInstallsTimeZone()
+    {
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
+        var id = (await CreateWatch(client, Daily("09:00")))["id"]!.GetValue<string>();
+        (await ChangeTimeZone(client, "Asia/Tokyo")).EnsureSuccessStatusCode();
+        var fields = Daily("10:00");
+        fields["timeZone"] = "Asia/Tokyo";
+
+        var response = await client.PutAsJsonAsync($"/api/watches/{id}/schedule", fields, testContext.CancellationToken);
+
+        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+        Assert.AreEqual(At("2026-10-20T01:00:00Z"), await NextRunAt(client, id));
+    }
+
+    [TestMethod]
+    public async Task SavesAnIntervalScheduleEditWhateverTimeZoneItWasGivenIn()
+    {
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
+        var id = (await CreateWatch(client, Daily("09:00")))["id"]!.GetValue<string>();
+        (await ChangeTimeZone(client, "Asia/Tokyo")).EnsureSuccessStatusCode();
+
+        var response = await client.PutAsJsonAsync($"/api/watches/{id}/schedule",
+            new Dictionary<string, string> { ["scheduleKind"] = "interval", ["every"] = "1", ["unit"] = "hours", ["timeZone"] = "UTC" },
+            testContext.CancellationToken);
+
+        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [TestMethod]
     public async Task PushesAChangeOfTimeZoneToTheApp()
     {
         await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };

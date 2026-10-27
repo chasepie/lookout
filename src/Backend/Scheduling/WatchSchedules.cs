@@ -130,8 +130,8 @@ public sealed class WatchSchedules(IServiceScopeFactory scopes, TimeProvider tim
     /// <summary>
     /// Schedules the first Run of a Watch not yet saved, from its Schedule and Jitter, or explains why they can't be used.
     /// Call it in the transaction that saves the Watch, which holds off a change of time zone until it commits.
-    /// A daily or cron Schedule whose times were given in <paramref name="shownTimeZone"/>, as the app's form names it, is
-    /// refused if that is no longer the time zone they would run in, such as after a change made in another tab.
+    /// A daily or cron Schedule given in a time zone that is no longer the install's is refused (see
+    /// <see cref="TimeZoneChangedSince"/>).
     /// </summary>
     public async Task<ScheduleUpdate> ScheduleFirstRunAsync(Watch watch, LookoutDbContext database, string? shownTimeZone,
         CancellationToken cancellationToken)
@@ -143,11 +143,9 @@ public sealed class WatchSchedules(IServiceScopeFactory scopes, TimeProvider tim
         }
 
         var timeZone = await ReadTimeZoneAsync(database, cancellationToken);
-        if (shownTimeZone is not null && watch.Schedule.Kind != ScheduleKind.Interval && shownTimeZone != timeZone.Zone.Id)
+        if (TimeZoneChangedSince(shownTimeZone, watch.Schedule, timeZone) is { } changed)
         {
-            return new ScheduleUpdate(ScheduleUpdateStatus.TimeZoneChanged,
-                $"Lookout's time zone changed to {timeZone.Zone.Id} while this Watch was being created, so it wasn't. " +
-                $"Check its time, which is now in {timeZone.Zone.Id}, and create it again.");
+            return changed;
         }
 
         if (Validate(timeZone, watch.Schedule, watch.JitterMinutes) is { } problem)
@@ -164,13 +162,18 @@ public sealed class WatchSchedules(IServiceScopeFactory scopes, TimeProvider tim
     /// Replaces the Watch's Schedule and Jitter and schedules its next Run, still clear of its last, unless it is Paused.
     /// </summary>
     public async Task<ScheduleUpdate> ChangeScheduleAsync(Guid watchId, Schedule schedule, int jitterMinutes,
-        CancellationToken cancellationToken)
+        string? shownTimeZone, CancellationToken cancellationToken)
     {
         await using var scope = scopes.CreateAsyncScope();
         var database = scope.ServiceProvider.GetRequiredService<LookoutDbContext>();
         for (var attempt = 0; attempt < Attempts; attempt++)
         {
             var timeZone = await ReadTimeZoneAsync(database, cancellationToken);
+            if (TimeZoneChangedSince(shownTimeZone, schedule, timeZone) is { } changed)
+            {
+                return changed;
+            }
+
             if (Validate(timeZone, schedule, jitterMinutes) is { } problem)
             {
                 return new ScheduleUpdate(ScheduleUpdateStatus.Invalid, problem);
@@ -383,6 +386,17 @@ public sealed class WatchSchedules(IServiceScopeFactory scopes, TimeProvider tim
 
     private static TimeZoneInfo? FindSaved(string? id) =>
         id is not null && TimeZoneInfo.TryFindSystemTimeZoneById(id, out var zone) ? zone : null;
+
+    /// <summary>
+    /// Refuses a daily or cron Schedule whose times were given in <paramref name="shownTimeZone"/>, as the app's form
+    /// names it, if that is no longer the time zone they would run in, such as after a change made in another tab.
+    /// </summary>
+    private static ScheduleUpdate? TimeZoneChangedSince(string? shownTimeZone, Schedule schedule, SavedTimeZone timeZone) =>
+        shownTimeZone is not null && schedule.Kind != ScheduleKind.Interval && shownTimeZone != timeZone.Zone.Id
+            ? new ScheduleUpdate(ScheduleUpdateStatus.TimeZoneChanged,
+                $"Lookout's time zone changed to {timeZone.Zone.Id} since this schedule was shown, so it wasn't saved. " +
+                $"Check its time, which is now in {timeZone.Zone.Id}, and try again.")
+            : null;
 
     /// <summary>Whether the install's time zone is still the one read, so a next Run worked out in it is current.</summary>
     private static Expression<Func<Watch, bool>> StillIn(LookoutDbContext database, SavedTimeZone timeZone)

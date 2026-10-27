@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
-import { changeTimeZone } from './watches';
+import { changeTimeZone, createWatch } from './watches';
 
 // The time zone is install-wide, so these tests mustn't run alongside each other.
 test.describe.configure({ mode: 'serial' });
@@ -90,6 +90,34 @@ test('a daily Watch given in a time zone that has since changed is refused, and 
     await expect(page.getByRole('alert')).toContainText(`Lookout's time zone changed to ${chosen}`);
     await expect(page.getByText(`In Lookout's time zone, ${chosen}.`)).toBeVisible();
     await expect(page.getByRole('article', { name })).toHaveCount(0);
+  } finally {
+    await changeTimeZone(page, original);
+  }
+});
+
+test('a schedule edit given in a time zone that has since changed is refused, and the form names the new one', async ({ page }) => {
+  // As if this tab hasn't heard of a change made in another: no events reach it.
+  await page.route('**/api/events/negotiate*', (route) => route.abort());
+  const original = ((await (await page.request.get('/api/settings')).json()) as { timeZone: string }).timeZone;
+  const chosen = original === 'Asia/Kathmandu' ? 'Pacific/Chatham' : 'Asia/Kathmandu';
+  const name = `Edit refused in ${original} ${randomUUID()}`;
+  const id = await createWatch(page, name);
+  await page.goto('/');
+  const card = page.getByRole('article', { name });
+  await card.getByRole('button', { name: 'Edit schedule' }).click();
+  await card.getByLabel('Schedule', { exact: true }).selectOption('Daily at a set time');
+  await expect(card.getByText(`In Lookout's time zone, ${original}.`)).toBeVisible();
+  await card.getByLabel('Time of day').fill('07:45');
+
+  try {
+    await changeTimeZone(page, chosen);
+    await expect(card.getByText(`In Lookout's time zone, ${original}.`)).toBeVisible();
+    await card.getByRole('button', { name: 'Save schedule' }).click();
+
+    await expect(card.getByRole('alert')).toContainText(`Lookout's time zone changed to ${chosen}`);
+    await expect(card.getByText(`In Lookout's time zone, ${chosen}.`)).toBeVisible();
+    const watch = (await (await page.request.get(`/api/watches/${id}`)).json()) as { schedule: { kind: string } };
+    expect(watch.schedule.kind).toBe('interval');
   } finally {
     await changeTimeZone(page, original);
   }
