@@ -49,22 +49,21 @@ public sealed class AccountController(
             return AccountAlreadyExists();
         }
 
-        var userName = credentials.UserName.Trim();
-        if (userName.Length is < 1 or > 100)
+        if (!Account.IsValidUserName(credentials.UserName))
         {
             return Problem(
-                detail: "User name must contain between 1 and 100 characters.",
+                detail: $"User name must contain between {Account.MinimumUserNameLength} and {Account.MaximumUserNameLength} characters.",
                 statusCode: HttpStatusCode.BadRequest);
         }
 
-        if (credentials.Password.Length is < 8 or > 1024)
+        if (!Account.IsValidPassword(credentials.Password))
         {
             return Problem(
-                detail: "Password must contain between 8 and 1024 characters.",
+                detail: $"Password must contain between {Account.MinimumPasswordLength} and {Account.MaximumPasswordLength} characters.",
                 statusCode: HttpStatusCode.BadRequest);
         }
 
-        var account = new Account { UserName = userName, PasswordHash = "" };
+        var account = new Account { UserName = credentials.UserName.Trim(), PasswordHash = "" };
         account.PasswordHash = passwordHasher.HashPassword(account, credentials.Password);
         database.Accounts.Add(account);
 

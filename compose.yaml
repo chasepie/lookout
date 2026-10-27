@@ -4,6 +4,10 @@
 # published on the Docker host through gluetun's own networks (ADR-0007).
 #   LOOKOUT_RUNNER_TOKEN         required: the token Lookout sends the runner: letters, digits, '-' and '_' only,
 #                                such as from openssl rand -hex 32. Without it, Lookout and the runner stop at startup.
+#   LOOKOUT_USERNAME             recommended: the Account's user name and password, which Lookout sets the Account from
+#   LOOKOUT_PASSWORD             on every start, before it accepts requests. Set both before the first docker compose
+#                                up, so no one else can set up the Account first; change them and run it again to
+#                                change or recover the password. Set both or neither, or Lookout stops at startup.
 #   LOOKOUT_PORT                 the host port Lookout is served on (default 8080)
 #   LOOKOUT_TIME_ZONE            the time zone a new install's schedules start with, such as Europe/London (default
 #                                UTC); once saved, it is changed in Settings instead
@@ -36,6 +40,9 @@ services:
       Runner__BaseUrl: http://runner:3000
       # Not required here with :?, which would stop every compose command, even down and logs, without it
       Runner__Token: ${LOOKOUT_RUNNER_TOKEN:-}
+      # Without both, the Account is set up in the app, by whoever reaches it first
+      Account__UserName: ${LOOKOUT_USERNAME:-}
+      Account__Password: ${LOOKOUT_PASSWORD:-}
       Scheduling__TimeZone: ${LOOKOUT_TIME_ZONE:-}
       Scheduling__MaxConcurrentRuns: ${LOOKOUT_MAX_CONCURRENT_RUNS:-2}
       # Without a key, the VPN is disabled and VPN Runs are refused

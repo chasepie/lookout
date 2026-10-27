@@ -26,6 +26,7 @@ public class Program
 
         var app = builder.Build();
         await LookoutDatabase.MigrateAsync(app);
+        await ConfiguredAccount.ApplyAsync(app);
         ConfigureApplication(app);
 
         await app.RunAsync();
