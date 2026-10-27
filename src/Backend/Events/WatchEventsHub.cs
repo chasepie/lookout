@@ -13,6 +13,7 @@ public interface IWatchEventsClient
     Task RunFinished(RunFinishedEvent message);
     Task WatchStatusChanged(WatchStatusChangedEvent message);
     Task VpnStatusChanged(VpnStatus message);
+    Task TimeZoneChanged(TimeZoneChangedEvent message);
 }
 
 /// <summary>

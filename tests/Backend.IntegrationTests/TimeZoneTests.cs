@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
+using ChasePie.Lookout.Backend.Events;
 using ChasePie.Lookout.Backend.Running;
 using ChasePie.Lookout.Backend.Scheduling;
 using ChasePie.Lookout.Database;
@@ -191,6 +192,23 @@ public sealed class TimeZoneTests(TestContext testContext)
         {
             File.Delete(databasePath);
         }
+    }
+
+    [TestMethod]
+    public async Task PushesAChangeOfTimeZoneToTheApp()
+    {
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
+        await using var listener = await WatchEventsListener.ConnectAsync(factory, testContext.CancellationToken);
+
+        // Neither saving the time zone already saved nor an unknown one changes it, so only the last save is pushed.
+        (await ChangeTimeZone(client, "UTC")).EnsureSuccessStatusCode();
+        Assert.AreEqual(HttpStatusCode.BadRequest, (await ChangeTimeZone(client, "Mars/Olympus_Mons")).StatusCode);
+        (await ChangeTimeZone(client, "Asia/Tokyo")).EnsureSuccessStatusCode();
+
+        var pushed = Assert.ContainsSingle(await listener.NextAsync(1, testContext.CancellationToken));
+        Assert.AreEqual(nameof(IWatchEventsClient.TimeZoneChanged), pushed.Name);
+        Assert.AreEqual("Asia/Tokyo", pushed.Payload.GetProperty("timeZone").GetString());
     }
 
     [TestMethod]

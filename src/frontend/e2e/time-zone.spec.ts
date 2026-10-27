@@ -36,6 +36,11 @@ test('change the time zone in Settings and see a daily Watch run at its time the
     });
     await page.getByLabel('Schedule', { exact: true }).selectOption('Daily at a set time');
     await expect(page.getByText(`In Lookout's time zone, ${original}.`)).toBeVisible();
+    // A change made elsewhere, such as in another tab, reaches the open form without a reload.
+    await changeTimeZone(page, chosen);
+    await expect(page.getByText(`In Lookout's time zone, ${chosen}.`)).toBeVisible();
+    await changeTimeZone(page, original);
+    await expect(page.getByText(`In Lookout's time zone, ${original}.`)).toBeVisible();
     await page.getByLabel('Time of day').fill('07:45');
     await page.getByRole('button', { name: 'Create Watch' }).click();
     const nextRun = page.getByRole('article', { name }).getByText('Next Run').locator('time');

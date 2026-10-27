@@ -1,4 +1,5 @@
 using System.Net;
+using ChasePie.Lookout.Backend.Events;
 using ChasePie.Lookout.Backend.Scheduling;
 using ChasePie.Lookout.Database;
 using ChasePie.Lookout.Model;
@@ -29,7 +30,8 @@ public sealed class TimeZoneRequest
 
 [ApiController]
 [Route("api/settings")]
-public sealed class SettingsController(LookoutDbContext database, WatchSchedules schedules) : LookoutControllerBase
+public sealed class SettingsController(LookoutDbContext database, WatchSchedules schedules, WatchEvents watchEvents)
+    : LookoutControllerBase
 {
     [HttpGet]
     public async Task<SettingsResponse> Get(CancellationToken cancellationToken)
@@ -76,6 +78,12 @@ public sealed class SettingsController(LookoutDbContext database, WatchSchedules
         {
             return Problem(detail: update.Problem!, statusCode: HttpStatusCode.BadRequest);
         }
-        return await Get(cancellationToken);
+        var settings = await Get(cancellationToken);
+        if (update.Status == ScheduleUpdateStatus.Changed)
+        {
+            // So other tabs and devices name the new time zone in their schedule inputs, and show the new next Runs.
+            await watchEvents.TimeZoneChangedAsync(settings.TimeZone!);
+        }
+        return settings;
     }
 }
