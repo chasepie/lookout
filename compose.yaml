@@ -4,6 +4,10 @@
 # published on the Docker host through gluetun's own networks (ADR-0007).
 #   LOOKOUT_RUNNER_TOKEN         required: the token Lookout sends the runner: letters, digits, '-' and '_' only,
 #                                such as from openssl rand -hex 32. Without it, Lookout and the runner stop at startup.
+#   LOOKOUT_BROWSERLESS_TOKEN    required: the token Browserless requires on every route of its API, which runs code,
+#                                so pages it loads can't use it: letters, digits, '-' and '_' only, such as from
+#                                openssl rand -hex 32, and not LOOKOUT_RUNNER_TOKEN, as Scripts can read it. Without
+#                                it, the runner stops at startup. An .env that predates it needs it added to upgrade.
 #   LOOKOUT_USERNAME             recommended: the Account's user name and password, which Lookout sets the Account from
 #   LOOKOUT_PASSWORD             on every start, before it accepts requests. Set both before the first docker compose
 #                                up, so no one else can set up the Account first; change them and run it again to
@@ -25,7 +29,8 @@
 # Each pair of services that talk shares a network of its own, so Browserless's Chromium, which loads whatever pages
 # Scripts visit, shares no network with Lookout. Its pages can still reach Lookout's published port through the Docker
 # host, directly or through gluetun's proxy, like any LAN device, and get only what needs no login (ADR-0007). It can
-# reach the runner, which refuses requests without the runner token and requests from web pages. gluetun's proxy forwards to every network gluetun is on, so gluetun and Lookout share none:
+# reach the runner, which refuses requests without the runner token and requests from web pages, and Browserless itself,
+# which refuses requests without its own token. gluetun's proxy forwards to every network gluetun is on, so gluetun and Lookout share none:
 # Lookout reaches gluetun's control server through a relay.
 name: lookout
 
@@ -67,15 +72,17 @@ services:
 
   # Runs trusted Scripts. Its internal networks have no direct internet access, but may allow Node code to reach
   # the Docker host's published ports on Linux Docker Engine (expected, not verified; ADR-0007). Nothing is mounted:
-  # no database, secrets or backend configuration (ADR-0003). Its only secret is the token it requires of Lookout.
-  # Scripts' processes aren't given it, and, connecting to Browserless, can't start a process to read it from the runner's.
+  # no database, secrets or backend configuration (ADR-0003). Its secrets are the token it requires of Lookout,
+  # which Scripts' processes aren't given, and, connecting to Browserless, can't start a process to read from the runner's,
+  # and Browserless's token, which they are given, as they drive the browser anyway.
   runner:
     build:
       context: .
       dockerfile: src/runner/Dockerfile
     restart: unless-stopped
     environment:
-      BROWSERLESS_URL: ws://browserless:3000/chromium/playwright
+      # Without the token, the runner stops at startup, rather than leaving Browserless's API open
+      BROWSERLESS_URL: ws://browserless:3000/chromium/playwright?token=${LOOKOUT_BROWSERLESS_TOKEN:-}
       RUNNER_TOKEN: ${LOOKOUT_RUNNER_TOKEN:-}
     networks:
       - runs
@@ -107,6 +114,10 @@ services:
       TIMEOUT: 660000
       # As many browsers as Lookout runs Runs at once
       CONCURRENT: ${LOOKOUT_MAX_CONCURRENT_RUNS:-2}
+      # Required on every route, even /active, so the pages it loads, which can reach it at localhost:3000, can't use
+      # its API, which runs code (/function) and takes browsers. Unset, the runner refuses to start.
+      TOKEN: ${LOOKOUT_BROWSERLESS_TOKEN:-}
+      STRICT_TOKEN_USE: "true"
     networks:
       - browsers
       - vpn-proxy
@@ -119,7 +130,7 @@ services:
     # is a cap, not more memory, and what Chromium keeps in either counts towards mem_limit above.
     shm_size: 2g
     healthcheck:
-      test: [CMD, curl, --fail, --silent, --output, /dev/null, http://localhost:3000/active]
+      test: [CMD-SHELL, 'curl --fail --silent --output /dev/null "http://localhost:3000/active?token=$$TOKEN"']
       interval: 30s
       start_period: 30s
       start_interval: 1s

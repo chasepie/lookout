@@ -5,8 +5,10 @@
  *   any address but a loopback one it refuses to start without `RUNNER_TOKEN`.
  * - `RUNNER_TOKEN`: the bearer token every request must carry, which Lookout is given as `Runner__Token`. Unset or
  *   empty, requests need none.
- * - `BROWSERLESS_URL`: Browserless's Playwright endpoint, such as `ws://browserless:3000/chromium/playwright`, to
- *   connect to for each Script's browser, as in deployment. Without it, each Script launches a local Chromium.
+ * - `BROWSERLESS_URL`: Browserless's Playwright endpoint, such as `ws://browserless:3000/chromium/playwright?token=…`,
+ *   to connect to for each Script's browser, as in deployment. Without it, each Script launches a local Chromium.
+ *   Browserless runs any code it's sent, so at any address but a loopback one the runner refuses to start without a
+ *   `token` in it.
  * - `HEADLESS`: `true` runs the launched Chromium headless, as tests do; otherwise it is visible, for local debugging.
  *   Browserless's is always headful.
  *
@@ -37,16 +39,31 @@ const loopback = new BlockList();
 loopback.addSubnet('127.0.0.0', 8, 'ipv4');
 loopback.addAddress('::1', 'ipv6');
 
+/** Whether only this machine can be at `address`, an IP address or a name */
+function isLoopback(address: string) {
+  return address === 'localhost' || (isIP(address) !== 0 && loopback.check(address, isIP(address) === 6 ? 'ipv6' : 'ipv4'));
+}
+
 const token = getEnvSetting('RUNNER_TOKEN');
-if (token === undefined && !loopback.check(host, isIP(host) === 6 ? 'ipv6' : 'ipv4')) {
+if (token === undefined && !isLoopback(host)) {
   console.error(`RUNNER_TOKEN must be set when RUNNER_HOST is ${host}, which other machines can reach, since the runner `
     + 'runs any Script it is sent');
   process.exit(1);
 }
 
 const browserlessUrl = process.env['BROWSERLESS_URL'];
-if (browserlessUrl && !['ws:', 'wss:'].includes(URL.parse(browserlessUrl)?.protocol ?? '')) {
+const browserlessEndpoint = browserlessUrl ? URL.parse(browserlessUrl) : null;
+if (browserlessUrl && !['ws:', 'wss:'].includes(browserlessEndpoint?.protocol ?? '')) {
   console.error(`BROWSERLESS_URL must be a ws:// or wss:// URL, not ${JSON.stringify(browserlessUrl)}`);
+  process.exit(1);
+}
+
+// Without a token, Browserless serves its whole API, including /function, which runs code, to any page it loads
+// (the brackets are an IPv6 address's)
+if (browserlessEndpoint && !browserlessEndpoint.searchParams.get('token')
+  && !isLoopback(browserlessEndpoint.hostname.replace(/^\[(.*)\]$/, '$1'))) {
+  console.error(`BROWSERLESS_URL must have a token, which LOOKOUT_BROWSERLESS_TOKEN sets, when Browserless is at `
+    + `${browserlessEndpoint.hostname}, which other machines can reach, since Browserless requires it only if given one`);
   process.exit(1);
 }
 

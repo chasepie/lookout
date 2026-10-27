@@ -12,7 +12,7 @@ A Direct Watch's browser can reach your local network (LAN), like another browse
 | Other devices on your LAN, such as a router | Can reach them | Blocked by the VPN's firewall |
 | Services published by Docker on the machine running Lookout, including Lookout itself | Can reach them | Can still reach them |
 
-Pages in Direct Watches can also reach Browserless, the service running their browsers. Its control API currently has no access key, so do not treat those controls as protected from pages. The probe confirmed a response, but did not test effects on other Runs. Requiring an access key is tracked in [#49](https://github.com/chasepie/lookout/issues/49).
+Pages in Direct Watches can also reach Browserless, the service running their browsers, at `localhost:3000`. Its control API requires an access key, `LOOKOUT_BROWSERLESS_TOKEN`, on every route, so pages get only `401` from it, and the Docker deployment doesn't start without the key. Scripts are given that key, as they drive the browser anyway, so use a different value from `LOOKOUT_RUNNER_TOKEN`.
 
 These rules also apply to Test runs. A VPN Watch whose VPN is unavailable does not fall back to your home internet connection.
 

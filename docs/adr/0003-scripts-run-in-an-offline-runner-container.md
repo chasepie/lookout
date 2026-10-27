@@ -13,6 +13,6 @@ Offline here means no direct route to the internet, not necessarily no access to
 
 - Scripts can only import Node built-ins and `playwright`, the only package installed in the runner.
 - Scripts that need data from a public internet API must get it through the browser (e.g. `page.request` or by navigating to it), not directly through Node.
-- The runner requires a token from Lookout, so that Browserless, which can reach it, can't have it run a Script. It comes in the runner's environment, not mounted. Scripts' processes aren't given it, and, connecting to Browserless, can't start a process to read it from the runner's. The VPN-provider login also stays out of the runner. Optional HTTP proxy credentials are passed into Script processes to configure their browsers and are visible to Scripts; ADR-0007 records why this is accepted.
+- The runner requires a token from Lookout, so that Browserless, which can reach it, can't have it run a Script. It comes in the runner's environment, not mounted. Scripts' processes aren't given it, and, connecting to Browserless, can't start a process to read it from the runner's. Browserless's own token, in `BROWSERLESS_URL`, is a separate value for that reason: Scripts' processes are given it to open their browser. The VPN-provider login also stays out of the runner. Optional HTTP proxy credentials are passed into Script processes to configure their browsers and are visible to Scripts; ADR-0007 records why this is accepted.
 
 Sources: [docs/research/script-execution-and-vpn.md](../research/script-execution-and-vpn.md)

@@ -64,6 +64,12 @@ test.each([
   }
 });
 
+// As in development and the tests, where only this machine can reach the Browserless it starts
+test.each(['127.0.0.1', '[::1]', 'localhost'])('a runner whose BROWSERLESS_URL is at %s starts without a token', { timeout: 30_000 }, async (host) => {
+  const { runner } = await startRunner({ BROWSERLESS_URL: `ws://${host}:3000/chromium/playwright` });
+  runner.kill();
+});
+
 test("a Script's process exits when the runner dies, with the subprocesses it started", { timeout: 30_000 }, async () => {
   const { marker, notificationUrl } = subprocessScript('hang');
   const { runner: doomedRunner, url } = await startRunner({ HEADLESS: 'true' });
@@ -123,6 +129,7 @@ const portError = 'PORT must be an integer from 0 to 65535';
 const hostError = 'RUNNER_HOST must be an IP address';
 const tokenError = 'RUNNER_TOKEN must be set when RUNNER_HOST is';
 const browserlessUrlError = 'BROWSERLESS_URL must be a ws:// or wss:// URL';
+const browserlessTokenError = 'BROWSERLESS_URL must have a token, which LOOKOUT_BROWSERLESS_TOKEN sets,';
 
 test.each([
   ['a PORT that is empty', { PORT: '' }, portError],
@@ -137,6 +144,10 @@ test.each([
   ['a BROWSERLESS_URL that is not a URL', { BROWSERLESS_URL: 'browserless:3000' }, browserlessUrlError],
   ['a BROWSERLESS_URL that is not a WebSocket URL', { BROWSERLESS_URL: 'http://browserless:3000/chromium/playwright' },
     browserlessUrlError],
+  ['a BROWSERLESS_URL other machines serve, and no token', { BROWSERLESS_URL: 'ws://browserless:3000/chromium/playwright' },
+    browserlessTokenError],
+  ['a BROWSERLESS_URL other machines serve, and an empty token, as compose passes an unset variable',
+    { BROWSERLESS_URL: 'ws://browserless:3000/chromium/playwright?token=' }, browserlessTokenError],
 ])('a runner with %s refuses to start', { timeout: 30_000 }, async (_, env, error) => {
   const badRunner = spawn(process.execPath, [runnerPath], {
     env: runnerEnvironment(env),
