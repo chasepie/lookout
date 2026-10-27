@@ -115,8 +115,12 @@ public sealed class WatchesController(
             return ScheduleMissing();
         }
 
-        var update = await schedules.ChangeScheduleAsync(id, schedule, request.JitterMinutes, request.TimeZone,
-            cancellationToken);
+        var update = await schedules.ChangeScheduleAsync(
+            watchId: id,
+            schedule: schedule,
+            jitterMinutes: request.JitterMinutes,
+            shownTimeZone: request.TimeZone,
+            cancellationToken: cancellationToken);
         return update.Status switch
         {
             // Read back, unless the Watch was deleted since.

@@ -64,6 +64,7 @@ public sealed class WatchSchedules(IServiceScopeFactory scopes, TimeProvider tim
         {
             return zone;
         }
+
         return TimeZoneInfo.TryConvertWindowsIdToIanaId(zone.Id, out var ianaId)
             && TimeZoneInfo.TryFindSystemTimeZoneById(ianaId, out var ianaZone)
             && CanBeSaved(ianaZone)
@@ -161,8 +162,12 @@ public sealed class WatchSchedules(IServiceScopeFactory scopes, TimeProvider tim
     /// <summary>
     /// Replaces the Watch's Schedule and Jitter and schedules its next Run, still clear of its last, unless it is Paused.
     /// </summary>
-    public async Task<ScheduleUpdate> ChangeScheduleAsync(Guid watchId, Schedule schedule, int jitterMinutes,
-        string? shownTimeZone, CancellationToken cancellationToken)
+    public async Task<ScheduleUpdate> ChangeScheduleAsync(
+        Guid watchId,
+        Schedule schedule,
+        int jitterMinutes,
+        string? shownTimeZone,
+        CancellationToken cancellationToken)
     {
         await using var scope = scopes.CreateAsyncScope();
         var database = scope.ServiceProvider.GetRequiredService<LookoutDbContext>();
@@ -350,7 +355,9 @@ public sealed class WatchSchedules(IServiceScopeFactory scopes, TimeProvider tim
     private async Task RescheduleAsync(LookoutDbContext database, SavedTimeZone timeZone,
         Expression<Func<Watch, bool>> needsRescheduling, CancellationToken cancellationToken)
     {
-        var watches = await database.Watches.Where(needsRescheduling).ToListAsync(cancellationToken);
+        var watches = await database.Watches
+            .Where(needsRescheduling)
+            .ToListAsync(cancellationToken);
         foreach (var watch in watches)
         {
             watch.NextRunAt = NextRunAt(timeZone, watch.Schedule, watch.JitterMinutes, watch.LastScheduledRunAt);
@@ -391,12 +398,19 @@ public sealed class WatchSchedules(IServiceScopeFactory scopes, TimeProvider tim
     /// Refuses a daily or cron Schedule whose times were given in <paramref name="shownTimeZone"/>, as the app's form
     /// names it, if that is no longer the time zone they would run in, such as after a change made in another tab.
     /// </summary>
-    private static ScheduleUpdate? TimeZoneChangedSince(string? shownTimeZone, Schedule schedule, SavedTimeZone timeZone) =>
-        shownTimeZone is not null && schedule.Kind != ScheduleKind.Interval && shownTimeZone != timeZone.Zone.Id
-            ? new ScheduleUpdate(ScheduleUpdateStatus.TimeZoneChanged,
+    private static ScheduleUpdate? TimeZoneChangedSince(string? shownTimeZone, Schedule schedule, SavedTimeZone timeZone)
+    {
+        if (shownTimeZone is not null
+            && schedule.Kind != ScheduleKind.Interval
+            && shownTimeZone != timeZone.Zone.Id)
+        {
+            return new ScheduleUpdate(ScheduleUpdateStatus.TimeZoneChanged,
                 $"Lookout's time zone changed to {timeZone.Zone.Id} since this schedule was shown, so it wasn't saved. " +
-                $"Check its time, which is now in {timeZone.Zone.Id}, and try again.")
-            : null;
+                $"Check its time, which is now in {timeZone.Zone.Id}, and try again.");
+        }
+
+        return null;
+    }
 
     /// <summary>Whether the install's time zone is still the one read, so a next Run worked out in it is current.</summary>
     private static Expression<Func<Watch, bool>> StillIn(LookoutDbContext database, SavedTimeZone timeZone)
