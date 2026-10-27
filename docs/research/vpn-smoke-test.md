@@ -149,6 +149,8 @@ No candidate at all, not even an mDNS host candidate, means WebRTC offered no UD
 
 gluetun's firewall lets its proxy reach the subnets of its own interfaces, which include the `internet` network's gateway: the Docker host, where Lookout's port is published. Reaching Lookout's `lan` address from the `internet` network may be peculiar to Docker Desktop. A page that reaches Lookout gets only what needs no login (`/health`, `GET` and `POST /api/session`, `POST /api/setup`), as it has no Lookout cookie, which is what any LAN device gets. Also, the Browserless container can reach gluetun's control server directly on `gluetun:8000` (HTTP 401 without the key), as a page through the proxy already could; compose's comments account for the latter.
 
+**README "Smoke test" step 10, run live** on 2026-10-27 at 00:00 UTC against e35a9a8, with the same images and VPN configuration as above (exit in Florida): a Direct Test run and two VPN Test runs, through gluetun's proxy, each Succeeded with `200 Healthy, 401`. The step's first Script loaded `/api/watches` with `page.goto`, which Errored with `net::ERR_HTTP_RESPONSE_CODE_FAILURE`, as Chromium fails a navigation to a 401 with no body; the Script now fetches it from the page instead.
+
 ### 7. Server list and gluetun
 
 - gluetun started by writing its bundled list ("creating /gluetun/servers.json with 20957 hardcoded servers").

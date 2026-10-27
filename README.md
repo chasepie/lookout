@@ -243,8 +243,9 @@ The automated tests don't cover the real Browserless stack, so check a deploymen
       async run(page) {
         const health = await page.goto('http://<gateway>:<LOOKOUT_PORT>/health', { timeout: 8000 });
         const healthBody = await page.locator('body').innerText();
-        const watches = await page.goto('http://<gateway>:<LOOKOUT_PORT>/api/watches', { timeout: 8000 });
-        return { success: true, content: `${health?.status()} ${healthBody}, ${watches?.status()}` };
+        // Chromium fails a navigation to a 401 with no body, so fetch it from the page instead.
+        const watches = await page.evaluate(async () => (await fetch('/api/watches')).status);
+        return { success: true, content: `${health?.status()} ${healthBody}, ${watches}` };
       },
     } satisfies LookoutScript;
     ```
