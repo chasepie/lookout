@@ -15,7 +15,7 @@ const suggestions = Intl.supportedValuesOf('timeZone');
   selector: 'app-time-zone-settings',
   imports: [FormField],
   templateUrl: './time-zone-settings.html',
-  styleUrl: './time-zone-settings.scss',
+  styleUrl: '../settings-form-panel.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class TimeZoneSettings {

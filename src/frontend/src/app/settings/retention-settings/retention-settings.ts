@@ -18,7 +18,7 @@ const maxRetentionDays = 3650;
   selector: 'app-retention-settings',
   imports: [FormField],
   templateUrl: './retention-settings.html',
-  styleUrl: './retention-settings.scss',
+  styleUrl: '../settings-form-panel.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class RetentionSettings {

@@ -141,7 +141,7 @@ Browserless's `TIMEOUT` is set to 11 minutes, above the longest Run timeout, sin
 
 ### Time zone
 
-Daily and cron schedules run at their times in Lookout's single, install-wide time zone; interval schedules don't depend on it. Settings shows it beside the schedule inputs, and lets you change it to any IANA time zone, such as `Europe/London`.
+Daily and cron schedules run at their times in Lookout's single, install-wide time zone; interval schedules don't depend on it. The schedule inputs name it, and Settings lets you change it to any IANA time zone, such as `Europe/London`.
 
 - **Initial configuration:** the first time Lookout starts without a saved time zone, whether a new install or one upgraded from a version that didn't save it, it saves `LOOKOUT_TIME_ZONE` (`Scheduling__TimeZone` outside Docker Compose). If that's unset, it saves the host's time zone, which is UTC in the Docker image. Nothing else in Settings changes.
 - **Persistence:** the saved time zone is kept in the database on the `lookout-data` volume, so it survives restarts, upgrades and recreating the containers, and is backed up with the volume.

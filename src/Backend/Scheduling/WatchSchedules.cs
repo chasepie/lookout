@@ -121,6 +121,11 @@ public sealed class WatchSchedules(IServiceScopeFactory scopes, TimeProvider tim
     /// </summary>
     public async Task<string?> ScheduleFirstRunAsync(Watch watch, LookoutDbContext database, CancellationToken cancellationToken)
     {
+        // Without one, a change of time zone could land before the Watch is saved, leaving it scheduled in the old one.
+        if (database.Database.CurrentTransaction is null)
+        {
+            throw new InvalidOperationException("Schedule a new Watch's first Run in the transaction that saves it.");
+        }
         var timeZone = await ReadTimeZoneAsync(database, cancellationToken);
         if (Validate(timeZone, watch.Schedule, watch.JitterMinutes) is { } problem)
         {
