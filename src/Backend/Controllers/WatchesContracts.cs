@@ -71,6 +71,11 @@ public sealed class CreateWatchRequest : ScheduleRequest
     public List<Guid> NotificationChannelIds { get; init; } = [];
     /// <summary>Whether the Watch's Runs go through the VPN rather than direct.</summary>
     public bool UsesVpn { get; init; }
+    /// <summary>
+    /// The time zone the app's form named the daily or cron times in. If given and no longer the install's, such as
+    /// after a change made in another tab, the Watch isn't created.
+    /// </summary>
+    public string? TimeZone { get; init; }
 }
 
 public class ScheduleRequest

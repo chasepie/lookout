@@ -1,20 +1,22 @@
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Service, inject } from '@angular/core';
 import { firstValueFrom, fromEvent, takeUntil } from 'rxjs';
 import { refreshableHttpResource } from '../shared/refreshable-http-resource';
 import { type ScheduleForm, scheduleFields } from '../schedules/schedule';
 import { Session } from '../session/session';
+import { InstallTimeZone } from '../settings/install-time-zone';
 import type { Run, ScriptVersion, ScriptVersionSource, TestRun, Watch, WatchSettings } from './watch.model';
 
 @Service()
 export class Watches {
   private readonly http = inject(HttpClient);
   private readonly session = inject(Session);
+  private readonly timeZone = inject(InstallTimeZone);
   // Loaded only while logged in, so it is fetched again for the next login. Refreshing keeps the Watches on screen
   // until the new list arrives.
   readonly list = refreshableHttpResource<Watch[]>(() => (this.session.userName() ? { url: '/api/watches' } : undefined));
 
-  create(name: string, notificationUrl: string, usesVpn: boolean, schedule: ScheduleForm, script: File,
+  async create(name: string, notificationUrl: string, usesVpn: boolean, schedule: ScheduleForm, script: File,
     notificationChannelIds: Iterable<string>) {
     const data = new FormData();
     data.set('name', name);
@@ -27,7 +29,17 @@ export class Watches {
       data.append('notificationChannelIds', id);
     }
     data.set('script', script);
-    return firstValueFrom(this.http.post<Watch>('/api/watches', data));
+    // The time zone the form names daily and cron times in, which Lookout refuses if it has changed since, such as in
+    // another tab whose change this one hasn't heard of yet.
+    const timeZone = this.timeZone.effective();
+    if (timeZone) {data.set('timeZone', timeZone);}
+    try {
+      return await firstValueFrom(this.http.post<Watch>('/api/watches', data));
+    } catch (error: unknown) {
+      // Read again, so the form names the time zone the Watch would now run in.
+      if (error instanceof HttpErrorResponse && error.status === 409) {this.timeZone.settings.refresh();}
+      throw error;
+    }
   }
 
   changeSchedule(id: string, schedule: ScheduleForm) {

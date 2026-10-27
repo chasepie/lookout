@@ -29,9 +29,10 @@ public static class ExampleWatches
                 Unit = IntervalUnit.Hours
             }
         };
-        if (await schedules.ScheduleFirstRunAsync(watch, database, CancellationToken.None) is { } problem)
+        var scheduled = await schedules.ScheduleFirstRunAsync(watch, database, shownTimeZone: null, CancellationToken.None);
+        if (scheduled.Status != ScheduleUpdateStatus.Changed)
         {
-            throw new InvalidOperationException($"The example Watch's schedule can't be used: {problem}");
+            throw new InvalidOperationException($"The example Watch's schedule can't be used: {scheduled.Problem}");
         }
 
         var version = new ScriptVersion

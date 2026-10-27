@@ -195,6 +195,55 @@ public sealed class TimeZoneTests(TestContext testContext)
     }
 
     [TestMethod]
+    [DataRow("daily", "09:00")]
+    [DataRow("cron", "0 9 * * *")]
+    public async Task RefusesADailyOrCronWatchGivenInATimeZoneThatIsNoLongerTheInstalls(string kind, string time)
+    {
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
+        // As if another tab changed it while this one's form still named UTC.
+        (await ChangeTimeZone(client, "Asia/Tokyo")).EnsureSuccessStatusCode();
+        var fields = kind == "daily" ? Daily(time) : Cron(time);
+        fields["timeZone"] = "UTC";
+
+        var response = await PostWatch(client, fields);
+
+        Assert.AreEqual(HttpStatusCode.Conflict, response.StatusCode);
+        var problem = await response.Content.ReadFromJsonAsync<JsonObject>(testContext.CancellationToken);
+        Assert.Contains("changed to Asia/Tokyo", problem!["detail"]!.GetValue<string>());
+        Assert.IsEmpty((await client.GetFromJsonAsync<JsonArray>("/api/watches", testContext.CancellationToken))!);
+    }
+
+    [TestMethod]
+    public async Task CreatesADailyWatchGivenInTheInstallsTimeZone()
+    {
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
+        (await ChangeTimeZone(client, "Asia/Tokyo")).EnsureSuccessStatusCode();
+        var fields = Daily("09:00");
+        fields["timeZone"] = "Asia/Tokyo";
+
+        var response = await PostWatch(client, fields);
+
+        Assert.AreEqual(HttpStatusCode.Created, response.StatusCode);
+        var id = (await response.Content.ReadFromJsonAsync<JsonObject>(testContext.CancellationToken))!["id"]!.GetValue<string>();
+        Assert.AreEqual(At("2026-10-20T00:00:00Z"), await NextRunAt(client, id));
+    }
+
+    [TestMethod]
+    public async Task CreatesAnIntervalWatchWhateverTimeZoneItWasGivenIn()
+    {
+        await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
+        using var client = await factory.CreateSignedInClientAsync(testContext.CancellationToken);
+        (await ChangeTimeZone(client, "Asia/Tokyo")).EnsureSuccessStatusCode();
+
+        var response = await PostWatch(client,
+            new() { ["scheduleKind"] = "interval", ["every"] = "1", ["unit"] = "hours", ["timeZone"] = "UTC" });
+
+        Assert.AreEqual(HttpStatusCode.Created, response.StatusCode);
+    }
+
+    [TestMethod]
     public async Task PushesAChangeOfTimeZoneToTheApp()
     {
         await using var factory = new LookoutWebApplicationFactory { PollsSchedule = false };
@@ -563,19 +612,25 @@ public sealed class TimeZoneTests(TestContext testContext)
 
     private async Task<JsonObject> CreateWatch(HttpClient client, Dictionary<string, string> schedule)
     {
+        var response = await PostWatch(client, schedule);
+        Assert.IsTrue(response.IsSuccessStatusCode, await response.Content.ReadAsStringAsync(testContext.CancellationToken));
+        return (await response.Content.ReadFromJsonAsync<JsonObject>(testContext.CancellationToken))!;
+    }
+
+    /// <summary>Posts a new Watch with <paramref name="fields"/>, its Schedule and any others, such as its time zone.</summary>
+    private async Task<HttpResponseMessage> PostWatch(HttpClient client, Dictionary<string, string> fields)
+    {
         using var form = new MultipartFormDataContent
         {
             { new StringContent("Widget price"), "name" },
             { new StringContent("https://example.com/widget"), "notificationUrl" },
             { new StringContent("export default {}"), "script", "price.ts" }
         };
-        foreach (var (name, value) in schedule)
+        foreach (var (name, value) in fields)
         {
             form.Add(new StringContent(value), name);
         }
-        var response = await client.PostAsync(new Uri("/api/watches", UriKind.Relative), form, testContext.CancellationToken);
-        Assert.IsTrue(response.IsSuccessStatusCode, await response.Content.ReadAsStringAsync(testContext.CancellationToken));
-        return (await response.Content.ReadFromJsonAsync<JsonObject>(testContext.CancellationToken))!;
+        return await client.PostAsync(new Uri("/api/watches", UriKind.Relative), form, testContext.CancellationToken);
     }
 
     private async Task PostWatchAction(HttpClient client, string id, string action)

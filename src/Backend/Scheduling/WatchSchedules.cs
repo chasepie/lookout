@@ -14,7 +14,12 @@ public enum ScheduleUpdateStatus
     /// <summary>The Watch kept changing underneath the update, which then gave up.</summary>
     KeptChanging,
     /// <summary>The Schedule, Jitter or time zone can't be used, as <see cref="ScheduleUpdate.Problem"/> explains.</summary>
-    Invalid
+    Invalid,
+    /// <summary>
+    /// The daily or cron times were given in a time zone that is no longer the install's, as
+    /// <see cref="ScheduleUpdate.Problem"/> explains.
+    /// </summary>
+    TimeZoneChanged
 }
 
 public sealed record ScheduleUpdate(ScheduleUpdateStatus Status, string? Problem = null);
@@ -121,8 +126,11 @@ public sealed class WatchSchedules(IServiceScopeFactory scopes, TimeProvider tim
     /// <summary>
     /// Schedules the first Run of a Watch not yet saved, from its Schedule and Jitter, or explains why they can't be used.
     /// Call it in the transaction that saves the Watch, which holds off a change of time zone until it commits.
+    /// A daily or cron Schedule whose times were given in <paramref name="shownTimeZone"/>, as the app's form names it, is
+    /// refused if that is no longer the time zone they would run in, such as after a change made in another tab.
     /// </summary>
-    public async Task<string?> ScheduleFirstRunAsync(Watch watch, LookoutDbContext database, CancellationToken cancellationToken)
+    public async Task<ScheduleUpdate> ScheduleFirstRunAsync(Watch watch, LookoutDbContext database, string? shownTimeZone,
+        CancellationToken cancellationToken)
     {
         // Without one, a change of time zone could land before the Watch is saved, leaving it scheduled in the old one.
         if (database.Database.CurrentTransaction is null)
@@ -130,13 +138,19 @@ public sealed class WatchSchedules(IServiceScopeFactory scopes, TimeProvider tim
             throw new InvalidOperationException("Schedule a new Watch's first Run in the transaction that saves it.");
         }
         var timeZone = await ReadTimeZoneAsync(database, cancellationToken);
+        if (shownTimeZone is not null && watch.Schedule.Kind != ScheduleKind.Interval && shownTimeZone != timeZone.Zone.Id)
+        {
+            return new ScheduleUpdate(ScheduleUpdateStatus.TimeZoneChanged,
+                $"Lookout's time zone changed to {timeZone.Zone.Id} while this Watch was being created, so it wasn't. " +
+                $"Check its time, which is now in {timeZone.Zone.Id}, and create it again.");
+        }
         if (Validate(timeZone, watch.Schedule, watch.JitterMinutes) is { } problem)
         {
-            return problem;
+            return new ScheduleUpdate(ScheduleUpdateStatus.Invalid, problem);
         }
         watch.NextRunAt = NextRunAt(timeZone, watch.Schedule, watch.JitterMinutes);
         watch.NextRunTimeZone = timeZone.Zone.Id;
-        return null;
+        return new ScheduleUpdate(ScheduleUpdateStatus.Changed);
     }
 
     /// <summary>

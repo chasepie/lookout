@@ -62,9 +62,12 @@ public sealed class WatchesController(
         };
         // Scheduled in the transaction that saves the Watch, so the install's time zone can't change in between.
         await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
-        if (await schedules.ScheduleFirstRunAsync(watch, database, cancellationToken) is { } scheduleProblem)
+        var scheduled = await schedules.ScheduleFirstRunAsync(watch, database, request.TimeZone, cancellationToken);
+        if (scheduled.Status != ScheduleUpdateStatus.Changed)
         {
-            return Problem(scheduleProblem, statusCode: HttpStatusCode.BadRequest);
+            return Problem(scheduled.Problem!, statusCode: scheduled.Status == ScheduleUpdateStatus.TimeZoneChanged
+                ? HttpStatusCode.Conflict
+                : HttpStatusCode.BadRequest);
         }
 
         if (await FindNotificationChannels(request.NotificationChannelIds, cancellationToken) is not { } notificationChannels)
