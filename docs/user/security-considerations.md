@@ -12,13 +12,15 @@ A Direct Watch's browser can reach your local network (LAN), like another browse
 | Other devices on your LAN, such as a router | Can reach them | Blocked by the VPN's firewall |
 | Services published by Docker on the machine running Lookout, including Lookout itself | Can reach them | Can still reach them |
 
+Pages in Direct Watches can also reach Browserless, the service running their browsers. Its control API currently has no access key, so do not treat those controls as protected from pages. The probe confirmed a response, but did not test effects on other Runs. Requiring an access key is tracked in [#49](https://github.com/chasepie/lookout/issues/49).
+
 These rules also apply to Test runs. A VPN Watch whose VPN is unavailable does not fall back to your home internet connection.
 
-Part of a Script runs outside the browser, using Node. In the Docker deployment, that code has no direct internet access. It may still reach services published by Docker on the same machine, whether the Watch uses the VPN or not. This is expected on Linux Docker Engine from Docker's documentation; it has not been verified there. A VPN Watch is not a way to protect other services on the Docker host from a Script.
+Part of a Script runs outside the browser, using Node. In the Docker deployment, that code has no direct internet access. It may still reach services published by Docker on the same machine, whether the Watch uses the VPN or not. This is expected on Linux Docker Engine from Docker's documentation; it has not been verified there. The Docker Desktop probes tested browser access, not this Node access, which has not been probed there either. Assume it may be possible on Docker Desktop too. A VPN Watch is not a way to protect other services on the Docker host from a Script.
 
 ## What stays protected
 
-In the supplied Docker deployment, Scripts run in a separate container without Lookout's database, private settings or files containing secrets. Scripts are not given the access key Lookout uses to request Runs, or the VPN login details. These protections keep Lookout's data and secrets separate from Scripts; they are not a guarantee against hostile code. See [how Scripts run](../adr/0003-scripts-run-in-an-offline-runner-container.md) for the details. Running the development commands directly on your machine does not provide that container separation.
+In the supplied Docker deployment, Scripts run in a separate container without Lookout's database, private settings or files containing secrets. Scripts are not given the access key Lookout uses to request Runs, or your VPN-provider login, such as your PIA user name and password. If you configure a separate HTTP proxy login for the browser's connection to the VPN, Scripts do receive that user name and password and can read them. This is accepted because Scripts are trusted. These protections keep Lookout's data and secrets separate from Scripts; they are not a guarantee against hostile code. See [how Scripts run](../adr/0003-scripts-run-in-an-offline-runner-container.md) for the details. Running the development commands directly on your machine does not provide that container separation.
 
 The browser a Script drives does not have your Lookout Session. Reaching Lookout lets a page load the public app, check its health and whether an Account exists, attempt login, or attempt first-launch setup while no Account exists. It does not give the page your logged-in access to Watches or data. Other services published on the same Docker host have their own access controls.
 
