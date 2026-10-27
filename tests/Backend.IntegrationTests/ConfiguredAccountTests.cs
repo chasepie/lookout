@@ -173,6 +173,8 @@ public sealed class ConfiguredAccountTests(TestContext testContext)
             {
                 Assert.ThrowsExactly<InvalidOperationException>(() => refused.CreateClient());
             }
+            // Refused before migrating, so a fresh install's database isn't even created.
+            Assert.IsFalse(File.Exists(databasePath), "Expected no database from a refused start");
 
             await using var after = WithAccountSettings(factory, null, null, databasePath);
             using var client = await after.CreateAppClientAsync(testContext.CancellationToken);
