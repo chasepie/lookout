@@ -2,6 +2,8 @@
 
 Scope: running user-written Playwright (Node.js, Playwright 1.64) scripts on a schedule from a .NET 10 backend, deployed with Docker. These are facts from primary sources, with trade-offs noted. "Source:" means I read the repo code myself (browserless `main` @ `2185e9b`, v2.57.1, 2026-10-16; steel-browser `main`, shallow clone 2026-10-18).
 
+**Current decision:** [ADR-0007](../adr/0007-scripts-are-trusted-and-direct-runs-reach-the-lan.md) treats Scripts as trusted code. The sandbox options below are historical research, not a promise to contain hostile Scripts. Internal Docker networks remove the runner's direct internet route; they may still allow it to reach the host's published ports. Direct Runs and their pages can reach the LAN.
+
 ---
 
 ## 1. Browserless (browserless/browserless, self-hosted)
@@ -105,7 +107,7 @@ I found no actively maintained, widely adopted browserless *fork* in primary sou
 
 ### Container-level isolation (Docker primitives)
 - `docker run` flags: `--read-only` ("mounts the container's root filesystem as read only"), `--tmpfs`, `--cap-drop`, `--security-opt no-new-privileges`, `--pids-limit`, `--memory`, `--runtime` ([docker run reference](https://docs.docker.com/reference/cli/docker/container/run/)).
-- A Compose network with `internal: true` "lets you create an externally isolated network" ([Compose networks](https://docs.docker.com/reference/compose-file/networks/)). Putting the runner on a network that contains only the browser service, and not the backend or DB, keeps it away from the backend's network. Secrets stay out if you do not pass env vars or mounts.
+- A Compose network with `internal: true` "lets you create an externally isolated network" ([Compose networks](https://docs.docker.com/reference/compose-file/networks/)). Putting the runner on a network that contains only the browser service, and not the backend or DB, keeps it off the backend's network, but does not by itself prevent access to published ports through the Docker host. Secrets stay out if you do not pass env vars or mounts.
 - gVisor adds a user-space kernel runtime: `docker run --runtime=runsc` ([gVisor Docker quick start](https://gvisor.dev/docs/user_guide/quick_start/docker/)).
 - **Trade-offs:**
   - A container per run costs startup time (Node plus Playwright client, around seconds) but gives the strongest boundary of these options.

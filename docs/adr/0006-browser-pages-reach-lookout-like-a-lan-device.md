@@ -1,5 +1,7 @@
 # Pages Browserless loads can reach Lookout like any LAN device
 
+**Superseded by [ADR-0007: Scripts are trusted and Direct Runs reach the LAN](0007-scripts-are-trusted-and-direct-runs-reach-the-lan.md).** The original decision below covered only access to Lookout; ADR-0007 records the wider reach and the tested firewall option.
+
 Browserless's Chromium shares no Docker network with Lookout, but the pages it loads can still reach Lookout through the Docker host, at the port Lookout is published on, both in Direct Runs and through gluetun's proxy in VPN Runs (found by the [#42 smoke test](../research/vpn-smoke-test.md), [#44](https://github.com/chasepie/lookout/issues/44)). We accept this rather than restrict it: Lookout is designed for a LAN where other devices can reach it ([ADR-0002](0002-designed-for-lan-only-homelab-deployment.md)), and to Lookout such a page is one more of them. Its login, its request-token header (XSRF) on every state-changing request, and its `SameSite=Strict` cookies, which Browserless's pages never have, still apply, so a page gets only what needs no login: `/health`, the session check, login and first-launch setup.
 
 ## Considered Options
