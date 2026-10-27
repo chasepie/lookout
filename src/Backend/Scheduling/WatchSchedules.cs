@@ -97,7 +97,10 @@ public sealed class WatchSchedules(IServiceScopeFactory scopes, TimeProvider tim
         {
             return new ScheduleUpdate(ScheduleUpdateStatus.Invalid, "Enter a time zone, such as Europe/London.");
         }
-        if (id.Length > MaximumTimeZoneLength || !TimeZoneInfo.TryFindSystemTimeZoneById(id, out var zone) || !zone.HasIanaId)
+
+        if (id.Length > MaximumTimeZoneLength
+            || !TimeZoneInfo.TryFindSystemTimeZoneById(id, out var zone)
+            || !zone.HasIanaId)
         {
             var shown = id.Length > MaximumTimeZoneLength ? id[..MaximumTimeZoneLength] + "…" : id;
             return new ScheduleUpdate(ScheduleUpdateStatus.Invalid,
@@ -113,6 +116,7 @@ public sealed class WatchSchedules(IServiceScopeFactory scopes, TimeProvider tim
         {
             return new ScheduleUpdate(ScheduleUpdateStatus.Unchanged);
         }
+
         await database.Settings.ExecuteUpdateAsync(setters => setters
             .SetProperty(settings => settings.TimeZone, zone.Id), cancellationToken);
 
@@ -137,6 +141,7 @@ public sealed class WatchSchedules(IServiceScopeFactory scopes, TimeProvider tim
         {
             throw new InvalidOperationException("Schedule a new Watch's first Run in the transaction that saves it.");
         }
+
         var timeZone = await ReadTimeZoneAsync(database, cancellationToken);
         if (shownTimeZone is not null && watch.Schedule.Kind != ScheduleKind.Interval && shownTimeZone != timeZone.Zone.Id)
         {
@@ -144,10 +149,12 @@ public sealed class WatchSchedules(IServiceScopeFactory scopes, TimeProvider tim
                 $"Lookout's time zone changed to {timeZone.Zone.Id} while this Watch was being created, so it wasn't. " +
                 $"Check its time, which is now in {timeZone.Zone.Id}, and create it again.");
         }
+
         if (Validate(timeZone, watch.Schedule, watch.JitterMinutes) is { } problem)
         {
             return new ScheduleUpdate(ScheduleUpdateStatus.Invalid, problem);
         }
+
         watch.NextRunAt = NextRunAt(timeZone, watch.Schedule, watch.JitterMinutes);
         watch.NextRunTimeZone = timeZone.Zone.Id;
         return new ScheduleUpdate(ScheduleUpdateStatus.Changed);
@@ -401,7 +408,10 @@ public sealed class WatchSchedules(IServiceScopeFactory scopes, TimeProvider tim
     /// Jitter can delay a Run until just before the schedule's next occurrence, so the next Run is also held at least
     /// <see cref="Schedule.MinimumInterval"/> after <paramref name="lastRunAt"/>.
     /// </summary>
-    private DateTimeOffset? NextRunAt(SavedTimeZone timeZone, Schedule schedule, int jitterMinutes,
+    private DateTimeOffset? NextRunAt(
+        SavedTimeZone timeZone,
+        Schedule schedule,
+        int jitterMinutes,
         DateTimeOffset? lastRunAt = null)
     {
         var jitter = TimeSpan.FromSeconds(Random.Shared.Next(jitterMinutes * 60 + 1));

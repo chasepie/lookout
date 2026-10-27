@@ -60,14 +60,16 @@ public sealed class WatchesController(
             UsesVpn = request.UsesVpn,
             JitterMinutes = request.JitterMinutes
         };
+
         // Scheduled in the transaction that saves the Watch, so the install's time zone can't change in between.
         await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
         var scheduled = await schedules.ScheduleFirstRunAsync(watch, database, request.TimeZone, cancellationToken);
         if (scheduled.Status != ScheduleUpdateStatus.Changed)
         {
-            return Problem(scheduled.Problem!, statusCode: scheduled.Status == ScheduleUpdateStatus.TimeZoneChanged
+            var statusCode = scheduled.Status == ScheduleUpdateStatus.TimeZoneChanged
                 ? HttpStatusCode.Conflict
-                : HttpStatusCode.BadRequest);
+                : HttpStatusCode.BadRequest;
+            return Problem(scheduled.Problem!, statusCode);
         }
 
         if (await FindNotificationChannels(request.NotificationChannelIds, cancellationToken) is not { } notificationChannels)

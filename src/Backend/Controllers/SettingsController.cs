@@ -39,8 +39,11 @@ public sealed class SettingsController(LookoutDbContext database, WatchSchedules
         var settings = await database.Settings.AsNoTracking()
             .Select(settings => new { settings.RetentionDays, settings.TimeZone })
             .SingleAsync(cancellationToken);
-        return new SettingsResponse(settings.RetentionDays, settings.TimeZone,
-            schedules.EffectiveTimeZone(settings.TimeZone), WatchSchedules.KnowsTimeZone(settings.TimeZone));
+        return new SettingsResponse(
+            RetentionDays: settings.RetentionDays,
+            TimeZone: settings.TimeZone,
+            EffectiveTimeZone: schedules.EffectiveTimeZone(settings.TimeZone),
+            TimeZoneKnown: WatchSchedules.KnowsTimeZone(settings.TimeZone));
     }
 
     [HttpPut]
@@ -78,6 +81,7 @@ public sealed class SettingsController(LookoutDbContext database, WatchSchedules
         {
             return Problem(detail: update.Problem!, statusCode: HttpStatusCode.BadRequest);
         }
+
         var settings = await Get(cancellationToken);
         if (update.Status == ScheduleUpdateStatus.Changed)
         {
