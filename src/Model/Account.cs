@@ -15,7 +15,8 @@ public sealed class Account
     public required string PasswordHash { get; set; }
 
     /// <summary>Whether <paramref name="userName"/>, once trimmed, can be the Account's user name.</summary>
-    public static bool IsValidUserName(string userName) => userName.Trim().Length is >= MinimumUserNameLength and <= MaximumUserNameLength;
+    public static bool IsValidUserName(string userName) =>
+        userName.Trim().Length is >= MinimumUserNameLength and <= MaximumUserNameLength;
 
     /// <summary>Whether <paramref name="password"/> can be the Account's password.</summary>
     public static bool IsValidPassword(string password) =>

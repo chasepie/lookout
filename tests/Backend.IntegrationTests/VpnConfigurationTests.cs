@@ -3,7 +3,6 @@ using System.Text.Json.Nodes;
 using ChasePie.Lookout.Backend.Runner;
 using ChasePie.Lookout.Backend.Vpn;
 using ChasePie.Lookout.Model;
-using Microsoft.AspNetCore.Hosting;
 
 namespace ChasePie.Lookout.Backend.IntegrationTests;
 

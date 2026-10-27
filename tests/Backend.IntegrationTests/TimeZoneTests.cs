@@ -6,7 +6,6 @@ using ChasePie.Lookout.Backend.Events;
 using ChasePie.Lookout.Backend.Running;
 using ChasePie.Lookout.Backend.Scheduling;
 using ChasePie.Lookout.Database;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
@@ -651,7 +650,9 @@ public sealed class TimeZoneTests(TestContext testContext)
 
     private static Dictionary<string, string> Daily(string timeOfDay, int jitterMinutes = 0) => new()
     {
-        ["scheduleKind"] = "daily", ["timeOfDay"] = timeOfDay, ["jitterMinutes"] = jitterMinutes.ToString(CultureInfo.InvariantCulture)
+        ["scheduleKind"] = "daily",
+        ["timeOfDay"] = timeOfDay,
+        ["jitterMinutes"] = jitterMinutes.ToString(CultureInfo.InvariantCulture)
     };
 
     private static Dictionary<string, string> Cron(string cron) => new() { ["scheduleKind"] = "cron", ["cron"] = cron };

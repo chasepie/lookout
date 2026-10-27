@@ -3,7 +3,6 @@ using ChasePie.Lookout.Backend.Running;
 using ChasePie.Lookout.Backend.Vpn;
 using ChasePie.Lookout.Database;
 using ChasePie.Lookout.Model;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;

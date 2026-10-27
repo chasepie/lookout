@@ -1,7 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
-using Microsoft.AspNetCore.Hosting;
+using ChasePie.Lookout.Backend.Startup;
 using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace ChasePie.Lookout.Backend.IntegrationTests;
@@ -117,13 +117,13 @@ public sealed class ConfiguredAccountTests(TestContext testContext)
 
     public static IEnumerable<(string? UserName, string? Password, string Setting)> RefusedSettings =>
     [
-        ("someone", null, "Account:Password"),
-        ("someone", "", "Account:Password"),
-        (null, "battery staple", "Account:UserName"),
-        ("   ", "battery staple", "Account:UserName"),
-        (new string('a', 101), "battery staple", "Account:UserName"),
-        ("someone", "seven c", "Account:Password"),
-        ("someone", new string('p', 1025), "Account:Password"),
+        ("someone", null, ConfiguredAccount.AccountPassword),
+        ("someone", "", ConfiguredAccount.AccountPassword),
+        (null, "battery staple", ConfiguredAccount.AccountUserName),
+        ("   ", "battery staple", ConfiguredAccount.AccountUserName),
+        (new string('a', 101), "battery staple", ConfiguredAccount.AccountUserName),
+        ("someone", "seven c", ConfiguredAccount.AccountPassword),
+        ("someone", new string('p', 1025), ConfiguredAccount.AccountPassword),
     ];
 
     [TestMethod]
@@ -219,8 +219,8 @@ public sealed class ConfiguredAccountTests(TestContext testContext)
             {
                 builder.UseSetting("ConnectionStrings:Lookout", $"Data Source={databasePath};Pooling=False");
             }
-            builder.UseSetting("Account:UserName", userName);
-            builder.UseSetting("Account:Password", password);
+            builder.UseSetting(ConfiguredAccount.AccountUserName, userName);
+            builder.UseSetting(ConfiguredAccount.AccountPassword, password);
         });
 
     private Task<HttpResponseMessage> Login(HttpClient client, string userName, string password) =>

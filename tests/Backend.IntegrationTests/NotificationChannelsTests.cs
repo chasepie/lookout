@@ -2,7 +2,6 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json.Nodes;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using ChasePie.Lookout.Model;
 

@@ -3,7 +3,6 @@ using System.Text.Json.Nodes;
 using ChasePie.Lookout.Backend.Runner;
 using ChasePie.Lookout.Database;
 using ChasePie.Lookout.Model;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;

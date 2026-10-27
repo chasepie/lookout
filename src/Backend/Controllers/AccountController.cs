@@ -63,7 +63,11 @@ public sealed class AccountController(
                 statusCode: HttpStatusCode.BadRequest);
         }
 
-        var account = new Account { UserName = credentials.UserName.Trim(), PasswordHash = "" };
+        var account = new Account
+        {
+            UserName = credentials.UserName.Trim(),
+            PasswordHash = ""
+        };
         account.PasswordHash = passwordHasher.HashPassword(account, credentials.Password);
         database.Accounts.Add(account);
 

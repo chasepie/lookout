@@ -11,6 +11,9 @@ namespace ChasePie.Lookout.Backend.Startup;
 /// </summary>
 public sealed partial class ConfiguredAccount
 {
+    internal const string AccountUserName = "Account:UserName";
+    internal const string AccountPassword = "Account:Password";
+
     private ConfiguredAccount(string userName, string password)
     {
         UserName = userName;
@@ -29,32 +32,37 @@ public sealed partial class ConfiguredAccount
     public static ConfiguredAccount? Read(IConfiguration configuration)
     {
         // An empty setting is unset, as compose passes an unset variable.
-        var userName = configuration["Account:UserName"];
-        var password = configuration["Account:Password"];
+        var userName = configuration[AccountUserName];
+        var password = configuration[AccountPassword];
         if (string.IsNullOrEmpty(userName) && string.IsNullOrEmpty(password))
         {
             return null;
         }
+
         if (string.IsNullOrEmpty(password))
         {
             throw new InvalidOperationException(
-                "Account:Password must be set with Account:UserName, or neither set to set up the Account in the app");
+                $"{AccountPassword} must be set with {AccountUserName}, or neither set to set up the Account in the app");
         }
+
         if (string.IsNullOrEmpty(userName))
         {
             throw new InvalidOperationException(
-                "Account:UserName must be set with Account:Password, or neither set to set up the Account in the app");
+                $"{AccountUserName} must be set with {AccountPassword}, or neither set to set up the Account in the app");
         }
+
         if (!Account.IsValidUserName(userName))
         {
             throw new InvalidOperationException(
-                $"Account:UserName must contain between {Account.MinimumUserNameLength} and {Account.MaximumUserNameLength} characters once trimmed");
+                $"{AccountUserName} must contain between {Account.MinimumUserNameLength} and {Account.MaximumUserNameLength} characters once trimmed");
         }
+
         if (!Account.IsValidPassword(password))
         {
             throw new InvalidOperationException(
-                $"Account:Password must contain between {Account.MinimumPasswordLength} and {Account.MaximumPasswordLength} characters");
+                $"{AccountPassword} must contain between {Account.MinimumPasswordLength} and {Account.MaximumPasswordLength} characters");
         }
+
         return new ConfiguredAccount(userName.Trim(), password);
     }
 
@@ -72,11 +80,16 @@ public sealed partial class ConfiguredAccount
         await using var scope = app.Services.CreateAsyncScope();
         var database = scope.ServiceProvider.GetRequiredService<LookoutDbContext>();
         var passwordHasher = scope.ServiceProvider.GetRequiredService<IPasswordHasher<Account>>();
+
         await using var transaction = await database.Database.BeginTransactionAsync();
         var account = await database.Accounts.SingleOrDefaultAsync();
         if (account is null)
         {
-            account = new Account { UserName = configured.UserName, PasswordHash = "" };
+            account = new Account
+            {
+                UserName = configured.UserName,
+                PasswordHash = ""
+            };
             account.PasswordHash = passwordHasher.HashPassword(account, configured.Password);
             database.Accounts.Add(account);
             LogCreated(app.Logger);
@@ -99,13 +112,14 @@ public sealed partial class ConfiguredAccount
                 LogChanged(app.Logger);
             }
         }
+
         await database.SaveChangesAsync();
         await transaction.CommitAsync();
     }
 
-    [LoggerMessage(LogLevel.Information, "Created the Account from Account:UserName and Account:Password.")]
+    [LoggerMessage(LogLevel.Information, $"Created the Account from {AccountUserName} and {AccountPassword}.")]
     private static partial void LogCreated(ILogger logger);
 
-    [LoggerMessage(LogLevel.Information, "Changed the Account to match Account:UserName and Account:Password, ending every Session.")]
+    [LoggerMessage(LogLevel.Information, $"Changed the Account to match {AccountUserName} and {AccountPassword}, ending every Session.")]
     private static partial void LogChanged(ILogger logger);
 }

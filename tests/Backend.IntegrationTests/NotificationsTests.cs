@@ -6,7 +6,6 @@ using ChasePie.Lookout.Backend.Runner;
 using ChasePie.Lookout.Database;
 using ChasePie.Lookout.Model;
 using Microsoft.AspNetCore.TestHost;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace ChasePie.Lookout.Backend.IntegrationTests;

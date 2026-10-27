@@ -20,4 +20,8 @@
     <EmbeddedResource Include="..\..\examples\bot-detection.ts" LogicalName="ExampleScripts/bot-detection.ts" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Backend.IntegrationTests" />
+  </ItemGroup>
+
 </Project>
