@@ -55,6 +55,7 @@ public sealed class LookoutWebApplicationFactory : WebApplicationFactory<Program
                 services.AddSingleton<IVpnRotator>(Vpn);
             }
             services.AddSingleton(UseSystemTime ? TimeProvider.System : Time);
+            services.AddSingleton<IStartupFilter, ClientAddressStartupFilter>();
             if (!UseRealNotificationChannels)
             {
                 services.RemoveAll<INotificationChannelSender>();

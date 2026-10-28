@@ -7,7 +7,8 @@ Lookout targets homelabs. It is designed to be reachable only from the local net
 Supporting direct internet exposure later would require at least:
 
 - HTTPS terminated by a reverse proxy, with `Secure`, `HttpOnly` and `SameSite` cookies and HSTS.
-- Login rate limiting and account lockout.
+- Login limiting that tells clients apart behind a reverse proxy. Since [#48](https://github.com/chasepie/lookout/issues/48), Lookout refuses logins from a client address for the rest of a 5-minute window after 5 failed logins from it, but it doesn't know the proxy's address, so it can't trust `X-Forwarded-For`, and behind a proxy every client shares one limit: someone failing logins on purpose can keep the owner locked out, 5 minutes at a time. That's accepted on a LAN, not on the internet.
+- A limit on failed logins across all addresses, such as account lockout or a global cap, as an attacker with many addresses is never caught by a limit on each one. It would need a way for the owner to still get in, such as a lockout that a successful login from a known device skips, so that it can't be used to keep the owner out.
 - Stronger authentication: passkeys, TOTP, or OIDC via an existing identity provider.
 - Revisit the trusted-Script decision and review what containing a hostile Script would require.
 - Security headers (CSP, frame-ancestors) on the Angular app.

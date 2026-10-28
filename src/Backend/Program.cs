@@ -65,6 +65,7 @@ public class Program
             .SetApplicationName("Lookout")
             .PersistKeysToDbContext<LookoutDbContext>();
         services.AddSingleton<IPasswordHasher<Account>, PasswordHasher<Account>>();
+        services.AddSingleton<LoginLimit>();
 
         services.AddLookoutDatabase(configuration, environment);
     }

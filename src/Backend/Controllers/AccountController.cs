@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using ChasePie.Lookout.Backend.Events;
 using ChasePie.Lookout.Backend.Security;
@@ -23,6 +24,7 @@ public sealed class AccountController(
     IPasswordHasher<Account> passwordHasher,
     IAntiforgery antiforgery,
     EventConnections eventConnections,
+    LoginLimit loginLimit,
     TimeProvider timeProvider)
     : LookoutControllerBase
 {
@@ -97,6 +99,12 @@ public sealed class AccountController(
                 statusCode: HttpStatusCode.Unauthorized);
         }
 
+        var client = HttpContext.Connection.RemoteIpAddress;
+        if (loginLimit.StartAttempt(client) is { } wait)
+        {
+            return TooManyFailedLogins(wait);
+        }
+
         // Check the password even for the wrong user name, so the response time doesn't reveal which was wrong.
         var verification = passwordHasher.VerifyHashedPassword(
             user: account,
@@ -115,6 +123,7 @@ public sealed class AccountController(
             account.PasswordHash = passwordHasher.HashPassword(account, credentials.Password);
         }
 
+        loginLimit.Succeeded(client);
         await SessionCookie.SignInAsync(HttpContext, database, account, timeProvider, cancellationToken);
         return NoContent();
     }
@@ -129,6 +138,15 @@ public sealed class AccountController(
             eventConnections.Close(id);
         }
         return NoContent();
+    }
+
+    private ObjectResult TooManyFailedLogins(TimeSpan wait)
+    {
+        var minutes = (int)Math.Ceiling(wait.TotalMinutes);
+        Response.Headers.RetryAfter = ((int)Math.Ceiling(wait.TotalSeconds)).ToString(CultureInfo.InvariantCulture);
+        return Problem(
+            detail: $"Too many failed logins. Try again in {minutes} {(minutes == 1 ? "minute" : "minutes")}.",
+            statusCode: HttpStatusCode.TooManyRequests);
     }
 
     private ObjectResult AccountAlreadyExists() =>

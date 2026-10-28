@@ -58,6 +58,26 @@ test('an error from logging out is cleared on moving to another page', async ({ 
 test.describe('without a session', () => {
   test.use({ storageState: { cookies: [], origins: [] } });
 
+  test('says how long to wait after too many failed logins', async ({ page }) => {
+    // Reaching the real limit would refuse every other test's logins from this address for 5 minutes.
+    await page.route('**/api/session', (route) => route.request().method() === 'POST'
+      ? route.fulfill({
+        status: 429,
+        headers: { 'Retry-After': '240' },
+        contentType: 'application/problem+json',
+        json: { status: 429, detail: 'Too many failed logins. Try again in 4 minutes.' },
+      })
+      : route.fallback());
+    await page.goto('/');
+    await page.getByLabel('User name').fill('owner');
+    await page.getByLabel('Password').fill('a guess');
+
+    await page.getByRole('button', { name: 'Log in' }).click();
+
+    await expect(page.getByRole('alert')).toHaveText('Too many failed logins. Try again in 4 minutes.');
+    await expect(page.getByRole('heading', { name: 'Log in' })).toBeVisible();
+  });
+
   test('sends the user to log in when another browser set up the account first', async ({ page }) => {
     // This browser loaded setup before the account existed; the backend's account was created since.
     let stale = true;
