@@ -71,6 +71,15 @@ test.each(['127.0.0.1', '[::1]', 'localhost'])('a runner whose BROWSERLESS_URL i
     runner.kill();
   });
 
+// As compose.yaml configures it
+test('a runner whose BROWSERLESS_URL other machines can reach starts with a token of its own', { timeout: 30_000 }, async () => {
+  const { runner } = await startRunner({
+    BROWSERLESS_URL: 'ws://browserless:3000/chromium/playwright?token=browserless-secret',
+    RUNNER_TOKEN: 'runner-secret',
+  });
+  runner.kill();
+});
+
 test("a Script's process exits when the runner dies, with the subprocesses it started", { timeout: 30_000 }, async () => {
   const { marker, notificationUrl } = subprocessScript('hang');
   const { runner: doomedRunner, url } = await startRunner({ HEADLESS: 'true' });
@@ -131,6 +140,7 @@ const hostError = 'RUNNER_HOST must be an IP address';
 const tokenError = 'RUNNER_TOKEN must be set when RUNNER_HOST is';
 const browserlessUrlError = 'BROWSERLESS_URL must be a ws:// or wss:// URL';
 const browserlessTokenError = 'BROWSERLESS_URL must have a token when Browserless is at browserless';
+const sharedTokenError = "BROWSERLESS_URL's token must differ from RUNNER_TOKEN";
 
 test.each([
   ['a PORT that is empty', { PORT: '' }, portError],
@@ -149,6 +159,9 @@ test.each([
     browserlessTokenError],
   ['a BROWSERLESS_URL other machines can reach, with an empty token, as compose passes an unset variable',
     { BROWSERLESS_URL: 'ws://browserless:3000/chromium/playwright?token=' }, browserlessTokenError],
+  ['a BROWSERLESS_URL whose token is RUNNER_TOKEN, which Scripts are given',
+    { BROWSERLESS_URL: 'ws://browserless:3000/chromium/playwright?token=shared-secret', RUNNER_TOKEN: 'shared-secret' },
+    sharedTokenError],
 ])('a runner with %s refuses to start', { timeout: 30_000 }, async (_, env, error) => {
   const badRunner = spawn(process.execPath, [runnerPath], {
     env: runnerEnvironment(env),

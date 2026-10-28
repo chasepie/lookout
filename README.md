@@ -238,7 +238,7 @@ The automated tests don't cover the real Browserless stack, so check a deploymen
    docker inspect "$(docker compose ps -q runner)" --format '{{json .Mounts}}'
    ```
 
-7. Check that a page can't use Browserless's API without its token. Create a Direct Watch with this Script and choose **Test run**. It Succeeds with the content `401`; `200` would mean Browserless's API is open to the pages it loads:
+7. Check that a page can't use Browserless's API without its token. Upload this Script to a Watch with **Send Runs through the VPN** off, to start a Test run. It Succeeds with the content `401`. An Errored Test run with `net::ERR_ABORTED` means Browserless answered `204`, as Chromium ends a navigation to a `204` that way: its API is open to the pages it loads:
 
    ```ts
    import type { LookoutScript } from '@chasepie/lookout-scripting';
