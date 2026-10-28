@@ -137,11 +137,13 @@ test('the settings form shows a name changed elsewhere back to one saved here', 
   await expect(page.getByLabel('Name', { exact: true })).toHaveValue(original);
   const renamed = `Renamed ${randomUUID()}`;
   await page.getByLabel('Name', { exact: true }).fill(renamed);
-  const reread = page.waitForResponse((response) => response.request().method() === 'GET'
-    && new URL(response.url()).pathname === `/api/watches/${id}`);
+  const reread = page.waitForResponse(async (response) => response.request().method() === 'GET'
+    && new URL(response.url()).pathname === `/api/watches/${id}`
+    && (await response.json() as { name: string }).name === renamed);
   await page.getByRole('button', { name: 'Save settings' }).click();
   await expect(page.getByRole('status')).toHaveText('Settings saved.');
-  // Another tab's changes come after this page has read back its own save.
+  // Another tab's changes come after this page has read back its own save, not just after any read, such as the one
+  // the page makes when its live events connect, which can land after the save is clicked.
   await reread;
 
   await editWatch(page, id, { name: original, notificationUrl: 'https://example.com/widget', timeoutSeconds: 120, usesVpn: false });
