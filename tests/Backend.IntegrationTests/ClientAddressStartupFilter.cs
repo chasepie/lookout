@@ -16,9 +16,10 @@ public sealed class ClientAddressStartupFilter : IStartupFilter
     {
         app.Use((context, nextMiddleware) =>
         {
-            if (context.Request.Headers.TryGetValue(HeaderName, out var address))
+            if (context.Request.Headers.TryGetValue(HeaderName, out var header)
+                && IPAddress.TryParse(header.ToString(), out var address))
             {
-                context.Connection.RemoteIpAddress = IPAddress.Parse(address.ToString());
+                context.Connection.RemoteIpAddress = address;
             }
             return nextMiddleware(context);
         });
