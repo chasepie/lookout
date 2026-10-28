@@ -64,15 +64,8 @@ test.each([
   }
 });
 
-// As in development and the tests, where only this machine can reach the Browserless it starts
-test.each(['127.0.0.1', '[::1]', 'localhost'])('a runner whose BROWSERLESS_URL is at %s starts without a token',
-  { timeout: 30_000 }, async (host) => {
-    const { runner } = await startRunner({ BROWSERLESS_URL: `ws://${host}:3000/chromium/playwright` });
-    runner.kill();
-  });
-
 // As compose.yaml configures it
-test('a runner whose BROWSERLESS_URL other machines can reach starts with a token of its own', { timeout: 30_000 }, async () => {
+test('a runner whose BROWSERLESS_URL has a token of its own starts', { timeout: 30_000 }, async () => {
   const { runner } = await startRunner({
     BROWSERLESS_URL: 'ws://browserless:3000/chromium/playwright?token=browserless-secret',
     RUNNER_TOKEN: 'runner-secret',
@@ -139,7 +132,7 @@ const portError = 'PORT must be an integer from 0 to 65535';
 const hostError = 'RUNNER_HOST must be an IP address';
 const tokenError = 'RUNNER_TOKEN must be set when RUNNER_HOST is';
 const browserlessUrlError = 'BROWSERLESS_URL must be a ws:// or wss:// URL';
-const browserlessTokenError = 'BROWSERLESS_URL must have a token when Browserless is at browserless';
+const browserlessTokenError = 'BROWSERLESS_URL must have a token';
 const sharedTokenError = "BROWSERLESS_URL's token must differ from RUNNER_TOKEN";
 
 test.each([
@@ -155,9 +148,14 @@ test.each([
   ['a BROWSERLESS_URL that is not a URL', { BROWSERLESS_URL: 'browserless:3000' }, browserlessUrlError],
   ['a BROWSERLESS_URL that is not a WebSocket URL', { BROWSERLESS_URL: 'http://browserless:3000/chromium/playwright' },
     browserlessUrlError],
-  ['a BROWSERLESS_URL other machines can reach, without a token', { BROWSERLESS_URL: 'ws://browserless:3000/chromium/playwright' },
+  ['a BROWSERLESS_URL without a token', { BROWSERLESS_URL: 'ws://browserless:3000/chromium/playwright' },
     browserlessTokenError],
-  ['a BROWSERLESS_URL other machines can reach, with an empty token, as compose passes an unset variable',
+  // The pages Browserless loads reach it at their own localhost, wherever the runner reaches it
+  ['a BROWSERLESS_URL at localhost without a token', { BROWSERLESS_URL: 'ws://localhost:3000/chromium/playwright' },
+    browserlessTokenError],
+  ['a BROWSERLESS_URL at a loopback address without a token', { BROWSERLESS_URL: 'ws://[::1]:3000/chromium/playwright' },
+    browserlessTokenError],
+  ['a BROWSERLESS_URL with an empty token, as compose passes an unset variable',
     { BROWSERLESS_URL: 'ws://browserless:3000/chromium/playwright?token=' }, browserlessTokenError],
   ['a BROWSERLESS_URL whose token is RUNNER_TOKEN, which Scripts are given',
     { BROWSERLESS_URL: 'ws://browserless:3000/chromium/playwright?token=shared-secret', RUNNER_TOKEN: 'shared-secret' },
