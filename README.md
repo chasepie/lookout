@@ -293,6 +293,12 @@ The automated tests don't cover the real Browserless stack, so check a deploymen
 
     Keep this Watch Paused for VPN step 8, then delete it. If no VPN is configured, delete it after this Direct Test run. This records the accepted exposure without leaving scheduled Runs against the device.
 
+12. Check that Browserless has 2 GB of `/dev/shm`. This prints a size of `2.0G`:
+
+    ```sh
+    docker compose exec browserless df -h /dev/shm
+    ```
+
 With the VPN set up, also check that VPN Runs leave from the VPN's exit and direct Runs from your own IP:
 
 1. Settings shows the VPN as Connected, with a region and exit IP.

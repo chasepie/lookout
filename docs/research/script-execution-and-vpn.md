@@ -63,7 +63,7 @@ Scope: running user-written Playwright (Node.js, Playwright 1.64) scripts on a s
 | `HEALTH`, `MAX_CPU_PERCENT`, `MAX_MEMORY_PERCENT` | false / 99 / 99 | Reject new sessions when overloaded |
 | `ALLOW_FILE_PROTOCOL`, `DISABLE_BLOCKLIST` | false / false | `file://` access and the URL blocklist |
 
-The docs also advise `shm_size: "2g"` ([open-source page](https://docs.browserless.io/enterprise/open-source)). Checked in #50: with Browserless v2.57.1 (Chromium 1248, Playwright 1.64), Chromium shares memory through memfd (`/memfd:shared-memory-region`), not `/dev/shm`. That holds with or without the `--disable-dev-shm-usage` flag Playwright adds by default, so `/dev/shm` stayed empty under load, while the cgroup's shared memory reached 408 MB.
+The docs also advise `shm_size: "2g"` ([open-source page](https://docs.browserless.io/enterprise/open-source)). Checked in #50: with Browserless v2.57.1 (Playwright 1.64's Chromium 156, build 1248), Chromium shares memory through memfd (`/memfd:shared-memory-region`), not `/dev/shm`. That holds with or without the `--disable-dev-shm-usage` flag Playwright adds by default (removed through `ignoreDefaultArgs` in Browserless's `launch` parameter, and confirmed absent from the running Chromium's command line), so `/dev/shm` stayed empty under load, while the cgroup's shared memory reached 408 MB.
 
 ---
 

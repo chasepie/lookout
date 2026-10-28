@@ -113,10 +113,10 @@ services:
       - internet
     # The pages it renders aren't Lookout's to vouch for; one that leaks memory mustn't take the host's
     mem_limit: ${LOOKOUT_BROWSERLESS_MEMORY:-3g}
-    # Browserless advises 2g rather than Docker's 64m, which could crash tabs that share memory through /dev/shm. Its
-    # current Chromium shares memory through memfd instead, with or without Playwright's --disable-dev-shm-usage, so
-    # this is for whatever falls back to /dev/shm. Both are memory, not disk: this is a cap, not more memory, and what
-    # Chromium keeps in either counts towards mem_limit above.
+    # Browserless advises 2g rather than Docker's 64m, which could crash tabs that share memory through /dev/shm. The
+    # Chromium in v2.57.1 shares memory through memfd instead, with or without Playwright's --disable-dev-shm-usage
+    # (which would send it to /tmp), so this is for anything else that uses /dev/shm. Both are memory, not disk: this
+    # is a cap, not more memory, and what Chromium keeps in either counts towards mem_limit above.
     shm_size: 2g
     healthcheck:
       test: [CMD, curl, --fail, --silent, --output, /dev/null, http://localhost:3000/active]
