@@ -74,10 +74,12 @@ public sealed class LoginLimit(TimeProvider timeProvider)
         {
             return IPAddress.None;
         }
+
         if (address.IsIPv4MappedToIPv6)
         {
             return address.MapToIPv4();
         }
+
         if (address.AddressFamily != AddressFamily.InterNetworkV6)
         {
             return address;
