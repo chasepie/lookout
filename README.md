@@ -133,7 +133,7 @@ Then open `http://<host>:8080` and log in. Lookout sets the Account from `LOOKOU
 | `LOOKOUT_TIME_ZONE`           | UTC              | The time zone a new install starts with, such as `Europe/London`; see [Time zone](#time-zone)                                                                                    |
 | `LOOKOUT_MAX_CONCURRENT_RUNS` | `2`              | How many Runs execute at once, and how many browsers Browserless runs at once. Raise the two memory limits with it                                                               |
 | `LOOKOUT_RUNNER_MEMORY`       | `1536m`          | The runner's memory limit: 640 MB per concurrent Run, plus 256 MB for the runner itself                                                                                          |
-| `LOOKOUT_BROWSERLESS_MEMORY`  | `3g`             | Browserless's memory limit: about 1.5 GB per concurrent Run                                                                                                                      |
+| `LOOKOUT_BROWSERLESS_MEMORY`  | `3g`             | Browserless's memory limit: about 1.5 GB per concurrent Run, including the memory Chromium's processes share, whether in `/dev/shm` or elsewhere                                 |
 | `COMPOSE_PROFILES`            | unset            | `vpn` runs gluetun and its relay                                                                                                                                                 |
 | `LOOKOUT_VPN_API_KEY`         | unset            | The key Lookout uses for gluetun's control server: letters, digits, `-` and `_` only. Without it, the VPN is disabled                                                            |
 | `PIA_USER`, `PIA_PASSWORD`    | unset            | Your Private Internet Access login                                                                                                                                               |
@@ -292,6 +292,12 @@ The automated tests don't cover the real Browserless stack, so check a deploymen
     Expect `HTTPS response: HTTP ...`; even a 401 or 403 proves the device was reached. The Script records the main-frame navigation response before Chromium can fail loading an empty authentication-error page, so those errors still report the device's HTTP status. An Errored result with the device's certificate error (such as `ERR_CERT_COMMON_NAME_INVALID`) also proves reach. A timeout or unreachable-address error does not: check the address and network before continuing. Record the response or certificate error for comparison in VPN step 8.
 
     Keep this Watch Paused for VPN step 8, then delete it. If no VPN is configured, delete it after this Direct Test run. This records the accepted exposure without leaving scheduled Runs against the device.
+
+12. Check that Browserless has 2 GB of `/dev/shm`. This prints a size of `2.0G`:
+
+    ```sh
+    docker compose exec browserless df -h /dev/shm
+    ```
 
 With the VPN set up, also check that VPN Runs leave from the VPN's exit and direct Runs from your own IP:
 
