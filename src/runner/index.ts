@@ -9,7 +9,7 @@
  *   to connect to for each Script's browser, as in deployment. Without it, each Script launches a local Chromium.
  *   Browserless runs any code it's sent, even for the pages it loads, which reach it at their own `localhost`, so the
  *   runner refuses to start without a `token` in it, at any address. Scripts' processes are given it, so it refuses
- *   one whose `token` is `RUNNER_TOKEN`.
+ *   one whose `token` is `RUNNER_TOKEN`, or has anything but letters, digits, `-` and `_`.
  * - `HEADLESS`: `true` runs the launched Chromium headless, as tests do; otherwise it is visible, for local debugging.
  *   Browserless's is always headful.
  *
@@ -61,6 +61,15 @@ const browserlessToken = browserlessEndpoint?.searchParams.get('token');
 if (browserlessEndpoint && !browserlessToken) {
   console.error('BROWSERLESS_URL must have a token, since Browserless requires one only if given it, and runs any code '
     + 'it is sent, even by the pages it loads. In Docker Compose, set LOOKOUT_BROWSERLESS_TOKEN');
+  process.exit(1);
+}
+
+// As written, rather than decoded: compose writes it into this URL and the healthcheck's without encoding it, so a +
+// would reach Browserless as a space, and a # would end it
+const writtenToken = /[?&]token=([^&]*)/.exec(browserlessUrl ?? '')?.[1];
+if (writtenToken !== undefined && !/^[A-Za-z0-9_-]+$/.test(writtenToken)) {
+  console.error('BROWSERLESS_URL\'s token must contain only letters, digits, \'-\' and \'_\', such as from '
+    + 'openssl rand -hex 32');
   process.exit(1);
 }
 
