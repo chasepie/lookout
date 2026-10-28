@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { type Request, expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { createWatch, runWatch } from './watches';
 
@@ -48,17 +48,21 @@ test('see the VPN status in Settings', async ({ page }) => {
 // Each Run is started through the API, as the scheduler would, so only pushed events update the page.
 test('see the VPN rotate to a new exit IP after a Known failure, without reloading', async ({ page }) => {
   const id = await createWatch(page, `Blocked price ${randomUUID()}`, 'https://example.com/known-failure', true);
+  const statusReads: Request[] = [];
+  page.on('request', (request) => { if (new URL(request.url()).pathname === '/api/vpn') {statusReads.push(request);} });
   await page.goto('/settings');
+  // The page reads the status on loading, and again once its live events connect, as it may have missed a change.
+  // The second read can land after the first is on screen, so wait for both before the Run.
+  await expect.poll(() => statusReads.length).toBe(2);
+  await (await statusReads[1]!.response())!.finished();
   const vpn = page.getByRole('region', { name: 'VPN' });
   await expect(vpn).toContainText('Connected');
   const exitBefore = (await vpn.getByText(exitIp).textContent())!;
-  let statusReads = 0;
-  page.on('request', (request) => { if (new URL(request.url()).pathname === '/api/vpn') {statusReads++;} });
 
   await runWatch(page, id, 1);
 
   await expect(vpn.getByText(exitIp)).not.toHaveText(exitBefore);
   await expect(vpn).toContainText('Connected');
   // The pushed status is shown as it is, without reading gluetun again
-  expect(statusReads).toBe(0);
+  expect(statusReads).toHaveLength(2);
 });
