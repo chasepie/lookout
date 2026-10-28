@@ -224,9 +224,11 @@ public sealed class RunnerClientTests(TestContext testContext)
         start.ArgumentList.Add(Path.Combine(RepositoryRoot.Find(), "src/runner/index.ts"));
         start.Environment["PORT"] = "0";
         start.Environment["HEADLESS"] = "true";
-        // A developer may have set these for running the runner themselves; this one takes requests without a token.
+        // A developer may have set these for running the runner themselves; this one takes requests without a token,
+        // and launches its own Chromium rather than connecting to a Browserless.
         start.Environment.Remove("RUNNER_HOST");
         start.Environment.Remove("RUNNER_TOKEN");
+        start.Environment.Remove("BROWSERLESS_URL");
         using var process = Process.Start(start)!;
         try
         {
