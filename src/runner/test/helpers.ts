@@ -132,7 +132,7 @@ export async function scriptSubprocesses(runnerPid: number) {
  */
 export function runnerEnvironment(env: Record<string, string>) {
   const environment: NodeJS.ProcessEnv = { ...process.env, PORT: '0', ...env };
-  for (const name of ['RUNNER_HOST', 'RUNNER_TOKEN']) {
+  for (const name of ['RUNNER_HOST', 'RUNNER_TOKEN', 'BROWSERLESS_URL']) {
     if (!(name in env)) {
       delete environment[name];
     }
