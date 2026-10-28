@@ -13,7 +13,8 @@
 #                                UTC); once saved, it is changed in Settings instead
 #   LOOKOUT_MAX_CONCURRENT_RUNS  how many Runs execute at once (default 2); raise the memory limits with it
 #   LOOKOUT_RUNNER_MEMORY        the runner's memory limit (default 1536m): 640m per concurrent Run, plus 256m
-#   LOOKOUT_BROWSERLESS_MEMORY   Browserless's memory limit (default 3g): about 1.5g per concurrent Run
+#   LOOKOUT_BROWSERLESS_MEMORY   Browserless's memory limit (default 3g): about 1.5g per concurrent Run, including the
+#                                memory Chromium's processes share, in /dev/shm or not
 #
 # The VPN is optional (see "VPN" in README.md). To use it, set COMPOSE_PROFILES=vpn and:
 #   LOOKOUT_VPN_API_KEY          the key Lookout uses for gluetun's control server: letters, digits, '-' and '_' only,
@@ -112,6 +113,11 @@ services:
       - internet
     # The pages it renders aren't Lookout's to vouch for; one that leaks memory mustn't take the host's
     mem_limit: ${LOOKOUT_BROWSERLESS_MEMORY:-3g}
+    # Browserless advises 2 GB of /dev/shm, rather than Docker's default of 64 MB, which can crash tabs that share memory
+    # through it. Its current Chromium shares memory through memfd instead, which this doesn't limit, so it's for
+    # whatever falls back to /dev/shm. Both are memory, not disk: this is a cap, not more memory, and what Chromium
+    # keeps in either counts towards mem_limit above.
+    shm_size: 2g
     healthcheck:
       test: [CMD, curl, --fail, --silent, --output, /dev/null, http://localhost:3000/active]
       interval: 30s
