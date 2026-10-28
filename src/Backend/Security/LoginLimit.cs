@@ -20,6 +20,7 @@ public sealed class LoginLimit(TimeProvider timeProvider)
 
     private readonly Lock _lock = new();
     private readonly Dictionary<IPAddress, Failures> _failures = [];
+    private DateTimeOffset _nextRemoval;
 
     /// <summary>
     /// Starts a login attempt from the address, counting it as failed until <see cref="Succeeded"/> says otherwise,
@@ -29,12 +30,17 @@ public sealed class LoginLimit(TimeProvider timeProvider)
     public TimeSpan? StartAttempt(IPAddress? address)
     {
         var client = ClientKey(address);
-        var now = timeProvider.GetUtcNow();
         lock (_lock)
         {
+            var now = timeProvider.GetUtcNow();
             if (!_failures.TryGetValue(client, out var failures) || now >= failures.WindowEnd)
             {
-                RemoveEnded(now);
+                // Forgetting ended windows at most once a window keeps each new address's first attempt cheap.
+                if (now >= _nextRemoval)
+                {
+                    RemoveEnded(now);
+                    _nextRemoval = now + Window;
+                }
                 _failures[client] = new Failures(now + Window, 1);
                 return null;
             }

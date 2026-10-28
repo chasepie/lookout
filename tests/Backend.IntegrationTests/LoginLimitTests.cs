@@ -79,10 +79,35 @@ public sealed class LoginLimitTests(TestContext testContext)
         await FailLoginsAsync(limited, 5);
         using var sameNetwork = await factory.CreateAppClientAsync(testContext.CancellationToken);
         sameNetwork.DefaultRequestHeaders.Add(ClientAddressStartupFilter.HeaderName, "fd00:1:2:3:abcd::1");
+        using var otherNetwork = await factory.CreateAppClientAsync(testContext.CancellationToken);
+        otherNetwork.DefaultRequestHeaders.Add(ClientAddressStartupFilter.HeaderName, "fd00:1:2:4::10");
 
         var login = await LogInAsync(sameNetwork, SignedInClients.UserName, SignedInClients.Password);
 
         Assert.AreEqual(HttpStatusCode.TooManyRequests, login.StatusCode);
+        Assert.AreEqual(HttpStatusCode.NoContent,
+            (await LogInAsync(otherNetwork, SignedInClients.UserName, SignedInClients.Password)).StatusCode);
+    }
+
+    [TestMethod]
+    public async Task CountsIpv4MappedClientsByTheirIpv4Address()
+    {
+        // Kestrel listening on every IPv6 and IPv4 address, as in Lookout's container, sees IPv4 clients as IPv4-mapped.
+        await using var factory = new LookoutWebApplicationFactory();
+        using (await factory.CreateSignedInClientAsync(testContext.CancellationToken)) { }
+        using var limited = await factory.CreateAppClientAsync(testContext.CancellationToken);
+        limited.DefaultRequestHeaders.Add(ClientAddressStartupFilter.HeaderName, "::ffff:192.168.1.10");
+        await FailLoginsAsync(limited, 5);
+        using var sameAddress = await factory.CreateAppClientAsync(testContext.CancellationToken);
+        sameAddress.DefaultRequestHeaders.Add(ClientAddressStartupFilter.HeaderName, "192.168.1.10");
+        using var other = await factory.CreateAppClientAsync(testContext.CancellationToken);
+        other.DefaultRequestHeaders.Add(ClientAddressStartupFilter.HeaderName, "::ffff:192.168.1.11");
+
+        var login = await LogInAsync(other, SignedInClients.UserName, SignedInClients.Password);
+
+        Assert.AreEqual(HttpStatusCode.NoContent, login.StatusCode);
+        Assert.AreEqual(HttpStatusCode.TooManyRequests,
+            (await LogInAsync(sameAddress, SignedInClients.UserName, SignedInClients.Password)).StatusCode);
     }
 
     [TestMethod]
