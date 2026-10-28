@@ -7,7 +7,8 @@
 #   LOOKOUT_BROWSERLESS_TOKEN    required: the token Browserless requires on every route of its API, which runs code,
 #                                so pages it loads can't use it: letters, digits, '-' and '_' only, such as from
 #                                openssl rand -hex 32, and not LOOKOUT_RUNNER_TOKEN, as Scripts are given it. Without
-#                                it, the runner stops at startup. An .env that predates it needs it added to upgrade.
+#                                it, Browserless and the runner stop at startup, and Lookout waits for Browserless.
+#                                An .env that predates it needs it added to upgrade.
 #   LOOKOUT_USERNAME             recommended: the Account's user name and password, which Lookout sets the Account from
 #   LOOKOUT_PASSWORD             on every start, before it accepts requests. Set both before the first docker compose
 #                                up, so no one else can set up the Account first; change them and run it again to
@@ -81,7 +82,7 @@ services:
       dockerfile: src/runner/Dockerfile
     restart: unless-stopped
     environment:
-      # Without the token, the runner stops at startup, rather than leaving Browserless's API open
+      # Without the token, the runner stops at startup, as Browserless does
       BROWSERLESS_URL: ws://browserless:3000/chromium/playwright?token=${LOOKOUT_BROWSERLESS_TOKEN:-}
       RUNNER_TOKEN: ${LOOKOUT_RUNNER_TOKEN:-}
     networks:
@@ -115,7 +116,8 @@ services:
       # As many browsers as Lookout runs Runs at once
       CONCURRENT: ${LOOKOUT_MAX_CONCURRENT_RUNS:-2}
       # Required on every route, even /active, so the pages it loads, which can reach it at localhost:3000, can't use
-      # its API, which runs code (/function) and takes browsers. Unset, the runner refuses to start.
+      # its API, which runs code (/function) and takes browsers. With STRICT_TOKEN_USE, an unset TOKEN stops it at
+      # startup, rather than leaving its API open.
       TOKEN: ${LOOKOUT_BROWSERLESS_TOKEN:-}
       STRICT_TOKEN_USE: "true"
     networks:
