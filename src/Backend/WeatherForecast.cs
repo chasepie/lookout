@@ -1,4 +1,4 @@
-namespace Backend;
+namespace ChasePie.Lookout.Backend;
 
 public class WeatherForecast
 {
