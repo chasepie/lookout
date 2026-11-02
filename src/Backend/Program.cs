@@ -1,3 +1,5 @@
+using Scalar.AspNetCore;
+
 namespace ChasePie.Lookout.Backend;
 
 public class Program
@@ -25,6 +27,7 @@ public class Program
         if (app.Environment.IsDevelopment())
         {
             app.MapOpenApi();
+            app.MapScalarApiReference("/api-docs");
         }
 
         app.UseHttpsRedirection();

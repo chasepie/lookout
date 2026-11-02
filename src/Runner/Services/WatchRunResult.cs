@@ -5,5 +5,5 @@ namespace ChasePie.Lookout.Runner.Services;
 /// </summary>
 /// <param name="Success">Whether the watch script succeeded.</param>
 /// <param name="Content">The script's output when <paramref name="Success"/> is <see langword="true"/>.</param>
-/// <param name="Reason">Why the script failed when <paramref name="Success"/> is <see langword="false"/>.</param>
-public sealed record WatchRunResult(bool Success, string? Content, string? Reason);
+/// <param name="FailureReason">Why the script failed when <paramref name="Success"/> is <see langword="false"/>.</param>
+public sealed record WatchRunResult(bool Success, string? Content, string? FailureReason);

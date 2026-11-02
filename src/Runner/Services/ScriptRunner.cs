@@ -1,13 +1,12 @@
-using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 
 namespace ChasePie.Lookout.Runner.Services;
 
-public partial class ScriptRunner
+public partial class ScriptRunner(ILogger<ScriptRunner> logger)
 {
-    private const string WatchScriptsDir = "watch-scripts";
+    private const string WatchScriptsDir = "examples/";
 
     // How long a cancelled script gets to abort and close its browser before the process is killed
     private static readonly TimeSpan CancelGracePeriod = TimeSpan.FromSeconds(5);
@@ -17,13 +16,6 @@ public partial class ScriptRunner
 
     // camelCase + case-insensitive, matching the CLI's JSON output
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-
-    private readonly ILogger<ScriptRunner> _logger;
-
-    public ScriptRunner(ILogger<ScriptRunner> logger)
-    {
-        _logger = logger;
-    }
 
     private static string RepoRoot()
     {
@@ -44,10 +36,11 @@ public partial class ScriptRunner
     private static string GetScriptPath(string scriptName)
     {
         var repoRoot = RepoRoot();
-        var scriptPath = Path.Combine(repoRoot, WatchScriptsDir, scriptName);
+        var scriptsDir = Path.Combine(repoRoot, WatchScriptsDir);
+        var scriptPath = Path.Combine(scriptsDir, scriptName);
         if (!File.Exists(scriptPath))
         {
-            throw new FileNotFoundException($"Script '{scriptName}' not found in the '{WatchScriptsDir}' directory.");
+            throw new FileNotFoundException($"Script '{scriptName}' not found in the '{scriptsDir}' directory.");
         }
 
         return scriptPath;

@@ -14,14 +14,14 @@ export function isSuccessfulRunResult(value: unknown): value is SuccessfulRunRes
 
 export interface FailedRunResult {
   success: false;
-  reason: string;
+  failureReason: string;
 }
 
 export function isFailedRunResult(value: unknown): value is FailedRunResult {
   return typeof value === 'object'
     && value !== null
     && 'success' in value && value.success === false
-    && 'reason' in value && typeof value.reason === 'string';
+    && 'failureReason' in value && typeof value.failureReason === 'string';
 }
 
 export type RunResult = SuccessfulRunResult | FailedRunResult;

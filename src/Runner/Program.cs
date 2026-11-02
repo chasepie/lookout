@@ -1,4 +1,7 @@
 
+using ChasePie.Lookout.Runner.Services;
+using Scalar.AspNetCore;
+
 namespace Runner;
 
 public class Program
@@ -6,28 +9,31 @@ public class Program
     public static void Main(string[] args)
     {
         var builder = WebApplication.CreateBuilder(args);
-
-        // Add services to the container.
-
-        builder.Services.AddControllers();
-        // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
-        builder.Services.AddOpenApi();
+        ConfigureServices(builder.Services);
 
         var app = builder.Build();
+        ConfigureApp(app);
 
-        // Configure the HTTP request pipeline.
+        app.Run();
+    }
+
+    private static void ConfigureServices(IServiceCollection services)
+    {
+        services.AddControllers();
+        services.AddOpenApi();
+        services.AddScoped<ScriptRunner>();
+    }
+
+    private static void ConfigureApp(WebApplication app)
+    {
         if (app.Environment.IsDevelopment())
         {
             app.MapOpenApi();
+            app.MapScalarApiReference("/api-docs");
         }
 
         app.UseHttpsRedirection();
-
         app.UseAuthorization();
-
-
         app.MapControllers();
-
-        app.Run();
     }
 }

@@ -6,5 +6,6 @@
   <ItemGroup>
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.14" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.14" />
+    <PackageVersion Include="Scalar.AspNetCore" Version="2.18.7" />
   </ItemGroup>
 </Project>
