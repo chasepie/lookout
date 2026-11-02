@@ -18,10 +18,6 @@
     "erasableSyntaxOnly": true,
     // ...and needs relative imports to name the .ts file
     "rewriteRelativeImportExtensions": true,
-    // Resolve workspace packages (e.g. @chasepie/lookout-watch-sdk) to their .ts source instead of dist/
-    "customConditions": [
-      "@chasepie/source"
-    ],
     "noEmit": true
   }
 }
