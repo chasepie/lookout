@@ -1,0 +1,26 @@
+{
+  "name": "@chasepie/lookout",
+  "version": "0.0.0",
+  "description": "",
+  "homepage": "https://github.com/chasepie/lookout#readme",
+  "bugs": {
+    "url": "https://github.com/chasepie/lookout/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chasepie/lookout.git"
+  },
+  "license": "MIT",
+  "author": "chasepie",
+  "workspaces": [
+    "examples",
+    "src/Runner",
+    "src/watch-sdk"
+  ],
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  }
+}

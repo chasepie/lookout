@@ -1,0 +1,19 @@
+{
+  "name": "@chasepie/lookout-watch-sdk",
+  "version": "0.0.0",
+  "description": "",
+  "license": "MIT",
+  "author": "chasepie",
+  "type": "module",
+  "main": "index.ts",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2"
+  },
+  "peerDependencies": {
+    "playwright": "^1.64.1"
+  }
+}
