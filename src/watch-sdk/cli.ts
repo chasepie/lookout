@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
+import { writeFile } from 'node:fs/promises';
 import { extname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { isRunResult, runWatch, type LookoutWatchScript } from './index.js';
 
 interface RunCommandOptions {
-  outputPath?: string;
+  output?: string;
   headless?: boolean;
 }
 
@@ -39,9 +40,10 @@ async function loadWatchScript(scriptPath: string): Promise<LookoutWatchScript> 
 async function runCommandAction(scriptPath: string, options: RunCommandOptions): Promise<void> {
   const watchScript = await loadWatchScript(scriptPath);
 
-  // First Ctrl+C aborts the script so the browser closes cleanly; a second one exits immediately.
+  // The first SIGINT (Ctrl+C) or SIGTERM aborts the script so the browser closes cleanly; a second one exits immediately.
   const controller = new AbortController();
   process.once('SIGINT', () => controller.abort());
+  process.once('SIGTERM', () => controller.abort());
 
   const result = await runWatch(watchScript, {
     signal: controller.signal,
@@ -53,7 +55,12 @@ async function runCommandAction(scriptPath: string, options: RunCommandOptions):
     throw new Error(`Watch script returned an unexpected result: ${JSON.stringify(result)}`);
   }
 
-  console.log(JSON.stringify(result, null, 2));
+  const json = JSON.stringify(result, null, 2);
+  if (options.output) {
+    await writeFile(resolve(process.cwd(), options.output), json);
+  } else {
+    console.log(json);
+  }
 }
 
 const program = new Command()
@@ -65,7 +72,7 @@ program
   .description('Run a watch script and print its result')
   .argument('<script>', 'path to a .ts or .js file whose default export implements LookoutWatchScript')
   .option('-o, --output <file>', 'write the result to a file instead of stdout')
-  .option('-hl, --headless', 'run the browser in headless mode (default: false)')
+  .option('--headless', 'run the browser in headless mode (default: false)')
   .action(async (scriptPath: string, options: RunCommandOptions) => {
     await runCommandAction(scriptPath, options);
   });

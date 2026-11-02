@@ -1,15 +1,29 @@
 using System;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 
 namespace ChasePie.Lookout.Runner.Services;
 
-public class ScriptRunner
+public partial class ScriptRunner
 {
     private const string WatchScriptsDir = "watch-scripts";
 
+    // How long a cancelled script gets to abort and close its browser before the process is killed
+    private static readonly TimeSpan CancelGracePeriod = TimeSpan.FromSeconds(5);
+
+    // How many trailing stderr lines to include when the CLI fails
+    private const int StderrTailLines = 20;
+
     // camelCase + case-insensitive, matching the CLI's JSON output
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
+    private readonly ILogger<ScriptRunner> _logger;
+
+    public ScriptRunner(ILogger<ScriptRunner> logger)
+    {
+        _logger = logger;
+    }
 
     private static string RepoRoot()
     {
@@ -60,6 +74,7 @@ public class ScriptRunner
         var repoRoot = RepoRoot();
         var scriptPath = GetScriptPath(scriptName);
         var cliPath = GetWatchCliPath(repoRoot);
+        var outputPath = Path.Combine(Path.GetTempPath(), $"lookout-watch-{Guid.NewGuid():N}.json");
 
         var processStartInfo = new ProcessStartInfo("node")
         {
@@ -73,42 +88,112 @@ public class ScriptRunner
         processStartInfo.ArgumentList.Add(cliPath);
         processStartInfo.ArgumentList.Add("run");
         processStartInfo.ArgumentList.Add(scriptPath);
+        processStartInfo.ArgumentList.Add("--output");
+        processStartInfo.ArgumentList.Add(outputPath);
 
-        using var process = Process.Start(processStartInfo)
-            ?? throw new InvalidOperationException("Failed to start the node process.");
+        using var process = new Process { StartInfo = processStartInfo };
 
-        // Read both streams concurrently so neither pipe's buffer fills up and blocks the CLI
-        var stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
-        var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
+        // stdout/stderr are only logs (the result goes to the output file), so scripts can console.log freely
+        var stderrTail = new Queue<string>();
+        process.OutputDataReceived += (_, args) =>
+        {
+            if (args.Data is not null)
+            {
+                LogScriptOutput(scriptName, args.Data);
+            }
+        };
+        process.ErrorDataReceived += (_, args) =>
+        {
+            if (args.Data is null)
+            {
+                return;
+            }
+
+            LogScriptError(scriptName, args.Data);
+            lock (stderrTail)
+            {
+                stderrTail.Enqueue(args.Data);
+                if (stderrTail.Count > StderrTailLines)
+                {
+                    stderrTail.Dequeue();
+                }
+            }
+        };
 
         try
         {
-            await process.WaitForExitAsync(cancellationToken);
+            process.Start();
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+
+            try
+            {
+                await process.WaitForExitAsync(cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                await StopAsync(process);
+                throw;
+            }
+
+            if (process.ExitCode != 0)
+            {
+                string stderr;
+                lock (stderrTail)
+                {
+                    stderr = string.Join(Environment.NewLine, stderrTail);
+                }
+
+                throw new InvalidOperationException($"lookout-watch exited with code {process.ExitCode}: {stderr}");
+            }
+
+            var json = await File.ReadAllTextAsync(outputPath, cancellationToken);
+            try
+            {
+                return JsonSerializer.Deserialize<WatchRunResult>(json, JsonOptions)
+                    ?? throw new JsonException("The output was 'null'.");
+            }
+            catch (JsonException ex)
+            {
+                throw new InvalidOperationException($"lookout-watch wrote output that isn't a run result: {json}", ex);
+            }
         }
-        catch (OperationCanceledException)
+        finally
         {
-            // Also kills the Chromium processes Playwright launched
+            File.Delete(outputPath);
+        }
+    }
+
+    /// <summary>
+    /// Asks the CLI to abort with SIGTERM, then kills it if it hasn't exited within <see cref="CancelGracePeriod"/>.
+    /// </summary>
+    private static async Task StopAsync(Process process)
+    {
+        try
+        {
+            process.SendSignal(PosixSignal.SIGTERM);
+        }
+        catch (NotImplementedException)
+        {
+            // Windows: don't leave the CLI (and its browser) running while the exception surfaces
             process.Kill(entireProcessTree: true);
             throw;
         }
 
-        var stdout = await stdoutTask;
-        var stderr = await stderrTask;
-
-        if (process.ExitCode != 0)
-        {
-            throw new InvalidOperationException(
-                $"lookout-watch exited with code {process.ExitCode}: {stderr.Trim()}");
-        }
-
+        using var graceTimeout = new CancellationTokenSource(CancelGracePeriod);
         try
         {
-            return JsonSerializer.Deserialize<WatchRunResult>(stdout, JsonOptions)
-                ?? throw new JsonException("The output was 'null'.");
+            await process.WaitForExitAsync(graceTimeout.Token);
         }
-        catch (JsonException ex)
+        catch (OperationCanceledException)
         {
-            throw new InvalidOperationException($"lookout-watch printed output that isn't a run result: {stdout}", ex);
+            process.Kill(entireProcessTree: true);
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "[{ScriptName}] {Line}")]
+    private partial void LogScriptOutput(string scriptName, string line);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "[{ScriptName}] {Line}")]
+    private partial void LogScriptError(string scriptName, string line);
 }
