@@ -211,3 +211,5 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+.shared-volumes/
