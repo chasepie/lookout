@@ -5,12 +5,30 @@ export interface SuccessfulRunResult {
   content: string;
 }
 
+export function isSuccessfulRunResult(value: unknown): value is SuccessfulRunResult {
+  return typeof value === 'object'
+    && value !== null
+    && 'success' in value && value.success === true
+    && 'content' in value && typeof value.content === 'string';
+}
+
 export interface FailedRunResult {
   success: false;
   reason: string;
 }
 
+export function isFailedRunResult(value: unknown): value is FailedRunResult {
+  return typeof value === 'object'
+    && value !== null
+    && 'success' in value && value.success === false
+    && 'reason' in value && typeof value.reason === 'string';
+}
+
 export type RunResult = SuccessfulRunResult | FailedRunResult;
+
+export function isRunResult(value: unknown): value is RunResult {
+  return isSuccessfulRunResult(value) || isFailedRunResult(value);
+}
 
 export interface LookoutWatchScript {
   run(page: Page, signal: AbortSignal): Promise<RunResult>;

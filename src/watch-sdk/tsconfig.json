@@ -1,9 +1,11 @@
 {
   // Visit https://aka.ms/tsconfig to read more about this file
+  // Type-checks the library and CLI; tsconfig.build.json emits the library.
+  "include": [
+    "*.ts"
+  ],
   "compilerOptions": {
-    // File Layout
-    // "rootDir": "./src",
-    // "outDir": "./dist",
+    "noEmit": true,
     // Environment Settings
     // See also https://aka.ms/tsconfig/module
     "module": "nodenext",

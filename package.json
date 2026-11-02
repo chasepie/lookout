@@ -28,6 +28,7 @@
     "typescript-eslint": "^8.72.1"
   },
   "allowScripts": {
-    "fsevents@2.3.3": true
+    "fsevents@2.3.3": true,
+    "esbuild@0.28.2": true
   }
 }
