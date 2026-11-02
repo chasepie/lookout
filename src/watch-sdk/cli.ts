@@ -4,6 +4,11 @@ import { extname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { isRunResult, runWatch, type LookoutWatchScript } from './index.js';
 
+interface RunCommandOptions {
+  outputPath?: string;
+  headless?: boolean;
+}
+
 function isWatchScript(value: unknown): value is LookoutWatchScript {
   return typeof value === 'object'
     && value !== null
@@ -31,14 +36,19 @@ async function loadWatchScript(scriptPath: string): Promise<LookoutWatchScript> 
   throw new Error(`${scriptPath} must default-export a class or object implementing LookoutWatchScript`);
 }
 
-async function runWatchScript(scriptPath: string): Promise<void> {
+async function runCommandAction(scriptPath: string, options: RunCommandOptions): Promise<void> {
   const watchScript = await loadWatchScript(scriptPath);
 
   // First Ctrl+C aborts the script so the browser closes cleanly; a second one exits immediately.
   const controller = new AbortController();
   process.once('SIGINT', () => controller.abort());
 
-  const result = await runWatch(watchScript, { signal: controller.signal });
+  const result = await runWatch(watchScript, {
+    signal: controller.signal,
+    launchOptions: {
+      headless: options.headless ?? false,
+    }
+  });
   if (!isRunResult(result)) {
     throw new Error(`Watch script returned an unexpected result: ${JSON.stringify(result)}`);
   }
@@ -54,7 +64,11 @@ program
   .command('run')
   .description('Run a watch script and print its result')
   .argument('<script>', 'path to a .ts or .js file whose default export implements LookoutWatchScript')
-  .action(runWatchScript);
+  .option('-o, --output <file>', 'write the result to a file instead of stdout')
+  .option('-hl, --headless', 'run the browser in headless mode (default: false)')
+  .action(async (scriptPath: string, options: RunCommandOptions) => {
+    await runCommandAction(scriptPath, options);
+  });
 
 try {
   await program.parseAsync();
