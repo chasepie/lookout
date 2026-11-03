@@ -117,6 +117,10 @@ public partial class ScriptRunner(
                 ["FORCE_COLOR"] = "0",
             },
         };
+        // When a package.json without a "type" field is above the scripts directory, as with the repo root in
+        // development, Node warns on every ESM script it loads. Node still loads them fine, and the warning would
+        // otherwise lead the stderr kept for failed runs.
+        processStartInfo.ArgumentList.Add("--disable-warning=MODULE_TYPELESS_PACKAGE_JSON");
         // ArgumentList quotes each argument, so paths with spaces are passed intact
         processStartInfo.ArgumentList.Add(cliPath);
         processStartInfo.ArgumentList.Add("run");
