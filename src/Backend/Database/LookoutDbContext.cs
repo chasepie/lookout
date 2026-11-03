@@ -1,6 +1,7 @@
 using ChasePie.Lookout.Core;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace ChasePie.Lookout.Backend.Database;
 
@@ -10,6 +11,17 @@ public class LookoutDbContext(DbContextOptions<LookoutDbContext> options) : DbCo
 
     public DbSet<Watch> Watches { get; set; } = null!;
     public DbSet<WatchRun> WatchRuns { get; set; } = null!;
+
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+    {
+        // Every DateTime is stored in UTC. SQLite keeps no DateTimeKind, so without this the values read back as
+        // Unspecified, serialize without a "Z", and the frontend shows them as local time.
+        configurationBuilder.Properties<DateTime>().HaveConversion<UtcDateTimeConverter>();
+    }
+
+    private sealed class UtcDateTimeConverter() : ValueConverter<DateTime, DateTime>(
+        value => value.Kind == DateTimeKind.Local ? value.ToUniversalTime() : value,
+        value => DateTime.SpecifyKind(value, DateTimeKind.Utc));
 
     /// <summary>
     /// The connection string for the database file in the <c>LOOKOUT_DATABASE_DIR</c> directory,
