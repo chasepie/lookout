@@ -1,4 +1,3 @@
-using System.Runtime.CompilerServices;
 using ChasePie.Lookout.Backend.Database;
 using Microsoft.EntityFrameworkCore;
 

@@ -11,6 +11,7 @@ public class Program
     {
         var builder = WebApplication.CreateBuilder(args);
         builder.Configuration.AddDotNetEnv();
+        builder.AddServiceDefaults();
         ConfigureServices(builder.Services);
 
         var app = builder.Build();
@@ -46,5 +47,6 @@ public class Program
         app.UseHttpsRedirection();
         app.UseAuthorization();
         app.MapControllers();
+        app.MapDefaultEndpoints();
     }
 }

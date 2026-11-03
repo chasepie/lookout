@@ -5,6 +5,12 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "Aspire: Launch AppHost",
+      "type": "aspire",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/AppHost/AppHost.csproj"
+    },
+    {
       "name": "Launch API Docs - Backend",
       "type": "dotnet",
       "request": "launch",
