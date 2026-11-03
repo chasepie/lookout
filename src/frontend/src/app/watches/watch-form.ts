@@ -10,6 +10,7 @@ interface WatchFormModel {
   /** The numeric enum value as a string, or `''` for none. */
   scheduleKind: string;
   scheduleInterval: string;
+  useVpn: boolean;
 }
 
 const scheduleKinds = Object.entries(WatchScheduleKind)
@@ -49,6 +50,13 @@ const scheduleKinds = Object.entries(WatchScheduleKind)
       <p>
         <label for="interval">Schedule interval (a number, or a cron expression)</label><br />
         <input id="interval" [formField]="watchForm.scheduleInterval" />
+      </p>
+      <p>
+        <label>
+          <input type="checkbox" aria-describedby="vpn-hint" [formField]="watchForm.useVpn" />
+          Use VPN
+        </label>
+        <br /><span id="vpn-hint">Sends the browser's traffic through the VPN. Runs fail if the VPN isn't set up.</span>
       </p>
       @if (!id()) {
         <p>
@@ -91,6 +99,7 @@ export class WatchForm {
     scheduleEnabled: false,
     scheduleKind: '',
     scheduleInterval: '',
+    useVpn: false,
   });
   protected readonly watchForm = form(this.model, (path) => {
     required(path.name);
@@ -109,6 +118,7 @@ export class WatchForm {
         scheduleEnabled: watch.scheduleEnabled,
         scheduleKind: watch.scheduleKind === null ? '' : String(watch.scheduleKind),
         scheduleInterval: watch.scheduleInterval ?? '',
+        useVpn: watch.useVpn,
       });
     });
   }
@@ -128,6 +138,7 @@ export class WatchForm {
         scheduleEnabled: value.scheduleEnabled,
         scheduleKind: value.scheduleKind === '' ? null : Number(value.scheduleKind),
         scheduleInterval: value.scheduleInterval || null,
+        useVpn: value.useVpn,
       };
       try {
         const id = this.id();

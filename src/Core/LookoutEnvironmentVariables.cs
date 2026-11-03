@@ -28,6 +28,12 @@ public static class LookoutEnvironmentVariables
     public const string BrowserlessUrl = "LOOKOUT_BROWSERLESS_URL";
 
     /// <summary>
+    /// The HTTP proxy that watches with <see cref="CreateWatchDto.UseVpn"/> send their browser traffic through,
+    /// used by the Runner. The browser connects to it, so it must be reachable from wherever the browser runs.
+    /// </summary>
+    public const string VpnProxyUrl = "LOOKOUT_VPN_PROXY_URL";
+
+    /// <summary>
     /// Reads a directory from configuration, makes it absolute, and creates it if it doesn't exist yet.
     /// </summary>
     /// <exception cref="InvalidOperationException">The variable is not set.</exception>

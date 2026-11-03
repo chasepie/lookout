@@ -9,6 +9,7 @@ interface RunCommandOptions {
   output?: string;
   headless?: boolean;
   browserless?: string;
+  proxy?: string;
 }
 
 function isWatchScript(value: unknown): value is LookoutWatchScript {
@@ -52,6 +53,7 @@ async function runCommandAction(scriptPath: string, options: RunCommandOptions):
       headless: options.headless ?? false,
     },
     ...(options.browserless ? { browserlessUrl: options.browserless } : {}),
+    ...(options.proxy ? { proxy: options.proxy } : {}),
   });
   if (!isRunResult(result)) {
     throw new Error(`Watch script returned an unexpected result: ${JSON.stringify(result)}`);
@@ -78,6 +80,7 @@ program
   // The Runner passes its environment on to the CLI, so the AppHost's LOOKOUT_BROWSERLESS_URL reaches it
   .addOption(new Option('--browserless <url>', 'run the browser on this browserless server instead of launching Chromium locally')
     .env('LOOKOUT_BROWSERLESS_URL'))
+  .option('--proxy <url>', 'send all browser traffic through this HTTP proxy')
   .action(async (scriptPath: string, options: RunCommandOptions) => {
     await runCommandAction(scriptPath, options);
   });

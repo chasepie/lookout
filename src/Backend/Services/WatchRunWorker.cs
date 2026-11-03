@@ -113,7 +113,7 @@ public partial class WatchRunWorker(
             var scriptName = WatchScriptsDirectory.GetStoredFileName(watchRun.Watch)
                 ?? throw new InvalidOperationException("The watch has no script.");
             var runner = scope.ServiceProvider.GetRequiredService<RunnerHttpClient>();
-            var result = await runner.RunWatchScriptAsync(scriptName, stoppingToken);
+            var result = await runner.RunWatchScriptAsync(scriptName, watchRun.Watch.UseVpn, stoppingToken);
             if (result.Success)
             {
                 watchRun.Content = result.Content;

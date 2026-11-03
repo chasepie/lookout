@@ -45,6 +45,11 @@ export interface RunWatchOptions {
    * launching Chromium locally. Query parameters, such as `token`, are passed on to browserless.
    */
   browserlessUrl?: string;
+  /**
+   * HTTP proxy, such as `http://gluetun:8888`, that the browser sends all its traffic through. The browser
+   * connects to it, so with {@link browserlessUrl} it must be reachable from the browserless server.
+   */
+  proxy?: string;
   signal?: AbortSignal;
 }
 
@@ -63,6 +68,17 @@ export function getBrowserlessEndpoint(browserlessUrl: string, launchOptions: Pi
   return url.href;
 }
 
+/**
+ * Runs in every frame of a proxied context. WebRTC sends STUN requests over UDP outside the HTTP proxy, which
+ * reveals the real IP, and Chromium's `--force-webrtc-ip-handling-policy` doesn't stop it with a per-context
+ * proxy, so pages get no WebRTC at all.
+ */
+function removeWebRtc(): void {
+  for (const name of ['RTCPeerConnection', 'webkitRTCPeerConnection', 'RTCDataChannel', 'RTCIceCandidate', 'RTCSessionDescription']) {
+    Reflect.deleteProperty(globalThis, name);
+  }
+}
+
 async function openBrowser(launchOptions: LaunchOptions, browserlessUrl: string | undefined): Promise<Browser> {
   if (browserlessUrl === undefined) {
     return chromium.launch(launchOptions);
@@ -78,11 +94,16 @@ export async function runWatch(runScript: LookoutWatchScript, options?: RunWatch
     args: ['--disable-blink-features=AutomationControlled'],
     ...options?.launchOptions,
   };
+  const proxy = options?.proxy;
 
   const browser = await openBrowser(launchOptions, options?.browserlessUrl);
 
   try {
-    const page = await browser.newPage();
+    const context = await browser.newContext(proxy === undefined ? {} : { proxy: { server: proxy } });
+    if (proxy !== undefined) {
+      await context.addInitScript(removeWebRtc);
+    }
+    const page = await context.newPage();
     return await runScript.run(page, signal);
   } finally {
     await browser.close();
