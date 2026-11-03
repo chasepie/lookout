@@ -130,7 +130,8 @@ export class WatchForm {
 
   protected save(event: Event) {
     event.preventDefault();
-    submit(this.watchForm, async () => {
+    // The action catches its own errors and shows them, so nothing is left to handle on the returned promise
+    void submit(this.watchForm, async () => {
       this.error.set(null);
       const value = this.model();
       const dto: CreateWatchDto = {
