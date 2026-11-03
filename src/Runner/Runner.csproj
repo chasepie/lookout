@@ -5,6 +5,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="../Model/Model.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="dotenv.net" />
     <PackageReference Include="dotenv.net.Configuration" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />

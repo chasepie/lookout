@@ -23,6 +23,7 @@ public class Program
         services.AddControllers();
         services.AddOpenApi();
         services.AddScoped<WatchScriptManager>();
+        services.AddHttpClient<RunnerHttpClient>(RunnerHttpClient.Configure);
     }
 
     private static void ConfigureApp(WebApplication app)

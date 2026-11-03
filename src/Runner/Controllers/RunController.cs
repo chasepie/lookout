@@ -1,3 +1,4 @@
+using ChasePie.Lookout.Model;
 using ChasePie.Lookout.Runner.Services;
 using Microsoft.AspNetCore.Mvc;
 

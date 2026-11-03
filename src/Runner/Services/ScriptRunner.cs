@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using ChasePie.Lookout.Model;
 
 namespace ChasePie.Lookout.Runner.Services;
 
