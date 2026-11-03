@@ -23,6 +23,11 @@ public static class LookoutEnvironmentVariables
     public const string RunnerUrl = "LOOKOUT_RUNNER_URL";
 
     /// <summary>
+    /// The browserless container's base URL, used by the Runner.
+    /// </summary>
+    public const string BrowserlessUrl = "LOOKOUT_BROWSERLESS_URL";
+
+    /// <summary>
     /// Reads a directory from configuration, makes it absolute, and creates it if it doesn't exist yet.
     /// </summary>
     /// <exception cref="InvalidOperationException">The variable is not set.</exception>

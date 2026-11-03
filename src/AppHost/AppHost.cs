@@ -13,9 +13,44 @@ public partial class Program
         // repo-root .env, so forward the values they need from it.
         var repoRoot = Path.GetFullPath(Path.Combine(builder.AppHostDirectory, "..", ".."));
         var dotEnv = DotEnv.Read(new DotEnvOptions(envFilePaths: [Path.Combine(repoRoot, ".env")]));
+        string? DotEnvValue(string name) =>
+            dotEnv.TryGetValue(name, out var value) && !string.IsNullOrWhiteSpace(value) ? value : null;
+
+        var timeZone = DotEnvValue("TZ") ?? "America/New_York";
+
+        // Headless Chromium that watch scripts can connect to instead of launching a local browser
+        var browserless = builder.AddContainer("browserless", "ghcr.io/browserless/chromium")
+            .WithEnvironment("TZ", timeZone)
+            .WithEnvironment("TIMEOUT", "180000")
+            .WithHttpEndpoint(targetPort: 3000, name: "http");
+
+        // Without a token browserless accepts unauthenticated connections
+        if (DotEnvValue("BROWSERLESS_TOKEN") is { } browserlessToken)
+        {
+            var token = builder.AddParameter("browserless-token", browserlessToken, secret: true);
+            browserless.WithEnvironment("TOKEN", token);
+        }
+
+        // VPN client that exposes an HTTP proxy on port 8888, so traffic sent through it leaves over the VPN.
+        // Aspire has no API for capabilities or devices, so they're passed to `docker run` directly.
+        var openVpnPassword = builder.AddParameter("openvpn-password", DotEnvValue("OPENVPN_PASSWORD") ?? "", secret: true);
+        builder.AddContainer("gluetun", "qmcgaw/gluetun")
+            .WithContainerRuntimeArgs("--cap-add=NET_ADMIN", "--device=/dev/net/tun:/dev/net/tun")
+            // Keeps the server list it downloads between runs
+            .WithVolume("lookout-gluetun", "/gluetun")
+            .WithEnvironment("VPN_SERVICE_PROVIDER", DotEnvValue("VPN_SERVICE_PROVIDER") ?? "private internet access")
+            .WithEnvironment("VPN_TYPE", "openvpn")
+            .WithEnvironment("OPENVPN_USER", DotEnvValue("OPENVPN_USER") ?? "")
+            .WithEnvironment("OPENVPN_PASSWORD", openVpnPassword)
+            .WithEnvironment("HTTPPROXY", "on")
+            .WithEnvironment("TZ", timeZone)
+            .WithEnvironment("UPDATER_PERIOD", "360h")
+            .WithEndpoint(targetPort: 8888, scheme: "http", name: "proxy");
 
         var runner = builder.AddProject<Projects.Runner>("runner")
-            .WithHttpHealthCheck("/health");
+            .WithEnvironment(LookoutEnvironmentVariables.BrowserlessUrl, browserless.GetEndpoint("http"))
+            .WithHttpHealthCheck("/health")
+            .WaitFor(browserless);
 
         var backend = builder.AddProject<Projects.Backend>("backend")
             .WithEnvironment(LookoutEnvironmentVariables.RunnerUrl, runner.GetEndpoint("https"))
