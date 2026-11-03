@@ -109,7 +109,13 @@ public partial class ScriptRunner(
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
-            CreateNoWindow = true
+            CreateNoWindow = true,
+            Environment =
+            {
+                // The output ends up in logs and in run errors, not a terminal. Playwright colours its errors even
+                // when stderr isn't a TTY, and ignores NO_COLOR, so without this the escape codes show up as text.
+                ["FORCE_COLOR"] = "0",
+            },
         };
         // ArgumentList quotes each argument, so paths with spaces are passed intact
         processStartInfo.ArgumentList.Add(cliPath);
