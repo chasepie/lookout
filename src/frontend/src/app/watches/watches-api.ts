@@ -53,7 +53,7 @@ export class WatchesApi {
   }
 
   run(id: string) {
-    return firstValueFrom(this.http.post<WatchRun>(`${baseUrl}/${id}/run`, null));
+    return firstValueFrom(this.http.post<WatchRun>(`${baseUrl}/${id}/runs`, null));
   }
 }
 

@@ -8,7 +8,7 @@ namespace ChasePie.Lookout.Backend.Controllers;
 
 [ApiController]
 [Route("[controller]")]
-public partial class WatchesController : ControllerBase
+public class WatchesController : ControllerBase
 {
     private readonly LookoutDbContext _dbContext;
     private readonly WatchScriptManager _scriptManager;
