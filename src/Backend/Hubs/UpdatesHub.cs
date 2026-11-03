@@ -23,6 +23,11 @@ public interface IUpdatesClient
     Task RunUpdated(WatchRunUpdate update);
 
     /// <summary>
+    /// Runs of a watch were deleted.
+    /// </summary>
+    Task RunsDeleted(int watchId, IReadOnlyList<int> runIds);
+
+    /// <summary>
     /// A watch was created, edited, deleted, or had its script replaced.
     /// </summary>
     Task WatchChanged(int watchId);

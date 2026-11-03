@@ -82,4 +82,69 @@ public class WatchRunsController(LookoutDbContext dbContext, UpdatesNotifier not
 
         return watchRun;
     }
+
+    /// <summary>
+    /// Deletes a run. A run that is in progress can't be deleted until it finishes.
+    /// </summary>
+    [HttpDelete("{runId:int}")]
+    public async Task<ActionResult<WatchRun>> Delete(int watchId, int runId, CancellationToken cancellationToken)
+    {
+        var watchRun = await _dbContext.WatchRuns
+            .AsNoTracking()
+            .SingleOrDefaultAsync(wr => wr.WatchId == watchId && wr.Id == runId, cancellationToken);
+        if (watchRun is null)
+        {
+            return NotFound();
+        }
+
+        // Conditional, in case the worker started the run since it was read
+        var deleted = await _dbContext.WatchRuns
+            .Where(wr => wr.Id == runId && wr.Status != WatchRunStatus.Running)
+            .ExecuteDeleteAsync(cancellationToken);
+        if (deleted == 0)
+        {
+            return Conflict(RunInProgressMessage);
+        }
+
+        await _notifier.RunsDeletedAsync(watchId, [runId]);
+        return watchRun;
+    }
+
+    /// <summary>
+    /// Deletes all of a watch's runs, except any that are in progress.
+    /// </summary>
+    [HttpDelete]
+    public async Task<ActionResult<DeleteRunsResult>> DeleteAll(int watchId, CancellationToken cancellationToken)
+    {
+        var watchExists = await _dbContext.Watches
+            .AnyAsync(w => w.Id == watchId, cancellationToken);
+        if (!watchExists)
+        {
+            return NotFound();
+        }
+
+        var runIds = await _dbContext.WatchRuns
+            .Where(wr => wr.WatchId == watchId && wr.Status != WatchRunStatus.Running)
+            .Select(wr => wr.Id)
+            .ToListAsync(cancellationToken);
+        await _dbContext.WatchRuns
+            .Where(wr => runIds.Contains(wr.Id) && wr.Status != WatchRunStatus.Running)
+            .ExecuteDeleteAsync(cancellationToken);
+
+        var keptRunning = await _dbContext.WatchRuns
+            .CountAsync(wr => wr.WatchId == watchId, cancellationToken);
+
+        await _notifier.RunsDeletedAsync(watchId, runIds);
+        return new DeleteRunsResult(runIds.Count, keptRunning);
+    }
+
+    // Deleting a running run would make the worker's final save fail
+    private const string RunInProgressMessage = "This run is in progress. Delete it after it finishes.";
 }
+
+/// <summary>
+/// The outcome of deleting all of a watch's runs.
+/// </summary>
+/// <param name="Deleted">How many runs were deleted.</param>
+/// <param name="KeptRunning">How many runs were kept because they're in progress.</param>
+public sealed record DeleteRunsResult(int Deleted, int KeptRunning);

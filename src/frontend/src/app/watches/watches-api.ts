@@ -1,7 +1,7 @@
 import { HttpClient, httpResource } from '@angular/common/http';
 import { Service, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
-import { CreateWatchDto, Watch, WatchRun } from './watch.model';
+import { CreateWatchDto, DeleteRunsResult, Watch, WatchRun } from './watch.model';
 
 const baseUrl = '/api/Watches';
 
@@ -61,6 +61,16 @@ export class WatchesApi {
     const body = new FormData();
     body.append('script', script);
     return firstValueFrom(this.http.post(`${baseUrl}/${id}/script`, body, { responseType: 'text' }));
+  }
+
+  /** Fails with 409 if the run is in progress. */
+  deleteRun(watchId: string, runId: number) {
+    return firstValueFrom(this.http.delete<WatchRun>(`${baseUrl}/${watchId}/runs/${runId}`));
+  }
+
+  /** Keeps any run that is in progress. */
+  deleteRuns(watchId: string) {
+    return firstValueFrom(this.http.delete<DeleteRunsResult>(`${baseUrl}/${watchId}/runs`));
   }
 
   run(id: string) {

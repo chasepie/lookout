@@ -2,7 +2,7 @@ import { DatePipe } from '@angular/common';
 import { Component, inject, input, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
-import { filter } from 'rxjs';
+import { filter, merge } from 'rxjs';
 import { LiveUpdates } from './live-updates';
 import { WatchRunStatus, WatchScheduleKind } from './watch.model';
 import { WatchesApi, describeError } from './watches-api';
@@ -51,7 +51,12 @@ import { WatchesApi, describeError } from './watches-api';
     }
 
     <h3>Runs</h3>
-    <p><a [routerLink]="['/watches', id(), 'runs', 'latest']">Latest run</a></p>
+    <p>
+      <a [routerLink]="['/watches', id(), 'runs', 'latest']">Latest run</a>
+      @if (runs.hasValue() && runs.value().length > 0) {
+        <button type="button" (click)="deleteAllRuns()">Delete all runs</button>
+      }
+    </p>
     @if (runs.error(); as error) {
       <pre role="alert">{{ describeError(error) }}</pre>
     } @else if (runs.hasValue()) {
@@ -64,6 +69,7 @@ import { WatchesApi, describeError } from './watches-api';
               <th scope="col">Run</th>
               <th scope="col">Status</th>
               <th scope="col">Created</th>
+              <th scope="col">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -72,6 +78,13 @@ import { WatchesApi, describeError } from './watches-api';
                 <td><a [routerLink]="['/watches', id(), 'runs', run.id]">#{{ run.id }}</a></td>
                 <td>{{ statuses[run.status] }}</td>
                 <td>{{ run.createdTime | date: 'medium' }}</td>
+                <td>
+                  @if (run.status !== statuses.Running) {
+                    <button type="button" [attr.aria-label]="'Delete run #' + run.id" (click)="deleteRun(run.id)">
+                      Delete
+                    </button>
+                  }
+                </td>
               </tr>
             }
           </tbody>
@@ -102,7 +115,7 @@ export class WatchDetail {
     updates.watchChanged
       .pipe(filter(isThisWatch), takeUntilDestroyed())
       .subscribe(() => this.watch.reload());
-    updates.runUpdated
+    merge(updates.runUpdated, updates.runsDeleted)
       .pipe(filter((update) => isThisWatch(update.watchId)), takeUntilDestroyed())
       .subscribe(() => this.runs.reload());
     updates.reconnected.pipe(takeUntilDestroyed()).subscribe(() => {
@@ -128,6 +141,33 @@ export class WatchDetail {
     try {
       await this.api.delete(this.id());
       await this.router.navigate(['/']);
+    } catch (e) {
+      this.message.set(describeError(e));
+    }
+  }
+
+  protected async deleteRun(runId: number) {
+    if (!confirm(`Delete run #${runId}?`)) {
+      return;
+    }
+    try {
+      await this.api.deleteRun(this.id(), runId);
+      this.message.set(`Deleted run #${runId}.`);
+      this.runs.reload();
+    } catch (e) {
+      this.message.set(describeError(e));
+    }
+  }
+
+  protected async deleteAllRuns() {
+    if (!confirm('Delete all runs of this watch? Runs in progress are kept.')) {
+      return;
+    }
+    try {
+      const result = await this.api.deleteRuns(this.id());
+      const kept = result.keptRunning > 0 ? ` Kept ${result.keptRunning} in progress.` : '';
+      this.message.set(`Deleted ${result.deleted} runs.${kept}`);
+      this.runs.reload();
     } catch (e) {
       this.message.set(describeError(e));
     }

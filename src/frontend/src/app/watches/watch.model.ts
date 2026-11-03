@@ -41,5 +41,12 @@ export interface WatchRun {
   screenshot: string | null;
 }
 
+/** The result of deleting all of a watch's runs. Mirrors `DeleteRunsResult` in src/Backend/Controllers/WatchRunsController.cs. */
+export interface DeleteRunsResult {
+  deleted: number;
+  /** Runs kept because they were in progress. */
+  keptRunning: number;
+}
+
 /** A run's state as pushed by `LiveUpdates`. Mirrors `WatchRunUpdate` in src/Backend/Hubs/UpdatesHub.cs. */
 export type WatchRunUpdate = Pick<WatchRun, 'id' | 'watchId' | 'status' | 'createdTime' | 'startTime' | 'endTime'>;

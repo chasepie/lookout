@@ -19,6 +19,8 @@ function retryDelayMs(previousAttempts: number) {
 export class LiveUpdates {
   /** A run was created or changed status. */
   readonly runUpdated = new Subject<WatchRunUpdate>();
+  /** Runs of a watch were deleted. */
+  readonly runsDeleted = new Subject<{ watchId: number; runIds: number[] }>();
   /** A watch was created, edited, deleted, or had its script replaced. Emits the watch ID. */
   readonly watchChanged = new Subject<number>();
   /** The connection is back after being down. Messages sent meanwhile were missed, so reload. */
@@ -34,6 +36,9 @@ export class LiveUpdates {
 
   constructor() {
     this.connection.on('RunUpdated', (update: WatchRunUpdate) => this.runUpdated.next(update));
+    this.connection.on('RunsDeleted', (watchId: number, runIds: number[]) =>
+      this.runsDeleted.next({ watchId, runIds }),
+    );
     this.connection.on('WatchChanged', (watchId: number) => this.watchChanged.next(watchId));
     this.connection.onreconnected(() => this.reconnected.next());
     void this.start(0);

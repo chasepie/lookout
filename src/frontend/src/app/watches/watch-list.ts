@@ -65,7 +65,7 @@ export class WatchList {
   constructor() {
     // Any watch or run change can alter the list or its "Latest run" column
     const updates = inject(LiveUpdates);
-    merge(updates.runUpdated, updates.watchChanged, updates.reconnected)
+    merge(updates.runUpdated, updates.runsDeleted, updates.watchChanged, updates.reconnected)
       .pipe(takeUntilDestroyed())
       .subscribe(() => this.watches.reload());
   }

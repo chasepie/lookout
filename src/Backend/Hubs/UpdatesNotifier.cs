@@ -24,6 +24,23 @@ public partial class UpdatesNotifier(
         }
     }
 
+    public async Task RunsDeletedAsync(int watchId, IReadOnlyList<int> runIds)
+    {
+        if (runIds.Count == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            await hubContext.Clients.All.RunsDeleted(watchId, runIds);
+        }
+        catch (Exception ex)
+        {
+            LogSendFailed(ex, nameof(IUpdatesClient.RunsDeleted));
+        }
+    }
+
     public async Task WatchChangedAsync(int watchId)
     {
         try
