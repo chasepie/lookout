@@ -15,6 +15,7 @@
   "author": "chasepie",
   "workspaces": [
     "examples",
+    "src/frontend",
     "src/Runner",
     "src/watch-sdk"
   ],
