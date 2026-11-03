@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Text.Json.Serialization;
 
 namespace ChasePie.Lookout.Model;
 
@@ -14,6 +15,8 @@ public class WatchRun
     public int Id { get; set; }
 
     public required int WatchId { get; set; }
+
+    [JsonIgnore]
     public Watch Watch { get; set; } = null!;
 
     public required DateTime CreatedTime { get; set; }

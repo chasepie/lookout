@@ -1,3 +1,4 @@
+using ChasePie.Lookout.Backend.Database;
 using ChasePie.Lookout.Backend.Services;
 using dotenv.net.Configuration;
 using Scalar.AspNetCore;
@@ -22,12 +23,19 @@ public class Program
     {
         services.AddControllers();
         services.AddOpenApi();
+        services.AddDbContext<LookoutDbContext>();
         services.AddScoped<WatchScriptManager>();
         services.AddHttpClient<RunnerHttpClient>(RunnerHttpClient.Configure);
     }
 
     private static void ConfigureApp(WebApplication app)
     {
+        // There are no migrations yet, so create the schema directly.
+        using (var scope = app.Services.CreateScope())
+        {
+            scope.ServiceProvider.GetRequiredService<LookoutDbContext>().Database.EnsureCreated();
+        }
+
         // Configure the HTTP request pipeline.
         if (app.Environment.IsDevelopment())
         {
