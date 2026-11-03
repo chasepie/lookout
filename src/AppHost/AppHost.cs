@@ -18,17 +18,21 @@ public partial class Program
 
         var timeZone = DotEnvValue("TZ") ?? "America/New_York";
 
-        // Headless Chromium that watch scripts can connect to instead of launching a local browser
-        var browserless = builder.AddContainer("browserless", "ghcr.io/browserless/chromium")
+        // Chromium that watch scripts run on instead of a locally launched browser. The SDK connects with
+        // Playwright, so the image must support its Playwright version: v2.58.3 supports 1.60 to 1.64.
+        var browserless = builder.AddContainer("browserless", "ghcr.io/browserless/chromium", "v2.58.3")
             .WithEnvironment("TZ", timeZone)
             .WithEnvironment("TIMEOUT", "180000")
             .WithHttpEndpoint(targetPort: 3000, name: "http");
+        var browserlessUrl = ReferenceExpression.Create($"{browserless.GetEndpoint("http")}");
 
         // Without a token browserless accepts unauthenticated connections
         if (DotEnvValue("BROWSERLESS_TOKEN") is { } browserlessToken)
         {
             var token = builder.AddParameter("browserless-token", browserlessToken, secret: true);
             browserless.WithEnvironment("TOKEN", token);
+            // The SDK passes the URL's query on to browserless
+            browserlessUrl = ReferenceExpression.Create($"{browserless.GetEndpoint("http")}?token={token}");
         }
 
         // VPN client that exposes an HTTP proxy on port 8888, so traffic sent through it leaves over the VPN.
@@ -48,7 +52,7 @@ public partial class Program
             .WithEndpoint(targetPort: 8888, scheme: "http", name: "proxy");
 
         var runner = builder.AddProject<Projects.Runner>("runner")
-            .WithEnvironment(LookoutEnvironmentVariables.BrowserlessUrl, browserless.GetEndpoint("http"))
+            .WithEnvironment(LookoutEnvironmentVariables.BrowserlessUrl, browserlessUrl)
             .WithHttpHealthCheck("/health")
             .WaitFor(browserless);
 
