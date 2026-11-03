@@ -1,10 +1,6 @@
-You are an expert in TypeScript, Angular, and scalable web application development. You write functional, maintainable, performant, and accessible code following Angular and TypeScript best practices.
+# Frontend (Angular)
 
-## TypeScript Best Practices
-
-- Use strict type checking
-- Prefer type inference when the type is obvious
-- Avoid the `any` type; use `unknown` when type is uncertain
+The Lookout web UI, an Angular v22 app. These rules apply to everything under `src/frontend/`. The TypeScript rules in the root `CLAUDE.md` apply here as well.
 
 ## Angular Best Practices
 
