@@ -1,7 +1,7 @@
 import { Component, effect, inject, input, signal } from '@angular/core';
 import { FormField, form, required, submit } from '@angular/forms/signals';
 import { Router, RouterLink } from '@angular/router';
-import { CreateWatchDto, WatchScheduleKind } from './watch.model';
+import { CreateWatchDto, Watch, WatchScheduleKind } from './watch.model';
 import { WatchesApi, describeError } from './watches-api';
 
 interface WatchFormModel {
@@ -50,12 +50,26 @@ const scheduleKinds = Object.entries(WatchScheduleKind)
         <label for="interval">Schedule interval (a number, or a cron expression)</label><br />
         <input id="interval" [formField]="watchForm.scheduleInterval" />
       </p>
+      @if (!id()) {
+        <p>
+          <label for="script">Script (.ts or .js)</label><br />
+          <input
+            id="script"
+            type="file"
+            accept=".ts,.js"
+            required
+            aria-describedby="script-hint"
+            (change)="pickScript($event)"
+          />
+          <br /><span id="script-hint">A watch needs a script to run. You can replace it later.</span>
+        </p>
+      }
 
       @if (error(); as error) {
         <pre role="alert">{{ error }}</pre>
       }
 
-      <button type="submit" [disabled]="watchForm().submitting()">Save</button>
+      <button type="submit" [disabled]="watchForm().submitting() || (!id() && !script())">Save</button>
       <a [routerLink]="id() ? ['/watches', id()] : ['/']">Cancel</a>
     </form>
   `,
@@ -69,6 +83,8 @@ export class WatchForm {
 
   protected readonly scheduleKinds = scheduleKinds;
   protected readonly error = signal<string | null>(null);
+  /** The script to create the watch with; unused when editing. */
+  protected readonly script = signal<File | null>(null);
 
   private readonly model = signal<WatchFormModel>({
     name: '',
@@ -97,6 +113,11 @@ export class WatchForm {
     });
   }
 
+  protected pickScript(event: Event) {
+    const input = event.target as HTMLInputElement;
+    this.script.set(input.files?.[0] ?? null);
+  }
+
   protected save(event: Event) {
     event.preventDefault();
     submit(this.watchForm, async () => {
@@ -110,7 +131,16 @@ export class WatchForm {
       };
       try {
         const id = this.id();
-        const saved = id ? await this.api.update(id, dto) : await this.api.create(dto);
+        const script = this.script();
+        let saved: Watch;
+        if (id) {
+          saved = await this.api.update(id, dto);
+        } else if (script) {
+          saved = await this.api.create(dto, script);
+        } else {
+          this.error.set('Choose a script for the watch.');
+          return undefined;
+        }
         await this.router.navigate(['/watches', saved.id]);
       } catch (e) {
         this.error.set(describeError(e));

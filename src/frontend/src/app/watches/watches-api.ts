@@ -34,8 +34,19 @@ export class WatchesApi {
     return httpResource<WatchRun>(() => `${baseUrl}/${watchId()}/runs/${runId()}`);
   }
 
-  create(watch: CreateWatchDto) {
-    return firstValueFrom(this.http.post<Watch>(baseUrl, watch));
+  /** Creates a watch with its script, sent together as multipart form data. */
+  create(watch: CreateWatchDto, script: File) {
+    const body = new FormData();
+    body.append('name', watch.name);
+    body.append('scheduleEnabled', String(watch.scheduleEnabled));
+    if (watch.scheduleKind !== null) {
+      body.append('scheduleKind', String(watch.scheduleKind));
+    }
+    if (watch.scheduleInterval !== null) {
+      body.append('scheduleInterval', watch.scheduleInterval);
+    }
+    body.append('script', script);
+    return firstValueFrom(this.http.post<Watch>(baseUrl, body));
   }
 
   update(id: string, watch: CreateWatchDto) {

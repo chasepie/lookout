@@ -35,7 +35,8 @@ public sealed record WatchScriptsDirectory(string FullPath)
     {
         if (watch.ScriptFileId is { } fileId)
         {
-            return fileId + Path.GetExtension(watch.ScriptFileName);
+            // Lowercase, so Node.js recognizes .TS uploads as TypeScript
+            return fileId + Path.GetExtension(watch.ScriptFileName)?.ToLowerInvariant();
         }
 
         return null;

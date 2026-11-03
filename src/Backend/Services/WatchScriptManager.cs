@@ -1,11 +1,12 @@
 using ChasePie.Lookout.Backend.Database;
 using ChasePie.Lookout.Core;
-using Microsoft.EntityFrameworkCore;
 
 namespace ChasePie.Lookout.Backend.Services;
 
 public class WatchScriptManager
 {
+    private const long MaxScriptBytes = 64 * 1024;
+
     private readonly LookoutDbContext _dbContext;
     private readonly WatchScriptsDirectory _scriptsDirectory;
 
@@ -17,53 +18,55 @@ public class WatchScriptManager
         _scriptsDirectory = scriptsDirectory;
     }
 
-    public async Task<(bool successful, string? errorMessage)> SaveScriptAsync(
-        int watchId, IFormFile scriptFile, CancellationToken cancellationToken)
+    /// <summary>
+    /// Validates an uploaded script, saves it as the watch's script, and saves the watch.
+    /// Works for a new watch that has been added to the context but not saved yet.
+    /// </summary>
+    /// <returns>Why the script was rejected, or <see langword="null"/> if it was saved.</returns>
+    public async Task<string?> SaveScriptAsync(
+        Watch watch, IFormFile scriptFile, CancellationToken cancellationToken)
     {
-        var watch = await _dbContext.Watches.SingleAsync(w => w.Id == watchId, cancellationToken);
-
-        var fileKind = Path.GetExtension(scriptFile.FileName).ToLowerInvariant();
-        if (fileKind is not (".ts" or ".js") || scriptFile.Length is < 1 or > 65536)
+        var extension = Path.GetExtension(scriptFile.FileName).ToLowerInvariant();
+        if (extension is not (".ts" or ".js") || scriptFile.Length is < 1 or > MaxScriptBytes)
         {
-            return (false, "Upload a .ts or .js Script between 1 byte and 64 KiB.");
+            return "Upload a .ts or .js script between 1 byte and 64 KiB.";
         }
 
-        using var reader = new StreamReader(scriptFile.OpenReadStream());
-        var source = await reader.ReadToEndAsync(cancellationToken);
+        string source;
+        using (var reader = new StreamReader(scriptFile.OpenReadStream()))
+        {
+            source = await reader.ReadToEndAsync(cancellationToken);
+        }
+
         if (string.IsNullOrWhiteSpace(source))
         {
-            return (false, "Script source must not be empty.");
+            return "Script source must not be empty.";
         }
 
-        using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
-        watch.ScriptFileName = scriptFile.FileName;
-        watch.ScriptFileId ??= Guid.NewGuid();
-
-        var saveFilePath = Path.Combine(_scriptsDirectory.FullPath, WatchScriptsDirectory.GetStoredFileName(watch)!);
-        var backupFilePath = saveFilePath + ".bak";
-
-        var revertOnFail = false;
-        if (File.Exists(saveFilePath))
-        {
-            revertOnFail = true;
-            File.Move(saveFilePath, backupFilePath);
-        }
+        // Each upload gets a new file, so a failed save never touches the current script
+        var previousFileName = WatchScriptsDirectory.GetStoredFileName(watch);
+        watch.ScriptFileName = Path.GetFileName(scriptFile.FileName);
+        watch.ScriptFileId = Guid.NewGuid();
+        var savePath = GetPath(WatchScriptsDirectory.GetStoredFileName(watch)!);
 
         try
         {
-            await File.WriteAllTextAsync(saveFilePath, source, cancellationToken);
+            await File.WriteAllTextAsync(savePath, source, cancellationToken);
+            await _dbContext.SaveChangesAsync(cancellationToken);
         }
-        catch (Exception ex)
+        catch
         {
-            await transaction.RollbackAsync(cancellationToken);
-            if (revertOnFail)
-            {
-                File.Move(backupFilePath, saveFilePath);
-            }
-            return (false, ex.Message);
+            File.Delete(savePath);
+            throw;
         }
 
-        await transaction.CommitAsync(cancellationToken);
-        return (true, null);
+        if (previousFileName is not null)
+        {
+            File.Delete(GetPath(previousFileName));
+        }
+
+        return null;
     }
+
+    private string GetPath(string storedFileName) => Path.Combine(_scriptsDirectory.FullPath, storedFileName);
 }

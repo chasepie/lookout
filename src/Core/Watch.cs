@@ -22,8 +22,6 @@ public class CreateWatchDto : IValidatableObject
     public bool ScheduleEnabled { get; set; }
     public WatchScheduleKind? ScheduleKind { get; set; }
     public string? ScheduleInterval { get; set; }
-    public string? ScriptFileName { get; set; }
-    public Guid? ScriptFileId { get; set; }
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
@@ -76,6 +74,16 @@ public class CreateWatchDto : IValidatableObject
 public class Watch : CreateWatchDto
 {
     public int Id { get; set; }
+
+    /// <summary>
+    /// The uploaded script's original file name.
+    /// </summary>
+    public string? ScriptFileName { get; set; }
+
+    /// <summary>
+    /// Identifies the stored script file; see <see cref="WatchScriptsDirectory.GetStoredFileName"/>.
+    /// </summary>
+    public Guid? ScriptFileId { get; set; }
 
     public ICollection<WatchRun> WatchRuns { get; set; } = [];
 

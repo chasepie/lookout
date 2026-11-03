@@ -46,12 +46,23 @@ public class WatchesController : ControllerBase
         return watches;
     }
 
+    /// <summary>
+    /// Creates a watch with its script. Send the watch's fields and the <c>script</c> file as multipart form data.
+    /// </summary>
     [HttpPost]
-    public async Task<ActionResult<Watch>> Create(CreateWatchDto watch, CancellationToken cancellationToken)
+    public async Task<ActionResult<Watch>> Create(
+        [FromForm] CreateWatchDto watch, IFormFile script, CancellationToken cancellationToken)
     {
         var watchEntity = new Watch(watch);
         _dbContext.Watches.Add(watchEntity);
-        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        // Saves the watch and its script together
+        var errorMessage = await _scriptManager.SaveScriptAsync(watchEntity, script, cancellationToken);
+        if (errorMessage is not null)
+        {
+            return BadRequest(errorMessage);
+        }
+
         return CreatedAtAction(nameof(Get), new { id = watchEntity.Id }, watchEntity);
     }
 
@@ -85,8 +96,11 @@ public class WatchesController : ControllerBase
         return watchEntity;
     }
 
+    /// <summary>
+    /// Replaces the watch's script.
+    /// </summary>
     [HttpPost("{id}/script")]
-    public async Task<ActionResult> UploadScript(
+    public async Task<ActionResult<Watch>> UploadScript(
         int id, IFormFile script, CancellationToken cancellationToken)
     {
         var watchEntity = await _dbContext.Watches
@@ -96,13 +110,12 @@ public class WatchesController : ControllerBase
             return NotFound();
         }
 
-        var (successful, errorMessage) = await _scriptManager.SaveScriptAsync(
-            watchEntity.Id, script, cancellationToken);
-        if (!successful)
+        var errorMessage = await _scriptManager.SaveScriptAsync(watchEntity, script, cancellationToken);
+        if (errorMessage is not null)
         {
             return BadRequest(errorMessage);
         }
 
-        return Ok();
+        return watchEntity;
     }
 }
