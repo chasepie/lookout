@@ -2,6 +2,7 @@ using ChasePie.Lookout.Backend.Database;
 using ChasePie.Lookout.Backend.Services;
 using ChasePie.Lookout.Core;
 using dotenv.net.Configuration;
+using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
 
 namespace ChasePie.Lookout.Backend;
@@ -25,8 +26,9 @@ public class Program
     {
         services.AddControllers();
         services.AddOpenApi();
-        services.AddDbContext<LookoutDbContext>();
-        // Resolved here so a missing setting stops startup instead of failing each upload
+        // Directories are resolved here, so a missing setting stops startup instead of failing requests
+        var connectionString = LookoutDbContext.GetConnectionString(configuration);
+        services.AddDbContext<LookoutDbContext>(options => options.UseSqlite(connectionString));
         services.AddSingleton(WatchScriptsDirectory.FromConfiguration(configuration));
         services.AddScoped<WatchScriptManager>();
         services.AddHttpClient<RunnerHttpClient>(RunnerHttpClient.Configure);

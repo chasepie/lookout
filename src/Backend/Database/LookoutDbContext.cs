@@ -1,22 +1,28 @@
 using ChasePie.Lookout.Core;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
 namespace ChasePie.Lookout.Backend.Database;
 
-public class LookoutDbContext : DbContext
+public class LookoutDbContext(DbContextOptions<LookoutDbContext> options) : DbContext(options)
 {
+    private const string DatabaseFileName = "lookout.db";
+
     public DbSet<Watch> Watches { get; set; } = null!;
     public DbSet<WatchRun> WatchRuns { get; set; } = null!;
 
-    private readonly string _dbPath;
-
-    public LookoutDbContext()
+    /// <summary>
+    /// The connection string for the database file in the <c>LOOKOUT_DATABASE_DIR</c> directory,
+    /// which is created if it doesn't exist yet.
+    /// </summary>
+    /// <exception cref="InvalidOperationException"><c>LOOKOUT_DATABASE_DIR</c> is not set.</exception>
+    public static string GetConnectionString(IConfiguration configuration)
     {
-        var folder = Environment.SpecialFolder.LocalApplicationData;
-        var path = Environment.GetFolderPath(folder);
-        _dbPath = Path.Join(path, "lookout.db");
+        var databaseDir = LookoutEnvironmentVariables.GetRequiredDirectory(
+            configuration, LookoutEnvironmentVariables.DatabaseDir);
+        return new SqliteConnectionStringBuilder
+        {
+            DataSource = Path.Join(databaseDir, DatabaseFileName),
+        }.ToString();
     }
-
-    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-        => optionsBuilder.UseSqlite($"Data Source={_dbPath}");
 }

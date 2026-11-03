@@ -22,14 +22,22 @@ public partial class Program
             .WithHttpHealthCheck("/health")
             .WaitFor(runner);
 
-        if (dotEnv.TryGetValue(LookoutEnvironmentVariables.WatchScriptsDir, out var watchScriptsDir) && !string.IsNullOrWhiteSpace(watchScriptsDir))
+        // Directories, with a relative path resolved against the repo root, where .env lives
+        void ForwardDirectory(string name, params IResourceBuilder<ProjectResource>[] projects)
         {
-            // Resolve a relative path against the repo root, where .env lives. The Backend saves
-            // uploaded scripts there and the Runner runs them from there.
-            var scriptsDir = Path.GetFullPath(watchScriptsDir, repoRoot);
-            backend.WithEnvironment(LookoutEnvironmentVariables.WatchScriptsDir, scriptsDir);
-            runner.WithEnvironment(LookoutEnvironmentVariables.WatchScriptsDir, scriptsDir);
+            if (dotEnv.TryGetValue(name, out var dir) && !string.IsNullOrWhiteSpace(dir))
+            {
+                var fullPath = Path.GetFullPath(dir, repoRoot);
+                foreach (var project in projects)
+                {
+                    project.WithEnvironment(name, fullPath);
+                }
+            }
         }
+
+        // The Backend saves uploaded scripts there and the Runner runs them from there
+        ForwardDirectory(LookoutEnvironmentVariables.WatchScriptsDir, backend, runner);
+        ForwardDirectory(LookoutEnvironmentVariables.DatabaseDir, backend);
 
         // Runs `npm run start` (ng serve) on its default port. The dev server forwards /api to the
         // Backend through proxy.conf.json, which targets the Backend's launch profile port (7070).
