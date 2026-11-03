@@ -94,6 +94,7 @@ public class WatchesController(
 
         _dbContext.Watches.Remove(watchEntity);
         await _dbContext.SaveChangesAsync(cancellationToken);
+        _scriptManager.DeleteScript(watchEntity);
         await _notifier.WatchChangedAsync(watchEntity.Id);
         return watchEntity;
     }

@@ -62,5 +62,17 @@ public class WatchScriptManager(
         return null;
     }
 
+    /// <summary>
+    /// Deletes the watch's script file, if it has one. Call it after the watch's deletion is saved, so a failed
+    /// save leaves the watch with its script.
+    /// </summary>
+    public void DeleteScript(Watch watch)
+    {
+        if (WatchScriptsDirectory.GetStoredFileName(watch) is { } storedFileName)
+        {
+            File.Delete(GetPath(storedFileName));
+        }
+    }
+
     private string GetPath(string storedFileName) => Path.Combine(_scriptsDirectory.FullPath, storedFileName);
 }
