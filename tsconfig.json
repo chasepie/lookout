@@ -1,0 +1,25 @@
+{
+  // Visit https://aka.ms/tsconfig to read more about this file
+  // Shared rules every TypeScript project extends. Lists no files itself: editors and `tsc -b`
+  // follow the references to the project that owns each file.
+  "files": [],
+  "references": [
+    {
+      "path": "./tsconfig.node.json"
+    }
+  ],
+  "compilerOptions": {
+    "allowUnreachableCode": false,
+    "allowUnusedLabels": false,
+    "exactOptionalPropertyTypes": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "skipLibCheck": true,
+    "verbatimModuleSyntax": true
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "name": "@chasepie/lookout-watch-sdk",
+  "version": "0.0.0",
+  "description": "",
+  "license": "MIT",
+  "author": "chasepie",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "lookout-watch": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "index.ts"
+  ],
+  "scripts": {
+    "build": "npm run clean && npm run build:lib && npm run build:cli",
+    "build:lib": "tsc -p tsconfig.build.json",
+    "build:cli": "esbuild cli.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/cli.js --external:playwright",
+    "clean": "rimraf dist",
+    "typecheck": "tsc -p tsconfig.json",
+    "prepack": "npm run build",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "commander": "^15.0.0",
+    "esbuild": "^0.28.2",
+    "rimraf": "^6.1.3",
+    "typescript": "^6.0.3"
+  },
+  "peerDependencies": {
+    "playwright": "^1.64.1"
+  }
+}

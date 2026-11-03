@@ -1,0 +1,23 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "**/*"
+  ],
+  "exclude": [
+    "src/frontend"
+  ],
+  "compilerOptions": {
+    "module": "nodenext",
+    "lib": [
+      "ESNext"
+    ],
+    "types": [
+      "node"
+    ],
+    // Node runs the runner and Scripts with type stripping, which only supports erasable syntax
+    "erasableSyntaxOnly": true,
+    // ...and needs relative imports to name the .ts file
+    "rewriteRelativeImportExtensions": true,
+    "noEmit": true
+  }
+}

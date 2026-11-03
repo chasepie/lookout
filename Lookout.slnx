@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/tests/">
+    <Project Path="tests/Backend.IntegrationTests/Backend.IntegrationTests.csproj" />
+    <Project Path="tests/Backend.UnitTests/Backend.UnitTests.csproj" />
+    <Project Path="tests/Runner.IntegrationTests/Runner.IntegrationTests.csproj" />
+    <Project Path="tests/Runner.UnitTests/Runner.UnitTests.csproj" />
+  </Folder>
+  <Project Path="src/AppHost/AppHost.csproj" />
+  <Project Path="src/Backend/Backend.csproj" />
+  <Project Path="src/Core/Core.csproj" />
+  <Project Path="src/Runner/Runner.csproj" />
+  <Project Path="src/ServiceDefaults/ServiceDefaults.csproj" />
+</Solution>

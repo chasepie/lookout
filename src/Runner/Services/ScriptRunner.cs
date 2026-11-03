@@ -1,0 +1,200 @@
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Text.Json;
+using ChasePie.Lookout.Core;
+
+namespace ChasePie.Lookout.Runner.Services;
+
+public partial class ScriptRunner(ILogger<ScriptRunner> logger, WatchScriptsDirectory scriptsDirectory)
+{
+    // How long a cancelled script gets to abort and close its browser before the process is killed
+    private static readonly TimeSpan CancelGracePeriod = TimeSpan.FromSeconds(5);
+
+    // How many trailing stderr lines to include when the CLI fails
+    private const int StderrTailLines = 20;
+
+    // camelCase + case-insensitive, matching the CLI's JSON output
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
+    private static string RepoRoot()
+    {
+        var currentDir = new DirectoryInfo(Directory.GetCurrentDirectory());
+        while (currentDir != null && currentDir.GetFiles("Lookout.slnx").Length == 0)
+        {
+            currentDir = currentDir.Parent;
+        }
+
+        if (currentDir == null)
+        {
+            throw new InvalidOperationException("Could not find the repository root directory.");
+        }
+
+        return currentDir.FullName;
+    }
+
+    /// <summary>
+    /// Resolves a script directly inside <paramref name="scriptsDir"/>.
+    /// </summary>
+    /// <exception cref="ArgumentException"><paramref name="scriptName"/> is not a bare file name.</exception>
+    private static string GetScriptPath(string scriptsDir, string scriptName)
+    {
+        // Only files directly inside the scripts directory may run
+        if (string.IsNullOrWhiteSpace(scriptName) || Path.GetFileName(scriptName) != scriptName)
+        {
+            throw new ArgumentException($"'{scriptName}' is not a script file name.", nameof(scriptName));
+        }
+
+        var scriptPath = Path.Combine(scriptsDir, scriptName);
+        if (!File.Exists(scriptPath))
+        {
+            throw new FileNotFoundException($"Script '{scriptName}' not found in the '{scriptsDir}' directory.");
+        }
+
+        return scriptPath;
+    }
+
+    private static string GetWatchCliPath(string repoRoot)
+    {
+        // npm hoists the workspace SDK into the root node_modules; `bin` points at dist/cli.js
+        var cliPath = Path.Combine(repoRoot, "node_modules", "@chasepie", "lookout-watch-sdk", "dist", "cli.js");
+        if (!File.Exists(cliPath))
+        {
+            throw new FileNotFoundException(
+                "The lookout-watch CLI was not found. Run `npm install` and `npm run build -w @chasepie/lookout-watch-sdk`.",
+                cliPath);
+        }
+
+        return cliPath;
+    }
+
+    public async Task<WatchRunResult> RunWatchScriptAsync(
+        string scriptName,
+        CancellationToken cancellationToken = default)
+    {
+        var scriptsDir = scriptsDirectory.FullPath;
+        var scriptPath = GetScriptPath(scriptsDir, scriptName);
+        var cliPath = GetWatchCliPath(RepoRoot());
+        var outputPath = Path.Combine(Path.GetTempPath(), $"lookout-watch-{Guid.NewGuid():N}.json");
+
+        var processStartInfo = new ProcessStartInfo("node")
+        {
+            // The CLI is started by absolute path and resolves its own imports, so it can run from anywhere
+            WorkingDirectory = scriptsDir,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        // ArgumentList quotes each argument, so paths with spaces are passed intact
+        processStartInfo.ArgumentList.Add(cliPath);
+        processStartInfo.ArgumentList.Add("run");
+        processStartInfo.ArgumentList.Add(scriptPath);
+        processStartInfo.ArgumentList.Add("--output");
+        processStartInfo.ArgumentList.Add(outputPath);
+
+        using var process = new Process { StartInfo = processStartInfo };
+
+        // stdout/stderr are only logs (the result goes to the output file), so scripts can console.log freely
+        var stderrTail = new Queue<string>();
+        process.OutputDataReceived += (_, args) =>
+        {
+            if (args.Data is not null)
+            {
+                LogScriptOutput(scriptName, args.Data);
+            }
+        };
+        process.ErrorDataReceived += (_, args) =>
+        {
+            if (args.Data is null)
+            {
+                return;
+            }
+
+            LogScriptError(scriptName, args.Data);
+            lock (stderrTail)
+            {
+                stderrTail.Enqueue(args.Data);
+                if (stderrTail.Count > StderrTailLines)
+                {
+                    stderrTail.Dequeue();
+                }
+            }
+        };
+
+        try
+        {
+            process.Start();
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+
+            try
+            {
+                await process.WaitForExitAsync(cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                await StopAsync(process);
+                throw;
+            }
+
+            if (process.ExitCode != 0)
+            {
+                string stderr;
+                lock (stderrTail)
+                {
+                    stderr = string.Join(Environment.NewLine, stderrTail);
+                }
+
+                throw new InvalidOperationException($"lookout-watch exited with code {process.ExitCode}: {stderr}");
+            }
+
+            var json = await File.ReadAllTextAsync(outputPath, cancellationToken);
+            try
+            {
+                return JsonSerializer.Deserialize<WatchRunResult>(json, JsonOptions)
+                    ?? throw new JsonException("The output was 'null'.");
+            }
+            catch (JsonException ex)
+            {
+                throw new InvalidOperationException($"lookout-watch wrote output that isn't a run result: {json}", ex);
+            }
+        }
+        finally
+        {
+            File.Delete(outputPath);
+        }
+    }
+
+    /// <summary>
+    /// Asks the CLI to abort with SIGTERM, then kills it if it hasn't exited within <see cref="CancelGracePeriod"/>.
+    /// </summary>
+    private static async Task StopAsync(Process process)
+    {
+        try
+        {
+            process.SendSignal(PosixSignal.SIGTERM);
+        }
+        catch (NotImplementedException)
+        {
+            // Windows: don't leave the CLI (and its browser) running while the exception surfaces
+            process.Kill(entireProcessTree: true);
+            throw;
+        }
+
+        using var graceTimeout = new CancellationTokenSource(CancelGracePeriod);
+        try
+        {
+            await process.WaitForExitAsync(graceTimeout.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            process.Kill(entireProcessTree: true);
+        }
+    }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "[{ScriptName}] {Line}")]
+    private partial void LogScriptOutput(string scriptName, string line);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "[{ScriptName}] {Line}")]
+    private partial void LogScriptError(string scriptName, string line);
+}

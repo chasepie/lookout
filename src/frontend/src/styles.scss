@@ -1,0 +1,32 @@
+body {
+  font-family: system-ui, sans-serif;
+  color: #1a1a1a;
+  background: #fff;
+  margin: 0;
+}
+
+a {
+  color: #0645ad;
+}
+
+table {
+  border-collapse: collapse;
+}
+
+th,
+td {
+  border: 1px solid #999;
+  padding: 0.25rem 0.5rem;
+  text-align: left;
+}
+
+pre {
+  white-space: pre-wrap;
+  background: #f4f4f4;
+  padding: 0.5rem;
+}
+
+button,
+a {
+  margin-right: 0.5rem;
+}

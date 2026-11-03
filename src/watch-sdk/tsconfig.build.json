@@ -1,0 +1,14 @@
+{
+  // Emits the library (dist/index.js + .d.ts). The CLI is bundled separately by esbuild.
+  "extends": "./tsconfig.json",
+  "files": [
+    "index.ts"
+  ],
+  // Override the base config's include so cli.ts isn't emitted too
+  "include": [],
+  "compilerOptions": {
+    "noEmit": false,
+    "rootDir": ".",
+    "outDir": "./dist"
+  }
+}
