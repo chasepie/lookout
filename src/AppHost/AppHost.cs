@@ -1,4 +1,4 @@
-using ChasePie.Lookout.Model;
+using ChasePie.Lookout.Core;
 using dotenv.net;
 
 namespace Chasepie.Lookout.AppHost;

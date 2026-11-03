@@ -1,4 +1,4 @@
-using ChasePie.Lookout.Model;
+using ChasePie.Lookout.Core;
 using Microsoft.EntityFrameworkCore;
 
 namespace ChasePie.Lookout.Backend.Database;

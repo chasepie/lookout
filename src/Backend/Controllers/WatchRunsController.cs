@@ -1,6 +1,6 @@
 using ChasePie.Lookout.Backend.Database;
 using ChasePie.Lookout.Backend.Services;
-using ChasePie.Lookout.Model;
+using ChasePie.Lookout.Core;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 

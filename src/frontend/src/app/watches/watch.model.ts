@@ -1,4 +1,4 @@
-/** Mirrors `WatchScheduleKind` in src/Model/Watch.cs. The backend serializes enums as numbers. */
+/** Mirrors `WatchScheduleKind` in src/Core/Watch.cs. The backend serializes enums as numbers. */
 export enum WatchScheduleKind {
   Minutely = 0,
   Hourly = 1,
@@ -7,7 +7,7 @@ export enum WatchScheduleKind {
   Cron = 4,
 }
 
-/** Mirrors `WatchRunStatus` in src/Model/WatchRun.cs. */
+/** Mirrors `WatchRunStatus` in src/Core/WatchRun.cs. */
 export enum WatchRunStatus {
   Created = 0,
   Running = 1,

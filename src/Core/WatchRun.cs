@@ -1,7 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Serialization;
 
-namespace ChasePie.Lookout.Model;
+namespace ChasePie.Lookout.Core;
 
 public enum WatchRunStatus
 {

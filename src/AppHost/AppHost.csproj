@@ -16,7 +16,7 @@
     <ProjectReference Include="../Backend/Backend.csproj" />
     <ProjectReference Include="../Runner/Runner.csproj" />
     <!-- A library for the shared environment variable names, not a service to start -->
-    <ProjectReference Include="../Model/Model.csproj" IsAspireProjectResource="false" />
+    <ProjectReference Include="../Core/Core.csproj" IsAspireProjectResource="false" />
   </ItemGroup>
 
 </Project>

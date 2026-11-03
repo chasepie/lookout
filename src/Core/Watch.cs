@@ -3,7 +3,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using Cronos;
 
-namespace ChasePie.Lookout.Model;
+namespace ChasePie.Lookout.Core;
 
 public enum WatchScheduleKind
 {

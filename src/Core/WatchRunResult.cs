@@ -1,4 +1,4 @@
-namespace ChasePie.Lookout.Model;
+namespace ChasePie.Lookout.Core;
 
 /// <summary>
 /// The JSON result printed by <c>lookout-watch run</c>; mirrors the SDK's <c>RunResult</c> union.
