@@ -30,6 +30,7 @@ public class Program
         services.AddSingleton(WatchScriptsDirectory.FromConfiguration(configuration));
         services.AddScoped<WatchScriptManager>();
         services.AddHttpClient<RunnerHttpClient>(RunnerHttpClient.Configure);
+        services.AddHostedService<WatchScheduler>();
         services.AddHostedService<WatchRunWorker>();
     }
 

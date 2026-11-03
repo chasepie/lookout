@@ -95,4 +95,44 @@ public class Watch : CreateWatchDto
         ScheduleKind = dto.ScheduleKind;
         ScheduleInterval = dto.ScheduleInterval;
     }
+
+    /// <summary>
+    /// When the next scheduled run is due, given when the previous run was created.
+    /// </summary>
+    /// <param name="lastRunTime">When the previous run was created, in UTC.</param>
+    /// <param name="timeZone">The time zone cron expressions are evaluated in.</param>
+    /// <returns>
+    /// The due time in UTC, or <see langword="null"/> if the schedule is disabled, invalid,
+    /// or a cron expression with no further occurrences.
+    /// </returns>
+    public DateTime? GetNextRunTime(DateTime lastRunTime, TimeZoneInfo timeZone)
+    {
+        if (!ScheduleEnabled || string.IsNullOrWhiteSpace(ScheduleInterval))
+        {
+            return null;
+        }
+
+        var lastRunUtc = DateTime.SpecifyKind(lastRunTime, DateTimeKind.Utc);
+        if (ScheduleKind == WatchScheduleKind.Cron)
+        {
+            return CronExpression.TryParse(ScheduleInterval, CronFormat.Standard, out var cron)
+                ? cron.GetNextOccurrence(lastRunUtc, timeZone)
+                : null;
+        }
+
+        if (!int.TryParse(ScheduleInterval, CultureInfo.InvariantCulture, out var count) || count <= 0)
+        {
+            return null;
+        }
+
+        TimeSpan? interval = ScheduleKind switch
+        {
+            WatchScheduleKind.Minutely => TimeSpan.FromMinutes(count),
+            WatchScheduleKind.Hourly => TimeSpan.FromHours(count),
+            WatchScheduleKind.Daily => TimeSpan.FromDays(count),
+            WatchScheduleKind.Weekly => TimeSpan.FromDays(7 * count),
+            _ => null,
+        };
+        return lastRunUtc + interval;
+    }
 }

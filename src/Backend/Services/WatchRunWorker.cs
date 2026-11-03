@@ -12,7 +12,7 @@ public partial class WatchRunWorker(
     IServiceScopeFactory scopeFactory,
     ILogger<WatchRunWorker> logger) : BackgroundService
 {
-    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(1);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
