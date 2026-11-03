@@ -1,4 +1,4 @@
-using System;
+using System.Diagnostics.CodeAnalysis;
 
 namespace ChasePie.Lookout.Model;
 
@@ -13,15 +13,25 @@ public class WatchRun
 {
     public int Id { get; set; }
 
-    public int WatchId { get; set; }
+    public required int WatchId { get; set; }
     public Watch Watch { get; set; } = null!;
 
-    public DateTime CreatedTime { get; set; }
+    public required DateTime CreatedTime { get; set; }
     public DateTime? StartTime { get; set; }
     public DateTime? EndTime { get; set; }
 
-    public WatchRunStatus Status { get; set; }
+    public required WatchRunStatus Status { get; set; }
     public string? Content { get; set; }
     public string? Error { get; set; }
     public byte[]? Screenshot { get; set; }
+
+    public WatchRun() { }
+
+    [SetsRequiredMembers]
+    public WatchRun(Watch watch)
+    {
+        WatchId = watch.Id;
+        CreatedTime = DateTime.UtcNow;
+        Status = WatchRunStatus.Created;
+    }
 }

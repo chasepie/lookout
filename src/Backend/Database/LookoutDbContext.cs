@@ -1,7 +1,7 @@
 using ChasePie.Lookout.Model;
 using Microsoft.EntityFrameworkCore;
 
-namespace ChasePie.Lookout.Database;
+namespace ChasePie.Lookout.Backend.Database;
 
 public class LookoutDbContext : DbContext
 {

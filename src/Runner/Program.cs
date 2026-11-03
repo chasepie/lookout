@@ -1,5 +1,6 @@
 
 using ChasePie.Lookout.Runner.Services;
+using dotenv.net.Configuration;
 using Scalar.AspNetCore;
 
 namespace Runner;
@@ -9,6 +10,7 @@ public class Program
     public static void Main(string[] args)
     {
         var builder = WebApplication.CreateBuilder(args);
+        builder.Configuration.AddDotNetEnv();
         ConfigureServices(builder.Services);
 
         var app = builder.Build();

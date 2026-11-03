@@ -4,6 +4,9 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
   <ItemGroup>
+    <PackageVersion Include="Cronos" Version="0.13.0" />
+    <PackageVersion Include="dotenv.net" Version="4.2.0" />
+    <PackageVersion Include="dotenv.net.Configuration" Version="4.2.0" />
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.14" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.14" />
     <PackageVersion Include="Scalar.AspNetCore" Version="2.18.7" />
