@@ -1,4 +1,6 @@
+using System.Text.Json;
 using ChasePie.Lookout.Model;
+using Microsoft.AspNetCore.Mvc;
 
 namespace ChasePie.Lookout.Backend.Services;
 
@@ -7,7 +9,7 @@ namespace ChasePie.Lookout.Backend.Services;
 /// </summary>
 public class RunnerHttpClient(HttpClient httpClient)
 {
-    internal const string LOOKOUT_RUNNER_URL = "LOOKOUT_RUNNER_URL";
+    private static readonly TimeSpan RunTimeout = TimeSpan.FromMinutes(10);
 
     /// <summary>
     /// Asks the Runner to execute the named watch script and returns its result.
@@ -17,8 +19,38 @@ public class RunnerHttpClient(HttpClient httpClient)
         ArgumentException.ThrowIfNullOrWhiteSpace(scriptName);
 
         var requestUri = $"WatchRun?scriptName={Uri.EscapeDataString(scriptName)}";
-        return await httpClient.GetFromJsonAsync<WatchRunResult>(requestUri, cancellationToken)
+        using var response = await httpClient.GetAsync(requestUri, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var error = await ReadErrorAsync(response, cancellationToken);
+            throw new HttpRequestException(
+                $"Runner returned {(int)response.StatusCode}: {error}", null, response.StatusCode);
+        }
+
+        return await response.Content.ReadFromJsonAsync<WatchRunResult>(cancellationToken)
             ?? throw new InvalidOperationException("Runner returned an empty response.");
+    }
+
+    /// <summary>
+    /// Returns the problem details' message from an error response, or the raw body if it has none.
+    /// </summary>
+    private static async Task<string> ReadErrorAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        try
+        {
+            var problem = JsonSerializer.Deserialize<ProblemDetails>(body, JsonSerializerOptions.Web);
+            if ((problem?.Detail ?? problem?.Title) is { } message)
+            {
+                return message;
+            }
+        }
+        catch (JsonException)
+        {
+            // Not JSON; fall back to the raw body
+        }
+
+        return body;
     }
 
     /// <summary>
@@ -26,10 +58,10 @@ public class RunnerHttpClient(HttpClient httpClient)
     /// </summary>
     internal static void Configure(IServiceProvider services, HttpClient client)
     {
-        var runnerUrl = services.GetRequiredService<IConfiguration>()[LOOKOUT_RUNNER_URL];
+        var runnerUrl = services.GetRequiredService<IConfiguration>()[LookoutEnvironmentVariables.RunnerUrl];
         if (string.IsNullOrWhiteSpace(runnerUrl))
         {
-            throw new InvalidOperationException($"Environment variable {LOOKOUT_RUNNER_URL} must be set");
+            throw new InvalidOperationException($"Environment variable {LookoutEnvironmentVariables.RunnerUrl} must be set");
         }
 
         // Ensure a trailing slash so relative request URIs append to any path in the base URL.
@@ -40,9 +72,13 @@ public class RunnerHttpClient(HttpClient httpClient)
 
         if (!Uri.TryCreate(runnerUrl, UriKind.Absolute, out var baseAddress))
         {
-            throw new InvalidOperationException($"Environment variable {LOOKOUT_RUNNER_URL} must be an absolute URL");
+            throw new InvalidOperationException($"Environment variable {LookoutEnvironmentVariables.RunnerUrl} must be an absolute URL");
         }
 
         client.BaseAddress = baseAddress;
+
+        // A run waits for the whole browser session; the 100-second default is too short.
+        // On timeout the request is aborted, and the Runner stops the script.
+        client.Timeout = RunTimeout;
     }
 }

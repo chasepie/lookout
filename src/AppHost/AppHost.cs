@@ -1,3 +1,4 @@
+using ChasePie.Lookout.Model;
 using dotenv.net;
 
 namespace Chasepie.Lookout.AppHost;
@@ -17,14 +18,17 @@ public partial class Program
             .WithHttpHealthCheck("/health");
 
         var backend = builder.AddProject<Projects.Backend>("backend")
-            .WithEnvironment("LOOKOUT_RUNNER_URL", runner.GetEndpoint("https"))
+            .WithEnvironment(LookoutEnvironmentVariables.RunnerUrl, runner.GetEndpoint("https"))
             .WithHttpHealthCheck("/health")
             .WaitFor(runner);
 
-        if (dotEnv.TryGetValue("LOOKOUT_WATCH_SCRIPTS_DIR", out var watchScriptsDir) && !string.IsNullOrWhiteSpace(watchScriptsDir))
+        if (dotEnv.TryGetValue(LookoutEnvironmentVariables.WatchScriptsDir, out var watchScriptsDir) && !string.IsNullOrWhiteSpace(watchScriptsDir))
         {
-            // Resolve a relative path against the repo root, where .env lives.
-            backend.WithEnvironment("LOOKOUT_WATCH_SCRIPTS_DIR", Path.GetFullPath(watchScriptsDir, repoRoot));
+            // Resolve a relative path against the repo root, where .env lives. The Backend saves
+            // uploaded scripts there and the Runner runs them from there.
+            var scriptsDir = Path.GetFullPath(watchScriptsDir, repoRoot);
+            backend.WithEnvironment(LookoutEnvironmentVariables.WatchScriptsDir, scriptsDir);
+            runner.WithEnvironment(LookoutEnvironmentVariables.WatchScriptsDir, scriptsDir);
         }
 
         // Runs `npm run start` (ng serve) on its default port. The dev server forwards /api to the

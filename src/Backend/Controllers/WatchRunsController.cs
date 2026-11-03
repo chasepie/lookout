@@ -1,4 +1,5 @@
 using ChasePie.Lookout.Backend.Database;
+using ChasePie.Lookout.Backend.Services;
 using ChasePie.Lookout.Model;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -16,6 +17,9 @@ public class WatchRunsController : ControllerBase
         _dbContext = dbContext;
     }
 
+    /// <summary>
+    /// Creates a run for <see cref="WatchRunWorker"/> to pick up. Poll the returned run for its status.
+    /// </summary>
     [HttpPost]
     public async Task<ActionResult<WatchRun>> Create(int watchId, CancellationToken cancellationToken)
     {
@@ -24,6 +28,11 @@ public class WatchRunsController : ControllerBase
         if (watchEntity is null)
         {
             return NotFound();
+        }
+
+        if (WatchScriptsDirectory.GetStoredFileName(watchEntity) is null)
+        {
+            return BadRequest("Upload a script before running this watch.");
         }
 
         var watchRun = new WatchRun(watchEntity);

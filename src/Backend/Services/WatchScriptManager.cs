@@ -1,32 +1,20 @@
 using ChasePie.Lookout.Backend.Database;
+using ChasePie.Lookout.Model;
 using Microsoft.EntityFrameworkCore;
 
 namespace ChasePie.Lookout.Backend.Services;
 
 public class WatchScriptManager
 {
-    internal const string LOOKOUT_WATCH_SCRIPTS_DIR = "LOOKOUT_WATCH_SCRIPTS_DIR";
-
     private readonly LookoutDbContext _dbContext;
-    private readonly string _scriptDir;
+    private readonly WatchScriptsDirectory _scriptsDirectory;
 
     public WatchScriptManager(
-        IConfiguration configuration,
-        LookoutDbContext dbContext)
+        LookoutDbContext dbContext,
+        WatchScriptsDirectory scriptsDirectory)
     {
         _dbContext = dbContext;
-
-        var scriptDir = configuration[LOOKOUT_WATCH_SCRIPTS_DIR];
-        if (string.IsNullOrWhiteSpace(scriptDir))
-        {
-            throw new InvalidOperationException($"Environment variable {LOOKOUT_WATCH_SCRIPTS_DIR} must be set");
-        }
-
-        _scriptDir = scriptDir;
-        if (!Directory.Exists(_scriptDir))
-        {
-            Directory.CreateDirectory(_scriptDir);
-        }
+        _scriptsDirectory = scriptsDirectory;
     }
 
     public async Task<(bool successful, string? errorMessage)> SaveScriptAsync(
@@ -51,9 +39,7 @@ public class WatchScriptManager
         watch.ScriptFileName = scriptFile.FileName;
         watch.ScriptFileId ??= Guid.NewGuid();
 
-        var fileExtension = Path.GetExtension(scriptFile.FileName);
-        var saveFileName = watch.ScriptFileId + fileExtension;
-        var saveFilePath = Path.Combine(_scriptDir, saveFileName);
+        var saveFilePath = Path.Combine(_scriptsDirectory.FullPath, WatchScriptsDirectory.GetStoredFileName(watch)!);
         var backupFilePath = saveFilePath + ".bak";
 
         var revertOnFail = false;
