@@ -1,0 +1,138 @@
+using ChasePie.Lookout.Backend.Database;
+using ChasePie.Lookout.Core;
+using Microsoft.EntityFrameworkCore;
+
+namespace ChasePie.Lookout.Backend.Services;
+
+/// <summary>
+/// Polls the database for runs that are still <see cref="WatchRunStatus.Created"/> and executes them
+/// one at a time, oldest first, by asking the Runner to run the watch's script.
+/// </summary>
+public partial class WatchRunWorker(
+    IServiceScopeFactory scopeFactory,
+    ILogger<WatchRunWorker> logger) : BackgroundService
+{
+    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(5);
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        try
+        {
+            await FailInterruptedRunsAsync(stoppingToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            LogPollFailed(ex);
+        }
+
+        using var timer = new PeriodicTimer(PollInterval);
+        do
+        {
+            try
+            {
+                while (await TryExecuteNextRunAsync(stoppingToken))
+                {
+                    // Drain everything pending before waiting for the next tick
+                }
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                return;
+            }
+            catch (Exception ex)
+            {
+                LogPollFailed(ex);
+            }
+        }
+        while (await timer.WaitForNextTickAsync(stoppingToken));
+    }
+
+    /// <summary>
+    /// Marks runs left <see cref="WatchRunStatus.Running"/> by a previous process as done with an error.
+    /// Runs only progress inside this worker, so any found before it starts were cut off.
+    /// </summary>
+    private async Task FailInterruptedRunsAsync(CancellationToken cancellationToken)
+    {
+        using var scope = scopeFactory.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<LookoutDbContext>();
+
+        var now = DateTime.UtcNow;
+        await dbContext.WatchRuns
+            .Where(wr => wr.Status == WatchRunStatus.Running)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(wr => wr.Status, WatchRunStatus.Done)
+                    .SetProperty(wr => wr.EndTime, now)
+                    .SetProperty(wr => wr.Error, "Interrupted because the Backend restarted."),
+                cancellationToken);
+    }
+
+    /// <summary>
+    /// Claims and executes the oldest pending run.
+    /// </summary>
+    /// <returns><see langword="false"/> if there was nothing to run.</returns>
+    private async Task<bool> TryExecuteNextRunAsync(CancellationToken stoppingToken)
+    {
+        using var scope = scopeFactory.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<LookoutDbContext>();
+
+        var watchRun = await dbContext.WatchRuns
+            .Include(wr => wr.Watch)
+            .Where(wr => wr.Status == WatchRunStatus.Created)
+            .OrderBy(wr => wr.Id)
+            .FirstOrDefaultAsync(stoppingToken);
+        if (watchRun is null)
+        {
+            return false;
+        }
+
+        // Claim the run with a conditional update, so it runs once even if another worker saw it too
+        var startTime = DateTime.UtcNow;
+        var claimed = await dbContext.WatchRuns
+            .Where(wr => wr.Id == watchRun.Id && wr.Status == WatchRunStatus.Created)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(wr => wr.Status, WatchRunStatus.Running)
+                    .SetProperty(wr => wr.StartTime, startTime),
+                stoppingToken);
+        if (claimed == 0)
+        {
+            return true;
+        }
+
+        watchRun.StartTime = startTime;
+        LogRunStarted(watchRun.Id, watchRun.WatchId);
+
+        try
+        {
+            var scriptName = WatchScriptsDirectory.GetStoredFileName(watchRun.Watch)
+                ?? throw new InvalidOperationException("The watch has no script.");
+            var runner = scope.ServiceProvider.GetRequiredService<RunnerHttpClient>();
+            var result = await runner.RunWatchScriptAsync(scriptName, stoppingToken);
+            if (result.Success)
+            {
+                watchRun.Content = result.Content;
+            }
+            else
+            {
+                watchRun.Error = result.FailureReason ?? "The script failed without giving a reason.";
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
+        {
+            // Includes the HttpClient timeout, which surfaces as a TaskCanceledException
+            watchRun.Error = ex.Message;
+        }
+
+        watchRun.Status = WatchRunStatus.Done;
+        watchRun.EndTime = DateTime.UtcNow;
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        return true;
+    }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Starting watch run {WatchRunId} for watch {WatchId}")]
+    private partial void LogRunStarted(int watchRunId, int watchId);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Failed to process pending watch runs")]
+    private partial void LogPollFailed(Exception exception);
+}

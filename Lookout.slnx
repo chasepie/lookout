@@ -7,7 +7,7 @@
   </Folder>
   <Project Path="src/AppHost/AppHost.csproj" />
   <Project Path="src/Backend/Backend.csproj" />
-  <Project Path="src/Model/Model.csproj" />
+  <Project Path="src/Core/Core.csproj" />
   <Project Path="src/Runner/Runner.csproj" />
   <Project Path="src/ServiceDefaults/ServiceDefaults.csproj" />
 </Solution>

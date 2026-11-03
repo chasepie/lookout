@@ -1,5 +1,6 @@
 using ChasePie.Lookout.Backend.Database;
 using ChasePie.Lookout.Backend.Services;
+using ChasePie.Lookout.Core;
 using dotenv.net.Configuration;
 using Scalar.AspNetCore;
 
@@ -12,7 +13,7 @@ public class Program
         var builder = WebApplication.CreateBuilder(args);
         builder.Configuration.AddDotNetEnv();
         builder.AddServiceDefaults();
-        ConfigureServices(builder.Services);
+        ConfigureServices(builder.Services, builder.Configuration);
 
         var app = builder.Build();
         ConfigureApp(app);
@@ -20,13 +21,16 @@ public class Program
         app.Run();
     }
 
-    private static void ConfigureServices(IServiceCollection services)
+    private static void ConfigureServices(IServiceCollection services, IConfiguration configuration)
     {
         services.AddControllers();
         services.AddOpenApi();
         services.AddDbContext<LookoutDbContext>();
+        // Resolved here so a missing setting stops startup instead of failing each upload
+        services.AddSingleton(WatchScriptsDirectory.FromConfiguration(configuration));
         services.AddScoped<WatchScriptManager>();
         services.AddHttpClient<RunnerHttpClient>(RunnerHttpClient.Configure);
+        services.AddHostedService<WatchRunWorker>();
     }
 
     private static void ConfigureApp(WebApplication app)

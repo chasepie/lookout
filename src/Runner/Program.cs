@@ -1,4 +1,5 @@
 
+using ChasePie.Lookout.Core;
 using ChasePie.Lookout.Runner.Services;
 using dotenv.net.Configuration;
 using Scalar.AspNetCore;
@@ -12,7 +13,7 @@ public class Program
         var builder = WebApplication.CreateBuilder(args);
         builder.Configuration.AddDotNetEnv();
         builder.AddServiceDefaults();
-        ConfigureServices(builder.Services);
+        ConfigureServices(builder.Services, builder.Configuration);
 
         var app = builder.Build();
         ConfigureApp(app);
@@ -20,10 +21,12 @@ public class Program
         app.Run();
     }
 
-    private static void ConfigureServices(IServiceCollection services)
+    private static void ConfigureServices(IServiceCollection services, IConfiguration configuration)
     {
         services.AddControllers();
         services.AddOpenApi();
+        // Resolved here so a missing setting stops startup instead of failing each run
+        services.AddSingleton(WatchScriptsDirectory.FromConfiguration(configuration));
         services.AddScoped<ScriptRunner>();
     }
 

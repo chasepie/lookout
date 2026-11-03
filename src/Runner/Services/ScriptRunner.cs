@@ -1,14 +1,12 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text.Json;
-using ChasePie.Lookout.Model;
+using ChasePie.Lookout.Core;
 
 namespace ChasePie.Lookout.Runner.Services;
 
-public partial class ScriptRunner(ILogger<ScriptRunner> logger)
+public partial class ScriptRunner(ILogger<ScriptRunner> logger, WatchScriptsDirectory scriptsDirectory)
 {
-    private const string WatchScriptsDir = "examples/";
-
     // How long a cancelled script gets to abort and close its browser before the process is killed
     private static readonly TimeSpan CancelGracePeriod = TimeSpan.FromSeconds(5);
 
@@ -34,10 +32,18 @@ public partial class ScriptRunner(ILogger<ScriptRunner> logger)
         return currentDir.FullName;
     }
 
-    private static string GetScriptPath(string scriptName)
+    /// <summary>
+    /// Resolves a script directly inside <paramref name="scriptsDir"/>.
+    /// </summary>
+    /// <exception cref="ArgumentException"><paramref name="scriptName"/> is not a bare file name.</exception>
+    private static string GetScriptPath(string scriptsDir, string scriptName)
     {
-        var repoRoot = RepoRoot();
-        var scriptsDir = Path.Combine(repoRoot, WatchScriptsDir);
+        // Only files directly inside the scripts directory may run
+        if (string.IsNullOrWhiteSpace(scriptName) || Path.GetFileName(scriptName) != scriptName)
+        {
+            throw new ArgumentException($"'{scriptName}' is not a script file name.", nameof(scriptName));
+        }
+
         var scriptPath = Path.Combine(scriptsDir, scriptName);
         if (!File.Exists(scriptPath))
         {
@@ -65,14 +71,15 @@ public partial class ScriptRunner(ILogger<ScriptRunner> logger)
         string scriptName,
         CancellationToken cancellationToken = default)
     {
-        var repoRoot = RepoRoot();
-        var scriptPath = GetScriptPath(scriptName);
-        var cliPath = GetWatchCliPath(repoRoot);
+        var scriptsDir = scriptsDirectory.FullPath;
+        var scriptPath = GetScriptPath(scriptsDir, scriptName);
+        var cliPath = GetWatchCliPath(RepoRoot());
         var outputPath = Path.Combine(Path.GetTempPath(), $"lookout-watch-{Guid.NewGuid():N}.json");
 
         var processStartInfo = new ProcessStartInfo("node")
         {
-            WorkingDirectory = repoRoot,
+            // The CLI is started by absolute path and resolves its own imports, so it can run from anywhere
+            WorkingDirectory = scriptsDir,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,

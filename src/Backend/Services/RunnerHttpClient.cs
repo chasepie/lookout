@@ -1,5 +1,5 @@
 using System.Text.Json;
-using ChasePie.Lookout.Model;
+using ChasePie.Lookout.Core;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ChasePie.Lookout.Backend.Services;
