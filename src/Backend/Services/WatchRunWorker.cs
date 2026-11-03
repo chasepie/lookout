@@ -1,4 +1,5 @@
 using ChasePie.Lookout.Backend.Database;
+using ChasePie.Lookout.Backend.Hubs;
 using ChasePie.Lookout.Core;
 using Microsoft.EntityFrameworkCore;
 
@@ -10,6 +11,7 @@ namespace ChasePie.Lookout.Backend.Services;
 /// </summary>
 public partial class WatchRunWorker(
     IServiceScopeFactory scopeFactory,
+    UpdatesNotifier notifier,
     ILogger<WatchRunWorker> logger) : BackgroundService
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(1);
@@ -100,8 +102,11 @@ public partial class WatchRunWorker(
             return true;
         }
 
+        // Mirror the claim on the tracked entity, so the notification and final save match the database
+        watchRun.Status = WatchRunStatus.Running;
         watchRun.StartTime = startTime;
         LogRunStarted(watchRun.Id, watchRun.WatchId);
+        await notifier.RunUpdatedAsync(watchRun);
 
         try
         {
@@ -127,6 +132,7 @@ public partial class WatchRunWorker(
         watchRun.Status = WatchRunStatus.Done;
         watchRun.EndTime = DateTime.UtcNow;
         await dbContext.SaveChangesAsync(CancellationToken.None);
+        await notifier.RunUpdatedAsync(watchRun);
         return true;
     }
 

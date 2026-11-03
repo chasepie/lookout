@@ -3,20 +3,14 @@ using ChasePie.Lookout.Core;
 
 namespace ChasePie.Lookout.Backend.Services;
 
-public class WatchScriptManager
+public class WatchScriptManager(
+    LookoutDbContext dbContext,
+    WatchScriptsDirectory scriptsDirectory)
 {
     private const long MaxScriptBytes = 64 * 1024;
 
-    private readonly LookoutDbContext _dbContext;
-    private readonly WatchScriptsDirectory _scriptsDirectory;
-
-    public WatchScriptManager(
-        LookoutDbContext dbContext,
-        WatchScriptsDirectory scriptsDirectory)
-    {
-        _dbContext = dbContext;
-        _scriptsDirectory = scriptsDirectory;
-    }
+    private readonly LookoutDbContext _dbContext = dbContext;
+    private readonly WatchScriptsDirectory _scriptsDirectory = scriptsDirectory;
 
     /// <summary>
     /// Validates an uploaded script, saves it as the watch's script, and saves the watch.

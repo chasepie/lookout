@@ -1,4 +1,5 @@
 using ChasePie.Lookout.Backend.Database;
+using ChasePie.Lookout.Backend.Hubs;
 using ChasePie.Lookout.Backend.Services;
 using ChasePie.Lookout.Core;
 using Microsoft.AspNetCore.Mvc;
@@ -8,14 +9,10 @@ namespace ChasePie.Lookout.Backend.Controllers;
 
 [ApiController]
 [Route("Watches/{watchId:int}/runs")]
-public class WatchRunsController : ControllerBase
+public class WatchRunsController(LookoutDbContext dbContext, UpdatesNotifier notifier) : ControllerBase
 {
-    private readonly LookoutDbContext _dbContext;
-
-    public WatchRunsController(LookoutDbContext dbContext)
-    {
-        _dbContext = dbContext;
-    }
+    private readonly LookoutDbContext _dbContext = dbContext;
+    private readonly UpdatesNotifier _notifier = notifier;
 
     /// <summary>
     /// Creates a run for <see cref="WatchRunWorker"/> to pick up. Poll the returned run for its status.
@@ -38,6 +35,7 @@ public class WatchRunsController : ControllerBase
         var watchRun = new WatchRun(watchEntity);
         _dbContext.WatchRuns.Add(watchRun);
         await _dbContext.SaveChangesAsync(cancellationToken);
+        await _notifier.RunUpdatedAsync(watchRun);
         return CreatedAtAction(nameof(Get), new { watchId, runId = watchRun.Id }, watchRun);
     }
 

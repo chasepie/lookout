@@ -1,6 +1,9 @@
 import { DatePipe } from '@angular/common';
 import { Component, inject } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
+import { merge } from 'rxjs';
+import { LiveUpdates } from './live-updates';
 import { WatchRunStatus, WatchScheduleKind } from './watch.model';
 import { WatchesApi, describeError } from './watches-api';
 
@@ -11,7 +14,7 @@ import { WatchesApi, describeError } from './watches-api';
     <h2>Watches</h2>
     <p><a routerLink="/watches/new">New watch</a></p>
 
-    @if (watches.isLoading()) {
+    @if (watches.isLoading() && !watches.hasValue()) {
       <p>Loading…</p>
     } @else if (watches.error(); as error) {
       <pre role="alert">{{ describeError(error) }}</pre>
@@ -58,4 +61,12 @@ export class WatchList {
   protected readonly kinds = WatchScheduleKind;
   protected readonly statuses = WatchRunStatus;
   protected readonly describeError = describeError;
+
+  constructor() {
+    // Any watch or run change can alter the list or its "Latest run" column
+    const updates = inject(LiveUpdates);
+    merge(updates.runUpdated, updates.watchChanged, updates.reconnected)
+      .pipe(takeUntilDestroyed())
+      .subscribe(() => this.watches.reload());
+  }
 }

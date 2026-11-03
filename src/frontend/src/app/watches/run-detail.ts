@@ -1,7 +1,10 @@
 import { DatePipe } from '@angular/common';
 import { Component, computed, inject, input } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
-import { WatchRunStatus } from './watch.model';
+import { filter, merge } from 'rxjs';
+import { LiveUpdates } from './live-updates';
+import { WatchRunStatus, WatchRunUpdate } from './watch.model';
 import { WatchesApi, describeError } from './watches-api';
 
 @Component({
@@ -10,7 +13,7 @@ import { WatchesApi, describeError } from './watches-api';
   template: `
     <p><a [routerLink]="['/watches', id()]">Back to watch</a></p>
 
-    @if (run.isLoading()) {
+    @if (run.isLoading() && !run.hasValue()) {
       <p>Loading…</p>
     } @else if (run.error(); as error) {
       <pre role="alert">{{ describeError(error) }}</pre>
@@ -61,4 +64,16 @@ export class RunDetail {
 
   protected readonly statuses = WatchRunStatus;
   protected readonly describeError = describeError;
+
+  constructor() {
+    // "latest" follows any run of this watch, since a new run becomes the latest one
+    const updates = inject(LiveUpdates);
+    const isThisRun = (update: WatchRunUpdate) =>
+      update.watchId === Number(this.id()) &&
+      (this.runId() === 'latest' || update.id === Number(this.runId()));
+
+    merge(updates.runUpdated.pipe(filter(isThisRun)), updates.reconnected)
+      .pipe(takeUntilDestroyed())
+      .subscribe(() => this.run.reload());
+  }
 }

@@ -1,4 +1,5 @@
 using ChasePie.Lookout.Backend.Database;
+using ChasePie.Lookout.Backend.Hubs;
 using ChasePie.Lookout.Backend.Services;
 using ChasePie.Lookout.Core;
 using dotenv.net.Configuration;
@@ -26,6 +27,8 @@ public class Program
     {
         services.AddControllers();
         services.AddOpenApi();
+        services.AddSignalR();
+        services.AddSingleton<UpdatesNotifier>();
         // Directories are resolved here, so a missing setting stops startup instead of failing requests
         var connectionString = LookoutDbContext.GetConnectionString(configuration);
         services.AddDbContext<LookoutDbContext>(options => options.UseSqlite(connectionString));
@@ -54,6 +57,7 @@ public class Program
         app.UseHttpsRedirection();
         app.UseAuthorization();
         app.MapControllers();
+        app.MapHub<UpdatesHub>(UpdatesHub.Path);
         app.MapDefaultEndpoints();
     }
 }

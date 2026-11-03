@@ -1,4 +1,5 @@
 using ChasePie.Lookout.Backend.Database;
+using ChasePie.Lookout.Backend.Hubs;
 using ChasePie.Lookout.Backend.Services;
 using ChasePie.Lookout.Core;
 using Microsoft.AspNetCore.Mvc;
@@ -8,16 +9,14 @@ namespace ChasePie.Lookout.Backend.Controllers;
 
 [ApiController]
 [Route("[controller]")]
-public class WatchesController : ControllerBase
+public class WatchesController(
+    LookoutDbContext dbContext,
+    WatchScriptManager scriptManager,
+    UpdatesNotifier notifier) : ControllerBase
 {
-    private readonly LookoutDbContext _dbContext;
-    private readonly WatchScriptManager _scriptManager;
-
-    public WatchesController(LookoutDbContext dbContext, WatchScriptManager scriptManager)
-    {
-        _dbContext = dbContext;
-        _scriptManager = scriptManager;
-    }
+    private readonly LookoutDbContext _dbContext = dbContext;
+    private readonly WatchScriptManager _scriptManager = scriptManager;
+    private readonly UpdatesNotifier _notifier = notifier;
 
     [HttpGet("{id}")]
     public async Task<ActionResult<Watch>> Get(int id, CancellationToken cancellationToken)
@@ -63,6 +62,7 @@ public class WatchesController : ControllerBase
             return BadRequest(errorMessage);
         }
 
+        await _notifier.WatchChangedAsync(watchEntity.Id);
         return CreatedAtAction(nameof(Get), new { id = watchEntity.Id }, watchEntity);
     }
 
@@ -78,6 +78,7 @@ public class WatchesController : ControllerBase
 
         watchEntity.Update(watch);
         await _dbContext.SaveChangesAsync(cancellationToken);
+        await _notifier.WatchChangedAsync(watchEntity.Id);
         return watchEntity;
     }
 
@@ -93,6 +94,7 @@ public class WatchesController : ControllerBase
 
         _dbContext.Watches.Remove(watchEntity);
         await _dbContext.SaveChangesAsync(cancellationToken);
+        await _notifier.WatchChangedAsync(watchEntity.Id);
         return watchEntity;
     }
 
@@ -116,6 +118,7 @@ public class WatchesController : ControllerBase
             return BadRequest(errorMessage);
         }
 
+        await _notifier.WatchChangedAsync(watchEntity.Id);
         return watchEntity;
     }
 }

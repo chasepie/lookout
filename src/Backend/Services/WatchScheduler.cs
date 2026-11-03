@@ -1,4 +1,5 @@
 using ChasePie.Lookout.Backend.Database;
+using ChasePie.Lookout.Backend.Hubs;
 using ChasePie.Lookout.Core;
 using Microsoft.EntityFrameworkCore;
 
@@ -17,6 +18,7 @@ namespace ChasePie.Lookout.Backend.Services;
 /// </remarks>
 public partial class WatchScheduler(
     IServiceScopeFactory scopeFactory,
+    UpdatesNotifier notifier,
     ILogger<WatchScheduler> logger) : BackgroundService
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(1);
@@ -64,6 +66,7 @@ public partial class WatchScheduler(
             .ToListAsync(cancellationToken);
 
         var now = DateTime.UtcNow;
+        var createdRuns = new List<WatchRun>();
         foreach (var scheduled in scheduledWatches)
         {
             if (scheduled.HasQueuedRun)
@@ -76,12 +79,18 @@ public partial class WatchScheduler(
                 : now;
             if (dueTime <= now)
             {
-                dbContext.WatchRuns.Add(new WatchRun(scheduled.Watch) { CreatedTime = now });
+                var watchRun = new WatchRun(scheduled.Watch) { CreatedTime = now };
+                dbContext.WatchRuns.Add(watchRun);
+                createdRuns.Add(watchRun);
                 LogRunScheduled(scheduled.Watch.Id);
             }
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        foreach (var watchRun in createdRuns)
+        {
+            await notifier.RunUpdatedAsync(watchRun);
+        }
     }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Scheduled a run for watch {WatchId}")]

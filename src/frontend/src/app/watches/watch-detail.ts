@@ -1,6 +1,9 @@
 import { DatePipe } from '@angular/common';
 import { Component, inject, input, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
+import { filter } from 'rxjs';
+import { LiveUpdates } from './live-updates';
 import { WatchRunStatus, WatchScheduleKind } from './watch.model';
 import { WatchesApi, describeError } from './watches-api';
 
@@ -10,7 +13,7 @@ import { WatchesApi, describeError } from './watches-api';
   template: `
     <p><a routerLink="/">All watches</a></p>
 
-    @if (watch.isLoading()) {
+    @if (watch.isLoading() && !watch.hasValue()) {
       <p>Loading…</p>
     } @else if (watch.error(); as error) {
       <pre role="alert">{{ describeError(error) }}</pre>
@@ -91,6 +94,22 @@ export class WatchDetail {
   protected readonly kinds = WatchScheduleKind;
   protected readonly statuses = WatchRunStatus;
   protected readonly describeError = describeError;
+
+  constructor() {
+    const updates = inject(LiveUpdates);
+    const isThisWatch = (watchId: number) => watchId === Number(this.id());
+
+    updates.watchChanged
+      .pipe(filter(isThisWatch), takeUntilDestroyed())
+      .subscribe(() => this.watch.reload());
+    updates.runUpdated
+      .pipe(filter((update) => isThisWatch(update.watchId)), takeUntilDestroyed())
+      .subscribe(() => this.runs.reload());
+    updates.reconnected.pipe(takeUntilDestroyed()).subscribe(() => {
+      this.watch.reload();
+      this.runs.reload();
+    });
+  }
 
   protected async run() {
     try {
