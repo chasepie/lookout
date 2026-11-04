@@ -12,7 +12,7 @@ namespace ChasePie.Lookout.Backend;
 
 public class Program
 {
-    public static void Main(string[] args)
+    public static async Task Main(string[] args)
     {
         var builder = WebApplication.CreateBuilder(args);
         builder.Configuration.AddDotNetEnv();
@@ -20,9 +20,9 @@ public class Program
         ConfigureServices(builder.Services, builder.Configuration);
 
         var app = builder.Build();
-        ConfigureApp(app);
+        await ConfigureAppAsync(app);
 
-        app.Run();
+        await app.RunAsync();
     }
 
     private static void ConfigureServices(IServiceCollection services, IConfiguration configuration)
@@ -36,6 +36,7 @@ public class Program
         services.AddDbContext<LookoutDbContext>(options => options.UseSqlite(connectionString));
         services.AddSingleton(WatchScriptsDirectory.FromConfiguration(configuration));
         services.AddScoped<WatchScriptManager>();
+        services.AddScoped<DevelopmentDataSeeder>();
         services.AddHttpClient<RunnerHttpClient>(RunnerHttpClient.Configure);
         services.AddHostedService<WatchScheduler>();
         services.AddHostedService<WatchRunWorker>();
@@ -57,13 +58,20 @@ public class Program
         services.AddHostedService(provider => provider.GetRequiredService<VpnRotationService>());
     }
 
-    private static void ConfigureApp(WebApplication app)
+    private static async Task ConfigureAppAsync(WebApplication app)
     {
-        // Creates the database on first start and applies any migrations added since.
-        // A database made before migrations existed has no migrations history, so this fails on it; delete it.
         using (var scope = app.Services.CreateScope())
         {
-            scope.ServiceProvider.GetRequiredService<LookoutDbContext>().Database.Migrate();
+            // Creates the database on first start and applies any migrations added since.
+            // A database made before migrations existed has no migrations history, so this fails on it; delete it.
+            await scope.ServiceProvider.GetRequiredService<LookoutDbContext>().Database.MigrateAsync();
+
+            if (app.Environment.IsDevelopment()
+                && DevelopmentDataSeeder.FindExamplesDirectory(app.Environment.ContentRootPath) is { } examplesDir)
+            {
+                await scope.ServiceProvider.GetRequiredService<DevelopmentDataSeeder>()
+                    .SeedAsync(examplesDir, app.Lifetime.ApplicationStopping);
+            }
         }
 
         // Configure the HTTP request pipeline.

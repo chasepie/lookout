@@ -70,6 +70,7 @@ import { WatchesApi, describeError } from './watches-api';
             <tr>
               <th scope="col">Run</th>
               <th scope="col">Status</th>
+              <th scope="col">Content</th>
               <th scope="col">Created</th>
               <th scope="col">Actions</th>
             </tr>
@@ -79,6 +80,13 @@ import { WatchesApi, describeError } from './watches-api';
               <tr>
                 <td><a [routerLink]="['/watches', id(), 'runs', run.id]">#{{ run.id }}</a></td>
                 <td>{{ statuses[run.status] }}</td>
+                @if (run.content; as content) {
+                  <td class="content" [title]="content">{{ content }}</td>
+                } @else if (run.error; as error) {
+                  <td class="content error" [title]="error">Error: {{ error }}</td>
+                } @else {
+                  <td>-</td>
+                }
                 <td>{{ run.createdTime | date: 'medium' }}</td>
                 <td>
                   @if (run.status !== statuses.Running) {
@@ -92,6 +100,19 @@ import { WatchesApi, describeError } from './watches-api';
           </tbody>
         </table>
       }
+    }
+  `,
+  styles: `
+    /* Long output is cut to one line; the run's page and the tooltip show all of it */
+    .content {
+      max-width: 40ch;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .error {
+      color: #b00020;
     }
   `,
 })
