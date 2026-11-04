@@ -7,8 +7,7 @@
     "run:pia-location": "lookout-watch run pia-location.ts"
   },
   "dependencies": {
-    "@chasepie/lookout-watch-sdk": "file:../src/watch-sdk",
-    "playwright": "^1.64.1"
+    "@chasepie/lookout-watch-sdk": "file:../src/watch-sdk"
   },
   "devDependencies": {
     "typescript": "^6.0.3"
