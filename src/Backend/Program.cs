@@ -1,6 +1,7 @@
 using ChasePie.Lookout.Backend.Database;
 using ChasePie.Lookout.Backend.Hubs;
 using ChasePie.Lookout.Backend.Services;
+using System.Threading.RateLimiting;
 using ChasePie.Lookout.Backend.VpnServices;
 using ChasePie.Lookout.Core;
 using dotenv.net.Configuration;
@@ -48,7 +49,12 @@ public class Program
                 .ConfigureVpnProxyProbe();
         }
         services.AddSingleton<VpnRegionCatalog>();
-        services.AddSingleton<VpnGate>();
+        services.AddKeyedSingleton(VpnServiceKeys.Gate, (_, _) => new ConcurrencyLimiter(new ConcurrencyLimiterOptions
+        {
+            PermitLimit = 1,
+            QueueLimit = int.MaxValue,
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+        }));
         // A singleton too, so the controller can queue switches on the instance that makes them
         services.AddSingleton<VpnRotationService>();
         services.AddHostedService(provider => provider.GetRequiredService<VpnRotationService>());

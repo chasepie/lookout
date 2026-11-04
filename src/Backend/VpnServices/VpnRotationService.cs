@@ -1,4 +1,5 @@
 using System.Threading.Channels;
+using System.Threading.RateLimiting;
 using ChasePie.Lookout.Backend.Database;
 using ChasePie.Lookout.Backend.Hubs;
 using ChasePie.Lookout.Core;
@@ -12,14 +13,14 @@ namespace ChasePie.Lookout.Backend.VpnServices;
 /// when gluetun has lost it, which happens when gluetun restarts.
 /// </summary>
 /// <remarks>
-/// A switch holds <see cref="VpnGate"/> until the new tunnel is up, so it waits for a VPN run in progress and
+/// A switch holds <see cref="VpnServiceKeys.Gate"/> until the new tunnel is up, so it waits for a VPN run in progress and
 /// VPN runs wait for it. A manual switch restarts the rotation timer. A failed rotation is retried after
 /// <see cref="RetryDelay"/>. Does nothing unless <see cref="VpnConfiguration.IsEnabled"/>.
 /// </remarks>
 public partial class VpnRotationService(
     IServiceScopeFactory scopeFactory,
     VpnConfiguration configuration,
-    VpnGate gate,
+    [FromKeyedServices(VpnServiceKeys.Gate)] ConcurrencyLimiter gate,
     VpnRegionCatalog catalog,
     UpdatesNotifier notifier,
     ILogger<VpnRotationService> logger) : BackgroundService
@@ -165,8 +166,13 @@ public partial class VpnRotationService(
 
             _progress = new VpnSwitchProgress(region, WaitingForRun: true, DateTime.UtcNow);
             await notifier.VpnChangedAsync();
-            using (await gate.EnterAsync(cancellationToken))
+            using (var lease = await gate.AcquireAsync(1, cancellationToken))
             {
+                if (!lease.IsAcquired)
+                {
+                    throw new InvalidOperationException("The VPN gate refused a lease, though its queue is unbounded.");
+                }
+
                 _progress = _progress with { WaitingForRun = false };
                 await notifier.VpnChangedAsync();
                 LogSwitching(kind, region);
