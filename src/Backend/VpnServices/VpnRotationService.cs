@@ -54,7 +54,10 @@ public partial class VpnRotationService(
     /// </summary>
     /// <param name="region">A region from <see cref="VpnRegionCatalog"/>, or <see langword="null"/> for a random
     /// one. Excluded regions are allowed: exclusions only apply to rotation.</param>
-    public void RequestSwitch(string? region) => _requests.Writer.TryWrite(region);
+    public void RequestSwitch(string? region)
+    {
+        _requests.Writer.TryWrite(region);
+    }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -101,7 +104,9 @@ public partial class VpnRotationService(
         var dbContext = scope.ServiceProvider.GetRequiredService<LookoutDbContext>();
         var now = DateTime.UtcNow;
         return await dbContext.VpnSettings.AnyAsync(
-            s => s.Id == VpnSettings.SingletonId && s.RotationEnabled && s.NextRotationTime <= now,
+            s => s.Id == VpnSettings.SingletonId
+                && s.RotationEnabled
+                && s.NextRotationTime <= now,
             cancellationToken);
     }
 
