@@ -159,10 +159,14 @@ public partial class VpnRotationService(
         {
             var gluetunSettings = await gluetun.GetVpnSettingsAsync(cancellationToken);
             var regions = catalog.GetRegions(gluetunSettings.Provider.Name, gluetunSettings.Type);
-            region = requestedRegion ?? settings.PickRotationRegion(regions, Random.Shared)
-                ?? throw new InvalidOperationException(regions.Count == 0
+            region = requestedRegion ?? settings.PickRotationRegion(regions, Random.Shared);
+            if (region is null)
+            {
+                var message = regions.Count == 0
                     ? "There are no regions to switch to: gluetun's servers list has none for this VPN provider."
-                    : "There are no regions to rotate to: every region other than the current one is excluded.");
+                    : "There are no regions to rotate to: every region other than the current one is excluded.";
+                throw new InvalidOperationException(message);
+            }
 
             _progress = new VpnSwitchProgress(region, WaitingForRun: true, DateTime.UtcNow);
             await notifier.VpnChangedAsync();
@@ -175,8 +179,10 @@ public partial class VpnRotationService(
 
                 _progress = _progress with { WaitingForRun = false };
                 await notifier.VpnChangedAsync();
+
                 LogSwitching(kind, region);
                 await gluetun.SetRegionAsync(region, cancellationToken);
+
                 regionApplied = true;
                 publicIp = await WaitForTunnelAsync(scope.ServiceProvider, gluetun, cancellationToken);
             }

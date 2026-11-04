@@ -49,12 +49,13 @@ public class Program
                 .ConfigureVpnProxyProbe();
         }
         services.AddSingleton<VpnRegionCatalog>();
-        services.AddKeyedSingleton(VpnServiceKeys.Gate, (_, _) => new ConcurrencyLimiter(new ConcurrencyLimiterOptions
-        {
-            PermitLimit = 1,
-            QueueLimit = int.MaxValue,
-            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-        }));
+        services.AddKeyedSingleton(VpnServiceKeys.Gate, (_, _) => new ConcurrencyLimiter(
+            new ConcurrencyLimiterOptions
+            {
+                PermitLimit = 1,
+                QueueLimit = int.MaxValue,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            }));
         // A singleton too, so the controller can queue switches on the instance that makes them
         services.AddSingleton<VpnRotationService>();
         services.AddHostedService(provider => provider.GetRequiredService<VpnRotationService>());

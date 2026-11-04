@@ -43,7 +43,9 @@ public partial class VpnRegionCatalog(VpnConfiguration configuration, ILogger<Vp
         var lastWriteTime = File.GetLastWriteTimeUtc(filePath);
         lock (_lock)
         {
-            if (_cached is { } cached && cached.FilePath == filePath && cached.VpnType == vpnType
+            if (_cached is { } cached
+                && cached.FilePath == filePath
+                && cached.VpnType == vpnType
                 && cached.LastWriteTime == lastWriteTime)
             {
                 return cached.Regions;
@@ -73,7 +75,8 @@ public partial class VpnRegionCatalog(VpnConfiguration configuration, ILogger<Vp
     {
         using var stream = File.OpenRead(filePath);
         using var document = JsonDocument.Parse(stream);
-        if (!document.RootElement.TryGetProperty("servers", out var servers) || servers.ValueKind != JsonValueKind.Array)
+        if (!document.RootElement.TryGetProperty("servers", out var servers)
+            || servers.ValueKind != JsonValueKind.Array)
         {
             return [];
         }
@@ -81,8 +84,10 @@ public partial class VpnRegionCatalog(VpnConfiguration configuration, ILogger<Vp
         var regions = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var server in servers.EnumerateArray())
         {
-            if (server.TryGetProperty("vpn", out var vpn) && vpn.GetString() == vpnType
-                && server.TryGetProperty("region", out var region) && region.GetString() is { Length: > 0 } name)
+            if (server.TryGetProperty("vpn", out var vpn)
+                && vpn.GetString() == vpnType
+                && server.TryGetProperty("region", out var region)
+                && region.GetString() is { Length: > 0 } name)
             {
                 regions.Add(name);
             }
