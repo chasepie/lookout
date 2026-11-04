@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.SignalR;
 namespace ChasePie.Lookout.Backend.Hubs;
 
 /// <summary>
-/// Pushes watch and run changes to every connected browser. Clients only listen; there's one user,
+/// Pushes watch, run and VPN changes to every connected browser. Clients only listen; there's one user,
 /// so every client gets every message. Send through <see cref="UpdatesNotifier"/>.
 /// </summary>
 public class UpdatesHub : Hub<IUpdatesClient>
@@ -31,6 +31,11 @@ public interface IUpdatesClient
     /// A watch was created, edited, deleted, or had its script replaced.
     /// </summary>
     Task WatchChanged(int watchId);
+
+    /// <summary>
+    /// The VPN settings changed, or a region switch started, progressed or finished.
+    /// </summary>
+    Task VpnChanged();
 }
 
 /// <summary>

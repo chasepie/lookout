@@ -11,6 +11,13 @@ public class LookoutDbContext(DbContextOptions<LookoutDbContext> options) : DbCo
 
     public DbSet<Watch> Watches { get; set; } = null!;
     public DbSet<WatchRun> WatchRuns { get; set; } = null!;
+    public DbSet<VpnSettings> VpnSettings { get; set; } = null!;
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        // The single settings row always exists, so nothing has to create it on first use
+        modelBuilder.Entity<VpnSettings>().HasData(new VpnSettings { Id = Core.VpnSettings.SingletonId });
+    }
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {

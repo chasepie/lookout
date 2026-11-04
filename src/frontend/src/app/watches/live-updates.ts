@@ -12,7 +12,7 @@ function retryDelayMs(previousAttempts: number) {
 }
 
 /**
- * Real-time watch and run changes pushed by the Backend over SignalR.
+ * Real-time watch, run and VPN changes pushed by the Backend over SignalR.
  * Holds one connection for the app's lifetime and reconnects whenever it drops.
  */
 @Service()
@@ -23,6 +23,8 @@ export class LiveUpdates {
   readonly runsDeleted = new Subject<{ watchId: number; runIds: number[] }>();
   /** A watch was created, edited, deleted, or had its script replaced. Emits the watch ID. */
   readonly watchChanged = new Subject<number>();
+  /** The VPN settings changed, or a region switch started, progressed or finished. */
+  readonly vpnChanged = new Subject<void>();
   /** The connection is back after being down. Messages sent meanwhile were missed, so reload. */
   readonly reconnected = new Subject<void>();
 
@@ -40,6 +42,7 @@ export class LiveUpdates {
       this.runsDeleted.next({ watchId, runIds }),
     );
     this.connection.on('WatchChanged', (watchId: number) => this.watchChanged.next(watchId));
+    this.connection.on('VpnChanged', () => this.vpnChanged.next());
     this.connection.onreconnected(() => this.reconnected.next());
     void this.start(0);
   }

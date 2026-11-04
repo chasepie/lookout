@@ -1,5 +1,6 @@
 using ChasePie.Lookout.Backend.Database;
 using ChasePie.Lookout.Backend.Hubs;
+using ChasePie.Lookout.Backend.VpnServices;
 using ChasePie.Lookout.Core;
 using Microsoft.EntityFrameworkCore;
 
@@ -8,10 +9,13 @@ namespace ChasePie.Lookout.Backend.Services;
 /// <summary>
 /// Polls the database for runs that are still <see cref="WatchRunStatus.Created"/> and executes them
 /// one at a time, oldest first, by asking the Runner to run the watch's script.
+/// A run of a watch with <see cref="CreateWatchDto.UseVpn"/> holds <see cref="VpnGate"/>, so it waits for a
+/// VPN region switch in progress, staying <see cref="WatchRunStatus.Created"/> meanwhile.
 /// </summary>
 public partial class WatchRunWorker(
     IServiceScopeFactory scopeFactory,
     UpdatesNotifier notifier,
+    VpnGate vpnGate,
     ILogger<WatchRunWorker> logger) : BackgroundService
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(1);
@@ -87,6 +91,9 @@ public partial class WatchRunWorker(
         {
             return false;
         }
+
+        // Taken before claiming, so a run waiting for a switch doesn't show as running
+        using var vpnLease = watchRun.Watch.UseVpn ? await vpnGate.EnterAsync(stoppingToken) : null;
 
         // Claim the run with a conditional update, so it runs once even if another worker saw it too
         var startTime = DateTime.UtcNow;
