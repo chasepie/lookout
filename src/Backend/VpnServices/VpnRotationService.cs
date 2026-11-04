@@ -168,7 +168,7 @@ public partial class VpnRotationService(
 
                 regionApplied = true;
                 publicIp = await WaitForTunnelAsync(
-                    scope.ServiceProvider.GetRequiredService<VpnProxyProbe>(), cancellationToken);
+                    scope.ServiceProvider.GetRequiredService<VpnProbeHttpClient>(), cancellationToken);
             }
 
             if (publicIp is null)
@@ -235,7 +235,7 @@ public partial class VpnRotationService(
     /// Polls until traffic gets through the VPN proxy, which gluetun's firewall blocks until the new tunnel is up.
     /// </summary>
     /// <returns>The new public IP, or <see langword="null"/> if the tunnel wasn't up within <see cref="TunnelUpTimeout"/>.</returns>
-    private static async Task<string?> WaitForTunnelAsync(VpnProxyProbe probe, CancellationToken cancellationToken)
+    private static async Task<string?> WaitForTunnelAsync(VpnProbeHttpClient probe, CancellationToken cancellationToken)
     {
         var deadline = DateTime.UtcNow + TunnelUpTimeout;
         while (DateTime.UtcNow < deadline)

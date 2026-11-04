@@ -23,6 +23,10 @@ public partial class VpnRegionCatalog(VpnConfiguration configuration, ILogger<Vp
     /// The regions of the provider and VPN type gluetun is using, sorted, or an empty list if gluetun hasn't
     /// written its servers list yet.
     /// </summary>
+    /// <param name="gluetun">
+    /// The caller's client. It's a typed HTTP client, so it's transient, and this singleton would otherwise keep
+    /// one instance forever, which stops <c>IHttpClientFactory</c> from rotating its handler.
+    /// </param>
     /// <exception cref="GluetunException">gluetun couldn't say which provider it's using.</exception>
     public async Task<VpnRegions> GetRegionsAsync(GluetunHttpClient gluetun, CancellationToken cancellationToken)
     {

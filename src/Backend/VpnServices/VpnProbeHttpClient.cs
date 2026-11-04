@@ -7,7 +7,7 @@ namespace ChasePie.Lookout.Backend.VpnServices;
 /// send it. gluetun's firewall blocks the proxy while the tunnel is down, so a request that gets through means
 /// the tunnel is up. gluetun's own public IP lookup isn't a reliable signal: it gives up if its IP services fail.
 /// </summary>
-public class VpnProxyProbe(HttpClient httpClient)
+public class VpnProbeHttpClient(HttpClient httpClient)
 {
     /// <summary>
     /// Cloudflare's trace page: tiny, and it reports the IP the request came from.
@@ -38,7 +38,7 @@ public class VpnProxyProbe(HttpClient httpClient)
     }
 }
 
-internal static class VpnProxyProbeExtensions
+internal static class VpnProbeHttpClientExtensions
 {
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
 
@@ -47,7 +47,7 @@ internal static class VpnProxyProbeExtensions
         /// <summary>
         /// Sends the client's requests through the VPN proxy, <see cref="VpnConfiguration.ProxyUrl"/>.
         /// </summary>
-        public IHttpClientBuilder ConfigureVpnProxyProbe() => builder
+        public IHttpClientBuilder ConfigureVpnProbeHttpClient() => builder
             .ConfigureHttpClient(client => client.Timeout = RequestTimeout)
             .ConfigurePrimaryHttpMessageHandler(services => new SocketsHttpHandler
             {

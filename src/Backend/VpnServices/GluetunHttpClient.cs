@@ -36,7 +36,7 @@ public class GluetunHttpClient(HttpClient httpClient)
 
     /// <summary>
     /// Restricts gluetun's servers to <paramref name="region"/>, which restarts the tunnel on a server there.
-    /// Returns once gluetun has started reconnecting; <see cref="VpnProxyProbe"/> tells when it's done.
+    /// Returns once gluetun has started reconnecting; <see cref="VpnProbeHttpClient"/> tells when it's done.
     /// </summary>
     /// <exception cref="GluetunException">gluetun rejected the region or couldn't be reached.</exception>
     public async Task SetRegionAsync(string region, CancellationToken cancellationToken = default)
@@ -155,7 +155,7 @@ public sealed record GluetunPublicIp(
 /// </summary>
 /// <param name="GluetunUrl">The control server's base URL; <see langword="null"/> turns the VPN features off.</param>
 /// <param name="DataDirectory">The host directory mounted as gluetun's <c>/gluetun</c>.</param>
-/// <param name="ProxyUrl">gluetun's HTTP proxy, which <see cref="VpnProxyProbe"/> checks the tunnel through.</param>
+/// <param name="ProxyUrl">gluetun's HTTP proxy, which <see cref="VpnProbeHttpClient"/> checks the tunnel through.</param>
 public sealed record VpnConfiguration(Uri? GluetunUrl, string? ApiKey, string? DataDirectory, Uri? ProxyUrl)
 {
     private static readonly VpnConfiguration Disabled = new(null, null, null, null);
