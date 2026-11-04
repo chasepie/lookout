@@ -14,8 +14,6 @@ public class VpnProxyProbe(HttpClient httpClient)
     /// </summary>
     private static readonly Uri TraceUrl = new("https://www.cloudflare.com/cdn-cgi/trace");
 
-    private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
-
     /// <summary>
     /// The public IP of a request sent through the proxy.
     /// </summary>
@@ -28,14 +26,19 @@ public class VpnProxyProbe(HttpClient httpClient)
             .Select(line => line.Trim())
             .FirstOrDefault(line => line.StartsWith("ip=", StringComparison.Ordinal))?[3..];
     }
+}
 
-    /// <summary>
-    /// Sends the client's requests through the VPN proxy. Only registered when
-    /// <see cref="VpnConfiguration.ProxyUrl"/> is set.
-    /// </summary>
-    internal static void Configure(IHttpClientBuilder builder)
+internal static class VpnProxyProbeExtensions
+{
+    private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
+
+    extension(IHttpClientBuilder builder)
     {
-        builder
+        /// <summary>
+        /// Sends the client's requests through the VPN proxy. Only registered when
+        /// <see cref="VpnConfiguration.ProxyUrl"/> is set.
+        /// </summary>
+        public IHttpClientBuilder ConfigureVpnProxyProbe() => builder
             .ConfigureHttpClient(client => client.Timeout = RequestTimeout)
             .ConfigurePrimaryHttpMessageHandler(services => new SocketsHttpHandler
             {

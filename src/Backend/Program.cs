@@ -44,7 +44,8 @@ public class Program
         services.AddHttpClient<GluetunHttpClient>(GluetunHttpClient.Configure);
         if (vpnConfiguration.ProxyUrl is not null)
         {
-            VpnProxyProbe.Configure(services.AddHttpClient<VpnProxyProbe>());
+            services.AddHttpClient<VpnProxyProbe>()
+                .ConfigureVpnProxyProbe();
         }
         services.AddSingleton<VpnRegionCatalog>();
         services.AddSingleton<VpnGate>();

@@ -41,7 +41,16 @@ public class GluetunHttpClient(HttpClient httpClient)
     /// <exception cref="HttpRequestException">gluetun rejected the region or couldn't be reached.</exception>
     public async Task SetRegionAsync(string region, CancellationToken cancellationToken = default)
     {
-        var body = new { Provider = new { ServerSelection = new { Regions = new[] { region } } } };
+        var body = new
+        {
+            Provider = new
+            {
+                ServerSelection = new
+                {
+                    Regions = new[] { region }
+                }
+            }
+        };
         using var response = await httpClient.PutAsJsonAsync("v1/vpn/settings", body, JsonOptions, cancellationToken);
         await EnsureSuccessAsync(response, cancellationToken);
     }
@@ -150,6 +159,9 @@ public sealed record VpnConfiguration(Uri? GluetunUrl, string? ApiKey, string? D
             ? Path.GetFullPath(dir)
             : null;
         return new VpnConfiguration(
-            gluetunUrl, Value(configuration, LookoutEnvironmentVariables.GluetunApiKey), dataDirectory, proxyUrl);
+            GluetunUrl: gluetunUrl,
+            ApiKey: Value(configuration, LookoutEnvironmentVariables.GluetunApiKey),
+            DataDirectory: dataDirectory,
+            ProxyUrl: proxyUrl);
     }
 }

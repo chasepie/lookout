@@ -93,7 +93,9 @@ public partial class WatchRunWorker(
         }
 
         // Taken before claiming, so a run waiting for a switch doesn't show as running
-        using var vpnLease = watchRun.Watch.UseVpn ? await vpnGate.EnterAsync(stoppingToken) : null;
+        using var vpnLease = watchRun.Watch.UseVpn
+            ? await vpnGate.EnterAsync(stoppingToken)
+            : null;
 
         // Claim the run with a conditional update, so it runs once even if another worker saw it too
         var startTime = DateTime.UtcNow;
