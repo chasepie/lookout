@@ -11,7 +11,7 @@ public partial class Program
 
         // Aspire starts each project from its own directory, where the services can't find the
         // repo-root .env, so forward the values they need from it.
-        var repoRoot = Path.GetFullPath(Path.Combine(builder.AppHostDirectory, "..", ".."));
+        var repoRoot = RepoRoot.FindRequired(builder.AppHostDirectory);
         var dotEnv = DotEnv.Read(new DotEnvOptions(envFilePaths: [Path.Combine(repoRoot, ".env")]));
         string? DotEnvValue(string name) =>
             dotEnv.TryGetValue(name, out var value) && !string.IsNullOrWhiteSpace(value) ? value : null;

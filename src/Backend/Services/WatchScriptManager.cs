@@ -1,4 +1,5 @@
 using ChasePie.Lookout.Backend.Database;
+using System.Text;
 using ChasePie.Lookout.Core;
 
 namespace ChasePie.Lookout.Backend.Services;
@@ -7,7 +8,8 @@ public class WatchScriptManager(
     LookoutDbContext dbContext,
     WatchScriptsDirectory scriptsDirectory)
 {
-    private const long MaxScriptBytes = 64 * 1024;
+    private const int MaxScriptBytes = 64 * 1024;
+    private const string InvalidScriptMessage = "Upload a .ts or .js script between 1 byte and 64 KiB.";
 
     private readonly LookoutDbContext _dbContext = dbContext;
     private readonly WatchScriptsDirectory _scriptsDirectory = scriptsDirectory;
@@ -20,16 +22,34 @@ public class WatchScriptManager(
     public async Task<string?> SaveScriptAsync(
         Watch watch, IFormFile scriptFile, CancellationToken cancellationToken)
     {
-        var extension = Path.GetExtension(scriptFile.FileName).ToLowerInvariant();
-        if (extension is not (".ts" or ".js") || scriptFile.Length is < 1 or > MaxScriptBytes)
+        // Checked before reading, so an oversized upload isn't read into memory
+        if (scriptFile.Length > MaxScriptBytes)
         {
-            return "Upload a .ts or .js script between 1 byte and 64 KiB.";
+            return InvalidScriptMessage;
         }
 
         string source;
         using (var reader = new StreamReader(scriptFile.OpenReadStream()))
         {
             source = await reader.ReadToEndAsync(cancellationToken);
+        }
+
+        return await SaveScriptAsync(watch, scriptFile.FileName, source, cancellationToken);
+    }
+
+    /// <summary>
+    /// Validates a script's source, saves it as the watch's script, and saves the watch.
+    /// Works for a new watch that has been added to the context but not saved yet.
+    /// </summary>
+    /// <param name="fileName">The script's original file name, whose extension says how it runs.</param>
+    /// <returns>Why the script was rejected, or <see langword="null"/> if it was saved.</returns>
+    public async Task<string?> SaveScriptAsync(
+        Watch watch, string fileName, string source, CancellationToken cancellationToken)
+    {
+        var extension = Path.GetExtension(fileName).ToLowerInvariant();
+        if (extension is not (".ts" or ".js") || Encoding.UTF8.GetByteCount(source) is < 1 or > MaxScriptBytes)
+        {
+            return InvalidScriptMessage;
         }
 
         if (string.IsNullOrWhiteSpace(source))
@@ -39,7 +59,7 @@ public class WatchScriptManager(
 
         // Each upload gets a new file, so a failed save never touches the current script
         var previousFileName = WatchScriptsDirectory.GetStoredFileName(watch);
-        watch.ScriptFileName = Path.GetFileName(scriptFile.FileName);
+        watch.ScriptFileName = Path.GetFileName(fileName);
         watch.ScriptFileId = Guid.NewGuid();
         var savePath = GetPath(WatchScriptsDirectory.GetStoredFileName(watch)!);
 

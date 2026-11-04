@@ -19,22 +19,6 @@ public partial class ScriptRunner(
     // camelCase + case-insensitive, matching the CLI's JSON output
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    private static string RepoRoot()
-    {
-        var currentDir = new DirectoryInfo(Directory.GetCurrentDirectory());
-        while (currentDir != null && currentDir.GetFiles("Lookout.slnx").Length == 0)
-        {
-            currentDir = currentDir.Parent;
-        }
-
-        if (currentDir == null)
-        {
-            throw new InvalidOperationException("Could not find the repository root directory.");
-        }
-
-        return currentDir.FullName;
-    }
-
     /// <summary>
     /// Resolves a script directly inside <paramref name="scriptsDir"/>.
     /// </summary>
@@ -99,7 +83,7 @@ public partial class ScriptRunner(
         var proxyUrl = useVpn ? GetVpnProxyUrl() : null;
         var scriptsDir = scriptsDirectory.FullPath;
         var scriptPath = GetScriptPath(scriptsDir, scriptName);
-        var cliPath = GetWatchCliPath(RepoRoot());
+        var cliPath = GetWatchCliPath(RepoRoot.FindRequired(Directory.GetCurrentDirectory()));
         var outputPath = Path.Combine(Path.GetTempPath(), $"lookout-watch-{Guid.NewGuid():N}.json");
 
         var processStartInfo = new ProcessStartInfo("node")

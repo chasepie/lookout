@@ -7,10 +7,11 @@ A monorepo with a .NET solution (`Lookout.slnx`) and npm workspaces (root `packa
 - `src/Backend/`: ASP.NET Core API that manages watches and their runs. It calls the Runner over HTTP (`LOOKOUT_RUNNER_URL`). It also rotates the VPN between
 regions through gluetun's control server (`VpnServices/`); the region list comes from gluetun's servers list in `LOOKOUT_GLUETUN_DIR`. The SQLite schema is
 managed with EF Core migrations in `Database/Migrations`: after changing the model, run `dotnet tool restore` once, then
-`dotnet ef migrations add <Name> --project src/Backend --output-dir Database/Migrations`.
+`dotnet ef migrations add <Name> --project src/Backend --output-dir Database/Migrations`. In Development, `DevelopmentDataSeeder` gives a
+database with no watches one watch per script in `examples/`.
 - `src/Runner/`: ASP.NET Core service that runs watch scripts.
-- `src/Core/`: types shared by Backend, Runner and AppHost: the C# records, the environment variable names (`LookoutEnvironmentVariables`) and the watch scripts
-directory (`WatchScriptsDirectory`).
+- `src/Core/`: types shared by Backend, Runner and AppHost: the C# records, the environment variable names (`LookoutEnvironmentVariables`), the watch scripts
+directory (`WatchScriptsDirectory`) and the repo root lookup (`RepoRoot`).
 - `src/AppHost/`: Aspire AppHost. `dotnet run --project src/AppHost` starts Runner, Backend, the frontend and browserless (Chromium for watch runs) and, when
 the OpenVPN credentials are in `.env`, gluetun (the VPN proxy for watches with `UseVpn`). It sets `LOOKOUT_RUNNER_URL`, `LOOKOUT_GLUETUN_URL`,
 `LOOKOUT_GLUETUN_API_KEY` and `LOOKOUT_VPN_PROXY_URL` for Backend and `LOOKOUT_BROWSERLESS_URL` and `LOOKOUT_VPN_PROXY_URL` for Runner, forwards the directory
