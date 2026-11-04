@@ -40,16 +40,18 @@ public partial class Program
             .WithHttpHealthCheck("/health")
             .WaitFor(browserless);
 
+        var backend = builder.AddProject<Projects.Backend>("backend")
+            .WithEnvironment(LookoutEnvironmentVariables.RunnerUrl, runner.GetEndpoint("https"))
+            .WithHttpHealthCheck("/health")
+            .WaitFor(runner);
+
         // VPN client that exposes an HTTP proxy on port 8888, so traffic sent through it leaves over the VPN,
         // and a control server on port 8000 that the Backend uses to switch regions.
         // Only started with OpenVPN credentials; without it, runs of watches that use the VPN fail.
-        IResourceBuilder<ContainerResource>? gluetun = null;
-        IResourceBuilder<ParameterResource>? gluetunApiKey = null;
-        string? gluetunDir = null;
         if (DotEnvValue("OPENVPN_USER") is { } openVpnUser && DotEnvValue("OPENVPN_PASSWORD") is { } openVpnPasswordValue)
         {
             // gluetun keeps its servers list there, and the Backend reads the list to know which regions exist
-            gluetunDir = DotEnvValue(LookoutEnvironmentVariables.GluetunDir) is { } dir
+            var gluetunDir = DotEnvValue(LookoutEnvironmentVariables.GluetunDir) is { } dir
                 ? Path.GetFullPath(dir, repoRoot)
                 : throw new InvalidOperationException(
                     $"Set {LookoutEnvironmentVariables.GluetunDir} in .env to the directory gluetun keeps its data in.");
@@ -58,9 +60,9 @@ public partial class Program
             var openVpnPassword = builder.AddParameter("openvpn-password", openVpnPasswordValue, secret: true);
             // A new key every time the AppHost starts; only gluetun and the Backend need it. Letters and digits
             // only, since it's embedded in a JSON string below.
-            gluetunApiKey = builder.AddParameter(
+            var gluetunApiKey = builder.AddParameter(
                 "gluetun-api-key", new GenerateParameterDefault { MinLength = 32, Special = false }, secret: true);
-            gluetun = builder.AddContainer("gluetun", "qmcgaw/gluetun")
+            var gluetun = builder.AddContainer("gluetun", "qmcgaw/gluetun")
                 // Aspire has no API for capabilities or devices, so they're passed to `docker run` directly
                 .WithContainerRuntimeArgs("--cap-add=NET_ADMIN", "--device=/dev/net/tun:/dev/net/tun")
                 .WithBindMount(gluetunDir, "/gluetun")
@@ -83,16 +85,8 @@ public partial class Program
             // without the VPN don't need it, and a VPN run fails while the proxy is down instead of leaking.
             var proxyOnContainerNetwork = gluetun.Resource.GetEndpoint("proxy", KnownNetworkIdentifiers.DefaultAspireContainerNetwork);
             runner.WithEnvironment(LookoutEnvironmentVariables.VpnProxyUrl, proxyOnContainerNetwork);
-        }
 
-        var backend = builder.AddProject<Projects.Backend>("backend")
-            .WithEnvironment(LookoutEnvironmentVariables.RunnerUrl, runner.GetEndpoint("https"))
-            .WithHttpHealthCheck("/health")
-            .WaitFor(runner);
-
-        // The Backend doesn't wait for gluetun either: it retries, and shows gluetun as unreachable meanwhile
-        if (gluetun is not null && gluetunApiKey is not null && gluetunDir is not null)
-        {
+            // The Backend doesn't wait for gluetun either: it retries, and shows gluetun as unreachable meanwhile
             backend
                 .WithEnvironment(LookoutEnvironmentVariables.GluetunUrl, gluetun.GetEndpoint("control"))
                 .WithEnvironment(LookoutEnvironmentVariables.GluetunApiKey, gluetunApiKey)

@@ -50,9 +50,9 @@ public class VpnController(
         {
             publicIp = await _gluetun.GetPublicIpAsync(cancellationToken);
         }
-        catch (Exception ex) when (IsGluetunFailure(ex, cancellationToken))
+        catch (GluetunException ex)
         {
-            gluetunError = DescribeGluetunFailure(ex);
+            gluetunError = ex.Message;
         }
 
         return new VpnStatus(true, settings, _rotationService.Progress, publicIp, gluetunError);
@@ -71,13 +71,11 @@ public class VpnController(
 
         try
         {
-            var gluetunSettings = await _gluetun.GetVpnSettingsAsync(cancellationToken);
-            var regions = _catalog.GetRegions(gluetunSettings.Provider.Name, gluetunSettings.Type);
-            return new VpnRegions(gluetunSettings.Provider.Name, regions);
+            return await _catalog.GetRegionsAsync(_gluetun, cancellationToken);
         }
-        catch (Exception ex) when (IsGluetunFailure(ex, cancellationToken))
+        catch (GluetunException ex)
         {
-            return StatusCode(StatusCodes.Status503ServiceUnavailable, DescribeGluetunFailure(ex));
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, ex.Message);
         }
     }
 
@@ -111,18 +109,18 @@ public class VpnController(
         string? region = null;
         if (!string.IsNullOrWhiteSpace(request.Region))
         {
-            GluetunVpnSettings gluetunSettings;
+            VpnRegions regions;
             try
             {
-                gluetunSettings = await _gluetun.GetVpnSettingsAsync(cancellationToken);
+                regions = await _catalog.GetRegionsAsync(_gluetun, cancellationToken);
             }
-            catch (Exception ex) when (IsGluetunFailure(ex, cancellationToken))
+            catch (GluetunException ex)
             {
-                return StatusCode(StatusCodes.Status503ServiceUnavailable, DescribeGluetunFailure(ex));
+                return StatusCode(StatusCodes.Status503ServiceUnavailable, ex.Message);
             }
 
             // Matches gluetun's case-insensitive check, but sends the list's spelling, which reapplying compares to
-            region = _catalog.GetRegions(gluetunSettings.Provider.Name, gluetunSettings.Type)
+            region = regions.Regions
                 .FirstOrDefault(r => string.Equals(r, request.Region.Trim(), StringComparison.OrdinalIgnoreCase));
             if (region is null)
             {
@@ -133,14 +131,6 @@ public class VpnController(
         _rotationService.RequestSwitch(region);
         return Accepted();
     }
-
-    /// <summary>
-    /// gluetun is down, restarting, or rejected the request. A timeout surfaces as a TaskCanceledException.
-    /// </summary>
-    private static bool IsGluetunFailure(Exception exception, CancellationToken requestAborted) =>
-        exception is HttpRequestException || (exception is TaskCanceledException && !requestAborted.IsCancellationRequested);
-
-    private static string DescribeGluetunFailure(Exception exception) => $"Couldn't reach gluetun: {exception.Message}";
 
     private Task<VpnSettings> LoadSettingsAsync(CancellationToken cancellationToken) =>
         _dbContext.VpnSettings.SingleAsync(s => s.Id == VpnSettings.SingletonId, cancellationToken);
@@ -156,9 +146,6 @@ public sealed record VpnStatus(
     VpnSwitchProgress? Switch,
     GluetunPublicIp? PublicIp,
     string? GluetunError);
-
-/// <param name="Provider">gluetun's name for the VPN provider, such as <c>private internet access</c>.</param>
-public sealed record VpnRegions(string Provider, IReadOnlyList<string> Regions);
 
 /// <param name="Region">The region to switch to, or null for a random one that isn't the current region.</param>
 public sealed record VpnSwitchRequest(string? Region);

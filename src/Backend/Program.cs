@@ -43,11 +43,7 @@ public class Program
         var vpnConfiguration = VpnConfiguration.FromConfiguration(configuration);
         services.AddSingleton(vpnConfiguration);
         services.AddHttpClient<GluetunHttpClient>(GluetunHttpClient.Configure);
-        if (vpnConfiguration.ProxyUrl is not null)
-        {
-            services.AddHttpClient<VpnProxyProbe>()
-                .ConfigureVpnProxyProbe();
-        }
+        services.AddHttpClient<VpnProxyProbe>().ConfigureVpnProxyProbe();
         services.AddSingleton<VpnRegionCatalog>();
         services.AddKeyedSingleton(VpnServiceKeys.Gate, (_, _) => new ConcurrencyLimiter(
             new ConcurrencyLimiterOptions

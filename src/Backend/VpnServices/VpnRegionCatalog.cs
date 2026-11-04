@@ -14,23 +14,28 @@ namespace ChasePie.Lookout.Backend.VpnServices;
 /// </remarks>
 public partial class VpnRegionCatalog(VpnConfiguration configuration, ILogger<VpnRegionCatalog> logger)
 {
-    private readonly Lock _lock = new();
-    private CachedRegions? _cached;
+    // Replaced whole, never changed, so readers need no lock
+    private volatile CachedRegions? _cached;
 
     private sealed record CachedRegions(string FilePath, string VpnType, DateTime LastWriteTime, IReadOnlyList<string> Regions);
 
     /// <summary>
-    /// The provider's regions that have servers for the VPN type, sorted, or an empty list if gluetun
-    /// hasn't written the file yet.
+    /// The regions of the provider and VPN type gluetun is using, sorted, or an empty list if gluetun hasn't
+    /// written its servers list yet.
     /// </summary>
+    /// <exception cref="GluetunException">gluetun couldn't say which provider it's using.</exception>
+    public async Task<VpnRegions> GetRegionsAsync(GluetunHttpClient gluetun, CancellationToken cancellationToken)
+    {
+        var settings = await gluetun.GetVpnSettingsAsync(cancellationToken);
+        return new VpnRegions(settings.Provider.Name, GetRegions(settings.Provider.Name, settings.Type));
+    }
+
     /// <param name="providerName">gluetun's provider name, such as <c>private internet access</c>.</param>
     /// <param name="vpnType"><c>openvpn</c> or <c>wireguard</c>.</param>
-    public IReadOnlyList<string> GetRegions(string providerName, string vpnType)
+    private IReadOnlyList<string> GetRegions(string providerName, string vpnType)
     {
-        if (configuration.DataDirectory is not { } dataDirectory)
-        {
-            return [];
-        }
+        var dataDirectory = configuration.DataDirectory
+            ?? throw new InvalidOperationException("The VPN isn't configured, so there's no gluetun data directory.");
 
         // The name comes from gluetun, but it's still used in a path, so refuse anything that isn't a plain name
         var fileName = providerName + ".json";
@@ -41,15 +46,12 @@ public partial class VpnRegionCatalog(VpnConfiguration configuration, ILogger<Vp
 
         var filePath = Path.Join(dataDirectory, "servers", fileName);
         var lastWriteTime = File.GetLastWriteTimeUtc(filePath);
-        lock (_lock)
+        if (_cached is { } cached
+            && cached.FilePath == filePath
+            && cached.VpnType == vpnType
+            && cached.LastWriteTime == lastWriteTime)
         {
-            if (_cached is { } cached
-                && cached.FilePath == filePath
-                && cached.VpnType == vpnType
-                && cached.LastWriteTime == lastWriteTime)
-            {
-                return cached.Regions;
-            }
+            return cached.Regions;
         }
 
         IReadOnlyList<string> regions;
@@ -64,10 +66,7 @@ public partial class VpnRegionCatalog(VpnConfiguration configuration, ILogger<Vp
             return [];
         }
 
-        lock (_lock)
-        {
-            _cached = new CachedRegions(filePath, vpnType, lastWriteTime, regions);
-        }
+        _cached = new CachedRegions(filePath, vpnType, lastWriteTime, regions);
         return regions;
     }
 
@@ -98,3 +97,6 @@ public partial class VpnRegionCatalog(VpnConfiguration configuration, ILogger<Vp
     [LoggerMessage(Level = LogLevel.Warning, Message = "Couldn't read the VPN servers list at {FilePath}")]
     private partial void LogReadFailed(Exception exception, string filePath);
 }
+
+/// <param name="Provider">gluetun's name for the VPN provider, such as <c>private internet access</c>.</param>
+public sealed record VpnRegions(string Provider, IReadOnlyList<string> Regions);

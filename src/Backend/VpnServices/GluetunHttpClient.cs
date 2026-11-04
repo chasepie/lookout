@@ -13,6 +13,7 @@ namespace ChasePie.Lookout.Backend.VpnServices;
 /// and normally comes back when the new tunnel is up, while <c>/v1/vpn/status</c> stays <c>running</c> throughout.
 /// gluetun looks the IP up with third-party services once per tunnel, and leaves it empty if they all fail.
 /// Settings changed this way last until gluetun restarts.
+/// Every failure to get an answer from gluetun, including its error responses, throws <see cref="GluetunException"/>.
 /// </remarks>
 public class GluetunHttpClient(HttpClient httpClient)
 {
@@ -28,17 +29,16 @@ public class GluetunHttpClient(HttpClient httpClient)
     /// </summary>
     public async Task<GluetunVpnSettings> GetVpnSettingsAsync(CancellationToken cancellationToken = default)
     {
-        using var response = await httpClient.GetAsync("v1/vpn/settings", cancellationToken);
-        await EnsureSuccessAsync(response, cancellationToken);
+        using var response = await SendAsync(HttpMethod.Get, "v1/vpn/settings", null, cancellationToken);
         return await response.Content.ReadFromJsonAsync<GluetunVpnSettings>(JsonOptions, cancellationToken)
-            ?? throw new InvalidOperationException("gluetun returned empty VPN settings.");
+            ?? throw new GluetunException("gluetun returned empty VPN settings.");
     }
 
     /// <summary>
     /// Restricts gluetun's servers to <paramref name="region"/>, which restarts the tunnel on a server there.
     /// Returns once gluetun has started reconnecting; <see cref="VpnProxyProbe"/> tells when it's done.
     /// </summary>
-    /// <exception cref="HttpRequestException">gluetun rejected the region or couldn't be reached.</exception>
+    /// <exception cref="GluetunException">gluetun rejected the region or couldn't be reached.</exception>
     public async Task SetRegionAsync(string region, CancellationToken cancellationToken = default)
     {
         var body = new
@@ -51,8 +51,7 @@ public class GluetunHttpClient(HttpClient httpClient)
                 }
             }
         };
-        using var response = await httpClient.PutAsJsonAsync("v1/vpn/settings", body, JsonOptions, cancellationToken);
-        await EnsureSuccessAsync(response, cancellationToken);
+        using var response = await SendAsync(HttpMethod.Put, "v1/vpn/settings", body, cancellationToken);
     }
 
     /// <summary>
@@ -61,25 +60,50 @@ public class GluetunHttpClient(HttpClient httpClient)
     /// </summary>
     public async Task<GluetunPublicIp?> GetPublicIpAsync(CancellationToken cancellationToken = default)
     {
-        using var response = await httpClient.GetAsync("v1/publicip/ip", cancellationToken);
-        await EnsureSuccessAsync(response, cancellationToken);
+        using var response = await SendAsync(HttpMethod.Get, "v1/publicip/ip", null, cancellationToken);
         var publicIp = await response.Content.ReadFromJsonAsync<GluetunPublicIp>(JsonOptions, cancellationToken);
         return string.IsNullOrEmpty(publicIp?.PublicIp) ? null : publicIp;
     }
 
     /// <summary>
-    /// gluetun answers errors with a plain-text reason, such as the list of valid regions for a bad one.
+    /// Sends a request and returns the successful response, turning every way of not getting one into a
+    /// <see cref="GluetunException"/>. gluetun answers errors with a plain-text reason, such as the list of
+    /// valid regions for a bad one.
     /// </summary>
-    private static async Task EnsureSuccessAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    /// <param name="body">Sent as JSON; <see langword="null"/> for no body.</param>
+    private async Task<HttpResponseMessage> SendAsync(
+        HttpMethod method, string requestUri, object? body, CancellationToken cancellationToken)
     {
-        if (response.IsSuccessStatusCode)
+        using var request = new HttpRequestMessage(method, requestUri)
         {
-            return;
+            Content = body is null ? null : JsonContent.Create(body, options: JsonOptions),
+        };
+
+        HttpResponseMessage response;
+        try
+        {
+            response = await httpClient.SendAsync(request, cancellationToken);
+        }
+        catch (HttpRequestException ex)
+        {
+            throw new GluetunException($"Couldn't reach gluetun: {ex.Message}", ex);
+        }
+        catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            // The client's timeout, as opposed to the caller cancelling
+            throw new GluetunException($"gluetun didn't answer within {RequestTimeout.TotalSeconds:0} seconds.", ex);
         }
 
-        var error = (await response.Content.ReadAsStringAsync(cancellationToken)).Trim();
-        throw new HttpRequestException(
-            $"gluetun returned {(int)response.StatusCode}: {error}", null, response.StatusCode);
+        if (response.IsSuccessStatusCode)
+        {
+            return response;
+        }
+
+        using (response)
+        {
+            var error = (await response.Content.ReadAsStringAsync(cancellationToken)).Trim();
+            throw new GluetunException($"gluetun returned {(int)response.StatusCode}: {error}");
+        }
     }
 
     /// <summary>
@@ -98,6 +122,12 @@ public class GluetunHttpClient(HttpClient httpClient)
         client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
     }
 }
+
+/// <summary>
+/// gluetun couldn't be reached, didn't answer in time, or answered with an error.
+/// </summary>
+public sealed class GluetunException(string message, Exception? innerException = null)
+    : Exception(message, innerException);
 
 /// <summary>
 /// The parts of gluetun's <c>GET /v1/vpn/settings</c> response the Backend uses.
@@ -121,47 +151,35 @@ public sealed record GluetunPublicIp(
     string? Organization);
 
 /// <summary>
-/// Where the Backend finds gluetun, read once at startup.
+/// Where the Backend finds gluetun, read once at startup. Either every setting but the API key is set, or none is.
 /// </summary>
 /// <param name="GluetunUrl">The control server's base URL; <see langword="null"/> turns the VPN features off.</param>
 /// <param name="DataDirectory">The host directory mounted as gluetun's <c>/gluetun</c>.</param>
 /// <param name="ProxyUrl">gluetun's HTTP proxy, which <see cref="VpnProxyProbe"/> checks the tunnel through.</param>
 public sealed record VpnConfiguration(Uri? GluetunUrl, string? ApiKey, string? DataDirectory, Uri? ProxyUrl)
 {
+    private static readonly VpnConfiguration Disabled = new(null, null, null, null);
+
     public bool IsEnabled => GluetunUrl is not null;
 
-    /// <exception cref="InvalidOperationException"><c>LOOKOUT_GLUETUN_URL</c> is not an absolute URL.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// <c>LOOKOUT_GLUETUN_URL</c> is set but isn't an absolute URL, or the settings it needs are missing.
+    /// </exception>
     public static VpnConfiguration FromConfiguration(IConfiguration configuration)
     {
-        static string? Value(IConfiguration configuration, string name) =>
-            string.IsNullOrWhiteSpace(configuration[name]) ? null : configuration[name];
-
-        Uri? gluetunUrl = null;
-        if (Value(configuration, LookoutEnvironmentVariables.GluetunUrl) is { } url)
+        if (LookoutEnvironmentVariables.GetBaseUrl(configuration, LookoutEnvironmentVariables.GluetunUrl) is not { } gluetunUrl)
         {
-            // A trailing slash makes relative request URIs append to any path in the base URL
-            if (!Uri.TryCreate(url.EndsWith('/') ? url : url + "/", UriKind.Absolute, out gluetunUrl))
-            {
-                throw new InvalidOperationException(
-                    $"Environment variable {LookoutEnvironmentVariables.GluetunUrl} must be an absolute URL");
-            }
+            return Disabled;
         }
 
-        Uri? proxyUrl = null;
-        if (Value(configuration, LookoutEnvironmentVariables.VpnProxyUrl) is { } proxy
-            && !Uri.TryCreate(proxy, UriKind.Absolute, out proxyUrl))
-        {
-            throw new InvalidOperationException(
-                $"Environment variable {LookoutEnvironmentVariables.VpnProxyUrl} must be an absolute URL");
-        }
-
-        var dataDirectory = Value(configuration, LookoutEnvironmentVariables.GluetunDir) is { } dir
-            ? Path.GetFullPath(dir)
-            : null;
+        var proxyUrl = LookoutEnvironmentVariables.GetBaseUrl(configuration, LookoutEnvironmentVariables.VpnProxyUrl)
+            ?? throw new InvalidOperationException(
+                $"Environment variable {LookoutEnvironmentVariables.VpnProxyUrl} must be set when {LookoutEnvironmentVariables.GluetunUrl} is");
+        var apiKey = configuration[LookoutEnvironmentVariables.GluetunApiKey];
         return new VpnConfiguration(
             GluetunUrl: gluetunUrl,
-            ApiKey: Value(configuration, LookoutEnvironmentVariables.GluetunApiKey),
-            DataDirectory: dataDirectory,
+            ApiKey: string.IsNullOrWhiteSpace(apiKey) ? null : apiKey,
+            DataDirectory: LookoutEnvironmentVariables.GetRequiredDirectory(configuration, LookoutEnvironmentVariables.GluetunDir),
             ProxyUrl: proxyUrl);
     }
 }

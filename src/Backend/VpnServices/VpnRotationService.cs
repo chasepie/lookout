@@ -37,11 +37,8 @@ public partial class VpnRotationService(
         Reapply,
     }
 
-    /// <param name="Region">The region to switch to, or <see langword="null"/> for a random one.</param>
-    private sealed record SwitchRequest(string? Region);
-
-    // Only the latest manual request matters; one made while another waits replaces it
-    private readonly Channel<SwitchRequest> _requests = Channel.CreateBounded<SwitchRequest>(
+    // Requested regions, null for a random one. Only the latest matters; one made while another waits replaces it
+    private readonly Channel<string?> _requests = Channel.CreateBounded<string?>(
         new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropOldest });
 
     private volatile VpnSwitchProgress? _progress;
@@ -57,7 +54,7 @@ public partial class VpnRotationService(
     /// </summary>
     /// <param name="region">A region from <see cref="VpnRegionCatalog"/>, or <see langword="null"/> for a random
     /// one. Excluded regions are allowed: exclusions only apply to rotation.</param>
-    public void RequestSwitch(string? region) => _requests.Writer.TryWrite(new SwitchRequest(region));
+    public void RequestSwitch(string? region) => _requests.Writer.TryWrite(region);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -72,9 +69,9 @@ public partial class VpnRotationService(
         {
             try
             {
-                if (_requests.Reader.TryRead(out var request))
+                if (_requests.Reader.TryRead(out var requestedRegion))
                 {
-                    await SwitchAsync(SwitchKind.Manual, request.Region, stoppingToken);
+                    await SwitchAsync(SwitchKind.Manual, requestedRegion, stoppingToken);
                 }
                 else if (await IsRotationDueAsync(stoppingToken))
                 {
@@ -157,26 +154,12 @@ public partial class VpnRotationService(
         string? error = null;
         try
         {
-            var gluetunSettings = await gluetun.GetVpnSettingsAsync(cancellationToken);
-            var regions = catalog.GetRegions(gluetunSettings.Provider.Name, gluetunSettings.Type);
-            region = requestedRegion ?? settings.PickRotationRegion(regions, Random.Shared);
-            if (region is null)
-            {
-                var message = regions.Count == 0
-                    ? "There are no regions to switch to: gluetun's servers list has none for this VPN provider."
-                    : "There are no regions to rotate to: every region other than the current one is excluded.";
-                throw new InvalidOperationException(message);
-            }
+            region = requestedRegion ?? await PickRotationRegionAsync(settings, gluetun, cancellationToken);
 
             _progress = new VpnSwitchProgress(region, WaitingForRun: true, DateTime.UtcNow);
             await notifier.VpnChangedAsync();
-            using (var lease = await gate.AcquireAsync(1, cancellationToken))
+            using (await gate.AcquireVpnLeaseAsync(cancellationToken))
             {
-                if (!lease.IsAcquired)
-                {
-                    throw new InvalidOperationException("The VPN gate refused a lease, though its queue is unbounded.");
-                }
-
                 _progress = _progress with { WaitingForRun = false };
                 await notifier.VpnChangedAsync();
 
@@ -184,7 +167,8 @@ public partial class VpnRotationService(
                 await gluetun.SetRegionAsync(region, cancellationToken);
 
                 regionApplied = true;
-                publicIp = await WaitForTunnelAsync(scope.ServiceProvider, gluetun, cancellationToken);
+                publicIp = await WaitForTunnelAsync(
+                    scope.ServiceProvider.GetRequiredService<VpnProxyProbe>(), cancellationToken);
             }
 
             if (publicIp is null)
@@ -194,7 +178,6 @@ public partial class VpnRotationService(
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
-            // Includes the HttpClient timeout, which surfaces as a TaskCanceledException
             error = ex.Message;
         }
         finally
@@ -235,35 +218,32 @@ public partial class VpnRotationService(
     }
 
     /// <summary>
-    /// Polls until traffic gets through the new tunnel: through the VPN proxy if the Backend has its URL,
-    /// otherwise by waiting for gluetun's public IP, which is missing if gluetun's IP lookup fails.
+    /// A random region rotation may switch to, from the regions of the provider gluetun is using.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">No region is allowed.</exception>
+    private async Task<string> PickRotationRegionAsync(
+        VpnSettings settings, GluetunHttpClient gluetun, CancellationToken cancellationToken)
+    {
+        var regions = (await catalog.GetRegionsAsync(gluetun, cancellationToken)).Regions;
+        return settings.PickRotationRegion(regions, Random.Shared)
+            ?? throw new InvalidOperationException(regions.Count == 0
+                ? "There are no regions to switch to: gluetun's servers list has none for this VPN provider."
+                : "There are no regions to rotate to: every region other than the current one is excluded.");
+    }
+
+    /// <summary>
+    /// Polls until traffic gets through the VPN proxy, which gluetun's firewall blocks until the new tunnel is up.
     /// </summary>
     /// <returns>The new public IP, or <see langword="null"/> if the tunnel wasn't up within <see cref="TunnelUpTimeout"/>.</returns>
-    private static async Task<string?> WaitForTunnelAsync(
-        IServiceProvider services, GluetunHttpClient gluetun, CancellationToken cancellationToken)
+    private static async Task<string?> WaitForTunnelAsync(VpnProxyProbe probe, CancellationToken cancellationToken)
     {
-        var probe = services.GetService<VpnProxyProbe>();
         var deadline = DateTime.UtcNow + TunnelUpTimeout;
         while (DateTime.UtcNow < deadline)
         {
             await Task.Delay(PollInterval, cancellationToken);
-            if (probe is null)
+            if (await probe.TryGetPublicIpAsync(cancellationToken) is { } publicIp)
             {
-                if (await gluetun.GetPublicIpAsync(cancellationToken) is { } gluetunIp)
-                {
-                    return gluetunIp.PublicIp;
-                }
-                continue;
-            }
-
-            try
-            {
-                return await probe.GetPublicIpAsync(cancellationToken) ?? "unknown";
-            }
-            catch (Exception ex) when (ex is HttpRequestException
-                || (ex is TaskCanceledException && !cancellationToken.IsCancellationRequested))
-            {
-                // Blocked by gluetun's firewall until the tunnel is up
+                return publicIp;
             }
         }
         return null;

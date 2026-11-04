@@ -15,16 +15,26 @@ public class VpnProxyProbe(HttpClient httpClient)
     private static readonly Uri TraceUrl = new("https://www.cloudflare.com/cdn-cgi/trace");
 
     /// <summary>
-    /// The public IP of a request sent through the proxy.
+    /// The public IP of a request sent through the proxy, or <see langword="null"/> if the request didn't get
+    /// through or timed out, as while the tunnel is down.
     /// </summary>
-    /// <exception cref="HttpRequestException">The request didn't get through, as while the tunnel is down.</exception>
-    /// <exception cref="TaskCanceledException">The request timed out.</exception>
-    public async Task<string?> GetPublicIpAsync(CancellationToken cancellationToken)
+    public async Task<string?> TryGetPublicIpAsync(CancellationToken cancellationToken)
     {
-        var trace = await httpClient.GetStringAsync(TraceUrl, cancellationToken);
+        string trace;
+        try
+        {
+            trace = await httpClient.GetStringAsync(TraceUrl, cancellationToken);
+        }
+        catch (Exception ex) when (ex is HttpRequestException
+            || (ex is TaskCanceledException && !cancellationToken.IsCancellationRequested))
+        {
+            return null;
+        }
+
+        // The request got through, so the tunnel is up even if the page has changed shape
         return trace.Split('\n')
             .Select(line => line.Trim())
-            .FirstOrDefault(line => line.StartsWith("ip=", StringComparison.Ordinal))?[3..];
+            .FirstOrDefault(line => line.StartsWith("ip=", StringComparison.Ordinal))?[3..] ?? "unknown";
     }
 }
 
@@ -35,8 +45,7 @@ internal static class VpnProxyProbeExtensions
     extension(IHttpClientBuilder builder)
     {
         /// <summary>
-        /// Sends the client's requests through the VPN proxy. Only registered when
-        /// <see cref="VpnConfiguration.ProxyUrl"/> is set.
+        /// Sends the client's requests through the VPN proxy, <see cref="VpnConfiguration.ProxyUrl"/>.
         /// </summary>
         public IHttpClientBuilder ConfigureVpnProxyProbe() => builder
             .ConfigureHttpClient(client => client.Timeout = RequestTimeout)
