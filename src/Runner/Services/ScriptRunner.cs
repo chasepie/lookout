@@ -5,7 +5,10 @@ using ChasePie.Lookout.Core;
 
 namespace ChasePie.Lookout.Runner.Services;
 
-public partial class ScriptRunner(ILogger<ScriptRunner> logger, WatchScriptsDirectory scriptsDirectory)
+public partial class ScriptRunner(
+    ILogger<ScriptRunner> logger,
+    WatchScriptsDirectory scriptsDirectory,
+    IConfiguration configuration)
 {
     // How long a cancelled script gets to abort and close its browser before the process is killed
     private static readonly TimeSpan CancelGracePeriod = TimeSpan.FromSeconds(5);
@@ -67,10 +70,33 @@ public partial class ScriptRunner(ILogger<ScriptRunner> logger, WatchScriptsDire
         return cliPath;
     }
 
+    /// <summary>
+    /// The proxy that VPN runs send the browser's traffic through.
+    /// </summary>
+    /// <exception cref="InvalidOperationException"><c>LOOKOUT_VPN_PROXY_URL</c> is not set.</exception>
+    private string GetVpnProxyUrl()
+    {
+        var proxyUrl = configuration[LookoutEnvironmentVariables.VpnProxyUrl];
+        if (string.IsNullOrWhiteSpace(proxyUrl))
+        {
+            // Never run without the VPN when the watch asked for it
+            throw new InvalidOperationException(
+                $"The watch uses the VPN, but the Runner has no VPN proxy. Set {LookoutEnvironmentVariables.VpnProxyUrl}.");
+        }
+
+        return proxyUrl;
+    }
+
+    /// <param name="useVpn">Whether the browser's traffic goes through the VPN proxy.</param>
+    /// <exception cref="InvalidOperationException">
+    /// <paramref name="useVpn"/> is set but there is no VPN proxy, or the CLI failed.
+    /// </exception>
     public async Task<WatchRunResult> RunWatchScriptAsync(
         string scriptName,
+        bool useVpn,
         CancellationToken cancellationToken = default)
     {
+        var proxyUrl = useVpn ? GetVpnProxyUrl() : null;
         var scriptsDir = scriptsDirectory.FullPath;
         var scriptPath = GetScriptPath(scriptsDir, scriptName);
         var cliPath = GetWatchCliPath(RepoRoot());
@@ -83,14 +109,29 @@ public partial class ScriptRunner(ILogger<ScriptRunner> logger, WatchScriptsDire
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
-            CreateNoWindow = true
+            CreateNoWindow = true,
+            Environment =
+            {
+                // The output ends up in logs and in run errors, not a terminal. Playwright colours its errors even
+                // when stderr isn't a TTY, and ignores NO_COLOR, so without this the escape codes show up as text.
+                ["FORCE_COLOR"] = "0",
+            },
         };
+        // When a package.json without a "type" field is above the scripts directory, as with the repo root in
+        // development, Node warns on every ESM script it loads. Node still loads them fine, and the warning would
+        // otherwise lead the stderr kept for failed runs.
+        processStartInfo.ArgumentList.Add("--disable-warning=MODULE_TYPELESS_PACKAGE_JSON");
         // ArgumentList quotes each argument, so paths with spaces are passed intact
         processStartInfo.ArgumentList.Add(cliPath);
         processStartInfo.ArgumentList.Add("run");
         processStartInfo.ArgumentList.Add(scriptPath);
         processStartInfo.ArgumentList.Add("--output");
         processStartInfo.ArgumentList.Add(outputPath);
+        if (proxyUrl is not null)
+        {
+            processStartInfo.ArgumentList.Add("--proxy");
+            processStartInfo.ArgumentList.Add(proxyUrl);
+        }
 
         using var process = new Process { StartInfo = processStartInfo };
 

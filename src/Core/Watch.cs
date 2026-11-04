@@ -23,6 +23,11 @@ public class CreateWatchDto : IValidatableObject
     public WatchScheduleKind? ScheduleKind { get; set; }
     public string? ScheduleInterval { get; set; }
 
+    /// <summary>
+    /// Whether runs send the browser's traffic through the VPN proxy (<c>LOOKOUT_VPN_PROXY_URL</c>).
+    /// </summary>
+    public bool UseVpn { get; set; }
+
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
         if (!ScheduleEnabled)
@@ -102,6 +107,7 @@ public class Watch : CreateWatchDto
         ScheduleEnabled = dto.ScheduleEnabled;
         ScheduleKind = dto.ScheduleKind;
         ScheduleInterval = dto.ScheduleInterval;
+        UseVpn = dto.UseVpn;
     }
 
     /// <summary>

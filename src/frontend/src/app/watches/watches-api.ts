@@ -45,6 +45,7 @@ export class WatchesApi {
     if (watch.scheduleInterval !== null) {
       body.append('scheduleInterval', watch.scheduleInterval);
     }
+    body.append('useVpn', String(watch.useVpn));
     body.append('script', script);
     return firstValueFrom(this.http.post<Watch>(baseUrl, body));
   }

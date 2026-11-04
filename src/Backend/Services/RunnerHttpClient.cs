@@ -14,11 +14,13 @@ public class RunnerHttpClient(HttpClient httpClient)
     /// <summary>
     /// Asks the Runner to execute the named watch script and returns its result.
     /// </summary>
-    public async Task<WatchRunResult> RunWatchScriptAsync(string scriptName, CancellationToken cancellationToken = default)
+    /// <param name="useVpn">Whether the browser's traffic goes through the Runner's VPN proxy.</param>
+    public async Task<WatchRunResult> RunWatchScriptAsync(
+        string scriptName, bool useVpn, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(scriptName);
 
-        var requestUri = $"WatchRun?scriptName={Uri.EscapeDataString(scriptName)}";
+        var requestUri = $"WatchRun?scriptName={Uri.EscapeDataString(scriptName)}&useVpn={(useVpn ? "true" : "false")}";
         using var response = await httpClient.GetAsync(requestUri, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {

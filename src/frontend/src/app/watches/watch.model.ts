@@ -19,6 +19,8 @@ export interface CreateWatchDto {
   scheduleEnabled: boolean;
   scheduleKind: WatchScheduleKind | null;
   scheduleInterval: string | null;
+  /** Whether runs send the browser's traffic through the VPN. */
+  useVpn: boolean;
 }
 
 export interface Watch extends CreateWatchDto {

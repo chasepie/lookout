@@ -7,7 +7,7 @@ A monorepo with a .NET solution (`Lookout.slnx`) and npm workspaces (root `packa
 - `src/Backend/`: ASP.NET Core API that manages watches and their runs. It calls the Runner over HTTP (`LOOKOUT_RUNNER_URL`).
 - `src/Runner/`: ASP.NET Core service that runs watch scripts.
 - `src/Core/`: types shared by Backend, Runner and AppHost: the C# records, the environment variable names (`LookoutEnvironmentVariables`) and the watch scripts directory (`WatchScriptsDirectory`).
-- `src/AppHost/`: Aspire AppHost. `dotnet run --project src/AppHost` starts Runner, Backend and the frontend, sets `LOOKOUT_RUNNER_URL` for Backend, forwards the directory settings from `.env` (relative paths resolve against the repo root), and opens the Aspire dashboard.
+- `src/AppHost/`: Aspire AppHost. `dotnet run --project src/AppHost` starts Runner, Backend, the frontend and browserless (Chromium for watch runs) and, when the OpenVPN credentials are in `.env`, gluetun (the VPN proxy for watches with `UseVpn`). It sets `LOOKOUT_RUNNER_URL` for Backend and `LOOKOUT_BROWSERLESS_URL` and `LOOKOUT_VPN_PROXY_URL` for Runner, forwards the directory settings from `.env` (relative paths resolve against the repo root), and opens the Aspire dashboard.
 - `src/ServiceDefaults/`: shared Aspire setup (OpenTelemetry, health checks, service discovery) referenced by Backend and Runner.
 - `src/watch-sdk/`: TypeScript SDK and CLI (Playwright-based) for writing watch scripts.
 - `src/frontend/`: Angular web UI. Its conventions are in `src/frontend/CLAUDE.md`.

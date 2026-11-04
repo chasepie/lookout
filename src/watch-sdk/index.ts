@@ -1,4 +1,4 @@
-import { chromium, type LaunchOptions, type Page } from 'playwright';
+import { chromium, type Browser, type LaunchOptions, type Page } from 'playwright';
 
 export interface SuccessfulRunResult {
   success: true;
@@ -35,22 +35,75 @@ export interface LookoutWatchScript {
 }
 
 export interface RunWatchOptions {
+  /**
+   * Options for the browser. With {@link browserlessUrl} only `headless` and `args` apply, because
+   * browserless launches the browser on its own machine.
+   */
   launchOptions?: LaunchOptions;
+  /**
+   * Base URL of a browserless server, such as `http://localhost:3000`, to run the browser on instead of
+   * launching Chromium locally. Query parameters, such as `token`, are passed on to browserless.
+   */
+  browserlessUrl?: string;
+  /**
+   * HTTP proxy, such as `http://gluetun:8888`, that the browser sends all its traffic through. The browser
+   * connects to it, so with {@link browserlessUrl} it must be reachable from the browserless server.
+   */
+  proxy?: string;
   signal?: AbortSignal;
+}
+
+/**
+ * Builds the WebSocket URL for Playwright's `chromium.connect()` from a browserless base URL. Browserless
+ * launches the browser itself, so the launch options go in its `launch` query parameter.
+ */
+export function getBrowserlessEndpoint(browserlessUrl: string, launchOptions: Pick<LaunchOptions, 'headless' | 'args'>): string {
+  const url = new URL(browserlessUrl);
+  if (url.protocol === 'http:' || url.protocol === 'https:') {
+    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  }
+
+  url.pathname = `${url.pathname.replace(/\/+$/, '')}/chromium/playwright`;
+  url.searchParams.set('launch', JSON.stringify({ headless: launchOptions.headless, args: launchOptions.args }));
+  return url.href;
+}
+
+/**
+ * Runs in every frame of a proxied context. WebRTC sends STUN requests over UDP outside the HTTP proxy, which
+ * reveals the real IP, and Chromium's `--force-webrtc-ip-handling-policy` doesn't stop it with a per-context
+ * proxy, so pages get no WebRTC at all.
+ */
+function removeWebRtc(): void {
+  for (const name of ['RTCPeerConnection', 'webkitRTCPeerConnection', 'RTCDataChannel', 'RTCIceCandidate', 'RTCSessionDescription']) {
+    Reflect.deleteProperty(globalThis, name);
+  }
+}
+
+async function openBrowser(launchOptions: LaunchOptions, browserlessUrl: string | undefined): Promise<Browser> {
+  if (browserlessUrl === undefined) {
+    return chromium.launch(launchOptions);
+  }
+
+  return chromium.connect(getBrowserlessEndpoint(browserlessUrl, launchOptions));
 }
 
 export async function runWatch(runScript: LookoutWatchScript, options?: RunWatchOptions): Promise<RunResult> {
   const signal = options?.signal ?? new AbortController().signal;
-  const launchOptions = options?.launchOptions ?? {};
-
-  const browser = await chromium.launch({
+  const launchOptions: LaunchOptions = {
     headless: false,
     args: ['--disable-blink-features=AutomationControlled'],
-    ...launchOptions,
-  });
+    ...options?.launchOptions,
+  };
+  const proxy = options?.proxy;
+
+  const browser = await openBrowser(launchOptions, options?.browserlessUrl);
 
   try {
-    const page = await browser.newPage();
+    const context = await browser.newContext(proxy === undefined ? {} : { proxy: { server: proxy } });
+    if (proxy !== undefined) {
+      await context.addInitScript(removeWebRtc);
+    }
+    const page = await context.newPage();
     return await runScript.run(page, signal);
   } finally {
     await browser.close();

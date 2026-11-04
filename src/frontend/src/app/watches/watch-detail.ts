@@ -30,6 +30,8 @@ import { WatchesApi, describeError } from './watches-api';
             Off
           }
         </dd>
+        <dt>VPN</dt>
+        <dd>{{ watch.value().useVpn ? 'On' : 'Off' }}</dd>
       </dl>
 
       <p>
