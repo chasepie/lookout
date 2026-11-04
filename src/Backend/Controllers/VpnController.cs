@@ -23,7 +23,7 @@ public class VpnController(
     UpdatesNotifier notifier) : ControllerBase
 {
     private const string NotConfiguredMessage =
-        "The VPN isn't set up: the Backend has no gluetun control server URL (LOOKOUT_GLUETUN_URL).";
+        $"The VPN isn't set up: the Backend has no gluetun control server URL ({LookoutEnvironmentVariables.GluetunUrl}).";
 
     private readonly LookoutDbContext _dbContext = dbContext;
     private readonly VpnConfiguration _configuration = configuration;
