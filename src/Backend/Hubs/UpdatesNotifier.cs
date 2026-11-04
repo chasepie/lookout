@@ -53,6 +53,18 @@ public partial class UpdatesNotifier(
         }
     }
 
+    public async Task VpnChangedAsync()
+    {
+        try
+        {
+            await hubContext.Clients.All.VpnChanged();
+        }
+        catch (Exception ex)
+        {
+            LogSendFailed(ex, nameof(IUpdatesClient.VpnChanged));
+        }
+    }
+
     [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to send {Message} to clients")]
     private partial void LogSendFailed(Exception exception, string message);
 }

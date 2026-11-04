@@ -1,6 +1,8 @@
 using ChasePie.Lookout.Backend.Database;
 using ChasePie.Lookout.Backend.Hubs;
 using ChasePie.Lookout.Backend.Services;
+using System.Threading.RateLimiting;
+using ChasePie.Lookout.Backend.VpnServices;
 using ChasePie.Lookout.Core;
 using dotenv.net.Configuration;
 using Microsoft.EntityFrameworkCore;
@@ -37,14 +39,31 @@ public class Program
         services.AddHttpClient<RunnerHttpClient>(RunnerHttpClient.Configure);
         services.AddHostedService<WatchScheduler>();
         services.AddHostedService<WatchRunWorker>();
+
+        var vpnConfiguration = VpnConfiguration.FromConfiguration(configuration);
+        services.AddSingleton(vpnConfiguration);
+        services.AddHttpClient<GluetunHttpClient>(GluetunHttpClient.Configure);
+        services.AddHttpClient<VpnProbeHttpClient>().ConfigureVpnProbeHttpClient();
+        services.AddSingleton<VpnRegionCatalog>();
+        services.AddKeyedSingleton(VpnServiceKeys.Gate, (_, _) => new ConcurrencyLimiter(
+            new ConcurrencyLimiterOptions
+            {
+                PermitLimit = 1,
+                QueueLimit = int.MaxValue,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            }));
+        // A singleton too, so the controller can queue switches on the instance that makes them
+        services.AddSingleton<VpnRotationService>();
+        services.AddHostedService(provider => provider.GetRequiredService<VpnRotationService>());
     }
 
     private static void ConfigureApp(WebApplication app)
     {
-        // There are no migrations yet, so create the schema directly.
+        // Creates the database on first start and applies any migrations added since.
+        // A database made before migrations existed has no migrations history, so this fails on it; delete it.
         using (var scope = app.Services.CreateScope())
         {
-            scope.ServiceProvider.GetRequiredService<LookoutDbContext>().Database.EnsureCreated();
+            scope.ServiceProvider.GetRequiredService<LookoutDbContext>().Database.Migrate();
         }
 
         // Configure the HTTP request pipeline.

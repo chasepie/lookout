@@ -8,6 +8,8 @@
     <PackageReference Include="dotenv.net" />
     <PackageReference Include="dotenv.net.Configuration" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <!-- For `dotnet ef migrations`; not part of the build output -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
     <PackageReference Include="Scalar.AspNetCore" />
   </ItemGroup>

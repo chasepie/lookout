@@ -1,5 +1,9 @@
 <header>
   <h1><a routerLink="/">Lookout</a></h1>
+  <nav aria-label="Main">
+    <a routerLink="/" routerLinkActive="active" ariaCurrentWhenActive="page" [routerLinkActiveOptions]="{ exact: true }">Watches</a>
+    <a routerLink="/vpn" routerLinkActive="active" ariaCurrentWhenActive="page">VPN</a>
+  </nav>
 </header>
 <main>
   <router-outlet />

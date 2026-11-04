@@ -60,24 +60,9 @@ public class RunnerHttpClient(HttpClient httpClient)
     /// </summary>
     internal static void Configure(IServiceProvider services, HttpClient client)
     {
-        var runnerUrl = services.GetRequiredService<IConfiguration>()[LookoutEnvironmentVariables.RunnerUrl];
-        if (string.IsNullOrWhiteSpace(runnerUrl))
-        {
-            throw new InvalidOperationException($"Environment variable {LookoutEnvironmentVariables.RunnerUrl} must be set");
-        }
-
-        // Ensure a trailing slash so relative request URIs append to any path in the base URL.
-        if (!runnerUrl.EndsWith('/'))
-        {
-            runnerUrl += "/";
-        }
-
-        if (!Uri.TryCreate(runnerUrl, UriKind.Absolute, out var baseAddress))
-        {
-            throw new InvalidOperationException($"Environment variable {LookoutEnvironmentVariables.RunnerUrl} must be an absolute URL");
-        }
-
-        client.BaseAddress = baseAddress;
+        var configuration = services.GetRequiredService<IConfiguration>();
+        client.BaseAddress = LookoutEnvironmentVariables.GetBaseUrl(configuration, LookoutEnvironmentVariables.RunnerUrl)
+            ?? throw new InvalidOperationException($"Environment variable {LookoutEnvironmentVariables.RunnerUrl} must be set");
 
         // A run waits for the whole browser session; the 100-second default is too short.
         // On timeout the request is aborted, and the Runner stops the script.

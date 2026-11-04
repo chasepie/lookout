@@ -9,5 +9,6 @@ export const routes: Routes = [
     path: 'watches/:id/runs/:runId',
     loadComponent: () => import('./watches/run-detail').then((m) => m.RunDetail),
   },
+  { path: 'vpn', loadComponent: () => import('./vpn/vpn-page').then((m) => m.VpnPage) },
   { path: '**', redirectTo: '' },
 ];
