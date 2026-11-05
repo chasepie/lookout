@@ -4,7 +4,10 @@ A monorepo with a .NET solution (`Lookout.slnx`) and npm workspaces (root `packa
 
 ## Layout
 
-- `src/Backend/`: ASP.NET Core API that manages watches and their runs. It calls the Runner over HTTP (`LOOKOUT_RUNNER_URL`). It also rotates the VPN between
+- `src/Backend/`: ASP.NET Core API that manages watches and their runs, under `/api`. It also serves the built frontend from `wwwroot`. Only the Owner can use
+it: they sign in with `LOOKOUT_OWNER_USERNAME` and `LOOKOUT_OWNER_PASSWORD`, and every endpoint requires their session cookie unless it allows anonymous
+access (`Auth/`). Requests that change data also need the `X-Lookout-Request` header and a same-origin `Sec-Fetch-Site` or `Origin` (`CsrfProtection`). It
+calls the Runner over HTTP (`LOOKOUT_RUNNER_URL`). It also rotates the VPN between
 regions through gluetun's control server (`VpnServices/`); the region list comes from gluetun's servers list in `LOOKOUT_GLUETUN_DIR`. The SQLite schema is
 managed with EF Core migrations in `Database/Migrations`: after changing the model, run `dotnet tool restore` once, then
 `dotnet ef migrations add <Name> --project src/Backend --output-dir Database/Migrations`. In Development, `DevelopmentDataSeeder` gives a
@@ -15,7 +18,8 @@ directory (`WatchScriptsDirectory`) and the repo root lookup (`RepoRoot`).
 - `src/AppHost/`: Aspire AppHost. `dotnet run --project src/AppHost` starts Runner, Backend, the frontend and browserless (Chromium for watch runs) and, when
 the OpenVPN credentials are in `.env`, gluetun (the VPN proxy for watches with `UseVpn`). It sets `LOOKOUT_RUNNER_URL`, `LOOKOUT_GLUETUN_URL`,
 `LOOKOUT_GLUETUN_API_KEY` and `LOOKOUT_VPN_PROXY_URL` for Backend and `LOOKOUT_BROWSERLESS_URL` and `LOOKOUT_VPN_PROXY_URL` for Runner, forwards the directory
-settings from `.env` (relative paths resolve against the repo root), and opens the Aspire dashboard. It bind-mounts `LOOKOUT_GLUETUN_DIR` as gluetun's data
+settings from `.env` (relative paths resolve against the repo root), and opens the Aspire dashboard. It also forwards the Owner's
+`LOOKOUT_OWNER_USERNAME` and `LOOKOUT_OWNER_PASSWORD` from `.env` to Backend, and refuses to start without them. It bind-mounts `LOOKOUT_GLUETUN_DIR` as gluetun's data
 directory and generates a new control-server API key on each start.
 - `src/ServiceDefaults/`: shared Aspire setup (OpenTelemetry, health checks, service discovery) referenced by Backend and Runner.
 - `src/watch-sdk/`: TypeScript SDK and CLI (Playwright-based) for writing watch scripts.
@@ -24,6 +28,8 @@ directory and generates a new control-server API key on each start.
 - `tests/`: MSTest projects for Backend and Runner.
 
 Environment variables are loaded from `.env`. See `example.env` for the keys.
+
+The domain's terms are in `GLOSSARY.md`, and decisions that would surprise a reader are recorded in `docs/adr/`.
 
 ## TypeScript
 

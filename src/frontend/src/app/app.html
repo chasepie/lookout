@@ -1,9 +1,15 @@
 <header>
   <h1><a routerLink="/">Lookout</a></h1>
-  <nav aria-label="Main">
-    <a routerLink="/" routerLinkActive="active" ariaCurrentWhenActive="page" [routerLinkActiveOptions]="{ exact: true }">Watches</a>
-    <a routerLink="/vpn" routerLinkActive="active" ariaCurrentWhenActive="page">VPN</a>
-  </nav>
+  @if (session.signedIn()) {
+    <nav aria-label="Main">
+      <a routerLink="/" routerLinkActive="active" ariaCurrentWhenActive="page" [routerLinkActiveOptions]="{ exact: true }">Watches</a>
+      <a routerLink="/vpn" routerLinkActive="active" ariaCurrentWhenActive="page">VPN</a>
+    </nav>
+    <p>
+      Signed in as {{ session.username() }}
+      <button type="button" (click)="signOut()">Sign out</button>
+    </p>
+  }
 </header>
 <main>
   <router-outlet />

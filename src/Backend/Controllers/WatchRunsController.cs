@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore;
 namespace ChasePie.Lookout.Backend.Controllers;
 
 [ApiController]
-[Route("Watches/{watchId:int}/runs")]
+[Route("api/Watches/{watchId:int}/runs")]
 public class WatchRunsController(LookoutDbContext dbContext, UpdatesNotifier notifier) : ControllerBase
 {
     private readonly LookoutDbContext _dbContext = dbContext;

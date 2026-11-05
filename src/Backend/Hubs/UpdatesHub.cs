@@ -9,7 +9,7 @@ namespace ChasePie.Lookout.Backend.Hubs;
 /// </summary>
 public class UpdatesHub : Hub<IUpdatesClient>
 {
-    public const string Path = "/hubs/updates";
+    public const string Path = "/api/hubs/updates";
 }
 
 /// <summary>

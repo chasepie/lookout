@@ -54,6 +54,17 @@ public static class LookoutEnvironmentVariables
     public const string GluetunDir = "LOOKOUT_GLUETUN_DIR";
 
     /// <summary>
+    /// The Owner's username, which the Backend requires. The Owner is the one person who signs in to Lookout.
+    /// </summary>
+    public const string OwnerUsername = "LOOKOUT_OWNER_USERNAME";
+
+    /// <summary>
+    /// The Owner's password, which the Backend requires. Changing it, or <see cref="OwnerUsername"/>, signs out every
+    /// session once the Backend restarts.
+    /// </summary>
+    public const string OwnerPassword = "LOOKOUT_OWNER_PASSWORD";
+
+    /// <summary>
     /// Reads a base URL from configuration, adding a trailing slash so relative request URIs append to its path.
     /// </summary>
     /// <returns>The URL, or <see langword="null"/> if the variable is not set.</returns>
