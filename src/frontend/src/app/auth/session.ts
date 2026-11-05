@@ -3,12 +3,6 @@ import { Service, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
-/**
- * The header the Backend requires on every request that changes data, as protection against cross-site request
- * forgery. The auth interceptor adds it to every API request.
- */
-export const csrfHeader = 'X-Lookout-Request';
-
 const baseUrl = '/api/auth';
 
 /** The signed-in Owner, as the Backend's `/api/auth/me` returns it. */

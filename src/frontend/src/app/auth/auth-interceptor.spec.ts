@@ -4,7 +4,8 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { authInterceptor } from './auth-interceptor';
-import { Session, csrfHeader } from './session';
+import { csrfHeader } from './csrf';
+import { Session } from './session';
 
 describe('authInterceptor', () => {
   let http: HttpClient;

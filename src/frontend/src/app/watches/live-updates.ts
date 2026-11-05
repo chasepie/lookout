@@ -1,7 +1,8 @@
 import { Service, effect, inject } from '@angular/core';
 import { HubConnectionBuilder, HubConnectionState, LogLevel } from '@microsoft/signalr';
 import { Subject } from 'rxjs';
-import { Session, csrfHeader } from '../auth/session';
+import { csrfHeaders } from '../auth/csrf';
+import { Session } from '../auth/session';
 import { WatchRunUpdate } from './watch.model';
 
 /** The Backend's `UpdatesHub`, on the page's own origin like the rest of the API. */
@@ -34,7 +35,7 @@ export class LiveUpdates {
   private readonly connection = new HubConnectionBuilder()
     // The CSRF header covers the negotiate request, a POST. Browsers can't add headers to the WebSocket handshake, so
     // the Backend checks that one's origin instead.
-    .withUrl(hubUrl, { headers: { [csrfHeader]: '1' } })
+    .withUrl(hubUrl, { headers: csrfHeaders })
     .withAutomaticReconnect({
       nextRetryDelayInMilliseconds: (context) => {
         // Reconnecting after the session ended would only be refused

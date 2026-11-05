@@ -1,7 +1,8 @@
 import { HttpErrorResponse, HttpInterceptorFn } from '@angular/common/http';
 import { inject } from '@angular/core';
 import { catchError, throwError } from 'rxjs';
-import { Session, csrfHeader } from './session';
+import { csrfHeaders } from './csrf';
+import { Session } from './session';
 
 /**
  * Adds the CSRF header to every API request, and sends the Owner to the login page when the Backend says the session
@@ -13,7 +14,7 @@ export const authInterceptor: HttpInterceptorFn = (request, next) => {
   }
 
   const session = inject(Session);
-  return next(request.clone({ setHeaders: { [csrfHeader]: '1' } })).pipe(
+  return next(request.clone({ setHeaders: csrfHeaders })).pipe(
     catchError((error: unknown) => {
       if (error instanceof HttpErrorResponse && error.status === 401 && !request.url.startsWith('/api/auth/')) {
         session.expired();

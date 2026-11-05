@@ -1,4 +1,3 @@
-using System.ComponentModel.DataAnnotations;
 using ChasePie.Lookout.Backend.Auth;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -29,7 +28,8 @@ public partial class AuthController(OwnerCredentials owner, ILogger<AuthControll
     public async Task<ActionResult<OwnerInfo>> Login(SignInRequest request)
     {
         var remoteIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-        if (!_owner.Matches(request.Username, request.Password))
+        // Missing fields get the same answer as wrong ones, so every failed sign-in looks alike
+        if (!_owner.Matches(request.Username ?? "", request.Password ?? ""))
         {
             LogSignInFailed(remoteIp);
             return Unauthorized(IncorrectCredentialsMessage);
@@ -65,7 +65,11 @@ public partial class AuthController(OwnerCredentials owner, ILogger<AuthControll
     private partial void LogSignInFailed(string remoteIp);
 }
 
-public sealed record SignInRequest([Required] string Username, [Required] string Password);
+/// <remarks>
+/// Both are nullable so model validation lets missing fields through to the credentials check instead of answering
+/// with its own message.
+/// </remarks>
+public sealed record SignInRequest(string? Username, string? Password);
 
 /// <param name="Username">The Owner's username, as configured.</param>
 public sealed record OwnerInfo(string Username);

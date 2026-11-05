@@ -59,6 +59,22 @@ public sealed class AuthTests
     }
 
     [TestMethod]
+    [DataRow("{}")]
+    [DataRow("""{ "username": "", "password": "" }""")]
+    [DataRow("""{ "username": "owner" }""")]
+    public async Task MissingCredentialsGetTheSameMessageAsWrongOnes(string body)
+    {
+        await using var factory = new LookoutFactory();
+        using var client = factory.CreateBrowserClient();
+
+        using var login = await client.PostAsync(
+            "/api/auth/login", new StringContent(body, System.Text.Encoding.UTF8, "application/json"), Ct);
+
+        Assert.AreEqual(HttpStatusCode.Unauthorized, login.StatusCode);
+        Assert.AreEqual("Username or password is incorrect.", await login.Content.ReadAsStringAsync(Ct));
+    }
+
+    [TestMethod]
     public async Task TheSessionCookieIsHttpOnlySecureAndStrict()
     {
         await using var factory = new LookoutFactory();

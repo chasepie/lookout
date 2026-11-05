@@ -2,7 +2,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Component, inject, input, signal } from '@angular/core';
 import { FormField, form, required, submit } from '@angular/forms/signals';
 import { Router } from '@angular/router';
-import { describeError } from '../watches/watches-api';
+import { describeError } from '../shared/describe-error';
 import { safeReturnUrl } from './auth-guards';
 import { Session } from './session';
 
@@ -28,7 +28,7 @@ import { Session } from './session';
         }
       </p>
       @if (error(); as error) {
-        <p role="alert">{{ error }}</p>
+        <pre role="alert">{{ error }}</pre>
       }
       <button type="submit" [disabled]="loginForm().submitting()">Sign in</button>
     </form>

@@ -5,7 +5,8 @@ import { Router, RouterLink } from '@angular/router';
 import { filter, merge } from 'rxjs';
 import { LiveUpdates } from './live-updates';
 import { WatchRunStatus, WatchScheduleKind } from './watch.model';
-import { WatchesApi, describeError } from './watches-api';
+import { describeError } from '../shared/describe-error';
+import { WatchesApi } from './watches-api';
 
 @Component({
   selector: 'app-watch-detail',
