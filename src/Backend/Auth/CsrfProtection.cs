@@ -36,7 +36,9 @@ public static class CsrfProtection
         }
 
         var method = request.Method;
-        if (HttpMethods.IsGet(method) || HttpMethods.IsHead(method) || HttpMethods.IsOptions(method)
+        if (HttpMethods.IsGet(method)
+            || HttpMethods.IsHead(method)
+            || HttpMethods.IsOptions(method)
             || HttpMethods.IsTrace(method))
         {
             return null;

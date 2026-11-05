@@ -83,13 +83,16 @@ public sealed class OwnerCredentialsTests
     }
 
     [TestMethod]
-    public void AShortPasswordStopsStartup()
+    public void APasswordOneCharacterTooShortStopsStartup()
     {
+        var password = new string('x', OwnerCredentials.MinPasswordLength - 1);
+
         var exception = Assert.ThrowsExactly<InvalidOperationException>(
-            () => OwnerCredentials.FromConfiguration(Configuration("owner", "eleven char")));
+            () => OwnerCredentials.FromConfiguration(Configuration("owner", password)));
 
         Assert.Contains(LookoutEnvironmentVariables.OwnerPassword, exception.Message);
-        Assert.DoesNotContain("eleven char", exception.Message);
+        Assert.Contains("16", exception.Message);
+        Assert.DoesNotContain(password, exception.Message);
     }
 
     [TestMethod]

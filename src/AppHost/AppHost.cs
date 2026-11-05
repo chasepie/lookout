@@ -43,7 +43,7 @@ public partial class Program
         // The Owner's sign-in. The Backend also refuses to start without them, and checks the password's length.
         var ownerUsername = DotEnvValue(LookoutEnvironmentVariables.OwnerUsername);
         var ownerPasswordValue = DotEnvValue(LookoutEnvironmentVariables.OwnerPassword);
-        if (ownerUsername is null || ownerPasswordValue is null)
+        if (string.IsNullOrWhiteSpace(ownerUsername) || string.IsNullOrWhiteSpace(ownerPasswordValue))
         {
             throw new InvalidOperationException(
                 $"Set {LookoutEnvironmentVariables.OwnerUsername} and {LookoutEnvironmentVariables.OwnerPassword} "

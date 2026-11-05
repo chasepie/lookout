@@ -38,7 +38,7 @@ The Owner's username and password come only from `LOOKOUT_OWNER_USERNAME` and `L
 There's no user table, no setup page and no way to change them in the UI: with one Owner and credentials in `.env`, a user store would only be a copy to keep
 in sync. If TOTP, passkeys or changing the password in the UI are added later, ASP.NET Core Identity and its tables become worth adopting then.
 
-- The Backend refuses to start if either variable is missing or the password is shorter than 12 characters, like any other missing setting. The AppHost
+- The Backend refuses to start if either variable is missing or the password is shorter than 16 characters, like any other missing setting. The AppHost
   also refuses to start without them, so the error appears before anything else starts.
 - The username is compared ignoring case; the password exactly. Both comparisons run in constant time on fixed-length hashes, and both always run, so the
   response time reveals neither which one was wrong nor the input lengths.
@@ -51,7 +51,7 @@ Signing in sets a cookie session. A cookie, rather than a bearer token held by t
 and is sent on the live-updates WebSocket without putting a token in its URL.
 
 | Setting | Value | Why |
-|---|---|---|
+| --- | --- | --- |
 | Name | `lookout.session` | |
 | `HttpOnly` | yes | Page scripts can't read it |
 | `Secure` | always | Never sent over plain HTTP |
@@ -75,7 +75,7 @@ endpoint. A new endpoint can't be left open by mistake: `EndpointProtectionTests
 and isn't on its allow-list.
 
 | Endpoint | Open because |
-|---|---|
+| --- | --- |
 | `POST /api/auth/login` | It's how a session starts |
 | `POST /api/auth/logout` | A client whose session expired can still clear its cookie; it's still CSRF-checked |
 | The built frontend's files and `index.html` fallback | The page holds nothing private; every API call it makes needs a session |

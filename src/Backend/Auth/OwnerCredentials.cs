@@ -10,7 +10,7 @@ namespace ChasePie.Lookout.Backend.Auth;
 /// </summary>
 public sealed class OwnerCredentials
 {
-    public const int MinPasswordLength = 12;
+    public const int MinPasswordLength = 16;
 
     // Iterations for deriving the fingerprint. It's derived once per start, so it can afford to be slow.
     private const int FingerprintIterations = 100_000;

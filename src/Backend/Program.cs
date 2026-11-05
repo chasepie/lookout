@@ -119,7 +119,7 @@ public class Program
     private static void MapFrontend(WebApplication app, bool hasFrontend)
     {
         // Unknown API routes are 404s, not the frontend's page
-        app.MapFallback("api/{**path}", () => Results.NotFound());
+        app.MapFallback("api/{**path}", (string path) => Results.NotFound());
 
         if (hasFrontend)
         {

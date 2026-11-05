@@ -12,7 +12,9 @@ public sealed class CsrfHeaderDocumentTransformer : IOpenApiDocumentTransformer
     public const string SchemeName = "CsrfHeader";
 
     public Task TransformAsync(
-        OpenApiDocument document, OpenApiDocumentTransformerContext context, CancellationToken cancellationToken)
+        OpenApiDocument document,
+        OpenApiDocumentTransformerContext context,
+        CancellationToken cancellationToken)
     {
         document.Components ??= new OpenApiComponents();
         document.Components.SecuritySchemes ??= new Dictionary<string, IOpenApiSecurityScheme>();
