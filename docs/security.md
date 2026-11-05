@@ -23,14 +23,15 @@ scripts aren't sandboxed yet, which is why there is only one Owner ([ADR 0001](a
 These aren't visible in any one file, and breaking them breaks signing in or weakens the checks:
 
 - **HTTPS everywhere except `localhost`.** The session cookie is `Secure`, so browsers don't store it over plain HTTP, and browsers only send
-  `Sec-Fetch-Site` to secure origins. Browsers treat `http://localhost` as secure, except Safari, which needs `ng serve --ssl` in development.
+  `Sec-Fetch-Site` to secure origins. Browsers treat `http://localhost` as secure, except Safari, which needs `ng serve --ssl` in development. So that
+  this fails clearly rather than signing in and bouncing straight back, the Backend refuses sign-ins over plain HTTP except from this machine.
 - **The frontend and the API on one origin.** The cookie is `SameSite=Strict` and the CSRF checks require same-origin requests. In production the Backend
   serves the built frontend; in development the Angular dev server forwards `/api` to the Backend.
 - **No CORS policy.** The custom-header check relies on the Backend refusing every cross-origin preflight. Allowing another origin with credentials would let
   that origin pass every CSRF check.
-- **Forwarded headers behind a reverse proxy.** Without them, the Backend sees the proxy's IP for every client, so the per-IP sign-in limit becomes one
-  shared limit, and the `Origin` fallback compares against the proxy's `Host`. (The dev server's proxy rewrites `Host` too; requests still pass because
-  browsers send `Sec-Fetch-Site`.)
+- **Forwarded headers behind a reverse proxy.** Without them, the Backend sees the proxy's IP for every client, so the per-client sign-in limit becomes
+  one shared limit, the `Origin` fallback compares against the proxy's `Host`, and a proxy terminating TLS looks like plain HTTP, so sign-ins are refused.
+  (The dev server's proxy rewrites `Host` too; requests still pass because browsers send `Sec-Fetch-Site`.)
 
 ## Credentials
 
@@ -39,10 +40,11 @@ There's no user table, no setup page and no way to change them in the UI: with o
 in sync. If TOTP, passkeys or changing the password in the UI are added later, ASP.NET Core Identity and its tables become worth adopting then.
 
 - The Backend refuses to start if either variable is missing or the password is shorter than 16 characters, like any other missing setting. The AppHost
-  also refuses to start without them, so the error appears before anything else starts.
+  checks the same, so the error appears before anything else starts.
 - The username is compared ignoring case; the password exactly. Both comparisons run in constant time on fixed-length hashes, and both always run, so the
   response time reveals neither which one was wrong nor the input lengths.
-- Every failed sign-in gets the same `401` and message, including missing fields, which is why `SignInRequest`'s fields are nullable instead of required.
+- Every failed sign-in gets the same `401` and message, including missing fields or no body at all, which is why `SignInRequest` and its fields are
+  nullable instead of required.
 - Sign-ins are logged with the client IP. The attempted username isn't logged, in case a password was typed into it.
 
 ## Session
@@ -52,7 +54,7 @@ and is sent on the live-updates WebSocket without putting a token in its URL.
 
 | Setting | Value | Why |
 | --- | --- | --- |
-| Name | `lookout.session` | |
+| Name | `__Host-lookout.session` | The prefix stops a sibling subdomain planting a same-named cookie that shadows it |
 | `HttpOnly` | yes | Page scripts can't read it |
 | `Secure` | always | Never sent over plain HTTP |
 | `SameSite` | `Strict` | Not sent with requests started by other sites |
@@ -64,6 +66,11 @@ The API answers `401` or `403` and never redirects to a login page; the frontend
 the upper-cased username. Every request compares it with the current credentials' fingerprint. So changing the username or password in `.env` and
 restarting signs out every session, which is how the Owner recovers from a leaked password. Changing only the username's case doesn't, since the username is
 compared ignoring case. The fingerprint is derived once per start, so it can afford to be slow, and it sits inside the encrypted cookie anyway.
+
+**Signing out ends every session.** The session also carries a generation number, stored in the database and cached in memory. Signing out moves to the
+next generation, so every existing cookie stops working, including copies of the one that signed out: deleting a cookie in the browser alone wouldn't stop a
+stolen copy. With one Owner, "sign out" and "sign out everywhere" are the same thing. Only a request with a session can sign out; without one, signing out
+just clears the caller's cookie, so anyone can't sign the Owner out.
 
 **Data Protection keys** encrypt the cookie. They're kept in `LOOKOUT_DATABASE_DIR/keys`, so sessions survive restarts and are backed up with the database.
 Deleting the keys signs everyone out. They're stored unencrypted, as anyone who can read them can also read the database and `.env`.
@@ -78,11 +85,13 @@ and isn't on its allow-list.
 | --- | --- |
 | `POST /api/auth/login` | It's how a session starts |
 | `POST /api/auth/logout` | A client whose session expired can still clear its cookie; it's still CSRF-checked |
-| The built frontend's files and `index.html` fallback | The page holds nothing private; every API call it makes needs a session |
+| The built frontend's files, and its `index.html` for every path outside `/api` | The page holds nothing private; every API call it makes needs a session |
 | Development only: `/openapi/*`, `/api-docs` (Scalar) | So the API can be explored signed out; requests made from Scalar still need a session |
 | Development only: `/health`, `/alive` | The AppHost polls them without signing in |
 
-Unknown routes under `/api` answer `404` to the Owner instead of the frontend's page, and `401` to anyone else.
+Routes under `/api` are left to routing, never the frontend's page: an unknown one answers `404` to the Owner and `401` to anyone else, and a known one called
+with the wrong method answers `405`. `index.html` is sent with `Cache-Control: no-cache`, so a rebuilt frontend is picked up straight away, and the
+content-hashed bundles are cached for good.
 
 ## CSRF
 
@@ -115,9 +124,11 @@ requests can't be forged, and the checks would only block legitimate scripts.
 
 ## Sign-in rate limits
 
-`POST /api/auth/login` allows 5 attempts a minute per client IP and 20 a minute in total; nothing else is rate-limited. The total limit caps guessing spread
-across many IPs. There's no account lockout: with a single account, anyone could lock the Owner out by guessing wrong on purpose. The worst a flood of
-attempts can do here is make the Owner wait a minute. A blocked IP's attempts don't count against the total.
+`POST /api/auth/login` allows 5 attempts a minute per client; nothing else is rate-limited. A client is an IPv4 address or an IPv6 /64 network, since one
+IPv6 client usually controls a whole /64 and could otherwise use a fresh address for every attempt.
+
+There's deliberately no limit across all clients, and no account lockout: with a single account, either would let anyone with a few addresses keep the Owner
+from signing in for as long as they kept guessing wrong. Guessing spread across many addresses is left to the 16-character minimum, which makes it hopeless.
 
 ## Frontend
 
@@ -125,10 +136,11 @@ attempts can do here is make the Owner wait a minute. A blocked IP's attempts do
   `/login?returnUrl=…`.
 - `returnUrl` is only followed if it's a path inside the app (`/…` but not `//…`), so a crafted link can't send the Owner to another site after signing in.
 - An interceptor adds `X-Lookout-Request` to every API request and treats a `401` from anything but the auth endpoints as the session ending.
-- **Live updates follow the session.** The connection starts on sign-in and stops on sign-out. The Backend closes it when the session expires and refuses
-  it after the credentials change, but SignalR doesn't say why a reconnect failed: it wraps the negotiate request's `401` in an error without the status
-  code. So the client asks `/api/auth/me` before each reconnect attempt. Asking only once isn't enough: right after a restart, the question can reach a
-  Backend that is still shutting down and still accepts the old session.
+- **Live updates follow the session.** The connection starts on sign-in and stops on sign-out. The Backend closes it when the session expires, and refuses
+  to reconnect once the session has ended. SignalR wraps the negotiate request's `401` in an error without the status code, so the connection uses its own
+  HTTP client, `SessionAwareHttpClient`, which sees the `401` and ends the session in the frontend, which stops reconnecting.
+- Signing out waits for the Backend: if it can't be reached, the frontend says so and stays signed in, since the cookie can't be cleared from a page script
+  and would still work.
 
 ## Development
 

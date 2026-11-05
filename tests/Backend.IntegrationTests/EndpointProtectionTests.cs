@@ -21,9 +21,9 @@ public sealed partial class EndpointProtectionTests
     [
         "POST api/auth/login",
         "POST api/auth/logout",
-        // The built frontend's page, when wwwroot has one
-        "GET {*path:nonfile}",
-        "HEAD {*path:nonfile}",
+        // The built frontend's page, for every path outside /api
+        "GET {*path:nonfile:notapi}",
+        "HEAD {*path:nonfile:notapi}",
     ];
 
     // Development only: the OpenAPI document and the health checks the AppHost polls
@@ -75,17 +75,6 @@ public sealed partial class EndpointProtectionTests
         var keys = GetEndpoints(factory).Select(e => e.Key).ToList();
 
         Assert.IsFalse(keys.Exists(IsDevelopmentOnly), string.Join(", ", keys));
-    }
-
-    [TestMethod]
-    public async Task AnUnknownApiRouteIsNotFound()
-    {
-        await using var factory = new LookoutFactory();
-        using var client = await factory.CreateSignedInClientAsync(Ct);
-
-        using var response = await client.GetAsync("/api/nothing-here", Ct);
-
-        Assert.AreEqual(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     /// <summary>

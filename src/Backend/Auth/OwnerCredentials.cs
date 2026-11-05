@@ -10,7 +10,7 @@ namespace ChasePie.Lookout.Backend.Auth;
 /// </summary>
 public sealed class OwnerCredentials
 {
-    public const int MinPasswordLength = 16;
+    public const int MinPasswordLength = LookoutEnvironmentVariables.OwnerPasswordMinLength;
 
     // Iterations for deriving the fingerprint. It's derived once per start, so it can afford to be slow.
     private const int FingerprintIterations = 100_000;
@@ -62,14 +62,17 @@ public sealed class OwnerCredentials
                 + $"{LookoutEnvironmentVariables.OwnerPassword} must be set to the Owner's sign-in.");
         }
 
-        if (password.Length < MinPasswordLength)
+        try
         {
+            return new OwnerCredentials(username, password);
+        }
+        catch (ArgumentException ex) when (ex.ParamName == nameof(password))
+        {
+            // The constructor holds the rules; this only names the variable to fix
             throw new InvalidOperationException(
                 $"Environment variable {LookoutEnvironmentVariables.OwnerPassword} must be at least "
-                + $"{MinPasswordLength} characters.");
+                + $"{MinPasswordLength} characters.", ex);
         }
-
-        return new OwnerCredentials(username, password);
     }
 
     /// <summary>

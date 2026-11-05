@@ -59,10 +59,15 @@ public static class LookoutEnvironmentVariables
     public const string OwnerUsername = "LOOKOUT_OWNER_USERNAME";
 
     /// <summary>
-    /// The Owner's password, which the Backend requires. Changing it, or <see cref="OwnerUsername"/>, signs out every
-    /// session once the Backend restarts.
+    /// The Owner's password, which the Backend requires, at least <see cref="OwnerPasswordMinLength"/> characters.
+    /// Changing it, or <see cref="OwnerUsername"/> other than its case, signs out every session once the Backend restarts.
     /// </summary>
     public const string OwnerPassword = "LOOKOUT_OWNER_PASSWORD";
+
+    /// <summary>
+    /// The shortest <see cref="OwnerPassword"/> the Backend and the AppHost accept.
+    /// </summary>
+    public const int OwnerPasswordMinLength = 16;
 
     /// <summary>
     /// Reads a base URL from configuration, adding a trailing slash so relative request URIs append to its path.

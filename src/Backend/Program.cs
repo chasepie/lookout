@@ -2,6 +2,7 @@ using ChasePie.Lookout.Backend.Auth;
 using ChasePie.Lookout.Backend.Database;
 using ChasePie.Lookout.Backend.Hubs;
 using ChasePie.Lookout.Backend.Services;
+using System.Text.RegularExpressions;
 using System.Threading.RateLimiting;
 using ChasePie.Lookout.Backend.VpnServices;
 using ChasePie.Lookout.Core;
@@ -11,7 +12,7 @@ using Scalar.AspNetCore;
 
 namespace ChasePie.Lookout.Backend;
 
-public class Program
+public partial class Program
 {
     public static async Task Main(string[] args)
     {
@@ -29,6 +30,7 @@ public class Program
     private static void ConfigureServices(IServiceCollection services, IConfiguration configuration)
     {
         services.AddOwnerAuthentication(configuration);
+        services.Configure<RouteOptions>(options => options.SetParameterPolicy<NotApiRouteConstraint>(NotApiRouteConstraint.Name));
         services.AddControllers();
         services.AddOpenApi(options => options.AddDocumentTransformer<CsrfHeaderDocumentTransformer>());
         services.AddSignalR();
@@ -67,6 +69,7 @@ public class Program
             // Creates the database on first start and applies any migrations added since.
             // A database made before migrations existed has no migrations history, so this fails on it; delete it.
             await scope.ServiceProvider.GetRequiredService<LookoutDbContext>().Database.MigrateAsync();
+            await app.Services.GetRequiredService<OwnerSessions>().LoadAsync(app.Lifetime.ApplicationStopping);
 
             if (app.Environment.IsDevelopment()
                 && DevelopmentDataSeeder.FindExamplesDirectory(app.Environment.ContentRootPath) is { } examplesDir)
@@ -92,7 +95,7 @@ public class Program
         if (hasFrontend)
         {
             // Before authentication, so the frontend's files load signed out
-            app.UseStaticFiles();
+            app.UseStaticFiles(FrontendFileOptions);
         }
 
         app.UseCsrfProtection();
@@ -107,24 +110,47 @@ public class Program
     }
 
     /// <summary>
-    /// Whether <c>wwwroot</c> has the built frontend. Build it there with <c>npm run build -w @chasepie/lookout-frontend</c>.
-    /// In development the Angular dev server serves the frontend instead.
+    /// Whether the web root (<c>wwwroot</c>) has the built frontend. Build it there with
+    /// <c>npm run build -w @chasepie/lookout-frontend</c>. In development the Angular dev server serves the frontend instead.
     /// </summary>
     private static bool HasBuiltFrontend(IWebHostEnvironment environment) =>
-        File.Exists(Path.Join(environment.ContentRootPath, "wwwroot", "index.html"));
+        environment.WebRootFileProvider.GetFileInfo("index.html").Exists;
 
     /// <summary>
-    /// Serves the built frontend's <c>index.html</c> for every page's URL, so the frontend's routes load directly.
+    /// Serves the built frontend's <c>index.html</c> for every page's URL outside <c>/api</c>, so the frontend's routes load
+    /// directly while unknown API routes still get routing's 404, and wrong methods its 405.
     /// </summary>
     private static void MapFrontend(WebApplication app, bool hasFrontend)
     {
-        // Unknown API routes are 404s, not the frontend's page
-        app.MapFallback("api/{**path}", (string path) => Results.NotFound());
-
         if (hasFrontend)
         {
             // The page itself holds nothing private: the API calls it makes need a session
-            app.MapFallbackToFile("index.html").AllowAnonymous();
+            app.MapFallbackToFile($"{{*path:nonfile:{NotApiRouteConstraint.Name}}}", "index.html", FrontendFileOptions)
+                .AllowAnonymous();
         }
     }
+
+    private static readonly StaticFileOptions FrontendFileOptions = new()
+    {
+        OnPrepareResponse = context =>
+        {
+            var name = context.File.Name;
+            if (name == "index.html")
+            {
+                // Always revalidated, so a rebuild's page, which names the new bundles, is picked up right away
+                context.Context.Response.Headers.CacheControl = "no-cache";
+            }
+            else if (HashedBundleName().IsMatch(name))
+            {
+                // A bundle's name changes whenever its content does
+                context.Context.Response.Headers.CacheControl = "public, max-age=31536000, immutable";
+            }
+        },
+    };
+
+    /// <summary>
+    /// The Angular build's content-hashed bundles, such as <c>chunk-CPKy0xWZ.js</c> or <c>styles-5INURTSO.css</c>.
+    /// </summary>
+    [GeneratedRegex(@"-[A-Za-z0-9]{8}\.(js|css)$")]
+    private static partial Regex HashedBundleName();
 }

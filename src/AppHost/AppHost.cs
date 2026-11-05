@@ -40,14 +40,20 @@ public partial class Program
             .WithHttpHealthCheck("/health")
             .WaitFor(browserless);
 
-        // The Owner's sign-in. The Backend also refuses to start without them, and checks the password's length.
-        var ownerUsername = DotEnvValue(LookoutEnvironmentVariables.OwnerUsername);
-        var ownerPasswordValue = DotEnvValue(LookoutEnvironmentVariables.OwnerPassword);
-        if (string.IsNullOrWhiteSpace(ownerUsername) || string.IsNullOrWhiteSpace(ownerPasswordValue))
+        // The Owner's sign-in. The Backend checks them too; checking here stops startup before anything else starts.
+        if (DotEnvValue(LookoutEnvironmentVariables.OwnerUsername) is not { } ownerUsername
+            || DotEnvValue(LookoutEnvironmentVariables.OwnerPassword) is not { } ownerPasswordValue)
         {
             throw new InvalidOperationException(
                 $"Set {LookoutEnvironmentVariables.OwnerUsername} and {LookoutEnvironmentVariables.OwnerPassword} "
                 + "in .env to the username and password you sign in to Lookout with.");
+        }
+
+        if (ownerPasswordValue.Length < LookoutEnvironmentVariables.OwnerPasswordMinLength)
+        {
+            throw new InvalidOperationException(
+                $"{LookoutEnvironmentVariables.OwnerPassword} in .env must be at least "
+                + $"{LookoutEnvironmentVariables.OwnerPasswordMinLength} characters.");
         }
 
         var ownerPassword = builder.AddParameter("owner-password", ownerPasswordValue, secret: true);

@@ -40,4 +40,21 @@ describe('App', () => {
     expect(compiled.textContent).toContain('Signed in as owner');
     expect(compiled.querySelector('button')?.textContent).toContain('Sign out');
   });
+
+  it('says so when signing out fails, and stays signed in', async () => {
+    const backend = TestBed.inject(HttpTestingController);
+    const check = TestBed.inject(Session).check();
+    backend.expectOne('/api/auth/me').flush({ username: 'owner' });
+    await check;
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+    const compiled = fixture.nativeElement as HTMLElement;
+
+    compiled.querySelector('button')?.click();
+    backend.expectOne('/api/auth/logout').error(new ProgressEvent('error'));
+    await fixture.whenStable();
+
+    expect(compiled.querySelector('[role=alert]')?.textContent).toContain("Couldn't sign out");
+    expect(compiled.textContent).toContain('Signed in as owner');
+  });
 });

@@ -1,8 +1,9 @@
 import { Service, effect, inject } from '@angular/core';
-import { HubConnectionBuilder, HubConnectionState, LogLevel } from '@microsoft/signalr';
+import { DefaultHttpClient, HubConnectionBuilder, HubConnectionState, LogLevel, NullLogger } from '@microsoft/signalr';
 import { Subject } from 'rxjs';
 import { csrfHeaders } from '../auth/csrf';
 import { Session } from '../auth/session';
+import { SessionAwareHttpClient } from './session-aware-http-client';
 import { WatchRunUpdate } from './watch.model';
 
 /** The Backend's `UpdatesHub`, on the page's own origin like the rest of the API. */
@@ -33,19 +34,16 @@ export class LiveUpdates {
   private readonly session = inject(Session);
 
   private readonly connection = new HubConnectionBuilder()
-    // For the negotiate request; the WebSocket handshake can't carry headers
-    .withUrl(hubUrl, { headers: csrfHeaders })
+    .withUrl(hubUrl, {
+      // For the negotiate request; the WebSocket handshake can't carry headers
+      headers: csrfHeaders,
+      // A refused session ends it here, which stops reconnecting
+      httpClient: new SessionAwareHttpClient(new DefaultHttpClient(NullLogger.instance), () => this.session.expired()),
+    })
     .withAutomaticReconnect({
-      nextRetryDelayInMilliseconds: (context) => {
-        // Reconnecting after the session ended would only be refused
-        if (!this.session.signedIn()) {
-          return null;
-        }
-        // SignalR doesn't say why an attempt failed, so ask whether the session ended before each one; see
-        // docs/security.md
-        void this.session.recheck();
-        return retryDelayMs(context.previousRetryCount);
-      },
+      // Reconnecting after the session ended would only be refused
+      nextRetryDelayInMilliseconds: (context) =>
+        this.session.signedIn() ? retryDelayMs(context.previousRetryCount) : null,
     })
     .configureLogging(LogLevel.Warning)
     .build();
@@ -58,6 +56,12 @@ export class LiveUpdates {
     this.connection.on('WatchChanged', (watchId: number) => this.watchChanged.next(watchId));
     this.connection.on('VpnChanged', () => this.vpnChanged.next());
     this.connection.onreconnected(() => this.reconnected.next());
+    // Covers signing in again while the previous connection was still stopping, when start() had to skip
+    this.connection.onclose(() => {
+      if (this.session.signedIn()) {
+        void this.start(0);
+      }
+    });
     effect(() => {
       if (this.session.signedIn()) {
         void this.start(0);
@@ -78,7 +82,7 @@ export class LiveUpdates {
         this.reconnected.next();
       }
     } catch {
-      await this.session.recheck();
+      // A refused session already ended through the HTTP client, so the next start() returns early
       setTimeout(() => void this.start(failedAttempts + 1), retryDelayMs(failedAttempts));
     }
   }

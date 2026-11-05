@@ -43,20 +43,45 @@ internal sealed class LookoutFactory : WebApplicationFactory<Program>
         _password = password;
         _ownsDataDirectory = dataDirectory is null;
         DataDirectory = dataDirectory ?? Directory.CreateTempSubdirectory("lookout-tests-").FullName;
+        WebRoot = CreateWebRoot(DataDirectory);
     }
 
     public string DataDirectory { get; }
 
     /// <summary>
+    /// A stand-in for the built frontend, so serving it is tested whether or not this machine has a real build.
+    /// </summary>
+    public string WebRoot { get; }
+
+    /// <summary>
+    /// A content-hashed bundle in <see cref="WebRoot"/>, named like Angular's.
+    /// </summary>
+    public const string BundleFileName = "chunk-AB12cd34.js";
+
+    public const string IndexHtml = "<!doctype html><title>Lookout</title>";
+
+    private static string CreateWebRoot(string dataDirectory)
+    {
+        var webRoot = Path.Join(dataDirectory, "wwwroot");
+        Directory.CreateDirectory(webRoot);
+        File.WriteAllText(Path.Join(webRoot, "index.html"), IndexHtml);
+        File.WriteAllText(Path.Join(webRoot, BundleFileName), "export {};");
+        return webRoot;
+    }
+
+    /// <summary>
     /// A client that acts like a browser on Lookout's own pages: over HTTPS, keeping cookies, and sending the headers
     /// <see cref="CsrfProtection"/> requires.
     /// </summary>
-    public HttpClient CreateBrowserClient()
+    /// <param name="baseAddress">Where Lookout is served; HTTPS on localhost unless given.</param>
+    /// <param name="handleCookies">Whether to keep cookies between requests, as a browser does.</param>
+    public HttpClient CreateBrowserClient(Uri? baseAddress = null, bool handleCookies = true)
     {
         var client = CreateClient(new WebApplicationFactoryClientOptions
         {
-            BaseAddress = new Uri("https://localhost"),
+            BaseAddress = baseAddress ?? new Uri("https://localhost"),
             AllowAutoRedirect = false,
+            HandleCookies = handleCookies,
         });
         client.DefaultRequestHeaders.Add(CsrfProtection.HeaderName, "1");
         client.DefaultRequestHeaders.Add("Sec-Fetch-Site", "same-origin");
@@ -78,6 +103,7 @@ internal sealed class LookoutFactory : WebApplicationFactory<Program>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment(_environment);
+        builder.UseSetting(WebHostDefaults.WebRootKey, WebRoot);
         builder.UseSetting(LookoutEnvironmentVariables.OwnerUsername, _username);
         builder.UseSetting(LookoutEnvironmentVariables.OwnerPassword, _password);
         builder.UseSetting(LookoutEnvironmentVariables.DatabaseDir, Path.Join(DataDirectory, "database"));

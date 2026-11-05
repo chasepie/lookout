@@ -1,6 +1,8 @@
+using System.Net;
 using ChasePie.Lookout.Backend.Auth;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 
 namespace ChasePie.Lookout.Backend.Controllers;
 
@@ -13,23 +15,36 @@ public partial class AuthController(OwnerCredentials owner, ILogger<AuthControll
 {
     private const string IncorrectCredentialsMessage = "Username or password is incorrect.";
 
+    private const string HttpsRequiredMessage =
+        "Lookout must be served over HTTPS to sign in: browsers don't keep its session cookie over plain HTTP.";
+
     private readonly OwnerCredentials _owner = owner;
     private readonly ILogger<AuthController> _logger = logger;
 
     /// <summary>
-    /// Signs the Owner in with a session cookie. Attempts are rate-limited per client IP and in total.
+    /// Signs the Owner in with a session cookie. Attempts are rate-limited per client. Fails with 400 over plain HTTP
+    /// from anywhere but this machine, where the browser would drop the cookie.
     /// </summary>
     [HttpPost("login")]
     [AllowAnonymous]
     [SignInEndpoint]
     [ProducesResponseType<OwnerInfo>(StatusCodes.Status200OK)]
+    [ProducesResponseType<string>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<string>(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
-    public async Task<ActionResult<OwnerInfo>> Login(SignInRequest request)
+    public async Task<ActionResult<OwnerInfo>> Login(
+        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] SignInRequest? request)
     {
-        var remoteIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-        // Missing fields get the same answer as wrong ones, so every failed sign-in looks alike
-        if (!_owner.Matches(request.Username ?? "", request.Password ?? ""))
+        // Over plain HTTP the browser would drop the Secure cookie, so signing in would seem to work and then bounce
+        // back to the login page. Browsers treat localhost as secure, so plain HTTP from this machine is fine.
+        if (!Request.IsHttps && !IsLoopback(HttpContext.Connection.RemoteIpAddress))
+        {
+            return BadRequest(HttpsRequiredMessage);
+        }
+
+        var remoteIp = OwnerAuthentication.GetClientAddress(HttpContext);
+        // Missing fields, or no body at all, get the same answer as wrong ones, so every failed sign-in looks alike
+        if (!_owner.Matches(request?.Username ?? "", request?.Password ?? ""))
         {
             LogSignInFailed(remoteIp);
             return Unauthorized(IncorrectCredentialsMessage);
@@ -56,6 +71,8 @@ public partial class AuthController(OwnerCredentials owner, ILogger<AuthControll
     /// </summary>
     [HttpGet("me")]
     public ActionResult<OwnerInfo> Me() => new OwnerInfo(_owner.Username);
+
+    private static bool IsLoopback(IPAddress? address) => address is not null && IPAddress.IsLoopback(address);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "The Owner signed in from {RemoteIp}")]
     private partial void LogSignedIn(string remoteIp);

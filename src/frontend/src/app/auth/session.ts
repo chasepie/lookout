@@ -38,34 +38,20 @@ export class Session {
     return this.pendingCheck;
   }
 
-  /**
-   * Asks the Backend whether the session is still valid, such as after the live updates connection drops, and
-   * handles it ending. Errors other than the session ending are ignored: the caller keeps retrying.
-   */
-  async recheck(): Promise<void> {
-    try {
-      if (!(await this.fetchOwner())) {
-        this.expired();
-      }
-    } catch {
-      // The Backend is unreachable, which says nothing about the session
-    }
-  }
-
   /** Rejects with the HTTP error when the credentials are wrong or attempts are rate-limited. */
   async signIn(username: string, password: string): Promise<void> {
     const owner = await firstValueFrom(this.http.post<OwnerInfo>(`${baseUrl}/login`, { username, password }));
     this.owner.set(owner.username);
   }
 
+  /**
+   * Ends every session, then goes to the login page. Rejects, staying signed in, if the Backend can't be reached:
+   * the cookie can't be cleared from here, so the session would still work.
+   */
   async signOut(): Promise<void> {
-    try {
-      await firstValueFrom(this.http.post(`${baseUrl}/logout`, null));
-    } finally {
-      // Signed out locally either way; an unreachable Backend can't use the cookie meanwhile anyway
-      this.owner.set(null);
-      await this.router.navigate(['/login']);
-    }
+    await firstValueFrom(this.http.post(`${baseUrl}/logout`, null));
+    this.owner.set(null);
+    await this.router.navigate(['/login']);
   }
 
   /**

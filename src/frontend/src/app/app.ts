@@ -1,6 +1,7 @@
-import { Component, inject } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { Session } from './auth/session';
+import { describeError } from './shared/describe-error';
 
 @Component({
   imports: [RouterOutlet, RouterLink, RouterLinkActive],
@@ -10,9 +11,13 @@ import { Session } from './auth/session';
 })
 export class App {
   protected readonly session = inject(Session);
+  protected readonly signOutError = signal<string | null>(null);
 
   protected signOut() {
-    // Signing out always ends locally and goes to the login page, even if the Backend can't be reached
-    void this.session.signOut().catch(() => undefined);
+    this.signOutError.set(null);
+    // On failure the session still works, so say so rather than appear signed out
+    void this.session.signOut().catch((error: unknown) => {
+      this.signOutError.set(`Couldn't sign out, so you're still signed in: ${describeError(error)}`);
+    });
   }
 }

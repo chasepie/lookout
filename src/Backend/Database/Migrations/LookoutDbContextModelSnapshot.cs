@@ -17,6 +17,27 @@ namespace ChasePie.Lookout.Backend.Database.Migrations
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.14");
 
+            modelBuilder.Entity("ChasePie.Lookout.Backend.Auth.OwnerSessionState", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Generation")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("OwnerSessionStates");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            Generation = 0
+                        });
+                });
+
             modelBuilder.Entity("ChasePie.Lookout.Core.VpnSettings", b =>
                 {
                     b.Property<int>("Id")

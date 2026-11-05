@@ -4,9 +4,11 @@ import { Session } from './session';
 
 /** Sends the Owner to the login page, and back here afterwards, unless signed in. */
 export const ownerGuard: CanActivateChildFn = async (_route, state) => {
+  // inject() only works before the first await
+  const session = inject(Session);
   const router = inject(Router);
   try {
-    if (await inject(Session).check()) {
+    if (await session.check()) {
       return true;
     }
   } catch {
@@ -17,9 +19,12 @@ export const ownerGuard: CanActivateChildFn = async (_route, state) => {
 
 /** Skips the login page when already signed in. */
 export const signedOutGuard: CanActivateFn = async (route) => {
+  // inject() only works before the first await
+  const session = inject(Session);
+  const router = inject(Router);
   try {
-    if (await inject(Session).check()) {
-      return inject(Router).parseUrl(safeReturnUrl(route.queryParamMap.get('returnUrl')));
+    if (await session.check()) {
+      return router.parseUrl(safeReturnUrl(route.queryParamMap.get('returnUrl')));
     }
   } catch {
     // Unknown, so show the login page

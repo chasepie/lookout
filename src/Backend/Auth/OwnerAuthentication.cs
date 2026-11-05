@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Net;
+using System.Net.Sockets;
 using System.Security.Claims;
 using System.Threading.RateLimiting;
 using ChasePie.Lookout.Core;
@@ -16,7 +18,9 @@ namespace ChasePie.Lookout.Backend.Auth;
 /// <remarks>The reasoning behind the session, the fingerprint and the rate limits: <c>docs/security.md</c>.</remarks>
 public static class OwnerAuthentication
 {
-    public const string CookieName = "lookout.session";
+    // The __Host- prefix makes browsers refuse a cookie of this name that's scoped to a parent domain or a narrower
+    // path, so a sibling subdomain can't plant one that shadows the session
+    public const string CookieName = "__Host-lookout.session";
 
     /// <summary>
     /// How long a session lasts without being used. Each use extends it.
@@ -24,17 +28,15 @@ public static class OwnerAuthentication
     public static readonly TimeSpan SessionLifetime = TimeSpan.FromDays(14);
 
     /// <summary>
-    /// Sign-in attempts allowed per client IP, and from all clients together, in each <see cref="SignInWindow"/>.
+    /// Sign-in attempts allowed per client in each <see cref="SignInWindow"/>; see <see cref="GetRateLimitKey"/>.
     /// </summary>
     public const int SignInsPerClient = 5;
 
-    /// <inheritdoc cref="SignInsPerClient"/>
-    public const int SignInsInTotal = 20;
-
     public static readonly TimeSpan SignInWindow = TimeSpan.FromMinutes(1);
 
-    // Holds the credentials fingerprint the session signed in with
+    // The credentials fingerprint and session generation the session signed in with
     private const string FingerprintClaimType = "lookout:credentials";
+    private const string GenerationClaimType = "lookout:generation";
 
     private const string KeysDirectoryName = "keys";
 
@@ -42,6 +44,7 @@ public static class OwnerAuthentication
     {
         // Resolved here, so missing or weak credentials stop startup instead of failing sign-ins
         services.AddSingleton(OwnerCredentials.FromConfiguration(configuration));
+        services.AddSingleton<OwnerSessions>();
 
         // Without persisted keys, every restart would sign out every session
         var databaseDir = LookoutEnvironmentVariables.GetRequiredDirectory(configuration, LookoutEnvironmentVariables.DatabaseDir);
@@ -90,15 +93,12 @@ public static class OwnerAuthentication
 
                 return ValueTask.CompletedTask;
             };
-            // Sign-ins only, limited per client IP and in total
-            options.GlobalLimiter = PartitionedRateLimiter.CreateChained(
-                PartitionedRateLimiter.Create<HttpContext, string>(context => IsSignIn(context)
-                    ? RateLimitPartition.GetFixedWindowLimiter(
-                        context.Connection.RemoteIpAddress?.ToString() ?? "unknown", _ => SignInLimit(SignInsPerClient))
-                    : RateLimitPartition.GetNoLimiter(string.Empty)),
-                PartitionedRateLimiter.Create<HttpContext, string>(context => IsSignIn(context)
-                    ? RateLimitPartition.GetFixedWindowLimiter("all", _ => SignInLimit(SignInsInTotal))
-                    : RateLimitPartition.GetNoLimiter(string.Empty)));
+            // Sign-ins only, per client. There's deliberately no limit across all clients: an attacker with a few
+            // addresses could keep it exhausted and lock the Owner out.
+            options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context => IsSignIn(context)
+                ? RateLimitPartition.GetFixedWindowLimiter(
+                    GetRateLimitKey(context.Connection.RemoteIpAddress), _ => SignInLimit(SignInsPerClient))
+                : RateLimitPartition.GetNoLimiter(string.Empty));
         });
 
         return services;
@@ -109,10 +109,12 @@ public static class OwnerAuthentication
     /// </summary>
     public static Task SignInOwnerAsync(this HttpContext context, OwnerCredentials owner)
     {
+        var generation = context.RequestServices.GetRequiredService<OwnerSessions>().Generation;
         var identity = new ClaimsIdentity(
             [
                 new Claim(ClaimTypes.Name, owner.Username),
                 new Claim(FingerprintClaimType, owner.Fingerprint),
+                new Claim(GenerationClaimType, generation.ToString(CultureInfo.InvariantCulture)),
             ],
             CookieAuthenticationDefaults.AuthenticationScheme);
         return context.SignInAsync(
@@ -121,21 +123,71 @@ public static class OwnerAuthentication
             new AuthenticationProperties { IsPersistent = true });
     }
 
-    public static Task SignOutOwnerAsync(this HttpContext context) =>
-        context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+    /// <summary>
+    /// Clears this client's cookie. If the request has a session, also ends every session, so a copy of the cookie
+    /// stops working too. Without a session it only clears the cookie, so signed-out callers can't sign the Owner out.
+    /// </summary>
+    public static async Task SignOutOwnerAsync(this HttpContext context)
+    {
+        if (context.User.Identity?.IsAuthenticated == true)
+        {
+            await context.RequestServices.GetRequiredService<OwnerSessions>().EndAllAsync(context.RequestAborted);
+        }
+
+        await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+    }
 
     /// <summary>
-    /// Ends a session that signed in with different credentials than the current ones.
+    /// Ends a session that signed in with different credentials than the current ones, or before the last sign-out.
     /// </summary>
     private static async Task RejectOutdatedSessionAsync(CookieValidatePrincipalContext context)
     {
-        var owner = context.HttpContext.RequestServices.GetRequiredService<OwnerCredentials>();
+        var services = context.HttpContext.RequestServices;
         var fingerprint = context.Principal?.FindFirstValue(FingerprintClaimType);
-        if (!string.Equals(fingerprint, owner.Fingerprint, StringComparison.Ordinal))
+        var generation = context.Principal?.FindFirstValue(GenerationClaimType);
+        var isCurrent =
+            string.Equals(fingerprint, services.GetRequiredService<OwnerCredentials>().Fingerprint, StringComparison.Ordinal)
+            && string.Equals(
+                generation,
+                services.GetRequiredService<OwnerSessions>().Generation.ToString(CultureInfo.InvariantCulture),
+                StringComparison.Ordinal);
+        if (!isCurrent)
         {
             context.RejectPrincipal();
-            await context.HttpContext.SignOutOwnerAsync();
+            await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
         }
+    }
+
+    /// <summary>
+    /// The client's address, as the Backend sees it, for logs. Behind a reverse proxy this needs forwarded headers.
+    /// </summary>
+    public static string GetClientAddress(HttpContext context) =>
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+
+    /// <summary>
+    /// Which client a sign-in counts against: the IPv4 address, or the IPv6 /64 network, since one IPv6 client
+    /// usually controls a whole /64 and could otherwise use a fresh address for every attempt.
+    /// </summary>
+    public static string GetRateLimitKey(IPAddress? address)
+    {
+        if (address is null)
+        {
+            return "unknown";
+        }
+
+        if (address.IsIPv4MappedToIPv6)
+        {
+            address = address.MapToIPv4();
+        }
+
+        if (address.AddressFamily != AddressFamily.InterNetworkV6)
+        {
+            return address.ToString();
+        }
+
+        var bytes = address.GetAddressBytes();
+        Array.Clear(bytes, 8, 8);
+        return new IPAddress(bytes) + "/64";
     }
 
     private static bool IsSignIn(HttpContext context) =>
