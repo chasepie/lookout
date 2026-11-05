@@ -11,7 +11,8 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Only superseded PR runs are cancelled, so every push to main gets a result
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   DOTNET_NOLOGO: true
@@ -41,16 +42,13 @@ jobs:
           dotnet tool restore
           dotnet restore Lookout.slnx
 
-      # The SDK goes first: the Runner and examples resolve its types from dist/
+      # Cheap checks first, so they fail before the slow builds
+      - name: Check .NET formatting
+        run: dotnet format whitespace Lookout.slnx --verify-no-changes
+
+      # The SDK goes before the TypeScript checks: the Runner and examples resolve its types from dist/
       - name: Build watch SDK
         run: npm run build -w src/watch-sdk
-
-      - name: Build frontend
-        run: npm run build -w src/frontend
-
-      # Analyzers and code style are enforced here too (EnforceCodeStyleInBuild, TreatWarningsAsErrors)
-      - name: Build .NET
-        run: dotnet build Lookout.slnx -c Release --no-restore
 
       - name: Lint TypeScript
         run: npm run lint
@@ -58,22 +56,29 @@ jobs:
       - name: Typecheck TypeScript
         run: npm run typecheck
 
-      - name: Check .NET formatting
-        run: dotnet format whitespace Lookout.slnx --verify-no-changes
+      - name: Build frontend
+        id: build-frontend
+        run: npm run build -w src/frontend
 
-      # Exit code 8 means a test project ran zero tests; the Runner test projects have none yet
+      # Analyzers and code style are enforced here too (EnforceCodeStyleInBuild, TreatWarningsAsErrors)
+      - name: Build .NET
+        run: dotnet build Lookout.slnx -c Release --no-restore
+
       - name: Test .NET
+        id: test-dotnet
         run: >
           dotnet test --solution Lookout.slnx -c Release --no-build
           --results-directory TestResults
           --coverage --coverage-output-format cobertura
-          --ignore-exit-code 8
 
+      # Runs even when the .NET build or tests fail, so one run reports failures on both sides
       - name: Test frontend
+        id: test-frontend
+        if: ${{ !cancelled() && steps.build-frontend.outcome == 'success' }}
         run: npm run test:ci -w src/frontend
 
       - name: Coverage report
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && (steps.test-dotnet.outcome != 'skipped' || steps.test-frontend.outcome != 'skipped') }}
         run: |
           dotnet reportgenerator \
             "-reports:TestResults/*.cobertura.xml;src/frontend/coverage/**/cobertura-coverage.xml" \
@@ -83,7 +88,7 @@ jobs:
           cat coverage-report/SummaryGithub.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload coverage report
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && (steps.test-dotnet.outcome != 'skipped' || steps.test-frontend.outcome != 'skipped') }}
         uses: actions/upload-artifact@v7
         with:
           name: coverage-report

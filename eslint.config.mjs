@@ -10,6 +10,7 @@ export default defineConfig(
     '.shared-volumes/',
     '**/dist/',
     '**/coverage/',
+    'coverage-report/',
     '**/bin/',
     '**/obj/',
     'src/frontend/.angular/',
