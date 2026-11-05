@@ -65,10 +65,7 @@ public partial class AuthController(OwnerCredentials owner, ILogger<AuthControll
     private partial void LogSignInFailed(string remoteIp);
 }
 
-/// <remarks>
-/// Both are nullable so model validation lets missing fields through to the credentials check instead of answering
-/// with its own message.
-/// </remarks>
+/// <remarks>Nullable so missing fields get the same answer as wrong ones, not a validation error.</remarks>
 public sealed record SignInRequest(string? Username, string? Password);
 
 /// <param name="Username">The Owner's username, as configured.</param>

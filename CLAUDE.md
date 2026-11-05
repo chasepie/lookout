@@ -5,13 +5,12 @@ A monorepo with a .NET solution (`Lookout.slnx`) and npm workspaces (root `packa
 ## Layout
 
 - `src/Backend/`: ASP.NET Core API that manages watches and their runs, under `/api`. It also serves the built frontend from `wwwroot`. Only the Owner can use
-it: they sign in with `LOOKOUT_OWNER_USERNAME` and `LOOKOUT_OWNER_PASSWORD`, and every endpoint requires their session cookie unless it allows anonymous access
-(`Auth/`). Requests that change data also need the `X-Lookout-Request` header and a same-origin `Sec-Fetch-Site` or `Origin` (`CsrfProtection`). Outside
-`localhost` it must be served over HTTPS: the session cookie is `Secure`, and browsers only send `Sec-Fetch-Site` to secure origins. It calls the Runner over
-HTTP (`LOOKOUT_RUNNER_URL`). It also rotates the VPN between regions through gluetun's control server (`VpnServices/`); the region list comes from gluetun's
-servers list in `LOOKOUT_GLUETUN_DIR`. The SQLite schema is managed with EF Core migrations in `Database/Migrations`: after changing the model, run
-`dotnet tool restore` once, then `dotnet ef migrations add <Name> --project src/Backend --output-dir Database/Migrations`. In Development,
-`DevelopmentDataSeeder` gives a database with no watches one watch per script in `examples/`.
+it: they sign in with `LOOKOUT_OWNER_USERNAME` and `LOOKOUT_OWNER_PASSWORD` (`Auth/`), and outside `localhost` it must be served over HTTPS; see
+`docs/security.md`. It calls the Runner over HTTP (`LOOKOUT_RUNNER_URL`). It also rotates the VPN between regions through gluetun's control server
+(`VpnServices/`); the region list comes from gluetun's servers list in `LOOKOUT_GLUETUN_DIR`. The SQLite schema is managed with EF Core migrations in
+`Database/Migrations`: after changing the model, run `dotnet tool restore` once, then
+`dotnet ef migrations add <Name> --project src/Backend --output-dir Database/Migrations`. In Development, `DevelopmentDataSeeder` gives a database with no
+watches one watch per script in `examples/`.
 - `src/Runner/`: ASP.NET Core service that runs watch scripts.
 - `src/Core/`: types shared by Backend, Runner and AppHost: the C# records, the environment variable names (`LookoutEnvironmentVariables`), the watch scripts
 directory (`WatchScriptsDirectory`) and the repo root lookup (`RepoRoot`).
@@ -29,7 +28,9 @@ generates a new control-server API key on each start.
 
 Environment variables are loaded from `.env`. See `example.env` for the keys.
 
-The domain's terms are in `GLOSSARY.md`, and decisions that would surprise a reader are recorded in `docs/adr/`.
+The domain's terms are in `GLOSSARY.md`, and decisions that would surprise a reader are recorded in `docs/adr/`. How signing in, sessions and CSRF
+protection work, and the constraints they put on changes and deployment, are in `docs/security.md`: read it before changing anything in `Auth/`, the
+request pipeline in `Program.cs`, or the frontend's `auth/`.
 
 ## TypeScript
 

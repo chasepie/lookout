@@ -13,6 +13,7 @@ namespace ChasePie.Lookout.Backend.Auth;
 /// Signing in as the Owner, the one person who uses Lookout, with a cookie session. Every endpoint requires the Owner
 /// unless it allows anonymous access.
 /// </summary>
+/// <remarks>The reasoning behind the session, the fingerprint and the rate limits: <c>docs/security.md</c>.</remarks>
 public static class OwnerAuthentication
 {
     public const string CookieName = "lookout.session";
@@ -89,8 +90,7 @@ public static class OwnerAuthentication
 
                 return ValueTask.CompletedTask;
             };
-            // Both limits apply to sign-ins: the total one caps guessing spread across many IPs. Other requests
-            // aren't limited.
+            // Sign-ins only, limited per client IP and in total
             options.GlobalLimiter = PartitionedRateLimiter.CreateChained(
                 PartitionedRateLimiter.Create<HttpContext, string>(context => IsSignIn(context)
                     ? RateLimitPartition.GetFixedWindowLimiter(

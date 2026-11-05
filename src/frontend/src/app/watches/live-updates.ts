@@ -33,8 +33,7 @@ export class LiveUpdates {
   private readonly session = inject(Session);
 
   private readonly connection = new HubConnectionBuilder()
-    // The CSRF header covers the negotiate request, a POST. Browsers can't add headers to the WebSocket handshake, so
-    // the Backend checks that one's origin instead.
+    // For the negotiate request; the WebSocket handshake can't carry headers
     .withUrl(hubUrl, { headers: csrfHeaders })
     .withAutomaticReconnect({
       nextRetryDelayInMilliseconds: (context) => {
@@ -42,9 +41,8 @@ export class LiveUpdates {
         if (!this.session.signedIn()) {
           return null;
         }
-        // The Backend closes the connection when the session expires, and refuses it after the credentials change,
-        // but SignalR doesn't say why an attempt failed. So ask about the session before each attempt: checking only
-        // once can miss it, such as when the check reaches a Backend that is still shutting down.
+        // SignalR doesn't say why an attempt failed, so ask whether the session ended before each one; see
+        // docs/security.md
         void this.session.recheck();
         return retryDelayMs(context.previousRetryCount);
       },

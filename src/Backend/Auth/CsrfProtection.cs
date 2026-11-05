@@ -1,26 +1,13 @@
 namespace ChasePie.Lookout.Backend.Auth;
 
 /// <summary>
-/// Rejects requests that change data unless they provably come from Lookout's own pages. On top of the session
-/// cookie's <c>SameSite=Strict</c>, each POST, PUT, PATCH and DELETE must:
-/// <list type="number">
-/// <item>carry the <see cref="HeaderName"/> header, which a page on another origin can't add without a CORS preflight
-/// that the Backend never allows; and</item>
-/// <item>carry <c>Sec-Fetch-Site: same-origin</c>, or, from a browser without Fetch Metadata, an <c>Origin</c> that is
-/// the request's own. Browsers set both headers and pages can't change them. A request with neither is rejected:
-/// every browser sends one, and the browser is Lookout's only client.</item>
-/// </list>
-/// WebSocket handshakes, such as the updates hub's, get the second check only, since browsers can't add headers to
-/// them. They need it because WebSockets aren't covered by CORS: without it, a page on a sibling subdomain, which is
-/// sent the <c>SameSite=Strict</c> cookie, could open the hub and listen in.
+/// Rejects requests that change data unless they come from Lookout's own pages: each POST, PUT, PATCH and DELETE must
+/// carry <see cref="HeaderName"/> and a same-origin <c>Sec-Fetch-Site</c> (or, failing that, <c>Origin</c>). WebSocket
+/// handshakes get the origin check only, since browsers can't add headers to them.
 /// </summary>
 /// <remarks>
-/// This replaces antiforgery tokens on purpose. With no CORS policy, tokens add no protection over these checks, and
-/// issuing and refreshing them in the SPA is where token setups usually go wrong. Go's <c>http.CrossOriginProtection</c>
-/// works the same way (https://words.filippo.io/csrf/), and the OWASP CSRF Prevention Cheat Sheet lists both custom
-/// request headers and Fetch Metadata as defences. If Lookout ever accepts API tokens, apply these checks only to
-/// requests authenticated by the cookie: browsers don't send tokens on their own, so those requests can't be forged.
-/// Behind a reverse proxy that rewrites <c>Host</c>, the <c>Origin</c> fallback needs forwarded headers configured.
+/// Why it works this way instead of with antiforgery tokens, and what must stay true as Lookout changes:
+/// <c>docs/security.md</c>.
 /// </remarks>
 public static class CsrfProtection
 {

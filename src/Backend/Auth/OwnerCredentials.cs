@@ -5,8 +5,8 @@ using ChasePie.Lookout.Core;
 namespace ChasePie.Lookout.Backend.Auth;
 
 /// <summary>
-/// The Owner's username and password, from <c>LOOKOUT_OWNER_USERNAME</c> and <c>LOOKOUT_OWNER_PASSWORD</c>. They are the
-/// only credentials Lookout accepts; see <c>docs/adr/0001-single-owner.md</c>.
+/// The Owner's username and password, from <c>LOOKOUT_OWNER_USERNAME</c> and <c>LOOKOUT_OWNER_PASSWORD</c>: the only
+/// credentials Lookout accepts. See <c>docs/security.md</c>.
 /// </summary>
 public sealed class OwnerCredentials
 {
@@ -42,8 +42,8 @@ public sealed class OwnerCredentials
     public string Username { get; }
 
     /// <summary>
-    /// A value that changes whenever the username or password changes, and doesn't reveal either. Every session carries
-    /// the fingerprint it signed in with, so changing the credentials signs out every session.
+    /// Changes whenever the username or password changes, without revealing either. Sessions carry it, so changing the
+    /// credentials signs them all out.
     /// </summary>
     public string Fingerprint { get; }
 
@@ -77,8 +77,7 @@ public sealed class OwnerCredentials
     /// </summary>
     public bool Matches(string username, string password)
     {
-        // Comparing fixed-length hashes keeps the time the same whatever the input lengths, and both comparisons
-        // always run, so the response time doesn't reveal whether the username was right.
+        // Constant time, and both always run: the response time mustn't reveal which part was wrong
         var usernameMatches = CryptographicOperations.FixedTimeEquals(HashUsername(username), _usernameHash);
         var passwordMatches = CryptographicOperations.FixedTimeEquals(Hash(password), _passwordHash);
         return usernameMatches & passwordMatches;

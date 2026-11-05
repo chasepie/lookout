@@ -79,8 +79,7 @@ public class Program
         // Configure the HTTP request pipeline.
         if (app.Environment.IsDevelopment())
         {
-            // The docs are open so Scalar can be used signed out; its requests still need a session. Sign in by
-            // calling /api/auth/login from Scalar, or in the frontend: the cookie works on every localhost port.
+            // Open, but requests made from Scalar still need a session; see docs/security.md
             app.MapOpenApi().AllowAnonymous();
             app.MapScalarApiReference("/api-docs", options => options
                 .AddPreferredSecuritySchemes(CsrfHeaderDocumentTransformer.SchemeName)
