@@ -13,7 +13,7 @@ namespace ChasePie.Lookout.Backend.Controllers;
 /// can't be reached.
 /// </summary>
 [ApiController]
-[Route("[controller]")]
+[Route("api/[controller]")]
 public class VpnController(
     LookoutDbContext dbContext,
     VpnConfiguration configuration,

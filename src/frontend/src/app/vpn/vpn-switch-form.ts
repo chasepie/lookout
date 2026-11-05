@@ -1,6 +1,6 @@
 import { Component, inject, input, signal } from '@angular/core';
 import { FormField, form, submit } from '@angular/forms/signals';
-import { describeError } from '../watches/watches-api';
+import { describeError } from '../shared/describe-error';
 import { VpnApi } from './vpn-api';
 
 /** Switches the VPN to a chosen region, or a random one, right away. */

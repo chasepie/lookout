@@ -40,7 +40,27 @@ public partial class Program
             .WithHttpHealthCheck("/health")
             .WaitFor(browserless);
 
+        // The Owner's sign-in. The Backend checks them too; checking here stops startup before anything else starts.
+        if (DotEnvValue(LookoutEnvironmentVariables.OwnerUsername) is not { } ownerUsername
+            || DotEnvValue(LookoutEnvironmentVariables.OwnerPassword) is not { } ownerPasswordValue)
+        {
+            throw new InvalidOperationException(
+                $"Set {LookoutEnvironmentVariables.OwnerUsername} and {LookoutEnvironmentVariables.OwnerPassword} "
+                + "in .env to the username and password you sign in to Lookout with.");
+        }
+
+        if (ownerPasswordValue.Length < LookoutEnvironmentVariables.OwnerPasswordMinLength)
+        {
+            throw new InvalidOperationException(
+                $"{LookoutEnvironmentVariables.OwnerPassword} in .env must be at least "
+                + $"{LookoutEnvironmentVariables.OwnerPasswordMinLength} characters.");
+        }
+
+        var ownerPassword = builder.AddParameter("owner-password", ownerPasswordValue, secret: true);
+
         var backend = builder.AddProject<Projects.Backend>("backend")
+            .WithEnvironment(LookoutEnvironmentVariables.OwnerUsername, ownerUsername)
+            .WithEnvironment(LookoutEnvironmentVariables.OwnerPassword, ownerPassword)
             .WithEnvironment(LookoutEnvironmentVariables.RunnerUrl, runner.GetEndpoint("https"))
             .WithHttpHealthCheck("/health")
             .WaitFor(runner);
@@ -113,7 +133,8 @@ public partial class Program
         ForwardDirectory(LookoutEnvironmentVariables.DatabaseDir, backend);
 
         // Runs `npm run start` (ng serve) on its default port. The dev server forwards /api to the
-        // Backend through proxy.conf.json, which targets the Backend's launch profile port (7070).
+        // Backend through proxy.conf.json, which targets the Backend's launch profile port (7070). Serving both from
+        // one origin is what lets the session cookie and the CSRF checks work.
         // Packages come from the root npm workspace, so run `npm install` at the repo root first.
         var frontend = builder.AddJavaScriptApp("frontend", "../frontend", "start")
             .WithNpm(install: false)

@@ -1,6 +1,6 @@
 import { Component, computed, inject, input, linkedSignal, signal } from '@angular/core';
 import { FormField, form, max, min, required, submit } from '@angular/forms/signals';
-import { describeError } from '../watches/watches-api';
+import { describeError } from '../shared/describe-error';
 import { VpnApi } from './vpn-api';
 import { VpnSettings, VpnSettingsDto } from './vpn.model';
 

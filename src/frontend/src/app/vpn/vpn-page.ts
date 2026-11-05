@@ -2,7 +2,7 @@ import { Component, computed, inject } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { merge } from 'rxjs';
 import { LiveUpdates } from '../watches/live-updates';
-import { describeError } from '../watches/watches-api';
+import { describeError } from '../shared/describe-error';
 import { VpnApi } from './vpn-api';
 import { VpnRotationForm } from './vpn-rotation-form';
 import { VpnStatusCard } from './vpn-status-card';

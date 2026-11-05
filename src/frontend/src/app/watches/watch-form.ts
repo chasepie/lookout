@@ -2,7 +2,8 @@ import { Component, effect, inject, input, signal } from '@angular/core';
 import { FormField, form, required, submit } from '@angular/forms/signals';
 import { Router, RouterLink } from '@angular/router';
 import { CreateWatchDto, Watch, WatchScheduleKind } from './watch.model';
-import { WatchesApi, describeError } from './watches-api';
+import { describeError } from '../shared/describe-error';
+import { WatchesApi } from './watches-api';
 
 interface WatchFormModel {
   name: string;

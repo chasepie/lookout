@@ -78,20 +78,3 @@ export class WatchesApi {
     return firstValueFrom(this.http.post<WatchRun>(`${baseUrl}/${id}/runs`, null));
   }
 }
-
-/** Turns an HTTP error into something readable. */
-export function describeError(error: unknown): string {
-  if (error && typeof error === 'object' && 'error' in error) {
-    const body = error.error;
-    if (typeof body === 'string' && body) {
-      return body;
-    }
-    if (body && typeof body === 'object') {
-      return JSON.stringify(body, null, 2);
-    }
-  }
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return String(error);
-}

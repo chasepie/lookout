@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore;
 namespace ChasePie.Lookout.Backend.Controllers;
 
 [ApiController]
-[Route("[controller]")]
+[Route("api/[controller]")]
 public class WatchesController(
     LookoutDbContext dbContext,
     WatchScriptManager scriptManager,
