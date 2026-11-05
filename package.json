@@ -20,6 +20,8 @@
     "src/watch-sdk"
   ],
   "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc -b",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "devDependencies": {

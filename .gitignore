@@ -219,3 +219,4 @@ src/Backend/wwwroot/
 
 # playwright mcp output files
 .playwright-mcp/
+coverage-report/
