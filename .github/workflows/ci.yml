@@ -70,10 +70,7 @@ jobs:
           --ignore-exit-code 8
 
       - name: Test frontend
-        run: >
-          npm test -w src/frontend --
-          --watch=false
-          --coverage --coverage-reporters=cobertura --coverage-reporters=text-summary
+        run: npm run test:ci -w src/frontend
 
       - name: Coverage report
         if: ${{ !cancelled() }}
