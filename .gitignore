@@ -216,3 +216,6 @@ vite.config.ts.timestamp-*
 
 # The frontend's build output, which the Backend serves
 src/Backend/wwwroot/
+
+# playwright mcp output files
+.playwright-mcp/
