@@ -20,7 +20,7 @@ the OpenVPN credentials are in `.env`, gluetun (the VPN proxy for watches with `
 `LOOKOUT_RUNNER_API_KEY` for both, forwards the directory settings from `.env` (relative paths resolve against the repo root), and opens the Aspire
 dashboard. It also forwards the Owner's `LOOKOUT_OWNER_USERNAME` and
 `LOOKOUT_OWNER_PASSWORD` from `.env` to Backend, and refuses to start without them. It bind-mounts `LOOKOUT_GLUETUN_DIR` as gluetun's data directory and
-generates a new control-server API key, and a new Runner API key, on each start.
+generates new secrets on each start: gluetun's control-server API key and proxy password, the Runner API key and the browserless token.
 - `src/ServiceDefaults/`: shared Aspire setup (OpenTelemetry, health checks, service discovery) referenced by Backend and Runner.
 - `src/watch-sdk/`: TypeScript SDK and CLI (Playwright-based) for writing watch scripts.
 - `src/frontend/`: Angular web UI. Its conventions are in `src/frontend/CLAUDE.md`.

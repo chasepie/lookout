@@ -1,4 +1,4 @@
-import { chromium, type Browser, type LaunchOptions, type Page } from 'playwright';
+import { chromium, type Browser, type BrowserContextOptions, type LaunchOptions, type Page } from 'playwright';
 
 export interface SuccessfulRunResult {
   success: true;
@@ -47,7 +47,8 @@ export interface RunWatchOptions {
   browserlessUrl?: string;
   /**
    * HTTP proxy, such as `http://gluetun:8888`, that the browser sends all its traffic through. The browser
-   * connects to it, so with {@link browserlessUrl} it must be reachable from the browserless server.
+   * connects to it, so with {@link browserlessUrl} it must be reachable from the browserless server. Credentials
+   * go in the URL, as in `http://user:password@gluetun:8888`, percent-encoded if they contain reserved characters.
    */
   proxy?: string;
   signal?: AbortSignal;
@@ -66,6 +67,31 @@ export function getBrowserlessEndpoint(browserlessUrl: string, launchOptions: Pi
   url.pathname = `${url.pathname.replace(/\/+$/, '')}/chromium/playwright`;
   url.searchParams.set('launch', JSON.stringify({ headless: launchOptions.headless, args: launchOptions.args }));
   return url.href;
+}
+
+/**
+ * Playwright's proxy settings for a proxy URL. Playwright ignores credentials in `server`, so they're passed
+ * separately.
+ */
+export function getProxySettings(proxyUrl: string): NonNullable<BrowserContextOptions['proxy']> {
+  // Playwright takes `host:port` as an HTTP proxy, and so does this
+  const url = new URL(/^[a-z][a-z\d+.-]*:\/\//i.test(proxyUrl) ? proxyUrl : `http://${proxyUrl}`);
+  let username: string;
+  let password: string;
+  try {
+    username = decodeURIComponent(url.username);
+    password = decodeURIComponent(url.password);
+  } catch {
+    // The URL holds the password, so it stays out of the message
+    throw new Error('The proxy URL\'s username or password has an invalid percent-encoding (a % not followed by two hex digits).');
+  }
+
+  return {
+    // Not url.origin, which is "null" for schemes such as socks5:
+    server: `${url.protocol}//${url.host}`,
+    ...(username === '' ? {} : { username }),
+    ...(password === '' ? {} : { password }),
+  };
 }
 
 /**
@@ -99,7 +125,7 @@ export async function runWatch(runScript: LookoutWatchScript, options?: RunWatch
   const browser = await openBrowser(launchOptions, options?.browserlessUrl);
 
   try {
-    const context = await browser.newContext(proxy === undefined ? {} : { proxy: { server: proxy } });
+    const context = await browser.newContext(proxy === undefined ? {} : { proxy: getProxySettings(proxy) });
     if (proxy !== undefined) {
       await context.addInitScript(removeWebRtc);
     }

@@ -116,6 +116,31 @@ environment. Keeping it from scripts is part of sandboxing them.
 
 To call the Runner from Scalar, copy the key from the `runner-api-key` parameter in the Aspire dashboard.
 
+## The containers
+
+browserless and gluetun's HTTP proxy would each let anyone who reaches them use Lookout's resources: browserless drives Chromium, including against the
+internal network, and the proxy sends traffic out through the VPN. Like the Runner, they must not be reachable from outside, and each also requires a
+secret that the AppHost generates on each start:
+
+| Container | Secret | Who has it |
+| --- | --- | --- |
+| browserless | `browserless-token`, in the `token` query parameter of `LOOKOUT_BROWSERLESS_URL` | browserless and the Runner |
+| gluetun's HTTP proxy | `gluetun-proxy-password`, for the username `lookout`, in `LOOKOUT_VPN_PROXY_URL` | gluetun, the Runner and the Backend; see below |
+| gluetun's control server | `gluetun-api-key`, in `X-API-Key` | gluetun and the Backend |
+
+The proxy URL holds its password, so the Runner hands it to the watch CLI in `LOOKOUT_WATCH_PROXY_URL`, not on the command line, which any user on the
+machine can list. Only runs that use the VPN get it. Like the Runner key, it doesn't keep the secrets from a watch script: the browserless URL and, for VPN
+runs, the proxy URL are in the script's environment, since the CLI needs them.
+
+**Websites in VPN runs can be sent the proxy password.** Before 1.65, Playwright gives Chromium the proxy's credentials as credentials for every site, so
+a page or subresource that answers `401` with a Basic challenge during a VPN run is sent `lookout` and the password
+([microsoft/playwright#43326](https://github.com/microsoft/playwright/issues/43326)). The Playwright that answers these challenges is the one inside the
+browserless image, not the SDK's, so the fix only arrives with a browserless image that ships Playwright 1.65 or later. Proxy credentials also make
+Playwright intercept every request in VPN runs and turn off the HTTP cache, and that stays after the fix. We accept both: the password is only useful to
+something that can already reach the proxy, which stays off the LAN and the internet, and the watches, and so the sites VPN runs visit, are the Owner's.
+Once browserless ships Playwright 1.65 or later, upgrade the image and the SDK's Playwright together. If VPN runs become too slow, a small proxy in front of
+gluetun that adds the credentials itself would avoid the interception.
+
 ## CSRF
 
 The browser attaches the session cookie automatically, so a page the Owner visits could try to make requests that use it. `SameSite=Strict` stops other

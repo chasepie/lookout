@@ -35,7 +35,8 @@ public static class LookoutEnvironmentVariables
     public const int RunnerApiKeyMinLength = 32;
 
     /// <summary>
-    /// The browserless container's base URL, used by the Runner.
+    /// The browserless container's base URL, used by the Runner, with browserless's token in its <c>token</c> query
+    /// parameter.
     /// </summary>
     public const string BrowserlessUrl = "LOOKOUT_BROWSERLESS_URL";
 
@@ -44,6 +45,7 @@ public static class LookoutEnvironmentVariables
     /// The Runner passes it to the browser, so its value must be reachable from wherever the browser runs.
     /// The Backend sends a request through it after a region switch, to tell when the new tunnel is up, so its
     /// value must be reachable from the Backend. The Backend requires it along with <see cref="GluetunUrl"/>.
+    /// Its credentials go in the URL, as in <c>http://user:password@host:8888</c>.
     /// </summary>
     public const string VpnProxyUrl = "LOOKOUT_VPN_PROXY_URL";
 
