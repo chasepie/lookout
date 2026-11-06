@@ -51,10 +51,28 @@ internal static class VpnProbeHttpClientExtensions
             .ConfigureHttpClient(client => client.Timeout = RequestTimeout)
             .ConfigurePrimaryHttpMessageHandler(services => new SocketsHttpHandler
             {
-                Proxy = new WebProxy(services.GetRequiredService<VpnConfiguration>().ProxyUrl),
+                Proxy = CreateProxy(services.GetRequiredService<VpnConfiguration>().ProxyUrl),
                 UseProxy = true,
                 // A connection opened through the old tunnel must not make the new one look up
                 PooledConnectionLifetime = TimeSpan.Zero,
             });
+    }
+
+    /// <summary>
+    /// The proxy at <paramref name="proxyUrl"/>, with the credentials in the URL, if any. <see cref="WebProxy"/> ignores
+    /// credentials in its address, so they're passed separately.
+    /// </summary>
+    private static WebProxy? CreateProxy(Uri? proxyUrl)
+    {
+        if (proxyUrl is null)
+        {
+            return null;
+        }
+
+        var credentials = proxyUrl.UserInfo.Split(':', 2) is [{ Length: > 0 } username, var password]
+            ? new NetworkCredential(Uri.UnescapeDataString(username), Uri.UnescapeDataString(password))
+            : null;
+        var address = new UriBuilder(proxyUrl) { UserName = "", Password = "" }.Uri;
+        return new WebProxy(address) { Credentials = credentials };
     }
 }

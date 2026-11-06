@@ -20,30 +20,19 @@ public partial class Program
 
         // Chromium that watch scripts run on instead of a locally launched browser. The SDK connects with
         // Playwright, so the image must support its Playwright version: v2.58.3 supports 1.60 to 1.64.
+        // Without a token browserless accepts anyone, who could then drive Chromium against the internal network.
+        // A new one every time the AppHost starts; only browserless and the Runner have it.
+        var browserlessToken = AddGeneratedSecret(builder, "browserless-token");
         var browserless = builder.AddContainer("browserless", "ghcr.io/browserless/chromium", "v2.58.3")
             .WithEnvironment("TZ", timeZone)
             .WithEnvironment("TIMEOUT", "180000")
+            .WithEnvironment("TOKEN", browserlessToken)
             .WithHttpEndpoint(targetPort: 3000, name: "http");
-        var browserlessUrl = ReferenceExpression.Create($"{browserless.GetEndpoint("http")}");
-
-        // Without a token browserless accepts unauthenticated connections
-        if (DotEnvValue("BROWSERLESS_TOKEN") is { } browserlessToken)
-        {
-            var token = builder.AddParameter("browserless-token", browserlessToken, secret: true);
-            browserless.WithEnvironment("TOKEN", token);
-            // The SDK passes the URL's query on to browserless
-            browserlessUrl = ReferenceExpression.Create($"{browserless.GetEndpoint("http")}?token={token}");
-        }
+        // The SDK passes the URL's query on to browserless
+        var browserlessUrl = ReferenceExpression.Create($"{browserless.GetEndpoint("http")}?token={browserlessToken}");
 
         // A new key every time the AppHost starts; the Runner refuses requests without it, and only the Backend has it
-        var runnerApiKey = builder.AddParameter(
-            "runner-api-key",
-            new GenerateParameterDefault
-            {
-                MinLength = LookoutEnvironmentVariables.RunnerApiKeyMinLength,
-                Special = false
-            },
-            secret: true);
+        var runnerApiKey = AddGeneratedSecret(builder, "runner-api-key");
 
         var runner = builder.AddProject<Projects.Runner>("runner")
             .WithEnvironment(LookoutEnvironmentVariables.RunnerApiKey, runnerApiKey)
@@ -90,10 +79,11 @@ public partial class Program
             Directory.CreateDirectory(gluetunDir);
 
             var openVpnPassword = builder.AddParameter("openvpn-password", openVpnPasswordValue, secret: true);
-            // A new key every time the AppHost starts; only gluetun and the Backend need it. Letters and digits
-            // only, since it's embedded in a JSON string below.
-            var gluetunApiKey = builder.AddParameter(
-                "gluetun-api-key", new GenerateParameterDefault { MinLength = 32, Special = false }, secret: true);
+            // A new key every time the AppHost starts; only gluetun and the Backend need it
+            var gluetunApiKey = AddGeneratedSecret(builder, "gluetun-api-key");
+            // Without credentials, anyone who can reach the proxy can send traffic through the VPN. A new password
+            // every time the AppHost starts; only gluetun, the Runner and the Backend have it.
+            var proxyPassword = AddGeneratedSecret(builder, "gluetun-proxy-password");
             var gluetun = builder.AddContainer("gluetun", "qmcgaw/gluetun")
                 // Aspire has no API for capabilities or devices, so they're passed to `docker run` directly
                 .WithContainerRuntimeArgs("--cap-add=NET_ADMIN", "--device=/dev/net/tun:/dev/net/tun")
@@ -103,6 +93,8 @@ public partial class Program
                 .WithEnvironment("OPENVPN_USER", openVpnUser)
                 .WithEnvironment("OPENVPN_PASSWORD", openVpnPassword)
                 .WithEnvironment("HTTPPROXY", "on")
+                .WithEnvironment("HTTPPROXY_USER", ProxyUsername)
+                .WithEnvironment("HTTPPROXY_PASSWORD", proxyPassword)
                 .WithEnvironment("TZ", timeZone)
                 .WithEnvironment("UPDATER_PERIOD", "360h")
                 // Every control server route needs this key in the X-API-Key header
@@ -116,7 +108,7 @@ public partial class Program
             // on the container network rather than the host port. The Runner doesn't wait for gluetun: watches
             // without the VPN don't need it, and a VPN run fails while the proxy is down instead of leaking.
             var proxyOnContainerNetwork = gluetun.Resource.GetEndpoint("proxy", KnownNetworkIdentifiers.DefaultAspireContainerNetwork);
-            runner.WithEnvironment(LookoutEnvironmentVariables.VpnProxyUrl, proxyOnContainerNetwork);
+            runner.WithEnvironment(LookoutEnvironmentVariables.VpnProxyUrl, ProxyUrl(proxyOnContainerNetwork, proxyPassword));
 
             // The Backend doesn't wait for gluetun either: it retries, and shows gluetun as unreachable meanwhile
             backend
@@ -124,7 +116,7 @@ public partial class Program
                 .WithEnvironment(LookoutEnvironmentVariables.GluetunApiKey, gluetunApiKey)
                 .WithEnvironment(LookoutEnvironmentVariables.GluetunDir, gluetunDir)
                 // Unlike the Runner's, on the host, since the Backend connects to it itself
-                .WithEnvironment(LookoutEnvironmentVariables.VpnProxyUrl, gluetun.GetEndpoint("proxy"));
+                .WithEnvironment(LookoutEnvironmentVariables.VpnProxyUrl, ProxyUrl(gluetun.GetEndpoint("proxy"), proxyPassword));
         }
 
         // Directories, with a relative path resolved against the repo root, where .env lives
@@ -161,4 +153,23 @@ public partial class Program
 
         builder.Build().Run();
     }
+
+    // The username for gluetun's HTTP proxy; only the password needs to be secret
+    private const string ProxyUsername = "lookout";
+
+    /// <summary>
+    /// A secret generated every time the AppHost starts. Letters and digits only, so it can go in URLs and JSON strings
+    /// without escaping.
+    /// </summary>
+    private static IResourceBuilder<ParameterResource> AddGeneratedSecret(IDistributedApplicationBuilder builder, string name) =>
+        builder.AddParameter(
+            name,
+            new GenerateParameterDefault { MinLength = LookoutEnvironmentVariables.RunnerApiKeyMinLength, Special = false },
+            secret: true);
+
+    /// <summary>
+    /// The URL of gluetun's HTTP proxy at <paramref name="endpoint"/>, with its credentials.
+    /// </summary>
+    private static ReferenceExpression ProxyUrl(EndpointReference endpoint, IResourceBuilder<ParameterResource> password) =>
+        ReferenceExpression.Create($"http://{ProxyUsername}:{password}@{endpoint.Property(EndpointProperty.HostAndPort)}");
 }

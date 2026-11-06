@@ -116,6 +116,22 @@ environment. Keeping it from scripts is part of sandboxing them.
 
 To call the Runner from Scalar, copy the key from the `runner-api-key` parameter in the Aspire dashboard.
 
+## The containers
+
+browserless and gluetun's HTTP proxy would each let anyone who reaches them use Lookout's resources: browserless drives Chromium, including against the
+internal network, and the proxy sends traffic out through the VPN. Like the Runner, they must not be reachable from outside, and each also requires a
+secret that the AppHost generates on each start:
+
+| Container | Secret | Who has it |
+| --- | --- | --- |
+| browserless | `browserless-token`, in the `token` query parameter of `LOOKOUT_BROWSERLESS_URL` | browserless and the Runner |
+| gluetun's HTTP proxy | `gluetun-proxy-password`, for the username `lookout`, in `LOOKOUT_VPN_PROXY_URL` | gluetun, the Runner and the Backend |
+| gluetun's control server | `gluetun-api-key`, in `X-API-Key` | gluetun and the Backend |
+
+The proxy URL holds its password, so the Runner hands it to the watch CLI in the environment, not on the command line, which any user on the machine can
+list. Only runs that use the VPN get it. Like the Runner key, it doesn't keep the secrets from a watch script: the browserless URL and, for VPN runs, the
+proxy URL are in the script's environment, since the CLI needs them.
+
 ## CSRF
 
 The browser attaches the session cookie automatically, so a page the Owner visits could try to make requests that use it. `SameSite=Strict` stops other

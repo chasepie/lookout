@@ -85,40 +85,7 @@ public partial class ScriptRunner(
         var scriptPath = GetScriptPath(scriptsDir, scriptName);
         var cliPath = GetWatchCliPath(RepoRoot.FindRequired(Directory.GetCurrentDirectory()));
         var outputPath = Path.Combine(Path.GetTempPath(), $"lookout-watch-{Guid.NewGuid():N}.json");
-
-        var processStartInfo = new ProcessStartInfo("node")
-        {
-            // The CLI is started by absolute path and resolves its own imports, so it can run from anywhere
-            WorkingDirectory = scriptsDir,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            Environment =
-            {
-                // The output ends up in logs and in run errors, not a terminal. Playwright colours its errors even
-                // when stderr isn't a TTY, and ignores NO_COLOR, so without this the escape codes show up as text.
-                ["FORCE_COLOR"] = "0",
-            },
-        };
-        // Scripts have no use for it. This only keeps it out of reach of a careless script, not a malicious one,
-        // which runs as the Runner's user and can find it elsewhere; see docs/security.md.
-        processStartInfo.Environment.Remove(LookoutEnvironmentVariables.RunnerApiKey);
-        // When a package.json without a "type" field is above the scripts directory, as with the repo root in
-        // development, Node warns on every ESM script it loads. Node still loads them fine, and the warning would
-        // otherwise lead the stderr kept for failed runs.
-        processStartInfo.ArgumentList.Add("--disable-warning=MODULE_TYPELESS_PACKAGE_JSON");
-        // ArgumentList quotes each argument, so paths with spaces are passed intact
-        processStartInfo.ArgumentList.Add(cliPath);
-        processStartInfo.ArgumentList.Add("run");
-        processStartInfo.ArgumentList.Add(scriptPath);
-        processStartInfo.ArgumentList.Add("--output");
-        processStartInfo.ArgumentList.Add(outputPath);
-        if (proxyUrl is not null)
-        {
-            processStartInfo.ArgumentList.Add("--proxy");
-            processStartInfo.ArgumentList.Add(proxyUrl);
-        }
+        var processStartInfo = CreateStartInfo(cliPath, scriptPath, outputPath, proxyUrl);
 
         using var process = new Process { StartInfo = processStartInfo };
 
@@ -191,6 +158,58 @@ public partial class ScriptRunner(
         {
             File.Delete(outputPath);
         }
+    }
+
+    /// <summary>
+    /// The Node process that runs a script with the watch CLI, writing its result to <paramref name="outputPath"/>.
+    /// </summary>
+    /// <param name="proxyUrl">
+    /// The VPN proxy for a run that uses the VPN, credentials included, or <see langword="null"/> for one that doesn't.
+    /// </param>
+    internal static ProcessStartInfo CreateStartInfo(string cliPath, string scriptPath, string outputPath, string? proxyUrl)
+    {
+        var processStartInfo = new ProcessStartInfo("node")
+        {
+            // The scripts directory. The CLI is started by absolute path and resolves its own imports, so it can run
+            // from anywhere.
+            WorkingDirectory = Path.GetDirectoryName(scriptPath),
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            Environment =
+            {
+                // The output ends up in logs and in run errors, not a terminal. Playwright colours its errors even
+                // when stderr isn't a TTY, and ignores NO_COLOR, so without this the escape codes show up as text.
+                ["FORCE_COLOR"] = "0",
+            },
+        };
+        // Scripts have no use for it. This only keeps it out of reach of a careless script, not a malicious one,
+        // which runs as the Runner's user and can find it elsewhere; see docs/security.md.
+        processStartInfo.Environment.Remove(LookoutEnvironmentVariables.RunnerApiKey);
+        // When a package.json without a "type" field is above the scripts directory, as with the repo root in
+        // development, Node warns on every ESM script it loads. Node still loads them fine, and the warning would
+        // otherwise lead the stderr kept for failed runs.
+        processStartInfo.ArgumentList.Add("--disable-warning=MODULE_TYPELESS_PACKAGE_JSON");
+        // ArgumentList quotes each argument, so paths with spaces are passed intact
+        processStartInfo.ArgumentList.Add(cliPath);
+        processStartInfo.ArgumentList.Add("run");
+        processStartInfo.ArgumentList.Add(scriptPath);
+        processStartInfo.ArgumentList.Add("--output");
+        processStartInfo.ArgumentList.Add(outputPath);
+
+        // The CLI reads the proxy from the environment rather than its command line, which any user on the machine
+        // can list, since the URL holds the proxy's password. A run without the VPN must not inherit it.
+        if (proxyUrl is null)
+        {
+            processStartInfo.Environment.Remove(LookoutEnvironmentVariables.VpnProxyUrl);
+        }
+        else
+        {
+            processStartInfo.Environment[LookoutEnvironmentVariables.VpnProxyUrl] = proxyUrl;
+        }
+
+        return processStartInfo;
     }
 
     /// <summary>
