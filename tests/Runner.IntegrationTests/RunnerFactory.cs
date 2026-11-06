@@ -47,7 +47,7 @@ internal sealed class RunnerFactory : WebApplicationFactory<global::Runner.Progr
     protected override void Dispose(bool disposing)
     {
         base.Dispose(disposing);
-        if (disposing)
+        if (disposing && Directory.Exists(_scriptsDirectory))
         {
             Directory.Delete(_scriptsDirectory, recursive: true);
         }

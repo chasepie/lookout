@@ -88,6 +88,7 @@ public sealed partial class RunnerApiKeyTests
     {
         await using var factory = new RunnerFactory(environment);
         using var client = factory.CreateClient(apiKey: null);
+        using var clientWithKey = factory.CreateClient(RunnerFactory.ApiKey);
         var isDevelopment = environment == "Development";
 
         var checkedCount = 0;
@@ -101,6 +102,12 @@ public sealed partial class RunnerApiKeyTests
             using var request = new HttpRequestMessage(new HttpMethod(method), path);
             using var response = await client.SendAsync(request, Ct);
             Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode, $"{key} answered without the key");
+
+            // The fallback policy also answers 401 for a path that matches no endpoint, so check that the path reaches
+            // the endpoint: otherwise the check above proves nothing about it
+            using var requestWithKey = new HttpRequestMessage(new HttpMethod(method), path);
+            using var responseWithKey = await clientWithKey.SendAsync(requestWithKey, Ct);
+            Assert.AreNotEqual(HttpStatusCode.NotFound, responseWithKey.StatusCode, $"{path} doesn't reach {key}; fix ToPath");
             checkedCount++;
         }
 
@@ -157,7 +164,8 @@ public sealed partial class RunnerApiKeyTests
     }
 
     /// <summary>
-    /// Fills each route parameter with a value that satisfies its constraints, like <c>{id:int}</c>.
+    /// Fills each route parameter with "1", which satisfies constraints like <c>{id:int}</c> but not all of them; the
+    /// test checks that each path reaches its endpoint.
     /// </summary>
     private static string ToPath(string pattern) =>
         "/" + RouteParameter().Replace(pattern.TrimStart('/'), "1");

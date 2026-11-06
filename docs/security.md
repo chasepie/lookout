@@ -105,8 +105,9 @@ The Runner runs any script in the scripts directory that it's asked to, so askin
   requires it on every endpoint that doesn't say otherwise, and `RunnerApiKeyTests` fails if a new endpoint answers without it. Both services refuse to
   start without a key of at least 32 characters, so the check can't be turned off by forgetting to set it. Outside the AppHost, give both the same key.
 
-The key is defence in depth, for when something else on the network can reach the Runner's port. It doesn't help against a watch script: scripts run with
-the Runner's environment, key included.
+The key is defence in depth, for when something else on the network can reach the Runner's port. It doesn't help against a watch script: the Runner leaves
+it out of the environment scripts run with, but a script runs as the Runner's user, so it can still find the key, for example in the Runner's own
+environment. Keeping it from scripts is part of sandboxing them.
 
 | Runner endpoint | Open because |
 | --- | --- |

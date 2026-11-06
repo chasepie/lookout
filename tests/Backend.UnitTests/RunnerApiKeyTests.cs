@@ -30,17 +30,31 @@ public sealed class RunnerApiKeyTests
         Assert.AreEqual(Key, apiKey.Value);
     }
 
-    public static IEnumerable<object?[]> MissingOrShortKeys =>
+    // Missing, too short, or not carried intact by an HTTP header
+    public static IEnumerable<object?[]> InvalidKeys =>
     [
         [null],
         [""],
         [new string(' ', RunnerApiKey.MinLength)],
         [new string('k', RunnerApiKey.MinLength - 1)],
+        [Key + " "],
+        [" " + Key],
+        [Key + "é"],
+        [Key + "\t"],
+        [Key + "\n"],
     ];
 
     [TestMethod]
-    [DynamicData(nameof(MissingOrShortKeys))]
-    public void RefusesAMissingOrShortKey(string? value)
+    public void AcceptsSpacesInsideTheKey()
+    {
+        var value = Key[..16] + " " + Key[16..];
+
+        Assert.AreEqual(value, new RunnerApiKey(value).Value);
+    }
+
+    [TestMethod]
+    [DynamicData(nameof(InvalidKeys))]
+    public void RefusesAnInvalidKey(string? value)
     {
         var ex = Assert.ThrowsExactly<InvalidOperationException>(() => RunnerApiKey.FromConfiguration(Configuration(value)));
 
@@ -63,13 +77,8 @@ public sealed class RunnerApiKeyTests
     public async Task TheBackendSendsTheKeyToTheRunner()
     {
         var configuration = Configuration(Key);
-        var handler = new RecordingHandler();
-        var services = new ServiceCollection()
-            .AddSingleton(configuration)
-            .AddSingleton(RunnerApiKey.FromConfiguration(configuration));
-        services.AddHttpClient<RunnerHttpClient>(RunnerHttpClient.Configure)
-            .ConfigurePrimaryHttpMessageHandler(() => handler);
-        await using var provider = services.BuildServiceProvider();
+        var handler = new RecordingHandler(HttpStatusCode.OK);
+        await using var provider = CreateServices(configuration, handler);
 
         await provider.GetRequiredService<RunnerHttpClient>()
             .RunWatchScriptAsync("script.ts", useVpn: false, TestContext.CancellationToken);
@@ -78,16 +87,42 @@ public sealed class RunnerApiKeyTests
         Assert.AreEqual(Key, handler.Request.Headers.GetValues(RunnerApiKey.HeaderName).Single());
     }
 
-    private sealed class RecordingHandler : HttpMessageHandler
+    [TestMethod]
+    public async Task ARefusedKeyNamesTheVariableToCheck()
+    {
+        await using var provider = CreateServices(Configuration(Key), new RecordingHandler(HttpStatusCode.Unauthorized));
+
+        var ex = await Assert.ThrowsExactlyAsync<HttpRequestException>(() => provider.GetRequiredService<RunnerHttpClient>()
+            .RunWatchScriptAsync("script.ts", useVpn: false, TestContext.CancellationToken));
+
+        Assert.AreEqual(HttpStatusCode.Unauthorized, ex.StatusCode);
+        Assert.Contains(LookoutEnvironmentVariables.RunnerApiKey, ex.Message);
+    }
+
+    // The Backend's registration of RunnerHttpClient, with the Runner replaced by the handler
+    private static ServiceProvider CreateServices(IConfiguration configuration, HttpMessageHandler handler)
+    {
+        var services = new ServiceCollection()
+            .AddSingleton(configuration)
+            .AddSingleton(RunnerApiKey.FromConfiguration(configuration));
+        services.AddHttpClient<RunnerHttpClient>(RunnerHttpClient.Configure)
+            .ConfigurePrimaryHttpMessageHandler(() => handler);
+        return services.BuildServiceProvider();
+    }
+
+    private sealed class RecordingHandler(HttpStatusCode statusCode) : HttpMessageHandler
     {
         public HttpRequestMessage? Request { get; private set; }
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             Request = request;
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            return Task.FromResult(new HttpResponseMessage(statusCode)
             {
-                Content = new StringContent("""{"success":true,"content":""}""", null, "application/json"),
+                // A refused key gets an empty body, like the Runner's challenge
+                Content = statusCode == HttpStatusCode.OK
+                    ? new StringContent("""{"success":true,"content":""}""", null, "application/json")
+                    : new StringContent(""),
             });
         }
     }
