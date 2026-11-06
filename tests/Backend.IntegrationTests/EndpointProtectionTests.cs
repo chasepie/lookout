@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Backend.IntegrationTests;
+namespace ChasePie.Lookout.Backend.IntegrationTests;
 
 /// <summary>
 /// That every endpoint needs a session except the few meant to be open, so a new endpoint can't be left open by
@@ -50,7 +50,7 @@ public sealed partial class EndpointProtectionTests
         var isDevelopment = environment == "Development";
 
         var checkedCount = 0;
-        foreach (var (key, method, path) in GetEndpoints(factory))
+        foreach (var (key, pattern, method, path) in GetEndpoints(factory))
         {
             if (AnonymousEverywhere.Contains(key) || (isDevelopment && IsDevelopmentOnly(key)))
             {
@@ -60,6 +60,9 @@ public sealed partial class EndpointProtectionTests
             using var request = new HttpRequestMessage(new HttpMethod(method), path);
             using var response = await client.SendAsync(request, Ct);
             Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode, $"{key} answered without a session");
+            // The fallback policy also answers 401 for a path that matches no endpoint, so a path that misses the
+            // endpoint would prove nothing about it
+            AssertReached(response, pattern, path, key);
             checkedCount++;
         }
 
@@ -78,9 +81,15 @@ public sealed partial class EndpointProtectionTests
     }
 
     /// <summary>
-    /// Every routed endpoint as "METHOD pattern", with each method it accepts and a path that reaches it.
+    /// Every routed endpoint as "METHOD pattern", with its pattern, each method it accepts and a path meant to reach it.
     /// </summary>
-    private static IEnumerable<(string Key, string Method, string Path)> GetEndpoints(LookoutFactory factory)
+    private static void AssertReached(HttpResponseMessage response, string pattern, string path, string key) =>
+        Assert.AreEqual(
+            pattern,
+            response.Headers.TryGetValues(LookoutFactory.MatchedRouteHeader, out var matched) ? matched.Single() : null,
+            $"{path} doesn't reach {key}; fix ToPath");
+
+    private static IEnumerable<(string Key, string Pattern, string Method, string Path)> GetEndpoints(LookoutFactory factory)
     {
         // Creating the server builds the app, which maps the endpoints
         _ = factory.Server;
@@ -91,19 +100,20 @@ public sealed partial class EndpointProtectionTests
             var methods = endpoint.Metadata.GetMetadata<HttpMethodMetadata>()?.HttpMethods;
             if (methods is null or { Count: 0 })
             {
-                yield return ($"* {pattern}", "GET", ToPath(pattern));
+                yield return ($"* {pattern}", pattern, "GET", ToPath(pattern));
                 continue;
             }
 
             foreach (var method in methods)
             {
-                yield return ($"{method} {pattern}", method, ToPath(pattern));
+                yield return ($"{method} {pattern}", pattern, method, ToPath(pattern));
             }
         }
     }
 
     /// <summary>
-    /// Fills each route parameter with a value that satisfies its constraints, like <c>{id:int}</c>.
+    /// Fills each route parameter with "1", which satisfies constraints like <c>{id:int}</c> but not all of them; the
+    /// test checks that each path reaches its endpoint.
     /// </summary>
     private static string ToPath(string pattern) =>
         "/" + RouteParameter().Replace(pattern.TrimStart('/'), "1");

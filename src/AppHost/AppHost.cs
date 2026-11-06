@@ -35,7 +35,18 @@ public partial class Program
             browserlessUrl = ReferenceExpression.Create($"{browserless.GetEndpoint("http")}?token={token}");
         }
 
+        // A new key every time the AppHost starts; the Runner refuses requests without it, and only the Backend has it
+        var runnerApiKey = builder.AddParameter(
+            "runner-api-key",
+            new GenerateParameterDefault
+            {
+                MinLength = LookoutEnvironmentVariables.RunnerApiKeyMinLength,
+                Special = false
+            },
+            secret: true);
+
         var runner = builder.AddProject<Projects.Runner>("runner")
+            .WithEnvironment(LookoutEnvironmentVariables.RunnerApiKey, runnerApiKey)
             .WithEnvironment(LookoutEnvironmentVariables.BrowserlessUrl, browserlessUrl)
             .WithHttpHealthCheck("/health")
             .WaitFor(browserless);
@@ -62,6 +73,7 @@ public partial class Program
             .WithEnvironment(LookoutEnvironmentVariables.OwnerUsername, ownerUsername)
             .WithEnvironment(LookoutEnvironmentVariables.OwnerPassword, ownerPassword)
             .WithEnvironment(LookoutEnvironmentVariables.RunnerUrl, runner.GetEndpoint("https"))
+            .WithEnvironment(LookoutEnvironmentVariables.RunnerApiKey, runnerApiKey)
             .WithHttpHealthCheck("/health")
             .WaitFor(runner);
 

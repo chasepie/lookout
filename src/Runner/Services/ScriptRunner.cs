@@ -101,6 +101,9 @@ public partial class ScriptRunner(
                 ["FORCE_COLOR"] = "0",
             },
         };
+        // Scripts have no use for it. This only keeps it out of reach of a careless script, not a malicious one,
+        // which runs as the Runner's user and can find it elsewhere; see docs/security.md.
+        processStartInfo.Environment.Remove(LookoutEnvironmentVariables.RunnerApiKey);
         // When a package.json without a "type" field is above the scripts directory, as with the repo root in
         // development, Node warns on every ESM script it loads. Node still loads them fine, and the warning would
         // otherwise lead the stderr kept for failed runs.

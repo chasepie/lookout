@@ -3,7 +3,7 @@ using System.Net.Http.Json;
 using ChasePie.Lookout.Backend.Auth;
 using ChasePie.Lookout.Backend.Controllers;
 
-namespace Backend.IntegrationTests;
+namespace ChasePie.Lookout.Backend.IntegrationTests;
 
 [TestClass]
 public sealed class AuthTests

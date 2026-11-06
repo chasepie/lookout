@@ -1,7 +1,7 @@
 using System.Net;
 using ChasePie.Lookout.Backend.Auth;
 
-namespace Backend.UnitTests;
+namespace ChasePie.Lookout.Backend.UnitTests;
 
 [TestClass]
 public sealed class SignInRateLimitKeyTests

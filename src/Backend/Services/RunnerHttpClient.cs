@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text.Json;
 using ChasePie.Lookout.Core;
 using Microsoft.AspNetCore.Mvc;
@@ -24,7 +25,10 @@ public class RunnerHttpClient(HttpClient httpClient)
         using var response = await httpClient.GetAsync(requestUri, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
-            var error = await ReadErrorAsync(response, cancellationToken);
+            var error = response.StatusCode == HttpStatusCode.Unauthorized
+                ? $"it refused the API key. Check that {LookoutEnvironmentVariables.RunnerApiKey} is the same for the "
+                    + "Backend and the Runner."
+                : await ReadErrorAsync(response, cancellationToken);
             throw new HttpRequestException(
                 $"Runner returned {(int)response.StatusCode}: {error}", null, response.StatusCode);
         }
@@ -56,13 +60,17 @@ public class RunnerHttpClient(HttpClient httpClient)
     }
 
     /// <summary>
-    /// Configures the client's base address from the <c>LOOKOUT_RUNNER_URL</c> environment variable.
+    /// Configures the client's base address from the <c>LOOKOUT_RUNNER_URL</c> environment variable, and has it send
+    /// the <see cref="RunnerApiKey"/> on every request.
     /// </summary>
     internal static void Configure(IServiceProvider services, HttpClient client)
     {
         var configuration = services.GetRequiredService<IConfiguration>();
         client.BaseAddress = LookoutEnvironmentVariables.GetBaseUrl(configuration, LookoutEnvironmentVariables.RunnerUrl)
             ?? throw new InvalidOperationException($"Environment variable {LookoutEnvironmentVariables.RunnerUrl} must be set");
+        client.DefaultRequestHeaders.Add(
+            RunnerApiKey.HeaderName,
+            services.GetRequiredService<RunnerApiKey>().Value);
 
         // A run waits for the whole browser session; the 100-second default is too short.
         // On timeout the request is aborted, and the Runner stops the script.

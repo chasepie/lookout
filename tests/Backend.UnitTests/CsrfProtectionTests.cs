@@ -1,7 +1,7 @@
 using ChasePie.Lookout.Backend.Auth;
 using Microsoft.AspNetCore.Http;
 
-namespace Backend.UnitTests;
+namespace ChasePie.Lookout.Backend.UnitTests;
 
 [TestClass]
 public sealed class CsrfProtectionTests

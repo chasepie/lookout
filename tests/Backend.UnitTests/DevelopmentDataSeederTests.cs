@@ -5,7 +5,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Backend.UnitTests;
+namespace ChasePie.Lookout.Backend.UnitTests;
 
 [TestClass]
 public sealed class DevelopmentDataSeederTests : IDisposable

@@ -41,6 +41,8 @@ public partial class Program
         services.AddSingleton(WatchScriptsDirectory.FromConfiguration(configuration));
         services.AddScoped<WatchScriptManager>();
         services.AddScoped<DevelopmentDataSeeder>();
+        // Resolved here, so a missing or short key stops startup instead of failing every run
+        services.AddSingleton(RunnerApiKey.FromConfiguration(configuration));
         services.AddHttpClient<RunnerHttpClient>(RunnerHttpClient.Configure);
         services.AddHostedService<WatchScheduler>();
         services.AddHostedService<WatchRunWorker>();

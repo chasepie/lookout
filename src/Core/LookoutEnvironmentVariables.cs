@@ -3,7 +3,8 @@ using Microsoft.Extensions.Configuration;
 namespace ChasePie.Lookout.Core;
 
 /// <summary>
-/// Names of the environment variables the services read. The AppHost sets them; see <c>example.env</c>.
+/// Names of the environment variables the services read. The AppHost sets them all: the ones the user chooses come from
+/// <c>.env</c> and are listed in <c>example.env</c>; it works out or generates the rest.
 /// </summary>
 public static class LookoutEnvironmentVariables
 {
@@ -21,6 +22,17 @@ public static class LookoutEnvironmentVariables
     /// The Runner's base URL, used by the Backend.
     /// </summary>
     public const string RunnerUrl = "LOOKOUT_RUNNER_URL";
+
+    /// <summary>
+    /// The key the Backend sends the Runner, and without which the Runner refuses requests. Both require it, at least
+    /// <see cref="RunnerApiKeyMinLength"/> characters. The AppHost generates a new one on each start.
+    /// </summary>
+    public const string RunnerApiKey = "LOOKOUT_RUNNER_API_KEY";
+
+    /// <summary>
+    /// The shortest <see cref="RunnerApiKey"/> the Backend and the Runner accept.
+    /// </summary>
+    public const int RunnerApiKeyMinLength = 32;
 
     /// <summary>
     /// The browserless container's base URL, used by the Runner.
