@@ -16,6 +16,18 @@ public partial class Program
         string? DotEnvValue(string name) =>
             dotEnv.TryGetValue(name, out var value) && !string.IsNullOrWhiteSpace(value) ? value : null;
 
+        // A directory from .env, with a relative path resolved against the repo root, where .env lives
+        string? DotEnvDirectory(string name) => DotEnvValue(name) is { } dir ? Path.GetFullPath(dir, repoRoot) : null;
+
+        // A directory the AppHost needs, created if it doesn't exist yet
+        string RequiredDirectory(string name, string purpose)
+        {
+            var dir = DotEnvDirectory(name)
+                ?? throw new InvalidOperationException($"Set {name} in .env to the directory {purpose}.");
+            Directory.CreateDirectory(dir);
+            return dir;
+        }
+
         var timeZone = DotEnvValue("TZ") ?? "America/New_York";
 
         // Chromium that watch scripts run on instead of a locally launched browser. The SDK connects with
@@ -28,15 +40,32 @@ public partial class Program
             .WithEnvironment("TIMEOUT", "180000")
             .WithEnvironment("TOKEN", browserlessToken)
             .WithHttpEndpoint(targetPort: 3000, name: "http");
-        // The SDK passes the URL's query on to browserless
-        var browserlessUrl = ReferenceExpression.Create($"{browserless.GetEndpoint("http")}?token={browserlessToken}");
+        // The Runner reaches it on the container network. The SDK passes the URL's query on to browserless.
+        var browserlessOnContainerNetwork = browserless.Resource.GetEndpoint("http", KnownNetworkIdentifiers.DefaultAspireContainerNetwork);
+        var browserlessUrl = ReferenceExpression.Create($"{browserlessOnContainerNetwork}?token={browserlessToken}");
 
         // A new key every time the AppHost starts; the Runner refuses requests without it, and only the Backend has it
         var runnerApiKey = AddGeneratedSecret(builder, "runner-api-key");
 
-        var runner = builder.AddProject<Projects.Runner>("runner")
+        // The Backend saves uploaded scripts there and the Runner runs them from there
+        var watchScriptsDir = RequiredDirectory(LookoutEnvironmentVariables.WatchScriptsDir, "watch scripts are kept in");
+
+        // Watch scripts are code, so the Runner runs in a container that can't see the rest of this machine: as the
+        // image's non-root user, with the scripts read-only, no .env or database, no Linux capabilities, and no way to
+        // gain privileges. Its root filesystem stays writable (though not by its user, outside /tmp and its home), since
+        // Aspire copies the development certificate in, which the Runner's telemetry needs. docs/security.md explains.
+        var runner = builder.AddDockerfile("runner", repoRoot, "src/Runner/Dockerfile")
+            .WithBindMount(watchScriptsDir, "/app/scripts", isReadOnly: true)
+            .WithContainerRuntimeArgs("--cap-drop=ALL", "--security-opt=no-new-privileges")
+            // Plain HTTP: this hop stays on this machine
+            .WithHttpEndpoint(targetPort: 8080, name: "http")
+            // Always Development, as the Runner's launch profile was: /health, which the AppHost polls, is only mapped there
+            .WithEnvironment("ASPNETCORE_ENVIRONMENT", "Development")
+            // Scripts' dates follow the configured time zone, not the container's UTC
+            .WithEnvironment("TZ", timeZone)
             .WithEnvironment(LookoutEnvironmentVariables.RunnerApiKey, runnerApiKey)
             .WithEnvironment(LookoutEnvironmentVariables.BrowserlessUrl, browserlessUrl)
+            .WithOtlpExporter()
             .WithHttpHealthCheck("/health")
             .WaitFor(browserless);
 
@@ -61,7 +90,8 @@ public partial class Program
         var backend = builder.AddProject<Projects.Backend>("backend")
             .WithEnvironment(LookoutEnvironmentVariables.OwnerUsername, ownerUsername)
             .WithEnvironment(LookoutEnvironmentVariables.OwnerPassword, ownerPassword)
-            .WithEnvironment(LookoutEnvironmentVariables.RunnerUrl, runner.GetEndpoint("https"))
+            .WithEnvironment(LookoutEnvironmentVariables.RunnerUrl, runner.GetEndpoint("http"))
+            .WithEnvironment(LookoutEnvironmentVariables.WatchScriptsDir, watchScriptsDir)
             .WithEnvironment(LookoutEnvironmentVariables.RunnerApiKey, runnerApiKey)
             .WithHttpHealthCheck("/health")
             .WaitFor(runner);
@@ -72,11 +102,7 @@ public partial class Program
         if (DotEnvValue("OPENVPN_USER") is { } openVpnUser && DotEnvValue("OPENVPN_PASSWORD") is { } openVpnPasswordValue)
         {
             // gluetun keeps its servers list there, and the Backend reads the list to know which regions exist
-            var gluetunDir = DotEnvValue(LookoutEnvironmentVariables.GluetunDir) is { } dir
-                ? Path.GetFullPath(dir, repoRoot)
-                : throw new InvalidOperationException(
-                    $"Set {LookoutEnvironmentVariables.GluetunDir} in .env to the directory gluetun keeps its data in.");
-            Directory.CreateDirectory(gluetunDir);
+            var gluetunDir = RequiredDirectory(LookoutEnvironmentVariables.GluetunDir, "gluetun keeps its data in");
 
             var openVpnPassword = builder.AddParameter("openvpn-password", openVpnPasswordValue, secret: true);
             // A new key every time the AppHost starts; only gluetun and the Backend need it
@@ -119,22 +145,10 @@ public partial class Program
                 .WithEnvironment(LookoutEnvironmentVariables.VpnProxyUrl, ProxyUrl(gluetun.GetEndpoint("proxy"), proxyPassword));
         }
 
-        // Directories, with a relative path resolved against the repo root, where .env lives
-        void ForwardDirectory(string name, params IResourceBuilder<ProjectResource>[] projects)
+        if (DotEnvDirectory(LookoutEnvironmentVariables.DatabaseDir) is { } databaseDir)
         {
-            if (dotEnv.TryGetValue(name, out var dir) && !string.IsNullOrWhiteSpace(dir))
-            {
-                var fullPath = Path.GetFullPath(dir, repoRoot);
-                foreach (var project in projects)
-                {
-                    project.WithEnvironment(name, fullPath);
-                }
-            }
+            backend.WithEnvironment(LookoutEnvironmentVariables.DatabaseDir, databaseDir);
         }
-
-        // The Backend saves uploaded scripts there and the Runner runs them from there
-        ForwardDirectory(LookoutEnvironmentVariables.WatchScriptsDir, backend, runner);
-        ForwardDirectory(LookoutEnvironmentVariables.DatabaseDir, backend);
 
         // Runs `npm run start` (ng serve) on its default port. The dev server forwards /api to the
         // Backend through proxy.conf.json, which targets the Backend's launch profile port (7070). Serving both from
