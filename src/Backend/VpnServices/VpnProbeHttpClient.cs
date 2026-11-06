@@ -71,7 +71,9 @@ internal static class VpnProbeHttpClientExtensions
 
         // A username without a password has an empty one, as in the watch SDK
         var credentials = proxyUrl.UserInfo.Split(':', 2) is [{ Length: > 0 } username, .. var rest]
-            ? new NetworkCredential(Uri.UnescapeDataString(username), Uri.UnescapeDataString(rest is [var password] ? password : ""))
+            ? new NetworkCredential(
+                Uri.UnescapeDataString(username),
+                Uri.UnescapeDataString(rest is [var password] ? password : ""))
             : null;
         var address = new UriBuilder(proxyUrl) { UserName = "", Password = "" }.Uri;
         return new WebProxy(address) { Credentials = credentials };
