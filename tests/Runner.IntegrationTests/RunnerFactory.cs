@@ -1,6 +1,10 @@
 using ChasePie.Lookout.Core;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Runner.IntegrationTests;
 
@@ -10,6 +14,11 @@ namespace Runner.IntegrationTests;
 internal sealed class RunnerFactory : WebApplicationFactory<global::Runner.Program>
 {
     public static readonly string ApiKey = new('k', RunnerApiKey.MinLength);
+
+    /// <summary>
+    /// The route pattern of the endpoint a request reached, on every response; absent if it reached none.
+    /// </summary>
+    public const string MatchedRouteHeader = "X-Test-Matched-Route";
 
     private readonly string _environment;
     private readonly string _scriptsDirectory = Directory.CreateTempSubdirectory("lookout-runner-tests-").FullName;
@@ -42,6 +51,7 @@ internal sealed class RunnerFactory : WebApplicationFactory<global::Runner.Progr
         builder.UseEnvironment(_environment);
         builder.UseSetting(LookoutEnvironmentVariables.WatchScriptsDir, _scriptsDirectory);
         builder.UseSetting(LookoutEnvironmentVariables.RunnerApiKey, ApiKey);
+        builder.ConfigureServices(services => services.AddTransient<IStartupFilter, MatchedRouteStartupFilter>());
     }
 
     protected override void Dispose(bool disposing)
@@ -51,5 +61,29 @@ internal sealed class RunnerFactory : WebApplicationFactory<global::Runner.Progr
         {
             Directory.Delete(_scriptsDirectory, recursive: true);
         }
+    }
+
+    /// <summary>
+    /// Adds <see cref="MatchedRouteHeader"/> to every response, so tests can tell which endpoint a request reached.
+    /// </summary>
+    private sealed class MatchedRouteStartupFilter : IStartupFilter
+    {
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
+        {
+            app.Use((context, nextMiddleware) =>
+            {
+                context.Response.OnStarting(() =>
+                {
+                    if (context.GetEndpoint() is RouteEndpoint endpoint)
+                    {
+                        context.Response.Headers[MatchedRouteHeader] = endpoint.RoutePattern.RawText;
+                    }
+
+                    return Task.CompletedTask;
+                });
+                return nextMiddleware(context);
+            });
+            next(app);
+        };
     }
 }

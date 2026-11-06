@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Backend.IntegrationTests;
@@ -23,6 +24,11 @@ internal sealed class LookoutFactory : WebApplicationFactory<Program>
     /// Requests with this header appear to come from the IP it holds, for testing per-client limits.
     /// </summary>
     public const string ClientIpHeader = "X-Test-Client-Ip";
+
+    /// <summary>
+    /// The route pattern of the endpoint a request reached, on every response; absent if it reached none.
+    /// </summary>
+    public const string MatchedRouteHeader = "X-Test-Matched-Route";
 
     private readonly string _environment;
     private readonly string _username;
@@ -111,7 +117,9 @@ internal sealed class LookoutFactory : WebApplicationFactory<Program>
         // Nothing listens there; runs aren't exercised
         builder.UseSetting(LookoutEnvironmentVariables.RunnerUrl, "http://127.0.0.1:9");
         builder.UseSetting(LookoutEnvironmentVariables.RunnerApiKey, new string('k', RunnerApiKey.MinLength));
-        builder.ConfigureServices(services => services.AddTransient<IStartupFilter, ClientIpStartupFilter>());
+        builder.ConfigureServices(services => services
+            .AddTransient<IStartupFilter, ClientIpStartupFilter>()
+            .AddTransient<IStartupFilter, MatchedRouteStartupFilter>());
     }
 
     protected override void Dispose(bool disposing)
@@ -141,6 +149,30 @@ internal sealed class LookoutFactory : WebApplicationFactory<Program>
                     context.Connection.RemoteIpAddress = IPAddress.Parse(ip.ToString());
                 }
 
+                return nextMiddleware(context);
+            });
+            next(app);
+        };
+    }
+
+    /// <summary>
+    /// Adds <see cref="MatchedRouteHeader"/> to every response, so tests can tell which endpoint a request reached.
+    /// </summary>
+    private sealed class MatchedRouteStartupFilter : IStartupFilter
+    {
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
+        {
+            app.Use((context, nextMiddleware) =>
+            {
+                context.Response.OnStarting(() =>
+                {
+                    if (context.GetEndpoint() is RouteEndpoint endpoint)
+                    {
+                        context.Response.Headers[MatchedRouteHeader] = endpoint.RoutePattern.RawText;
+                    }
+
+                    return Task.CompletedTask;
+                });
                 return nextMiddleware(context);
             });
             next(app);

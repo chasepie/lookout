@@ -88,11 +88,10 @@ public sealed partial class RunnerApiKeyTests
     {
         await using var factory = new RunnerFactory(environment);
         using var client = factory.CreateClient(apiKey: null);
-        using var clientWithKey = factory.CreateClient(RunnerFactory.ApiKey);
         var isDevelopment = environment == "Development";
 
         var checkedCount = 0;
-        foreach (var (key, method, path) in GetEndpoints(factory))
+        foreach (var (key, pattern, method, path) in GetEndpoints(factory))
         {
             if (isDevelopment && IsDevelopmentOnly(key))
             {
@@ -103,11 +102,9 @@ public sealed partial class RunnerApiKeyTests
             using var response = await client.SendAsync(request, Ct);
             Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode, $"{key} answered without the key");
 
-            // The fallback policy also answers 401 for a path that matches no endpoint, so check that the path reaches
-            // the endpoint: otherwise the check above proves nothing about it
-            using var requestWithKey = new HttpRequestMessage(new HttpMethod(method), path);
-            using var responseWithKey = await clientWithKey.SendAsync(requestWithKey, Ct);
-            Assert.AreNotEqual(HttpStatusCode.NotFound, responseWithKey.StatusCode, $"{path} doesn't reach {key}; fix ToPath");
+            // The fallback policy also answers 401 for a path that matches no endpoint, so a path that misses the
+            // endpoint would prove nothing about it
+            AssertReached(response, pattern, path, key);
             checkedCount++;
         }
 
@@ -139,9 +136,15 @@ public sealed partial class RunnerApiKeyTests
     }
 
     /// <summary>
-    /// Every routed endpoint as "METHOD pattern", with each method it accepts and a path that reaches it.
+    /// Every routed endpoint as "METHOD pattern", with its pattern, each method it accepts and a path meant to reach it.
     /// </summary>
-    private static IEnumerable<(string Key, string Method, string Path)> GetEndpoints(RunnerFactory factory)
+    private static void AssertReached(HttpResponseMessage response, string pattern, string path, string key) =>
+        Assert.AreEqual(
+            pattern,
+            response.Headers.TryGetValues(RunnerFactory.MatchedRouteHeader, out var matched) ? matched.Single() : null,
+            $"{path} doesn't reach {key}; fix ToPath");
+
+    private static IEnumerable<(string Key, string Pattern, string Method, string Path)> GetEndpoints(RunnerFactory factory)
     {
         // Creating the server builds the app, which maps the endpoints
         _ = factory.Server;
@@ -152,13 +155,13 @@ public sealed partial class RunnerApiKeyTests
             var methods = endpoint.Metadata.GetMetadata<HttpMethodMetadata>()?.HttpMethods;
             if (methods is null or { Count: 0 })
             {
-                yield return ($"* {pattern}", "GET", ToPath(pattern));
+                yield return ($"* {pattern}", pattern, "GET", ToPath(pattern));
                 continue;
             }
 
             foreach (var method in methods)
             {
-                yield return ($"{method} {pattern}", method, ToPath(pattern));
+                yield return ($"{method} {pattern}", pattern, method, ToPath(pattern));
             }
         }
     }
