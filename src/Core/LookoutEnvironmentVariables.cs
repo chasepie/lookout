@@ -3,7 +3,8 @@ using Microsoft.Extensions.Configuration;
 namespace ChasePie.Lookout.Core;
 
 /// <summary>
-/// Names of the environment variables the services read. The AppHost sets them; see <c>example.env</c>.
+/// Names of the environment variables the services read. The AppHost sets them all: the ones the user chooses come from
+/// <c>.env</c> and are listed in <c>example.env</c>; it works out or generates the rest.
 /// </summary>
 public static class LookoutEnvironmentVariables
 {

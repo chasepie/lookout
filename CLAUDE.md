@@ -27,7 +27,8 @@ generates a new control-server API key, and a new Runner API key, on each start.
 - `examples/`: example watch scripts built on the SDK.
 - `tests/`: MSTest projects for Backend and Runner.
 
-Environment variables are loaded from `.env`. See `example.env` for the keys.
+Environment variables are loaded from `.env`. `example.env` lists only the ones the user sets; leave out the ones the AppHost always sets itself, such as
+service URLs and generated keys. `LookoutEnvironmentVariables` names them all.
 
 The domain's terms are in `GLOSSARY.md`, and decisions that would surprise a reader are recorded in `docs/adr/`. How signing in, sessions and CSRF
 protection work, and the constraints they put on changes and deployment, are in `docs/security.md`: read it before changing anything in `Auth/`, the
