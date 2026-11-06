@@ -38,7 +38,11 @@ public partial class Program
         // A new key every time the AppHost starts; the Runner refuses requests without it, and only the Backend has it
         var runnerApiKey = builder.AddParameter(
             "runner-api-key",
-            new GenerateParameterDefault { MinLength = LookoutEnvironmentVariables.RunnerApiKeyMinLength, Special = false },
+            new GenerateParameterDefault
+            {
+                MinLength = LookoutEnvironmentVariables.RunnerApiKeyMinLength,
+                Special = false
+            },
             secret: true);
 
         var runner = builder.AddProject<Projects.Runner>("runner")

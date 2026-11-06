@@ -64,7 +64,9 @@ public class RunnerHttpClient(HttpClient httpClient)
         var configuration = services.GetRequiredService<IConfiguration>();
         client.BaseAddress = LookoutEnvironmentVariables.GetBaseUrl(configuration, LookoutEnvironmentVariables.RunnerUrl)
             ?? throw new InvalidOperationException($"Environment variable {LookoutEnvironmentVariables.RunnerUrl} must be set");
-        client.DefaultRequestHeaders.Add(RunnerApiKey.HeaderName, services.GetRequiredService<RunnerApiKey>().Value);
+        client.DefaultRequestHeaders.Add(
+            RunnerApiKey.HeaderName,
+            services.GetRequiredService<RunnerApiKey>().Value);
 
         // A run waits for the whole browser session; the 100-second default is too short.
         // On timeout the request is aborted, and the Runner stops the script.
