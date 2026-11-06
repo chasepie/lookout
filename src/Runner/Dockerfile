@@ -2,7 +2,7 @@
 # the repo root: docker build -f src/Runner/Dockerfile .
 # docs/security.md explains how it's locked down.
 
-ARG NODE_VERSION=26.13.0
+ARG NODE_VERSION=26
 
 # Node, copied into the runtime image
 FROM node:${NODE_VERSION}-bookworm-slim AS node
@@ -43,8 +43,8 @@ RUN dotnet publish src/Runner/Runner.csproj -c Release --no-restore -o /out
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
 # Node needs libatomic, which the ASP.NET image doesn't have
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libatomic1 \
-    && rm -rf /var/lib/apt/lists/*
+  && apt-get install -y --no-install-recommends libatomic1 \
+  && rm -rf /var/lib/apt/lists/*
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 WORKDIR /app
 COPY --from=node-modules /src/package.json ./
@@ -53,7 +53,7 @@ COPY --from=watch-sdk /src/src/watch-sdk/package.json src/watch-sdk/
 COPY --from=watch-sdk /src/src/watch-sdk/dist src/watch-sdk/dist/
 COPY --from=runner /out runner/
 ENV LOOKOUT_WATCH_CLI_ROOT=/app \
-    LOOKOUT_WATCH_SCRIPTS_DIR=/app/scripts
+  LOOKOUT_WATCH_SCRIPTS_DIR=/app/scripts
 # The non-root user the .NET images provide
 USER $APP_UID
 ENTRYPOINT ["dotnet", "/app/runner/Runner.dll"]
