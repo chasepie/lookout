@@ -23,6 +23,17 @@ public sealed class VpnProbeHttpClientTests
     }
 
     [TestMethod]
+    public async Task SendsAnEmptyPasswordWhenTheProxyUrlHasOnlyAUsername()
+    {
+        using var proxy = new FakeProxy();
+        await using var provider = CreateServices(new Uri($"http://lookout@127.0.0.1:{proxy.Port}/"));
+
+        await provider.GetRequiredService<VpnProbeHttpClient>().TryGetPublicIpAsync(TestContext.CancellationToken);
+
+        Assert.AreEqual("Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes("lookout:")), proxy.Authorization);
+    }
+
+    [TestMethod]
     public async Task SendsNoCredentialsWhenTheProxyUrlHasNone()
     {
         using var proxy = new FakeProxy();

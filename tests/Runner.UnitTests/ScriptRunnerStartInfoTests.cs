@@ -9,21 +9,36 @@ namespace ChasePie.Lookout.Runner.UnitTests;
 [DoNotParallelize]
 public sealed class ScriptRunnerStartInfoTests
 {
-    private const string ProxyUrl = "http://lookout:secret@gluetun:8888";
+    private const string ProxyPassword = "secret";
+    private const string ProxyUrl = $"http://lookout:{ProxyPassword}@gluetun:8888";
 
-    // What the Runner's own environment holds when the AppHost starts it
+    // What the Runner's own environment holds when the AppHost starts it, plus a CLI proxy left over from a shell
+    private static readonly Dictionary<string, string> RunnerEnvironment = new()
+    {
+        [LookoutEnvironmentVariables.VpnProxyUrl] = ProxyUrl,
+        [LookoutEnvironmentVariables.RunnerApiKey] = new string('k', RunnerApiKey.MinLength),
+        [ScriptRunner.CliProxyUrlVariable] = ProxyUrl,
+    };
+
+    private static readonly Dictionary<string, string?> PreviousEnvironment = [];
+
     [ClassInitialize]
     public static void SetRunnerEnvironment(TestContext _)
     {
-        Environment.SetEnvironmentVariable(LookoutEnvironmentVariables.VpnProxyUrl, ProxyUrl);
-        Environment.SetEnvironmentVariable(LookoutEnvironmentVariables.RunnerApiKey, new string('k', RunnerApiKey.MinLength));
+        foreach (var (name, value) in RunnerEnvironment)
+        {
+            PreviousEnvironment[name] = Environment.GetEnvironmentVariable(name);
+            Environment.SetEnvironmentVariable(name, value);
+        }
     }
 
     [ClassCleanup]
-    public static void ResetRunnerEnvironment()
+    public static void RestoreEnvironment()
     {
-        Environment.SetEnvironmentVariable(LookoutEnvironmentVariables.VpnProxyUrl, null);
-        Environment.SetEnvironmentVariable(LookoutEnvironmentVariables.RunnerApiKey, null);
+        foreach (var (name, value) in PreviousEnvironment)
+        {
+            Environment.SetEnvironmentVariable(name, value);
+        }
     }
 
     private static ProcessStartInfo Create(string? proxyUrl) =>
@@ -34,9 +49,12 @@ public sealed class ScriptRunnerStartInfoTests
     {
         var startInfo = Create(ProxyUrl);
 
-        Assert.AreEqual(ProxyUrl, startInfo.Environment[LookoutEnvironmentVariables.VpnProxyUrl]);
-        Assert.DoesNotContain(ProxyUrl, startInfo.ArgumentList);
-        Assert.DoesNotContain("--proxy", startInfo.ArgumentList);
+        Assert.AreEqual(ProxyUrl, startInfo.Environment[ScriptRunner.CliProxyUrlVariable]);
+        Assert.IsFalse(startInfo.Environment.ContainsKey(LookoutEnvironmentVariables.VpnProxyUrl));
+        foreach (var argument in startInfo.ArgumentList)
+        {
+            Assert.DoesNotContain(ProxyPassword, argument);
+        }
     }
 
     [TestMethod]
@@ -44,8 +62,8 @@ public sealed class ScriptRunnerStartInfoTests
     {
         var startInfo = Create(proxyUrl: null);
 
+        Assert.IsFalse(startInfo.Environment.ContainsKey(ScriptRunner.CliProxyUrlVariable));
         Assert.IsFalse(startInfo.Environment.ContainsKey(LookoutEnvironmentVariables.VpnProxyUrl));
-        Assert.DoesNotContain("--proxy", startInfo.ArgumentList);
     }
 
     [TestMethod]

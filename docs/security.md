@@ -125,12 +125,18 @@ secret that the AppHost generates on each start:
 | Container | Secret | Who has it |
 | --- | --- | --- |
 | browserless | `browserless-token`, in the `token` query parameter of `LOOKOUT_BROWSERLESS_URL` | browserless and the Runner |
-| gluetun's HTTP proxy | `gluetun-proxy-password`, for the username `lookout`, in `LOOKOUT_VPN_PROXY_URL` | gluetun, the Runner and the Backend |
+| gluetun's HTTP proxy | `gluetun-proxy-password`, for the username `lookout`, in `LOOKOUT_VPN_PROXY_URL` | gluetun, the Runner and the Backend; see below |
 | gluetun's control server | `gluetun-api-key`, in `X-API-Key` | gluetun and the Backend |
 
-The proxy URL holds its password, so the Runner hands it to the watch CLI in the environment, not on the command line, which any user on the machine can
-list. Only runs that use the VPN get it. Like the Runner key, it doesn't keep the secrets from a watch script: the browserless URL and, for VPN runs, the
-proxy URL are in the script's environment, since the CLI needs them.
+The proxy URL holds its password, so the Runner hands it to the watch CLI in `LOOKOUT_WATCH_PROXY_URL`, not on the command line, which any user on the
+machine can list. Only runs that use the VPN get it. Like the Runner key, it doesn't keep the secrets from a watch script: the browserless URL and, for VPN
+runs, the proxy URL are in the script's environment, since the CLI needs them.
+
+**Websites in VPN runs can be sent the proxy password.** Playwright gives Chromium the proxy's credentials as credentials for every site, so a page or
+subresource that answers `401` with a Basic challenge during a VPN run is sent `lookout` and the password. It also makes Playwright intercept every request
+in VPN runs and turn off the HTTP cache. We accept both: the password is only useful to something that can already reach the proxy, which stays off the LAN
+and the internet, and the watches, and so the sites VPN runs visit, are the Owner's. Revisit this if Playwright starts telling proxy challenges from site
+challenges, or if VPN runs become too slow; a small proxy in front of gluetun that adds the credentials itself would avoid both.
 
 ## CSRF
 

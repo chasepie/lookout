@@ -13,6 +13,12 @@ public partial class ScriptRunner(
     // How long a cancelled script gets to abort and close its browser before the process is killed
     private static readonly TimeSpan CancelGracePeriod = TimeSpan.FromSeconds(5);
 
+    /// <summary>
+    /// The variable the watch CLI reads its proxy from. Only the Runner sets it, and only for runs that use the VPN, so a
+    /// shell that happens to have <c>LOOKOUT_VPN_PROXY_URL</c> doesn't send direct CLI runs through the VPN.
+    /// </summary>
+    internal const string CliProxyUrlVariable = "LOOKOUT_WATCH_PROXY_URL";
+
     // How many trailing stderr lines to include when the CLI fails
     private const int StderrTailLines = 20;
 
@@ -199,14 +205,16 @@ public partial class ScriptRunner(
         processStartInfo.ArgumentList.Add(outputPath);
 
         // The CLI reads the proxy from the environment rather than its command line, which any user on the machine
-        // can list, since the URL holds the proxy's password. A run without the VPN must not inherit it.
+        // can list, since the URL holds the proxy's password. Only a run that uses the VPN gets it, and none gets the
+        // Runner's own copy.
+        processStartInfo.Environment.Remove(LookoutEnvironmentVariables.VpnProxyUrl);
         if (proxyUrl is null)
         {
-            processStartInfo.Environment.Remove(LookoutEnvironmentVariables.VpnProxyUrl);
+            processStartInfo.Environment.Remove(CliProxyUrlVariable);
         }
         else
         {
-            processStartInfo.Environment[LookoutEnvironmentVariables.VpnProxyUrl] = proxyUrl;
+            processStartInfo.Environment[CliProxyUrlVariable] = proxyUrl;
         }
 
         return processStartInfo;

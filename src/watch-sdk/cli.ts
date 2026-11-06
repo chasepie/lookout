@@ -81,8 +81,8 @@ program
   .addOption(new Option('--browserless <url>', 'run the browser on this browserless server instead of launching Chromium locally')
     .env('LOOKOUT_BROWSERLESS_URL'))
   // The Runner passes the VPN proxy in the environment, since the URL holds its password and command lines aren't private
-  .addOption(new Option('--proxy <url>', 'send all browser traffic through this HTTP proxy, such as http://user:password@host:8888')
-    .env('LOOKOUT_VPN_PROXY_URL'))
+  .addOption(new Option('--proxy <url>', 'send all browser traffic through this proxy, such as http://user:password@host:8888')
+    .env('LOOKOUT_WATCH_PROXY_URL'))
   .action(async (scriptPath: string, options: RunCommandOptions) => {
     await runCommandAction(scriptPath, options);
   });

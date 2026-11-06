@@ -74,7 +74,8 @@ export function getBrowserlessEndpoint(browserlessUrl: string, launchOptions: Pi
  * separately.
  */
 export function getProxySettings(proxyUrl: string): NonNullable<BrowserContextOptions['proxy']> {
-  const url = new URL(proxyUrl);
+  // Playwright takes `host:port` as an HTTP proxy, and so does this
+  const url = new URL(/^[a-z][a-z\d+.-]*:\/\//i.test(proxyUrl) ? proxyUrl : `http://${proxyUrl}`);
   let username: string;
   let password: string;
   try {

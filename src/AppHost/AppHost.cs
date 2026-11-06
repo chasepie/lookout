@@ -157,8 +157,8 @@ public partial class Program
     // The username for gluetun's HTTP proxy; only the password needs to be secret
     private const string ProxyUsername = "lookout";
 
-    // The length of every generated secret. It must be at least the Runner API key's minimum, which the Backend and the
-    // Runner check.
+    // The length of every generated secret, unless the Runner API key's minimum, which the Backend and the Runner
+    // check, is longer
     private const int GeneratedSecretLength = 32;
 
     /// <summary>
@@ -168,7 +168,11 @@ public partial class Program
     private static IResourceBuilder<ParameterResource> AddGeneratedSecret(IDistributedApplicationBuilder builder, string name) =>
         builder.AddParameter(
             name,
-            new GenerateParameterDefault { MinLength = GeneratedSecretLength, Special = false },
+            new GenerateParameterDefault
+            {
+                MinLength = Math.Max(GeneratedSecretLength, LookoutEnvironmentVariables.RunnerApiKeyMinLength),
+                Special = false,
+            },
             secret: true);
 
     /// <summary>
