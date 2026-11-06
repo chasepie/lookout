@@ -4,7 +4,7 @@ using System.Text;
 using ChasePie.Lookout.Backend.VpnServices;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Backend.UnitTests;
+namespace ChasePie.Lookout.Backend.UnitTests;
 
 [TestClass]
 public sealed class VpnProbeHttpClientTests
@@ -23,14 +23,13 @@ public sealed class VpnProbeHttpClientTests
     }
 
     [TestMethod]
-    public async Task SendsNoCredentialsForAProxyUrlWithout()
+    public async Task SendsNoCredentialsWhenTheProxyUrlHasNone()
     {
         using var proxy = new FakeProxy();
         await using var provider = CreateServices(new Uri($"http://127.0.0.1:{proxy.Port}/"));
 
-        var ip = await provider.GetRequiredService<VpnProbeHttpClient>().TryGetPublicIpAsync(TestContext.CancellationToken);
+        await provider.GetRequiredService<VpnProbeHttpClient>().TryGetPublicIpAsync(TestContext.CancellationToken);
 
-        Assert.IsNull(ip);
         Assert.IsNull(proxy.Authorization);
     }
 

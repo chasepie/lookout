@@ -75,10 +75,19 @@ export function getBrowserlessEndpoint(browserlessUrl: string, launchOptions: Pi
  */
 export function getProxySettings(proxyUrl: string): NonNullable<BrowserContextOptions['proxy']> {
   const url = new URL(proxyUrl);
-  const username = decodeURIComponent(url.username);
-  const password = decodeURIComponent(url.password);
+  let username: string;
+  let password: string;
+  try {
+    username = decodeURIComponent(url.username);
+    password = decodeURIComponent(url.password);
+  } catch {
+    // The URL holds the password, so it stays out of the message
+    throw new Error('The proxy URL\'s username or password has an invalid percent-encoding (a % not followed by two hex digits).');
+  }
+
   return {
-    server: url.origin,
+    // Not url.origin, which is "null" for schemes such as socks5:
+    server: `${url.protocol}//${url.host}`,
     ...(username === '' ? {} : { username }),
     ...(password === '' ? {} : { password }),
   };

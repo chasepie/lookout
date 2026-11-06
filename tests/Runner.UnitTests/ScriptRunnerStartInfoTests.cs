@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using ChasePie.Lookout.Core;
 using ChasePie.Lookout.Runner.Services;
 
@@ -18,7 +19,14 @@ public sealed class ScriptRunnerStartInfoTests
         Environment.SetEnvironmentVariable(LookoutEnvironmentVariables.RunnerApiKey, new string('k', RunnerApiKey.MinLength));
     }
 
-    private static System.Diagnostics.ProcessStartInfo Create(string? proxyUrl) =>
+    [ClassCleanup]
+    public static void ResetRunnerEnvironment()
+    {
+        Environment.SetEnvironmentVariable(LookoutEnvironmentVariables.VpnProxyUrl, null);
+        Environment.SetEnvironmentVariable(LookoutEnvironmentVariables.RunnerApiKey, null);
+    }
+
+    private static ProcessStartInfo Create(string? proxyUrl) =>
         ScriptRunner.CreateStartInfo("/repo/cli.js", "/scripts/watch.ts", "/tmp/out.json", proxyUrl);
 
     [TestMethod]
