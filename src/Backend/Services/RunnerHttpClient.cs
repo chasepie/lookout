@@ -56,13 +56,15 @@ public class RunnerHttpClient(HttpClient httpClient)
     }
 
     /// <summary>
-    /// Configures the client's base address from the <c>LOOKOUT_RUNNER_URL</c> environment variable.
+    /// Configures the client's base address from the <c>LOOKOUT_RUNNER_URL</c> environment variable, and has it send
+    /// the <see cref="RunnerApiKey"/> on every request.
     /// </summary>
-    internal static void Configure(IServiceProvider services, HttpClient client)
+    public static void Configure(IServiceProvider services, HttpClient client)
     {
         var configuration = services.GetRequiredService<IConfiguration>();
         client.BaseAddress = LookoutEnvironmentVariables.GetBaseUrl(configuration, LookoutEnvironmentVariables.RunnerUrl)
             ?? throw new InvalidOperationException($"Environment variable {LookoutEnvironmentVariables.RunnerUrl} must be set");
+        client.DefaultRequestHeaders.Add(RunnerApiKey.HeaderName, services.GetRequiredService<RunnerApiKey>().Value);
 
         // A run waits for the whole browser session; the 100-second default is too short.
         // On timeout the request is aborted, and the Runner stops the script.

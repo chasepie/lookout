@@ -1,5 +1,6 @@
 
 using ChasePie.Lookout.Core;
+using ChasePie.Lookout.Runner.Auth;
 using ChasePie.Lookout.Runner.Services;
 using dotenv.net.Configuration;
 using Scalar.AspNetCore;
@@ -23,8 +24,9 @@ public class Program
 
     private static void ConfigureServices(IServiceCollection services, IConfiguration configuration)
     {
+        services.AddRunnerApiKeyAuthentication(configuration);
         services.AddControllers();
-        services.AddOpenApi();
+        services.AddOpenApi(options => options.AddDocumentTransformer<RunnerApiKeyDocumentTransformer>());
         // Resolved here so a missing setting stops startup instead of failing each run
         services.AddSingleton(WatchScriptsDirectory.FromConfiguration(configuration));
         services.AddScoped<ScriptRunner>();
@@ -34,11 +36,15 @@ public class Program
     {
         if (app.Environment.IsDevelopment())
         {
-            app.MapOpenApi();
-            app.MapScalarApiReference("/api-docs");
+            // Open, but requests made from Scalar still need the key; see docs/security.md
+            app.MapOpenApi().AllowAnonymous();
+            app.MapScalarApiReference("/api-docs", options => options
+                .AddPreferredSecuritySchemes(RunnerApiKeyDocumentTransformer.SchemeName))
+                .AllowAnonymous();
         }
 
         app.UseHttpsRedirection();
+        app.UseAuthentication();
         app.UseAuthorization();
         app.MapControllers();
         app.MapDefaultEndpoints();

@@ -110,6 +110,7 @@ internal sealed class LookoutFactory : WebApplicationFactory<Program>
         builder.UseSetting(LookoutEnvironmentVariables.WatchScriptsDir, Path.Join(DataDirectory, "scripts"));
         // Nothing listens there; runs aren't exercised
         builder.UseSetting(LookoutEnvironmentVariables.RunnerUrl, "http://127.0.0.1:9");
+        builder.UseSetting(LookoutEnvironmentVariables.RunnerApiKey, new string('k', RunnerApiKey.MinLength));
         builder.ConfigureServices(services => services.AddTransient<IStartupFilter, ClientIpStartupFilter>());
     }
 

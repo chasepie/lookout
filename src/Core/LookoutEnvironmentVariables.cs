@@ -23,6 +23,17 @@ public static class LookoutEnvironmentVariables
     public const string RunnerUrl = "LOOKOUT_RUNNER_URL";
 
     /// <summary>
+    /// The key the Backend sends the Runner, and without which the Runner refuses requests. Both require it, at least
+    /// <see cref="RunnerApiKeyMinLength"/> characters. The AppHost generates a new one on each start.
+    /// </summary>
+    public const string RunnerApiKey = "LOOKOUT_RUNNER_API_KEY";
+
+    /// <summary>
+    /// The shortest <see cref="RunnerApiKey"/> the Backend and the Runner accept.
+    /// </summary>
+    public const int RunnerApiKeyMinLength = 32;
+
+    /// <summary>
     /// The browserless container's base URL, used by the Runner.
     /// </summary>
     public const string BrowserlessUrl = "LOOKOUT_BROWSERLESS_URL";

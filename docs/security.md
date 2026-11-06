@@ -6,7 +6,8 @@ constraints that must stay true as Lookout changes. Terms such as **Owner** are 
 ## Threat model
 
 Uploading a watch script is the same as running code on the Runner's host: the Runner executes it with Node. So anyone who can use the API can read the
-`.env` file, the database and anything else the Runner's user can reach. Everything below exists to make sure only the Owner can use the API.
+`.env` file, the database and anything else the Runner's user can reach. Everything below exists to make sure only the Owner can use the API, and only
+the Backend can ask the Runner to run a script.
 
 Lookout runs on a LAN or tailnet today, but it's designed as if it were exposed to the internet. It defends against:
 
@@ -92,6 +93,25 @@ and isn't on its allow-list.
 Routes under `/api` are left to routing, never the frontend's page: an unknown one answers `404` to the Owner and `401` to anyone else, and a known one called
 with the wrong method answers `405`. `index.html` is sent with `Cache-Control: no-cache`, so a rebuilt frontend is picked up straight away, and the
 content-hashed bundles are cached for good.
+
+## The Runner
+
+The Runner runs any script in the scripts directory that it's asked to, so asking it directly would skip signing in. Two things stop that:
+
+- **The Runner must not be reachable from outside.** Only the Backend calls it. The AppHost runs it on this machine, and a deployment must keep its port off
+  the LAN and the internet, just like browserless's and gluetun's. This is the real protection.
+- **It requires a key.** The AppHost generates `LOOKOUT_RUNNER_API_KEY` on each start and gives it to the Backend and the Runner only. The Backend sends it
+  in `X-API-Key`, and the Runner answers `401` to any request without it, compared in constant time. Like the Backend's sign-in, a fallback policy
+  requires it on every endpoint that doesn't say otherwise, and `RunnerApiKeyTests` fails if a new endpoint answers without it. Both services refuse to
+  start without a key of at least 32 characters, so the check can't be turned off by forgetting to set it. Outside the AppHost, give both the same key.
+
+The key is defence in depth, for when something else on the network can reach the Runner's port. It doesn't help against a watch script: scripts run with
+the Runner's environment, key included.
+
+| Runner endpoint | Open because |
+| --- | --- |
+| Development only: `/health`, `/alive` | The AppHost polls them without the key |
+| Development only: `/openapi/*`, `/api-docs` (Scalar) | So the API can be explored; requests made from Scalar still need the key, which the Aspire dashboard shows under the `runner-api-key` parameter |
 
 ## CSRF
 
