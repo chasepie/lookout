@@ -38,15 +38,26 @@ public sealed class RunnerApiKey
     public static RunnerApiKey FromConfiguration(IConfiguration configuration)
     {
         var value = configuration[LookoutEnvironmentVariables.RunnerApiKey];
-        if (string.IsNullOrWhiteSpace(value) || value.Length < MinLength)
+        if (string.IsNullOrWhiteSpace(value))
         {
-            throw new InvalidOperationException(
-                $"Environment variable {LookoutEnvironmentVariables.RunnerApiKey} must be set to a key of at least "
-                + $"{MinLength} characters. The AppHost generates one; outside it, set the same key for the Backend "
-                + "and the Runner.");
+            throw NotSet(null);
         }
 
-        return new RunnerApiKey(value);
+        try
+        {
+            return new RunnerApiKey(value);
+        }
+        catch (ArgumentException ex) when (ex.ParamName == nameof(value))
+        {
+            // The constructor holds the rules; this only names the variable to fix
+            throw NotSet(ex);
+        }
+
+        static InvalidOperationException NotSet(Exception? innerException) => new(
+            $"Environment variable {LookoutEnvironmentVariables.RunnerApiKey} must be set to a key of at least "
+            + $"{MinLength} characters. The AppHost generates one; outside it, set the same key for the Backend "
+            + "and the Runner.",
+            innerException);
     }
 
     /// <summary>

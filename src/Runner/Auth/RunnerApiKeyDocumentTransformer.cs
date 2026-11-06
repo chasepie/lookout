@@ -10,7 +10,7 @@ namespace ChasePie.Lookout.Runner.Auth;
 /// </summary>
 public sealed class RunnerApiKeyDocumentTransformer : IOpenApiDocumentTransformer
 {
-    public const string SchemeName = "RunnerApiKey";
+    public const string OpenApiSchemeName = "RunnerApiKey";
 
     public Task TransformAsync(
         OpenApiDocument document,
@@ -19,7 +19,7 @@ public sealed class RunnerApiKeyDocumentTransformer : IOpenApiDocumentTransforme
     {
         document.Components ??= new OpenApiComponents();
         document.Components.SecuritySchemes ??= new Dictionary<string, IOpenApiSecurityScheme>();
-        document.Components.SecuritySchemes[SchemeName] = new OpenApiSecurityScheme
+        document.Components.SecuritySchemes[OpenApiSchemeName] = new OpenApiSecurityScheme
         {
             Type = SecuritySchemeType.ApiKey,
             In = ParameterLocation.Header,
@@ -32,7 +32,7 @@ public sealed class RunnerApiKeyDocumentTransformer : IOpenApiDocumentTransforme
         document.Security ??= [];
         document.Security.Add(new OpenApiSecurityRequirement
         {
-            [new OpenApiSecuritySchemeReference(SchemeName, document)] = [],
+            [new OpenApiSecuritySchemeReference(OpenApiSchemeName, document)] = [],
         });
         return Task.CompletedTask;
     }

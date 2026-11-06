@@ -30,11 +30,16 @@ public sealed class RunnerApiKeyTests
         Assert.AreEqual(Key, apiKey.Value);
     }
 
+    public static IEnumerable<object?[]> MissingOrShortKeys =>
+    [
+        [null],
+        [""],
+        [new string(' ', RunnerApiKey.MinLength)],
+        [new string('k', RunnerApiKey.MinLength - 1)],
+    ];
+
     [TestMethod]
-    [DataRow(null)]
-    [DataRow("")]
-    [DataRow("   ")]
-    [DataRow("kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk")]
+    [DynamicData(nameof(MissingOrShortKeys))]
     public void RefusesAMissingOrShortKey(string? value)
     {
         var ex = Assert.ThrowsExactly<InvalidOperationException>(() => RunnerApiKey.FromConfiguration(Configuration(value)));

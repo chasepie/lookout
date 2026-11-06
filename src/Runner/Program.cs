@@ -39,7 +39,7 @@ public class Program
             // Open, but requests made from Scalar still need the key; see docs/security.md
             app.MapOpenApi().AllowAnonymous();
             app.MapScalarApiReference("/api-docs", options => options
-                .AddPreferredSecuritySchemes(RunnerApiKeyDocumentTransformer.SchemeName))
+                .AddPreferredSecuritySchemes(RunnerApiKeyDocumentTransformer.OpenApiSchemeName))
                 .AllowAnonymous();
         }
 

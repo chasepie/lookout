@@ -45,12 +45,19 @@ public sealed partial class RunnerApiKeyTests
         Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
+    // Keys that differ from RunnerFactory.ApiKey only slightly, or not at all in length
+    public static IEnumerable<object?[]> WrongKeys =>
+    [
+        [null],
+        [""],
+        ["wrong"],
+        [RunnerFactory.ApiKey[..^1] + "K"],
+        [RunnerFactory.ApiKey + "k"],
+        [RunnerFactory.ApiKey[..^1]],
+    ];
+
     [TestMethod]
-    [DataRow(null, DisplayName = "No key")]
-    [DataRow("", DisplayName = "Empty key")]
-    [DataRow("wrong", DisplayName = "Short wrong key")]
-    [DataRow("kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkK", DisplayName = "Same length, last character differs")]
-    [DataRow("kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk", DisplayName = "The key with a character added")]
+    [DynamicData(nameof(WrongKeys))]
     public async Task ARunWithoutTheKeyIsRefused(string? apiKey)
     {
         await using var factory = new RunnerFactory();

@@ -111,7 +111,9 @@ the Runner's environment, key included.
 | Runner endpoint | Open because |
 | --- | --- |
 | Development only: `/health`, `/alive` | The AppHost polls them without the key |
-| Development only: `/openapi/*`, `/api-docs` (Scalar) | So the API can be explored; requests made from Scalar still need the key, which the Aspire dashboard shows under the `runner-api-key` parameter |
+| Development only: `/openapi/*`, `/api-docs` (Scalar) | So the API can be explored; requests made from Scalar still need the key |
+
+To call the Runner from Scalar, copy the key from the `runner-api-key` parameter in the Aspire dashboard.
 
 ## CSRF
 
