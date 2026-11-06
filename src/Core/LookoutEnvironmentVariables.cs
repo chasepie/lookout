@@ -3,8 +3,9 @@ using Microsoft.Extensions.Configuration;
 namespace ChasePie.Lookout.Core;
 
 /// <summary>
-/// Names of the environment variables the services read. The AppHost sets them all: the ones the user chooses come from
-/// <c>.env</c> and are listed in <c>example.env</c>; it works out or generates the rest.
+/// Names of the environment variables the services read. The AppHost sets them all, except <see cref="WatchCliRoot"/>,
+/// which the Runner's image sets: the ones the user chooses come from <c>.env</c> and are listed in <c>example.env</c>; it
+/// works out or generates the rest.
 /// </summary>
 public static class LookoutEnvironmentVariables
 {
@@ -33,6 +34,12 @@ public static class LookoutEnvironmentVariables
     /// The shortest <see cref="RunnerApiKey"/> the Backend and the Runner accept.
     /// </summary>
     public const int RunnerApiKeyMinLength = 32;
+
+    /// <summary>
+    /// The directory whose <c>node_modules</c> holds the watch SDK and Playwright, which the Runner runs scripts with.
+    /// The Runner's image sets it; without it, the Runner uses the repo root.
+    /// </summary>
+    public const string WatchCliRoot = "LOOKOUT_WATCH_CLI_ROOT";
 
     /// <summary>
     /// The browserless container's base URL, used by the Runner, with browserless's token in its <c>token</c> query

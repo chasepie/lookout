@@ -11,16 +11,18 @@ it: they sign in with `LOOKOUT_OWNER_USERNAME` and `LOOKOUT_OWNER_PASSWORD` (`Au
 `Database/Migrations`: after changing the model, run `dotnet tool restore` once, then
 `dotnet ef migrations add <Name> --project src/Backend --output-dir Database/Migrations`. In Development, `DevelopmentDataSeeder` gives a database with no
 watches one watch per script in `examples/`.
-- `src/Runner/`: ASP.NET Core service that runs watch scripts.
+- `src/Runner/`: ASP.NET Core service that runs watch scripts, sandboxed with Node's permission model in a container built from `src/Runner/Dockerfile`
+(see `docs/security.md`). Without the AppHost it needs `LOOKOUT_BROWSERLESS_URL`, and finds the watch CLI through the repo root.
 - `src/Core/`: types shared by Backend, Runner and AppHost: the C# records, the environment variable names (`LookoutEnvironmentVariables`), the watch scripts
 directory (`WatchScriptsDirectory`), the key the Backend authenticates to the Runner with (`RunnerApiKey`) and the repo root lookup (`RepoRoot`).
-- `src/AppHost/`: Aspire AppHost. `dotnet run --project src/AppHost` starts Runner, Backend, the frontend and browserless (Chromium for watch runs) and, when
-the OpenVPN credentials are in `.env`, gluetun (the VPN proxy for watches with `UseVpn`). It sets `LOOKOUT_RUNNER_URL`, `LOOKOUT_GLUETUN_URL`,
-`LOOKOUT_GLUETUN_API_KEY` and `LOOKOUT_VPN_PROXY_URL` for Backend, `LOOKOUT_BROWSERLESS_URL` and `LOOKOUT_VPN_PROXY_URL` for Runner, and
-`LOOKOUT_RUNNER_API_KEY` for both, forwards the directory settings from `.env` (relative paths resolve against the repo root), and opens the Aspire
-dashboard. It also forwards the Owner's `LOOKOUT_OWNER_USERNAME` and
-`LOOKOUT_OWNER_PASSWORD` from `.env` to Backend, and refuses to start without them. It bind-mounts `LOOKOUT_GLUETUN_DIR` as gluetun's data directory and
-generates new secrets on each start: gluetun's control-server API key and proxy password, the Runner API key and the browserless token.
+- `src/AppHost/`: Aspire AppHost. `dotnet run --project src/AppHost` (which needs Docker) starts Runner, Backend, the frontend and browserless (Chromium
+for watch runs) and, when the OpenVPN credentials are in `.env`, gluetun (the VPN proxy for watches with `UseVpn`). It builds the Runner's container from
+`src/Runner/Dockerfile` and mounts the scripts directory into it read-only. It sets `LOOKOUT_RUNNER_URL`, `LOOKOUT_GLUETUN_URL`, `LOOKOUT_GLUETUN_API_KEY`
+and `LOOKOUT_VPN_PROXY_URL` for Backend, `LOOKOUT_BROWSERLESS_URL` and `LOOKOUT_VPN_PROXY_URL` for Runner, and `LOOKOUT_RUNNER_API_KEY` for both, forwards
+the directory settings from `.env` (relative paths resolve against the repo root), and opens the Aspire dashboard. It also forwards the Owner's
+`LOOKOUT_OWNER_USERNAME` and `LOOKOUT_OWNER_PASSWORD` from `.env` to Backend, and refuses to start without them. It bind-mounts `LOOKOUT_GLUETUN_DIR` as
+gluetun's data directory and generates new secrets on each start: gluetun's control-server API key and proxy password, the Runner API key and the
+browserless token.
 - `src/ServiceDefaults/`: shared Aspire setup (OpenTelemetry, health checks, service discovery) referenced by Backend and Runner.
 - `src/watch-sdk/`: TypeScript SDK and CLI (Playwright-based) for writing watch scripts.
 - `src/frontend/`: Angular web UI. Its conventions are in `src/frontend/CLAUDE.md`.

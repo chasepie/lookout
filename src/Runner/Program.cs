@@ -29,6 +29,7 @@ public class Program
         services.AddOpenApi(options => options.AddDocumentTransformer<RunnerApiKeyDocumentTransformer>());
         // Resolved here so a missing setting stops startup instead of failing each run
         services.AddSingleton(WatchScriptsDirectory.FromConfiguration(configuration));
+        services.AddSingleton(WatchCli.FromConfiguration(configuration, Directory.GetCurrentDirectory()));
         services.AddScoped<ScriptRunner>();
     }
 
@@ -43,7 +44,6 @@ public class Program
                 .AllowAnonymous();
         }
 
-        app.UseHttpsRedirection();
         app.UseAuthentication();
         app.UseAuthorization();
         app.MapControllers();

@@ -64,6 +64,10 @@ jobs:
       - name: Build .NET
         run: dotnet build Lookout.slnx -c Release --no-restore
 
+      # The AppHost runs the Runner from this image, so a broken Dockerfile should fail here rather than on startup
+      - name: Build Runner image
+        run: docker build -f src/Runner/Dockerfile .
+
       - name: Test .NET
         id: test-dotnet
         run: >

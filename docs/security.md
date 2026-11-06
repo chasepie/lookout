@@ -5,9 +5,9 @@ constraints that must stay true as Lookout changes. Terms such as **Owner** are 
 
 ## Threat model
 
-Uploading a watch script is the same as running code on the Runner's host: the Runner executes it with Node. So anyone who can use the API can read the
-`.env` file, the database and anything else the Runner's user can reach. Everything below exists to make sure only the Owner can use the API, and only
-the Backend can ask the Runner to run a script.
+Uploading a watch script is running code: the Runner executes it with Node. [Watch scripts](#watch-scripts) limits what that code can reach, but it can
+still drive the browser anywhere and use the network. Everything below exists to make sure only the Owner can use the API, and only the Backend can ask the
+Runner to run a script.
 
 Lookout runs on a LAN or tailnet today, but it's designed as if it were exposed to the internet. It defends against:
 
@@ -16,8 +16,9 @@ Lookout runs on a LAN or tailnet today, but it's designed as if it were exposed 
   another dev server on `localhost`. These are the cross-site request forgery (CSRF) cases.
 - **Password guessing**, by rate limiting.
 
-It doesn't defend against a compromised Owner browser (XSS in Lookout itself defeats every check here), a compromised host, or a malicious watch script:
-scripts aren't sandboxed yet, which is why there is only one Owner ([ADR 0001](adr/0001-single-owner.md)).
+It doesn't defend against a compromised Owner browser (XSS in Lookout itself defeats every check here) or a compromised host. Against a malicious watch
+script, it only limits the damage: the script can't read Lookout's secrets or files, but it can reach the network and anything the browser can, which is
+why there is only one Owner ([ADR 0001](adr/0001-single-owner.md)).
 
 ## Requirements on how Lookout is served
 
@@ -105,9 +106,11 @@ The Runner runs any script in the scripts directory that it's asked to, so askin
   requires it on every endpoint that doesn't say otherwise, and `RunnerApiKeyTests` fails if a new endpoint answers without it. Both services refuse to
   start without a key of at least 32 characters, so the check can't be turned off by forgetting to set it. Outside the AppHost, give both the same key.
 
-The key is defence in depth, for when something else on the network can reach the Runner's port. It doesn't help against a watch script: the Runner leaves
-it out of the environment scripts run with, but a script runs as the Runner's user, so it can still find the key, for example in the Runner's own
-environment. Keeping it from scripts is part of sandboxing them.
+The key is defence in depth, for when something else on the network can reach the Runner's port. Scripts don't get it: see
+[Watch scripts](#watch-scripts).
+
+The Backend calls the Runner over plain HTTP, since the Runner's container has no certificate of its own. The hop stays on this machine; a deployment must
+keep it on an internal network or encrypt it.
 
 | Runner endpoint | Open because |
 | --- | --- |
@@ -115,6 +118,29 @@ environment. Keeping it from scripts is part of sandboxing them.
 | Development only: `/openapi/*`, `/api-docs` (Scalar) | So the API can be explored; requests made from Scalar still need the key |
 
 To call the Runner from Scalar, copy the key from the `runner-api-key` parameter in the Aspire dashboard.
+
+## Watch scripts
+
+A watch script is code, so it runs inside two limits, for when the sign-in is bypassed or a script depends on a compromised npm package.
+
+**Node's permission model.** `ScriptRunner` starts the watch CLI with `--permission`, so a script may only read the scripts directory, the `node_modules`
+the CLI imports from and the SDK's own directory; write only the file the CLI puts its result in; and start no child processes or worker threads. It
+starts with a clean environment: only `FORCE_COLOR`, `LOOKOUT_BROWSERLESS_URL`, `LOOKOUT_WATCH_PROXY_URL` for VPN runs, and `TZ` and `SystemRoot` when the
+Runner has them. So the Runner key, and anything else in the Runner's environment, never reach a script. `ScriptSandboxTests` runs scripts that try each
+of these and checks they're refused. Node calls its model a seat belt, not a sandbox, so it isn't the only limit:
+
+- Every path Node is given is resolved through links first: the permission model only matches real paths, and the temp directory is a link on macOS.
+- The CLI needs the network to reach browserless, and Node can't limit it to one host, so scripts get `--allow-net`.
+- A local browser needs child processes, so the Runner refuses to start without `LOOKOUT_BROWSERLESS_URL`.
+
+**The Runner's container.** The AppHost builds the Runner from `src/Runner/Dockerfile` and runs it as the image's non-root user, with no Linux
+capabilities, `no-new-privileges`, and the scripts directory mounted read-only at `/app/scripts`. The container has no `.env`, database, Data Protection
+keys or repo. Its root filesystem isn't read-only: Aspire copies the development certificate into it, which the Runner's telemetry needs, and `--read-only`
+refuses that. The image's files belong to root, so the Runner's user can only write `/tmp` and its home directory anyway.
+
+**What they don't limit.** A script drives Chromium in browserless, which reaches the internet and the LAN, and Node's own network is open too. So a
+script can still send out what it can read, which is little more than its own source, and reach services on the network. Limiting the Runner's network to
+browserless needs the Backend in a container too, so it waits for the production deployment.
 
 ## The containers
 
@@ -129,7 +155,7 @@ secret that the AppHost generates on each start:
 | gluetun's control server | `gluetun-api-key`, in `X-API-Key` | gluetun and the Backend |
 
 The proxy URL holds its password, so the Runner hands it to the watch CLI in `LOOKOUT_WATCH_PROXY_URL`, not on the command line, which any user on the
-machine can list. Only runs that use the VPN get it. Like the Runner key, it doesn't keep the secrets from a watch script: the browserless URL and, for VPN
+machine can list. Only runs that use the VPN get it. Unlike the Runner key, these two secrets aren't kept from scripts: the browserless URL and, for VPN
 runs, the proxy URL are in the script's environment, since the CLI needs them.
 
 **Websites in VPN runs can be sent the proxy password.** Before 1.65, Playwright gives Chromium the proxy's credentials as credentials for every site, so
@@ -200,5 +226,6 @@ from signing in for as long as they kept guessing wrong. Guessing spread across 
 
 - TOTP, passkeys, and creating or changing credentials in the UI.
 - API tokens for callers other than the browser (see the CSRF note above).
-- Several users, which first needs watch scripts sandboxed ([ADR 0001](adr/0001-single-owner.md)).
-- Production deployment: container images, TLS termination and forwarded headers.
+- Several users, which needs their watch scripts isolated from each other, not only from Lookout ([ADR 0001](adr/0001-single-owner.md)).
+- Production deployment: published container images, TLS termination, forwarded headers, the Runner's network limited to browserless, and its root
+  filesystem read-only.

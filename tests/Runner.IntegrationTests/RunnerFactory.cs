@@ -9,7 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace ChasePie.Lookout.Runner.IntegrationTests;
 
 /// <summary>
-/// Runs the Runner in memory with its own scripts directory, deleted on disposal.
+/// Runs the Runner in memory with its own scripts directory inside <see cref="DataDirectory"/>, deleted on disposal.
 /// </summary>
 internal sealed class RunnerFactory : WebApplicationFactory<Program>
 {
@@ -20,13 +20,30 @@ internal sealed class RunnerFactory : WebApplicationFactory<Program>
     /// </summary>
     public const string MatchedRouteHeader = "X-Test-Matched-Route";
 
-    private readonly string _environment;
-    private readonly string _scriptsDirectory = Directory.CreateTempSubdirectory("lookout-runner-tests-").FullName;
+    /// <summary>
+    /// Where the Runner's browserless is, unless a test says otherwise. Nothing listens there, so a script that gets as
+    /// far as connecting fails.
+    /// </summary>
+    public const string BrowserlessUrl = "http://127.0.0.1:9";
 
-    public RunnerFactory(string environment = "Production")
+    private readonly string _environment;
+    private readonly string? _browserlessUrl;
+
+    /// <param name="browserlessUrl">The Runner's <c>LOOKOUT_BROWSERLESS_URL</c>, or <see langword="null"/> for none.</param>
+    public RunnerFactory(string environment = "Production", string? browserlessUrl = BrowserlessUrl)
     {
         _environment = environment;
+        _browserlessUrl = browserlessUrl;
+        DataDirectory = Directory.CreateTempSubdirectory("lookout-runner-tests-").FullName;
+        ScriptsDirectory = Path.Join(DataDirectory, "scripts");
     }
+
+    /// <summary>
+    /// A directory that holds <see cref="ScriptsDirectory"/>, for files scripts must not be able to read.
+    /// </summary>
+    public string DataDirectory { get; }
+
+    public string ScriptsDirectory { get; }
 
     /// <summary>
     /// A client over HTTPS, sending <paramref name="apiKey"/> in the key's header unless it's <see langword="null"/>.
@@ -49,7 +66,8 @@ internal sealed class RunnerFactory : WebApplicationFactory<Program>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment(_environment);
-        builder.UseSetting(LookoutEnvironmentVariables.WatchScriptsDir, _scriptsDirectory);
+        builder.UseSetting(LookoutEnvironmentVariables.WatchScriptsDir, ScriptsDirectory);
+        builder.UseSetting(LookoutEnvironmentVariables.BrowserlessUrl, _browserlessUrl);
         builder.UseSetting(LookoutEnvironmentVariables.RunnerApiKey, ApiKey);
         builder.ConfigureServices(services => services.AddTransient<IStartupFilter, MatchedRouteStartupFilter>());
     }
@@ -57,9 +75,9 @@ internal sealed class RunnerFactory : WebApplicationFactory<Program>
     protected override void Dispose(bool disposing)
     {
         base.Dispose(disposing);
-        if (disposing && Directory.Exists(_scriptsDirectory))
+        if (disposing && Directory.Exists(DataDirectory))
         {
-            Directory.Delete(_scriptsDirectory, recursive: true);
+            Directory.Delete(DataDirectory, recursive: true);
         }
     }
 

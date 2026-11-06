@@ -1,0 +1,18 @@
+# Only what the Runner's image is built from, so .env, the database and the rest of the repo never reach a build.
+*
+!global.json
+!Directory.Build.props
+!Directory.Packages.props
+!package.json
+!package-lock.json
+# npm ci checks every workspace's package.json against the lockfile
+!examples/package.json
+!src/frontend/package.json
+!src/Core/
+!src/ServiceDefaults/
+!src/Runner/
+!src/watch-sdk/
+**/bin/
+**/obj/
+**/node_modules/
+**/dist/

@@ -11,6 +11,10 @@ public sealed class ScriptRunnerStartInfoTests
 {
     private const string ProxyPassword = "secret";
     private const string ProxyUrl = $"http://lookout:{ProxyPassword}@gluetun:8888";
+    private const string BrowserlessUrl = "http://browserless:3000?token=browserless-token";
+
+    private static readonly WatchCli Cli = new(
+        "/app/src/watch-sdk/dist/cli.js", ["/app/node_modules", "/app/src/watch-sdk"], BrowserlessUrl, ProxyUrl);
 
     // What the Runner's own environment holds when the AppHost starts it, plus a CLI proxy left over from a shell
     private static readonly Dictionary<string, string> RunnerEnvironment = new()
@@ -18,6 +22,8 @@ public sealed class ScriptRunnerStartInfoTests
         [LookoutEnvironmentVariables.VpnProxyUrl] = ProxyUrl,
         [LookoutEnvironmentVariables.RunnerApiKey] = new string('k', RunnerApiKey.MinLength),
         [ScriptRunner.CliProxyUrlVariable] = ProxyUrl,
+        ["HOME"] = "/home/app",
+        ["TZ"] = "America/New_York",
     };
 
     private static readonly Dictionary<string, string?> PreviousEnvironment = [];
@@ -42,15 +48,39 @@ public sealed class ScriptRunnerStartInfoTests
     }
 
     private static ProcessStartInfo Create(string? proxyUrl) =>
-        ScriptRunner.CreateStartInfo("/repo/cli.js", "/scripts/watch.ts", "/tmp/out.json", proxyUrl);
+        ScriptRunner.CreateStartInfo(Cli, "/app/scripts/watch.ts", "/tmp/out.json", proxyUrl);
 
     [TestMethod]
-    public void AVpnRunGetsTheProxyInItsEnvironmentAndNotOnItsCommandLine()
+    public void ARunWithoutTheVpnGetsOnlyWhatTheCliNeeds()
+    {
+        var startInfo = Create(proxyUrl: null);
+
+        Assert.AreSequenceEqual(
+            new Dictionary<string, string?>
+            {
+                ["FORCE_COLOR"] = "0",
+                [LookoutEnvironmentVariables.BrowserlessUrl] = BrowserlessUrl,
+                ["TZ"] = "America/New_York",
+            },
+            startInfo.Environment,
+            SequenceOrder.InAnyOrder);
+    }
+
+    [TestMethod]
+    public void AVpnRunAlsoGetsTheProxyInItsEnvironmentAndNotOnItsCommandLine()
     {
         var startInfo = Create(ProxyUrl);
 
-        Assert.AreEqual(ProxyUrl, startInfo.Environment[ScriptRunner.CliProxyUrlVariable]);
-        Assert.IsFalse(startInfo.Environment.ContainsKey(LookoutEnvironmentVariables.VpnProxyUrl));
+        Assert.AreSequenceEqual(
+            new Dictionary<string, string?>
+            {
+                ["FORCE_COLOR"] = "0",
+                [LookoutEnvironmentVariables.BrowserlessUrl] = BrowserlessUrl,
+                [ScriptRunner.CliProxyUrlVariable] = ProxyUrl,
+                ["TZ"] = "America/New_York",
+            },
+            startInfo.Environment,
+            SequenceOrder.InAnyOrder);
         foreach (var argument in startInfo.ArgumentList)
         {
             Assert.DoesNotContain(ProxyPassword, argument);
@@ -58,21 +88,28 @@ public sealed class ScriptRunnerStartInfoTests
     }
 
     [TestMethod]
-    public void ARunWithoutTheVpnDoesNotInheritTheProxy()
+    public void RunsTheCliInNodesPermissionModel()
     {
         var startInfo = Create(proxyUrl: null);
 
-        Assert.IsFalse(startInfo.Environment.ContainsKey(ScriptRunner.CliProxyUrlVariable));
-        Assert.IsFalse(startInfo.Environment.ContainsKey(LookoutEnvironmentVariables.VpnProxyUrl));
+        Assert.AreSequenceEqual(ExpectedArguments, startInfo.ArgumentList);
+        Assert.AreEqual("/app/scripts", startInfo.WorkingDirectory);
     }
 
-    [TestMethod]
-    [DataRow(true)]
-    [DataRow(false)]
-    public void NoRunGetsTheRunnerApiKey(bool useVpn)
-    {
-        var startInfo = Create(useVpn ? ProxyUrl : null);
-
-        Assert.IsFalse(startInfo.Environment.ContainsKey(LookoutEnvironmentVariables.RunnerApiKey));
-    }
+    private static readonly string[] ExpectedArguments =
+    [
+        "--permission",
+        "--allow-fs-read=/app/scripts",
+        "--allow-fs-read=/app/node_modules",
+        "--allow-fs-read=/app/src/watch-sdk",
+        "--allow-fs-write=/tmp/out.json",
+        "--allow-net",
+        "--disable-warning=ExperimentalWarning",
+        "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON",
+        "/app/src/watch-sdk/dist/cli.js",
+        "run",
+        "/app/scripts/watch.ts",
+        "--output",
+        "/tmp/out.json",
+    ];
 }
