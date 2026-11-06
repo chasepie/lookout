@@ -4,7 +4,7 @@ using ChasePie.Lookout.Core;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Backend.UnitTests;
+namespace ChasePie.Lookout.Backend.UnitTests;
 
 [TestClass]
 public sealed class RunnerApiKeyTests

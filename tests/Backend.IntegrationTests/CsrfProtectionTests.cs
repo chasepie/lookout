@@ -2,7 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using ChasePie.Lookout.Backend.Auth;
 
-namespace Backend.IntegrationTests;
+namespace ChasePie.Lookout.Backend.IntegrationTests;
 
 /// <summary>
 /// That <see cref="CsrfProtection"/> guards the Backend. Its rules are covered by the unit tests.

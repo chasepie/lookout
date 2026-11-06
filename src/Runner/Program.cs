@@ -5,7 +5,7 @@ using ChasePie.Lookout.Runner.Services;
 using dotenv.net.Configuration;
 using Scalar.AspNetCore;
 
-namespace Runner;
+namespace ChasePie.Lookout.Runner;
 
 public class Program
 {

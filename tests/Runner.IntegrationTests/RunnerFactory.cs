@@ -6,12 +6,12 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Runner.IntegrationTests;
+namespace ChasePie.Lookout.Runner.IntegrationTests;
 
 /// <summary>
 /// Runs the Runner in memory with its own scripts directory, deleted on disposal.
 /// </summary>
-internal sealed class RunnerFactory : WebApplicationFactory<global::Runner.Program>
+internal sealed class RunnerFactory : WebApplicationFactory<Program>
 {
     public static readonly string ApiKey = new('k', RunnerApiKey.MinLength);
 

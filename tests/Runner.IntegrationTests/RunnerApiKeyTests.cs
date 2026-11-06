@@ -4,7 +4,7 @@ using ChasePie.Lookout.Core;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Runner.IntegrationTests;
+namespace ChasePie.Lookout.Runner.IntegrationTests;
 
 /// <summary>
 /// That the Runner only answers callers with the key, except on the few endpoints meant to be open, so a new endpoint

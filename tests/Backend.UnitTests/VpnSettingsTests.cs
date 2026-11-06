@@ -1,7 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using ChasePie.Lookout.Core;
 
-namespace Backend.UnitTests;
+namespace ChasePie.Lookout.Backend.UnitTests;
 
 [TestClass]
 public sealed class VpnSettingsTests

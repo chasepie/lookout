@@ -1,4 +1,4 @@
-namespace Runner.UnitTests;
+namespace ChasePie.Lookout.Runner.UnitTests;
 
 /// <summary>
 /// Keeps this project from running zero tests, which fails the test run. Delete it once the project has real tests.

@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Backend.IntegrationTests;
+namespace ChasePie.Lookout.Backend.IntegrationTests;
 
 /// <summary>
 /// That every endpoint needs a session except the few meant to be open, so a new endpoint can't be left open by

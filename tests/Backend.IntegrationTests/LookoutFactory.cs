@@ -1,6 +1,5 @@
 using System.Net;
 using System.Net.Http.Json;
-using ChasePie.Lookout.Backend;
 using ChasePie.Lookout.Backend.Auth;
 using ChasePie.Lookout.Core;
 using Microsoft.AspNetCore.Builder;
@@ -10,7 +9,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Backend.IntegrationTests;
+namespace ChasePie.Lookout.Backend.IntegrationTests;
 
 /// <summary>
 /// Runs the Backend in memory with its own database and scripts directories, deleted on disposal unless shared.

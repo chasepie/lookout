@@ -2,7 +2,7 @@ using ChasePie.Lookout.Backend.Auth;
 using ChasePie.Lookout.Core;
 using Microsoft.Extensions.Configuration;
 
-namespace Backend.UnitTests;
+namespace ChasePie.Lookout.Backend.UnitTests;
 
 [TestClass]
 public sealed class OwnerCredentialsTests

@@ -1,6 +1,6 @@
 using System.Net;
 
-namespace Backend.IntegrationTests;
+namespace ChasePie.Lookout.Backend.IntegrationTests;
 
 /// <summary>
 /// Serving the built frontend: its page for every path outside <c>/api</c>, and caching that survives rebuilds.
