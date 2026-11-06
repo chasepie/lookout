@@ -19,11 +19,34 @@ public sealed class ScriptSandboxTests
     private CancellationToken Ct => TestContext.CancellationToken;
 
     [TestMethod]
-    public async Task AScriptCanReadItsOwnDirectory()
+    public async Task AScriptCanReadItself()
     {
         var outcome = await RunAsync("readFileSync(new URL(import.meta.url))");
 
         Assert.AreEqual("allowed", outcome);
+    }
+
+    [TestMethod]
+    public async Task AScriptCannotReadOtherScripts()
+    {
+        var outcome = await RunAsync("readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'other.ts'))");
+
+        Assert.AreEqual("ERR_ACCESS_DENIED", outcome);
+    }
+
+    [TestMethod]
+    public async Task AScriptThatIsALinkIsRefused()
+    {
+        await using var factory = new RunnerFactory();
+        Directory.CreateDirectory(factory.ScriptsDirectory);
+        var target = Path.Join(factory.DataDirectory, "elsewhere.ts");
+        await File.WriteAllTextAsync(target, "export default {};", Ct);
+        File.CreateSymbolicLink(Path.Join(factory.ScriptsDirectory, "linked.ts"), target);
+        using var client = factory.CreateClient(RunnerFactory.ApiKey);
+
+        using var response = await client.GetAsync("/WatchRun?scriptName=linked.ts", Ct);
+
+        Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [TestMethod]
@@ -87,6 +110,7 @@ public sealed class ScriptSandboxTests
         await using var factory = new RunnerFactory();
         Directory.CreateDirectory(factory.ScriptsDirectory);
         await File.WriteAllTextAsync(Path.Join(factory.DataDirectory, "secret.txt"), "secret", Ct);
+        await File.WriteAllTextAsync(Path.Join(factory.ScriptsDirectory, "other.ts"), "export default {};", Ct);
         await File.WriteAllTextAsync(Path.Join(factory.ScriptsDirectory, "sandbox.ts"), $$"""
             import { spawnSync } from 'node:child_process';
             import { readFileSync, writeFileSync } from 'node:fs';

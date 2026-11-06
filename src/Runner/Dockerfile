@@ -2,6 +2,7 @@
 # the repo root: docker build -f src/Runner/Dockerfile .
 # docs/security.md explains how it's locked down.
 
+# The latest of this major, like .nvmrc, so CI tests the Node the image ships
 ARG NODE_VERSION=26
 
 # Node, copied into the runtime image
@@ -52,6 +53,8 @@ COPY --from=node-modules /src/node_modules node_modules/
 COPY --from=watch-sdk /src/src/watch-sdk/package.json src/watch-sdk/
 COPY --from=watch-sdk /src/src/watch-sdk/dist src/watch-sdk/dist/
 COPY --from=runner /out runner/
+# The AppHost mounts the scripts here. Without the mount, it's an empty directory the Runner can read but not write.
+RUN mkdir scripts
 ENV LOOKOUT_WATCH_CLI_ROOT=/app \
   LOOKOUT_WATCH_SCRIPTS_DIR=/app/scripts
 # The non-root user the .NET images provide

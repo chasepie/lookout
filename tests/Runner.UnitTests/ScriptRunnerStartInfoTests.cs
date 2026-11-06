@@ -14,7 +14,7 @@ public sealed class ScriptRunnerStartInfoTests
     private const string BrowserlessUrl = "http://browserless:3000?token=browserless-token";
 
     private static readonly WatchCli Cli = new(
-        "/app/src/watch-sdk/dist/cli.js", ["/app/node_modules", "/app/src/watch-sdk"], BrowserlessUrl, ProxyUrl);
+        "/app/src/watch-sdk/dist/cli.js", ["/app/node_modules", "/app/src/watch-sdk"], BrowserlessUrl, ProxyUrl, "/tmp");
 
     // What the Runner's own environment holds when the AppHost starts it, plus a CLI proxy left over from a shell
     private static readonly Dictionary<string, string> RunnerEnvironment = new()
@@ -99,7 +99,7 @@ public sealed class ScriptRunnerStartInfoTests
     private static readonly string[] ExpectedArguments =
     [
         "--permission",
-        "--allow-fs-read=/app/scripts",
+        "--allow-fs-read=/app/scripts/watch.ts",
         "--allow-fs-read=/app/node_modules",
         "--allow-fs-read=/app/src/watch-sdk",
         "--allow-fs-write=/tmp/out.json",

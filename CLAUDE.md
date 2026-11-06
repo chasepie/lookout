@@ -27,7 +27,8 @@ browserless token.
 - `src/watch-sdk/`: TypeScript SDK and CLI (Playwright-based) for writing watch scripts.
 - `src/frontend/`: Angular web UI. Its conventions are in `src/frontend/CLAUDE.md`.
 - `examples/`: example watch scripts built on the SDK.
-- `tests/`: MSTest projects for Backend and Runner.
+- `tests/`: MSTest projects for Backend and Runner. The Runner's tests run real scripts, so they need Node and the built watch SDK
+(`npm run build -w src/watch-sdk`).
 
 Environment variables are loaded from `.env`. `example.env` lists only the ones the user sets; leave out the ones the AppHost always sets itself, such as
 service URLs and generated keys. `LookoutEnvironmentVariables` names them all.

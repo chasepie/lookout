@@ -3,9 +3,10 @@ using Microsoft.Extensions.Configuration;
 namespace ChasePie.Lookout.Core;
 
 /// <summary>
-/// Names of the environment variables the services read. The AppHost sets them all, except <see cref="WatchCliRoot"/>,
-/// which the Runner's image sets: the ones the user chooses come from <c>.env</c> and are listed in <c>example.env</c>; it
-/// works out or generates the rest.
+/// Names of the environment variables the services read. The AppHost sets them: the ones the user chooses come from
+/// <c>.env</c> and are listed in <c>example.env</c>; it works out or generates the rest. The Runner's image sets two of
+/// its own: <see cref="WatchCliRoot"/>, and <see cref="WatchScriptsDir"/> as <c>/app/scripts</c>, where the AppHost mounts
+/// the scripts directory.
 /// </summary>
 public static class LookoutEnvironmentVariables
 {

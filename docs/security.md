@@ -123,23 +123,28 @@ To call the Runner from Scalar, copy the key from the `runner-api-key` parameter
 
 A watch script is code, so it runs inside two limits, for when the sign-in is bypassed or a script depends on a compromised npm package.
 
-**Node's permission model.** `ScriptRunner` starts the watch CLI with `--permission`, so a script may only read the scripts directory, the `node_modules`
-the CLI imports from and the SDK's own directory; write only the file the CLI puts its result in; and start no child processes or worker threads. It
+**Node's permission model.** `ScriptRunner` starts the watch CLI with `--permission`, so a script may only read itself (not the other watches' scripts),
+the `node_modules` the CLI imports from and the SDK's own directory; write only the file the CLI puts its result in; and start no child processes or worker
+threads. It
 starts with a clean environment: only `FORCE_COLOR`, `LOOKOUT_BROWSERLESS_URL`, `LOOKOUT_WATCH_PROXY_URL` for VPN runs, and `TZ` and `SystemRoot` when the
 Runner has them. So the Runner key, and anything else in the Runner's environment, never reach a script. `ScriptSandboxTests` runs scripts that try each
 of these and checks they're refused. Node calls its model a seat belt, not a sandbox, so it isn't the only limit:
 
-- Every path Node is given is resolved through links first: the permission model only matches real paths, and the temp directory is a link on macOS.
+- Every path Node is given is resolved through links first: the permission model only matches real paths, and the temp directory is a link on macOS. A
+  script that is itself a link is refused, since it would carry its read permission to wherever it points.
+- Outside the container, as in the Runner's tests, `node_modules` is the repo's, and npm links every workspace into it. Node follows those links, so a
+  script run there can read the `src/Runner`, `src/frontend` and `examples` workspaces. In the container, those links point nowhere.
 - The CLI needs the network to reach browserless, and Node can't limit it to one host, so scripts get `--allow-net`.
 - A local browser needs child processes, so the Runner refuses to start without `LOOKOUT_BROWSERLESS_URL`.
 
 **The Runner's container.** The AppHost builds the Runner from `src/Runner/Dockerfile` and runs it as the image's non-root user, with no Linux
 capabilities, `no-new-privileges`, and the scripts directory mounted read-only at `/app/scripts`. The container has no `.env`, database, Data Protection
 keys or repo. Its root filesystem isn't read-only: Aspire copies the development certificate into it, which the Runner's telemetry needs, and `--read-only`
-refuses that. The image's files belong to root, so the Runner's user can only write `/tmp` and its home directory anyway.
+refuses that. The image's files belong to root, so the Runner's user can only write `/tmp` and its home directory anyway. The Runner's user is uid 1654,
+so on a Linux host the scripts directory must be readable by it, for example with the default `umask`; Docker Desktop on macOS hides this.
 
 **What they don't limit.** A script drives Chromium in browserless, which reaches the internet and the LAN, and Node's own network is open too. So a
-script can still send out what it can read, which is little more than its own source, and reach services on the network. Limiting the Runner's network to
+script can still send out what it can read, which is its own source, and reach services on the network. Limiting the Runner's network to
 browserless needs the Backend in a container too, so it waits for the production deployment.
 
 ## The containers

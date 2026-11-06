@@ -27,8 +27,10 @@ public class Program
         services.AddRunnerApiKeyAuthentication(configuration);
         services.AddControllers();
         services.AddOpenApi(options => options.AddDocumentTransformer<RunnerApiKeyDocumentTransformer>());
-        // Resolved here so a missing setting stops startup instead of failing each run
-        services.AddSingleton(WatchScriptsDirectory.FromConfiguration(configuration));
+        // Resolved here so a missing setting stops startup instead of failing each run. As a real path, since Node's
+        // permission model only matches those; see RealPath.
+        var scriptsDirectory = WatchScriptsDirectory.FromConfiguration(configuration);
+        services.AddSingleton(new WatchScriptsDirectory(RealPath.Of(scriptsDirectory.FullPath)));
         services.AddSingleton(WatchCli.FromConfiguration(configuration, Directory.GetCurrentDirectory()));
         services.AddScoped<ScriptRunner>();
     }

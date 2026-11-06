@@ -50,6 +50,12 @@ public partial class ScriptRunner(
             throw new FileNotFoundException($"Script '{scriptName}' not found in the '{scriptsDir}' directory.");
         }
 
+        // The Backend only saves regular files. A link would point the script's read permission somewhere else.
+        if (new FileInfo(scriptPath).LinkTarget is not null)
+        {
+            throw new ArgumentException($"'{scriptName}' is a link; only regular files can run.", nameof(scriptName));
+        }
+
         return scriptPath;
     }
 
@@ -72,10 +78,9 @@ public partial class ScriptRunner(
         CancellationToken cancellationToken = default)
     {
         var proxyUrl = useVpn ? GetVpnProxyUrl() : null;
-        var scriptsDir = scriptsDirectory.FullPath;
-        // Node's permission model only matches real paths, and the temp directory is a link on macOS
-        var scriptPath = RealPath.Of(GetScriptPath(scriptsDir, scriptName));
-        var outputPath = RealPath.Of(Path.Combine(Path.GetTempPath(), $"lookout-watch-{Guid.NewGuid():N}.json"));
+        // Both directories are real paths already, and the script isn't a link, as Node's permission model needs
+        var scriptPath = GetScriptPath(scriptsDirectory.FullPath, scriptName);
+        var outputPath = Path.Combine(watchCli.OutputDirectory, $"lookout-watch-{Guid.NewGuid():N}.json");
         var processStartInfo = CreateStartInfo(watchCli, scriptPath, outputPath, proxyUrl);
 
         using var process = new Process { StartInfo = processStartInfo };
@@ -153,7 +158,7 @@ public partial class ScriptRunner(
 
     /// <summary>
     /// The Node process that runs a script with the watch CLI, writing its result to <paramref name="outputPath"/>.
-    /// The script gets a clean environment, and Node's permission model limits it to reading the scripts directory and
+    /// The script gets a clean environment, and Node's permission model limits it to reading itself and
     /// <see cref="WatchCli.ReadablePaths"/>, writing only <paramref name="outputPath"/>, and no child processes or
     /// worker threads. See docs/security.md.
     /// </summary>
@@ -162,11 +167,11 @@ public partial class ScriptRunner(
     /// </param>
     internal static ProcessStartInfo CreateStartInfo(WatchCli cli, string scriptPath, string outputPath, string? proxyUrl)
     {
-        var scriptsDirectory = Path.GetDirectoryName(scriptPath)!;
         var processStartInfo = new ProcessStartInfo("node")
         {
-            // The CLI is started by absolute path and resolves its own imports, so it can run from anywhere
-            WorkingDirectory = scriptsDirectory,
+            // The scripts directory. The CLI is started by absolute path and resolves its own imports, so it can run
+            // from anywhere.
+            WorkingDirectory = Path.GetDirectoryName(scriptPath),
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
@@ -200,7 +205,8 @@ public partial class ScriptRunner(
         // Without --allow-child-process and --allow-worker, neither is allowed. Each path needs a flag of its own: Node
         // takes a comma-separated list as one path.
         arguments.Add("--permission");
-        arguments.Add($"--allow-fs-read={scriptsDirectory}");
+        // The script itself, not the scripts directory, so it can't read other watches' scripts
+        arguments.Add($"--allow-fs-read={scriptPath}");
         foreach (var path in cli.ReadablePaths)
         {
             arguments.Add($"--allow-fs-read={path}");

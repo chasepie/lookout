@@ -16,6 +16,18 @@ public partial class Program
         string? DotEnvValue(string name) =>
             dotEnv.TryGetValue(name, out var value) && !string.IsNullOrWhiteSpace(value) ? value : null;
 
+        // A directory from .env, with a relative path resolved against the repo root, where .env lives
+        string? DotEnvDirectory(string name) => DotEnvValue(name) is { } dir ? Path.GetFullPath(dir, repoRoot) : null;
+
+        // A directory the AppHost needs, created if it doesn't exist yet
+        string RequiredDirectory(string name, string purpose)
+        {
+            var dir = DotEnvDirectory(name)
+                ?? throw new InvalidOperationException($"Set {name} in .env to the directory {purpose}.");
+            Directory.CreateDirectory(dir);
+            return dir;
+        }
+
         var timeZone = DotEnvValue("TZ") ?? "America/New_York";
 
         // Chromium that watch scripts run on instead of a locally launched browser. The SDK connects with
@@ -36,11 +48,7 @@ public partial class Program
         var runnerApiKey = AddGeneratedSecret(builder, "runner-api-key");
 
         // The Backend saves uploaded scripts there and the Runner runs them from there
-        var watchScriptsDir = DotEnvValue(LookoutEnvironmentVariables.WatchScriptsDir) is { } scriptsDir
-            ? Path.GetFullPath(scriptsDir, repoRoot)
-            : throw new InvalidOperationException(
-                $"Set {LookoutEnvironmentVariables.WatchScriptsDir} in .env to the directory watch scripts are kept in.");
-        Directory.CreateDirectory(watchScriptsDir);
+        var watchScriptsDir = RequiredDirectory(LookoutEnvironmentVariables.WatchScriptsDir, "watch scripts are kept in");
 
         // Watch scripts are code, so the Runner runs in a container that can't see the rest of this machine: as the
         // image's non-root user, with the scripts read-only, no .env or database, no Linux capabilities, and no way to
@@ -51,7 +59,10 @@ public partial class Program
             .WithContainerRuntimeArgs("--cap-drop=ALL", "--security-opt=no-new-privileges")
             // Plain HTTP: this hop stays on this machine
             .WithHttpEndpoint(targetPort: 8080, name: "http")
-            .WithEnvironment("ASPNETCORE_ENVIRONMENT", builder.Environment.EnvironmentName)
+            // Always Development, as the Runner's launch profile was: /health, which the AppHost polls, is only mapped there
+            .WithEnvironment("ASPNETCORE_ENVIRONMENT", "Development")
+            // Scripts' dates follow the configured time zone, not the container's UTC
+            .WithEnvironment("TZ", timeZone)
             .WithEnvironment(LookoutEnvironmentVariables.RunnerApiKey, runnerApiKey)
             .WithEnvironment(LookoutEnvironmentVariables.BrowserlessUrl, browserlessUrl)
             .WithOtlpExporter()
@@ -91,11 +102,7 @@ public partial class Program
         if (DotEnvValue("OPENVPN_USER") is { } openVpnUser && DotEnvValue("OPENVPN_PASSWORD") is { } openVpnPasswordValue)
         {
             // gluetun keeps its servers list there, and the Backend reads the list to know which regions exist
-            var gluetunDir = DotEnvValue(LookoutEnvironmentVariables.GluetunDir) is { } dir
-                ? Path.GetFullPath(dir, repoRoot)
-                : throw new InvalidOperationException(
-                    $"Set {LookoutEnvironmentVariables.GluetunDir} in .env to the directory gluetun keeps its data in.");
-            Directory.CreateDirectory(gluetunDir);
+            var gluetunDir = RequiredDirectory(LookoutEnvironmentVariables.GluetunDir, "gluetun keeps its data in");
 
             var openVpnPassword = builder.AddParameter("openvpn-password", openVpnPasswordValue, secret: true);
             // A new key every time the AppHost starts; only gluetun and the Backend need it
@@ -138,20 +145,10 @@ public partial class Program
                 .WithEnvironment(LookoutEnvironmentVariables.VpnProxyUrl, ProxyUrl(gluetun.GetEndpoint("proxy"), proxyPassword));
         }
 
-        // Directories, with a relative path resolved against the repo root, where .env lives
-        void ForwardDirectory(string name, params IResourceBuilder<ProjectResource>[] projects)
+        if (DotEnvDirectory(LookoutEnvironmentVariables.DatabaseDir) is { } databaseDir)
         {
-            if (dotEnv.TryGetValue(name, out var dir) && !string.IsNullOrWhiteSpace(dir))
-            {
-                var fullPath = Path.GetFullPath(dir, repoRoot);
-                foreach (var project in projects)
-                {
-                    project.WithEnvironment(name, fullPath);
-                }
-            }
+            backend.WithEnvironment(LookoutEnvironmentVariables.DatabaseDir, databaseDir);
         }
-
-        ForwardDirectory(LookoutEnvironmentVariables.DatabaseDir, backend);
 
         // Runs `npm run start` (ng serve) on its default port. The dev server forwards /api to the
         // Backend through proxy.conf.json, which targets the Backend's launch profile port (7070). Serving both from

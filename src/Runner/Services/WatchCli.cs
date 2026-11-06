@@ -16,11 +16,13 @@ namespace ChasePie.Lookout.Runner.Services;
 /// </param>
 /// <param name="BrowserlessUrl">Where scripts run their browser, with browserless's token.</param>
 /// <param name="VpnProxyUrl">The proxy that runs using the VPN send their browser's traffic through, if there is one.</param>
+/// <param name="OutputDirectory">Where the CLI writes each run's result, as a real path: the temp directory.</param>
 public sealed record WatchCli(
     string CliPath,
     IReadOnlyList<string> ReadablePaths,
     string BrowserlessUrl,
-    string? VpnProxyUrl)
+    string? VpnProxyUrl,
+    string OutputDirectory)
 {
     // When it loads, Playwright tests for these to tell whether it runs under WSL. Node's permission model makes the test
     // throw instead of returning false, so reading them must be allowed. On Linux they say nothing beyond that.
@@ -62,6 +64,8 @@ public sealed record WatchCli(
             cliPath,
             [nodeModules, sdkDirectory, .. OperatingSystem.IsLinux() ? PlaywrightLinuxChecks : []],
             browserlessUrl,
-            string.IsNullOrWhiteSpace(vpnProxyUrl) ? null : vpnProxyUrl);
+            string.IsNullOrWhiteSpace(vpnProxyUrl) ? null : vpnProxyUrl,
+            // A link on macOS
+            RealPath.Of(Path.GetTempPath()));
     }
 }
