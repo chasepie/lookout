@@ -19,6 +19,7 @@ public partial class Program
     {
         var builder = WebApplication.CreateBuilder(args);
         builder.Configuration.AddDotNetEnv();
+        builder.Configuration.AddSecretFiles();
         builder.AddServiceDefaults();
         ConfigureServices(builder.Services, builder.Configuration);
 

@@ -172,7 +172,7 @@ public sealed record VpnConfiguration(Uri? GluetunUrl, string? ApiKey, string? D
             return Disabled;
         }
 
-        var proxyUrl = LookoutEnvironmentVariables.GetBaseUrl(configuration, LookoutEnvironmentVariables.VpnProxyUrl)
+        var proxyUrl = LookoutEnvironmentVariables.GetVpnProxyUrl(configuration)
             ?? throw new InvalidOperationException(
                 $"Environment variable {LookoutEnvironmentVariables.VpnProxyUrl} must be set when {LookoutEnvironmentVariables.GluetunUrl} is");
         var apiKey = configuration[LookoutEnvironmentVariables.GluetunApiKey];
