@@ -107,11 +107,17 @@ public partial class Program
             // Without credentials, anyone who can reach the proxy can send traffic through the VPN. A new password
             // every time the AppHost starts; only gluetun, the Runner and the Backend have it.
             var proxyPassword = AddGeneratedSecret(builder, "gluetun-proxy-password");
+            var vpnServiceProvider = DotEnvValue("VPN_SERVICE_PROVIDER") ?? "private internet access";
+            var serversUpdate = builder.AddContainer(GluetunServersUpdate, GluetunImage, GluetunTag)
+                .WithEntrypoint("/bin/sh")
+                .WithArgs(GluetunServersUpdateCommand(vpnServiceProvider))
+                .WithBindMount(gluetunDir, "/gluetun");
             var gluetun = builder.AddContainer("gluetun", GluetunImage, GluetunTag)
+                .WaitForCompletion(serversUpdate)
                 // Aspire has no API for capabilities or devices, so they're passed to `docker run` directly
                 .WithContainerRuntimeArgs("--cap-add=NET_ADMIN", "--device=/dev/net/tun:/dev/net/tun")
                 .WithBindMount(gluetunDir, "/gluetun")
-                .WithEnvironment("VPN_SERVICE_PROVIDER", DotEnvValue("VPN_SERVICE_PROVIDER") ?? "private internet access")
+                .WithEnvironment("VPN_SERVICE_PROVIDER", vpnServiceProvider)
                 .WithEnvironment("VPN_TYPE", "openvpn")
                 .WithEnvironment("OPENVPN_USER", openVpnUser)
                 .WithEnvironment("OPENVPN_PASSWORD", openVpnPassword)

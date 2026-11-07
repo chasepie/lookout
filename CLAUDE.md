@@ -21,7 +21,8 @@ scripts directory (`WatchScriptsDirectory`), the key the Backend authenticates t
     runs) and, when the OpenVPN credentials are in `.env`, gluetun (the VPN proxy for watches with `UseVpn`). It builds the Runner's container from
     `src/Runner/Dockerfile` and mounts the scripts directory into it read-only. It forwards the Owner's credentials and the directory settings from `.env`
     (relative paths resolve against the repo root), refusing to start without the credentials, sets the services' URLs, generates new secrets on each
-    start, bind-mounts `LOOKOUT_GLUETUN_DIR` as gluetun's data directory, and opens the Aspire dashboard.
+    start, bind-mounts `LOOKOUT_GLUETUN_DIR` as gluetun's data directory (refreshing its servers list before gluetun starts, as
+    production does), and opens the Aspire dashboard.
   - `aspire publish` (`Production.cs`) describes the production deployment as `deploy/docker-compose.yaml`. After changing it, run
     `src/AppHost/publish-deployment.sh` and commit the result, which `AppHost.Tests` checks is current.
 - `src/ServiceDefaults/`: shared Aspire setup (OpenTelemetry, health checks, service discovery) referenced by Backend and Runner.

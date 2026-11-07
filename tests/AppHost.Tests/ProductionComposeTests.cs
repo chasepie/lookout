@@ -16,10 +16,11 @@ public sealed class ProductionComposeTests
     private static string _envText = null!;
 
     // The services Lookout builds or configures to run read-only, as opposed to browserless and gluetun
-    private static readonly string[] LookoutServices = ["backend", "runner", "gluetun-control", "gluetun-proxy"];
+    private static readonly string[] LookoutServices =
+        ["backend", "runner", "gluetun-control", "gluetun-proxy", "gluetun-servers"];
 
     private static readonly string[] RunnerNetworks = ["browsers", "runner"];
-    private static readonly string[] OutwardServices = ["backend", "browserless", "gluetun"];
+    private static readonly string[] OutwardServices = ["backend", "browserless", "gluetun", "gluetun-servers"];
     private static readonly string[] BackendPorts = ["${LOOKOUT_BIND_ADDRESS:-127.0.0.1}:${LOOKOUT_PORT:-8080}:8080"];
     private static readonly string[] AllCapabilities = ["ALL"];
 
@@ -64,7 +65,21 @@ public sealed class ProductionComposeTests
     }
 
     [TestMethod]
-    public void OnlyBrowserlessGluetunAndTheBackendLeadOut()
+    public void GluetunRefreshesItsServersListBeforeItStarts()
+    {
+        // Otherwise the list goes stale, as gluetun's own refresh comes only a period after it starts
+        var dependsOn = Map(Map(Service("gluetun"), "depends_on"), "gluetun-servers");
+        var command = string.Join(' ', (List<object>)Service("gluetun-servers")["command"]);
+
+        Assert.AreEqual("service_completed_successfully", dependsOn["condition"]);
+        Assert.Contains("update -enduser -providers '${VPN_SERVICE_PROVIDER", command);
+        // A failed refresh mustn't keep gluetun from starting with the list it has
+        Assert.Contains("|| echo", command);
+        Assert.AreEqual("no", Service("gluetun-servers")["restart"]);
+    }
+
+    [TestMethod]
+    public void OnlyTheServicesThatNeedTheInternetLeadOut()
     {
         var outward = ServiceNames().Where(service => Networks(service).Any(network => !IsInternal(network)));
 

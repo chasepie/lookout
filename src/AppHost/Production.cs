@@ -172,10 +172,24 @@ public partial class Program
                 service.Networks = [RunnerNetwork, VpnControlNetwork, EdgeNetwork];
             });
 
+        var serversUpdate = builder.AddContainer(GluetunServersUpdate, GluetunImage, GluetunTag)
+            .WithVolume(GluetunVolume, "/gluetun")
+            .PublishAsDockerComposeService((resource, service) =>
+            {
+                service.Entrypoint = ["/bin/sh"];
+                service.Command = [.. GluetunServersUpdateCommand(Placeholder(vpnServiceProvider, resource))];
+                Harden(service, readOnly: true);
+                // It runs once, before gluetun
+                service.Restart = "no";
+                // Out to the provider for the list, and nowhere else
+                service.Networks = [EgressNetwork];
+            });
+
         // The key as a Compose variable, for gluetun's auth config
         string? gluetunApiKeyPlaceholder = null;
         builder.AddContainer(GluetunService, GluetunImage, GluetunTag)
             .WithVolume(GluetunVolume, "/gluetun")
+            .WaitForCompletion(serversUpdate)
             .PublishAsDockerComposeService((resource, service) =>
             {
                 gluetunApiKeyPlaceholder = Placeholder(gluetunApiKey, resource);

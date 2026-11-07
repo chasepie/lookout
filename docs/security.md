@@ -227,7 +227,7 @@ the file is generated and committed, why the Backend reaches gluetun through rel
 | `vpn-proxy` | browserless, gluetun | no |
 | `gluetun-relay` | gluetun, the two relays | no |
 | `vpn-control` | the two relays, Backend | no |
-| `egress` | browserless, gluetun | yes |
+| `egress` | browserless, gluetun, the refresh of gluetun's servers list | yes |
 | `edge` | Backend, for its published port | yes |
 
 So the Runner reaches only the Backend and browserless. Chromium, which loads whatever pages scripts visit, shares no network with the Backend. gluetun's
@@ -243,8 +243,8 @@ is trusted as, stays the same when the network is re-created. That trusts every 
 a proxy on another machine is trusted by its own address instead. The Compose project is named `lookout`, so the volumes are `lookout_*` wherever the
 file is.
 
-**Containers.** The Backend, the Runner and the relays run with a read-only root filesystem (a tmpfs for `/tmp`), no Linux capabilities and
-`no-new-privileges`, and the Backend and the Runner as uid 1654. Both images start with `tini` as PID 1: as PID 1 itself, .NET ignores the `SIGABRT`
+**Containers.** The Backend, the Runner, the relays and the one-off refresh of gluetun's servers list run with a read-only root filesystem (a
+tmpfs for `/tmp`), no Linux capabilities and `no-new-privileges`, and the Backend and the Runner as uid 1654. Both images start with `tini` as PID 1: as PID 1 itself, .NET ignores the `SIGABRT`
 its own crash raises, since the kernel drops signals PID 1 has no handler for, and spins instead of exiting, so a service that failed to start would
 look like it was running. There's no Aspire dashboard, which would show every service's environment.
 

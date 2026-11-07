@@ -78,7 +78,7 @@ Everything Lookout keeps is in Docker volumes:
 | --- | --- |
 | `database` | The SQLite database, and the keys that encrypt session cookies. Losing the keys signs everyone out. |
 | `scripts` | The uploaded watch scripts |
-| `gluetun` | gluetun's servers list, which it downloads again if lost |
+| `gluetun` | gluetun's servers list, which `gluetun-servers` refreshes each time the stack starts, and gluetun every 15 days while it runs. If lost, it's downloaded again. |
 
 Back up `database` and `scripts` together, with the stack stopped, for example:
 
