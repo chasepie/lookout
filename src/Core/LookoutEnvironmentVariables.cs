@@ -3,10 +3,11 @@ using Microsoft.Extensions.Configuration;
 namespace ChasePie.Lookout.Core;
 
 /// <summary>
-/// Names of the environment variables the services read. The AppHost sets them: the ones the user chooses come from
-/// <c>.env</c> and are listed in <c>example.env</c>; it works out or generates the rest. The Runner's image sets two of
-/// its own: <see cref="WatchCliRoot"/>, and <see cref="WatchScriptsDir"/> as <c>/app/scripts</c>, where the AppHost mounts
-/// the scripts directory.
+/// Names of the environment variables the services read. In development the AppHost sets them: the ones the user chooses
+/// come from <c>.env</c> and are listed in <c>example.env</c>; it works out or generates the rest. In production they come
+/// from <c>deploy/docker-compose.yaml</c> and its <c>.env</c>, and the secrets from files (see <see cref="SecretFiles"/>).
+/// The images set some of their own: the Runner's <see cref="WatchCliRoot"/>, and both <see cref="WatchScriptsDir"/> as
+/// <c>/app/scripts</c>, where the scripts are mounted, and the Backend's <see cref="DatabaseDir"/>.
 /// </summary>
 public static class LookoutEnvironmentVariables
 {
