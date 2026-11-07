@@ -1,8 +1,12 @@
 namespace Chasepie.Lookout.AppHost;
 
-// What development and production have in common
+// What development and production have in common, and every third-party image and tag, so they're updated in one place
 public partial class Program
 {
+    // The relays production puts between the Backend and gluetun (see AddRelay): socat forwards one TCP port to another
+    private const string AlpineSocatImage = "alpine/socat";
+    private const string AlpineSocatTag = "1.8.0.3";
+
     // Chromium that watch scripts run on instead of a locally launched browser. The SDK connects with Playwright, so the
     // image must support its Playwright version: v2.58.3 supports 1.60 to 1.64.
     private const string BrowserlessImage = "ghcr.io/browserless/chromium";

@@ -245,7 +245,7 @@ public partial class Program
     /// it leads only back to gluetun.
     /// </summary>
     private static void AddRelay(IDistributedApplicationBuilder builder, string name, int port) =>
-        builder.AddContainer(name, "alpine/socat", "1.8.0.3")
+        builder.AddContainer(name, AlpineSocatImage, AlpineSocatTag)
             .WithArgs($"TCP-LISTEN:{port},fork,reuseaddr", $"TCP:{GluetunService}:{port}")
             .PublishAsDockerComposeService((_, service) =>
             {
@@ -285,7 +285,14 @@ public partial class Program
         service.Deploy = new Deploy { Resources = new Resources { Limits = new ResourceSpec { Memory = memory } } };
 
     private static void AddVolume(Service service, string volume, string target, bool readOnly = false) =>
-        service.AddVolume(new Volume { Name = volume, Type = "volume", Source = volume, Target = target, ReadOnly = readOnly });
+        service.AddVolume(new Volume
+        {
+            Name = volume,
+            Type = "volume",
+            Source = volume,
+            Target = target,
+            ReadOnly = readOnly
+        });
 
     private static void DependOn(Service service, string other) =>
         service.DependsOn[other] = new ServiceDependency { Condition = "service_started" };
