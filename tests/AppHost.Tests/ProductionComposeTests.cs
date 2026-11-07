@@ -5,8 +5,8 @@ using YamlDotNet.Serialization;
 namespace Chasepie.Lookout.AppHost.Tests;
 
 /// <summary>
-/// The Docker Compose files `aspire publish` writes: what each service can reach, how it's locked down, and where its
-/// secrets come from. See docs/security.md.
+/// The Docker Compose files `aspire publish` writes: what each service can reach, how it's locked down, and which secrets
+/// it gets. See docs/security.md.
 /// </summary>
 [TestClass]
 public sealed class ProductionComposeTests
@@ -120,33 +120,21 @@ public sealed class ProductionComposeTests
     }
 
     [TestMethod]
-    [DataRow(LookoutEnvironmentVariables.OwnerPassword)]
-    [DataRow(LookoutEnvironmentVariables.RunnerApiKey)]
-    [DataRow(LookoutEnvironmentVariables.VpnProxyPassword)]
-    [DataRow("OPENVPN_USER")]
-    [DataRow("OPENVPN_PASSWORD")]
-    [DataRow("HTTPPROXY_PASSWORD")]
-    public void SecretsAreFilesRatherThanEnvironmentVariables(string variable)
+    [DataRow("LOOKOUT_OWNER_PASSWORD", "backend")]
+    [DataRow("LOOKOUT_RUNNER_API_KEY", "backend,runner")]
+    [DataRow("GLUETUN_PROXY_PASSWORD", "backend,gluetun,runner")]
+    [DataRow("BROWSERLESS_TOKEN", "browserless,runner")]
+    // gluetun gets it in its auth config
+    [DataRow("GLUETUN_API_KEY", "backend")]
+    [DataRow("OPENVPN_USER", "gluetun")]
+    [DataRow("OPENVPN_PASSWORD", "gluetun")]
+    public void EachSecretReachesOnlyTheServicesThatNeedIt(string secret, string services)
     {
-        foreach (var service in ServiceNames())
-        {
-            Assert.IsFalse(
-                Service(service).TryGetValue("environment", out var environment)
-                    && ((Dictionary<object, object>)environment).ContainsKey(variable),
-                $"{service} has {variable} in its environment");
-        }
-    }
+        var reached = ServiceNames().Where(service =>
+            Service(service).TryGetValue("environment", out var environment)
+            && ((Dictionary<object, object>)environment).Values.Any(value => value.ToString()!.Contains($"${{{secret}}}")));
 
-    [TestMethod]
-    public void EverySecretFileIsInTheSecretsDirectory()
-    {
-        var secrets = Map(_compose, "secrets");
-
-        Assert.IsNotEmpty(secrets);
-        foreach (var (name, secret) in secrets)
-        {
-            Assert.AreEqual($"./secrets/{name}", ((Dictionary<object, object>)secret)["file"]);
-        }
+        Assert.AreSequenceEqual(services.Split(','), reached.Order());
     }
 
     [TestMethod]

@@ -5,7 +5,7 @@ namespace ChasePie.Lookout.Core;
 /// <summary>
 /// Names of the environment variables the services read. In development the AppHost sets them: the ones you choose come
 /// from <c>.env</c> and are listed in <c>example.env</c>; it works out or generates the rest. In production they come
-/// from <c>deploy/docker-compose.yaml</c> and its <c>.env</c>, and the secrets from files (see <see cref="SecretFiles"/>).
+/// from <c>deploy/docker-compose.yaml</c> and its <c>.env</c>.
 /// The images set some of their own: the Runner's <see cref="WatchCliRoot"/>, and both <see cref="WatchScriptsDir"/> as
 /// <c>/app/scripts</c>, where the scripts are mounted, and the Backend's <see cref="DatabaseDir"/>.
 /// </summary>
@@ -51,7 +51,8 @@ public static class LookoutEnvironmentVariables
 
     /// <summary>
     /// browserless's token, which the Runner adds to <see cref="BrowserlessUrl"/> as its <c>token</c> query parameter.
-    /// A setting of its own, so it can come from a secret file. See <see cref="GetBrowserlessUrl"/>.
+    /// A setting of its own, so the token is set once beside browserless's own and kept out of URLs that end up in logs.
+    /// See <see cref="GetBrowserlessUrl"/>.
     /// </summary>
     public const string BrowserlessToken = "LOOKOUT_BROWSERLESS_TOKEN";
 
@@ -67,7 +68,7 @@ public static class LookoutEnvironmentVariables
 
     /// <summary>
     /// The password of <see cref="VpnProxyUrl"/>, which the Backend and the Runner add to its URL. A setting of its own,
-    /// so it can come from a secret file.
+    /// so the password is set once beside gluetun's own and kept out of URLs that end up in logs.
     /// </summary>
     public const string VpnProxyPassword = "LOOKOUT_VPN_PROXY_PASSWORD";
 
@@ -104,12 +105,6 @@ public static class LookoutEnvironmentVariables
     /// The shortest <see cref="OwnerPassword"/> the Backend and the AppHost accept.
     /// </summary>
     public const int OwnerPasswordMinLength = 16;
-
-    /// <summary>
-    /// A directory of secret files, one per setting, named after its variable, such as <c>LOOKOUT_OWNER_PASSWORD</c>.
-    /// They win over the environment. Docker Compose mounts its secrets in the default, <c>/run/secrets</c>.
-    /// </summary>
-    public const string SecretsDir = "LOOKOUT_SECRETS_DIR";
 
     /// <summary>
     /// The reverse proxies the Backend trusts the <c>X-Forwarded-For</c> and <c>X-Forwarded-Proto</c> headers from, as

@@ -110,7 +110,7 @@ The Runner runs any script in the scripts directory that it's asked to, so askin
   in `X-API-Key`, and the Runner answers `401` to any request without it, compared in constant time. Like the Backend's sign-in, a fallback policy
   requires it on every endpoint that doesn't say otherwise, and `RunnerApiKeyTests` fails if a new endpoint answers without it. Both services refuse to
   start without a key of at least 32 characters, so the check can't be turned off by forgetting to set it. Outside the AppHost, give both the same key: in
-production, `secrets/runner_api_key`.
+production, `LOOKOUT_RUNNER_API_KEY` in `.env`.
 
 The key is defence in depth, for when something else on the network can reach the Runner's port. Scripts don't get it: see
 [Watch scripts](#watch-scripts).
@@ -167,9 +167,9 @@ secret that the AppHost generates on each start:
 | gluetun's HTTP proxy | `gluetun-proxy-password`, `LOOKOUT_VPN_PROXY_PASSWORD`, for the username `lookout` | gluetun, the Runner and the Backend; see below |
 | gluetun's control server | `gluetun-api-key`, in `X-API-Key` | gluetun and the Backend |
 
-Production takes them from the deployment instead: see [Production deployment](#production-deployment). The secrets have settings of their own, rather than
-being part of their URLs, so they can come from secret files. The Runner refuses to start without a browserless token, since browserless without one
-accepts anyone, and the Runner having none means it was started without one.
+Production takes them from the deployment's `.env` instead: see [Production deployment](#production-deployment). The token and the password are settings
+of their own rather than part of their URLs, so each is set once beside the container's own and kept out of URLs that end up in logs. The Runner
+refuses to start without a browserless token, since browserless without one accepts anyone, and the Runner having none means it was started without one.
 
 gluetun's control-server key may only use the routes the Backend does (reading and changing the VPN's settings, and the public IP), through a role in
 gluetun's auth file; gluetun refuses every other route. Its proxy runs in stealth mode, without which it adds headers to plain-HTTP requests that give away
@@ -238,15 +238,15 @@ publishes ports from containers on a network that leads out, so the Backend can 
 raises, since the kernel drops signals PID 1 has no handler for, and spins instead of exiting, so a service that failed to start would look like it was
 running. There's no Aspire dashboard, which would show every service's environment.
 
-**Secrets** are files in `deploy/secrets`, which Compose mounts at `/run/secrets` in the containers that read them. The Backend and the Runner read each
-setting from the file named after it (`SecretFiles`, `LOOKOUT_SECRETS_DIR`), ahead of the environment, and gluetun reads its own under its own names. So
-they stay out of the containers' environments, `docker inspect` and child processes. They're still plaintext files on the host: Compose, unlike Swarm,
-doesn't encrypt them. Two secrets can't be files: browserless only reads its token from its environment, and gluetun its control-server key from its
-auth file, which Compose writes from `.env`. So those two are in `.env`, which the deployment keeps unreadable to other users.
+**Settings and secrets** are Compose variables in the deployment's `.env`, which it keeps unreadable to other users, and reach each container in its
+environment, only the ones it needs. gluetun's control-server key also goes into its auth file, which Compose writes from `.env`. Compose's secret files
+were the alternative, keeping secrets out of the containers' environments and `docker inspect`, but browserless only reads its token from its
+environment, so some secrets would have been in `.env` anyway, and one place is simpler than two. `docker inspect` shows them only to those who can
+already run containers on the host. Scripts don't get them: the Runner starts each with a clean environment ([Watch scripts](#watch-scripts)).
 
-**Settings** are Compose variables in `.env`, with defaults in the Compose file for the optional ones, so a setting left empty can't publish the port on
-every address. The required ones have none, and the service that needs one refuses to start without it. Nothing in the generated files comes from the
-publisher's machine, and `ProductionComposeTests` checks the networks, the containers and the secrets above.
+Optional settings have defaults in the Compose file, so a setting left empty can't publish the port on every address. The required ones have none, and
+the service that needs one refuses to start without it. Nothing in the generated files comes from the publisher's machine, and `ProductionComposeTests`
+checks the networks, the containers and which secrets reach which service.
 
 ## CSRF
 

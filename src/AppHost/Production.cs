@@ -8,8 +8,8 @@ namespace Chasepie.Lookout.AppHost;
 
 // `aspire publish`: every service a container, as the Docker Compose files in deploy/. Nothing here may come from this
 // machine (no .env, no paths, no generated values), so the files come out the same wherever they're published, and CI
-// checks the committed ones are current. deploy/README.md says how to run them, and docs/security.md why they're built
-// this way.
+// checks the committed ones are current. Every setting, secrets included, comes from the deployment's .env.
+// deploy/README.md says how to run them, and docs/security.md why they're built this way.
 public partial class Program
 {
     // The images CI pushes
@@ -38,16 +38,6 @@ public partial class Program
     private const string ScriptsVolume = "scripts";
     private const string DatabaseVolume = "database";
     private const string GluetunVolume = "gluetun";
-
-    // Files in deploy/secrets. Each is mounted where its reader looks: a Lookout service reads a setting from the file
-    // named after it (see SecretFiles), and gluetun reads its own under fixed names.
-    private const string OwnerPasswordSecret = "owner_password";
-    private const string RunnerApiKeySecret = "runner_api_key";
-    private const string VpnProxyPasswordSecret = "vpn_proxy_password";
-    private const string OpenVpnUserSecret = "openvpn_user";
-    private const string OpenVpnPasswordSecret = "openvpn_password";
-    private static readonly string[] SecretFileNames =
-        [OwnerPasswordSecret, RunnerApiKeySecret, VpnProxyPasswordSecret, OpenVpnUserSecret, OpenVpnPasswordSecret];
 
     private const string GluetunAuthConfigName = "gluetun_auth";
 
@@ -87,18 +77,25 @@ public partial class Program
             "The reverse proxy's address as the Backend sees it, as comma-separated IPs or CIDR networks. Without it, "
             + "X-Forwarded-For and X-Forwarded-Proto are ignored, and signing in through the proxy fails.");
         var ownerUsername = Setting("lookout-owner-username", null,
-            "the username the Owner signs in with. The password is in secrets/owner_password.");
+            "the username the Owner signs in with.");
         var timeZone = Setting("tz", "Etc/UTC", "The time zone of schedules and scripts' dates, such as America/New_York.");
         var vpnServiceProvider = Setting("vpn-service-provider", "private internet access", "gluetun's VPN_SERVICE_PROVIDER.");
         var runnerMemory = Setting("lookout-runner-memory", "1g", "The Runner's memory limit, which bounds what a script can take.");
         var browserlessMemory = Setting("lookout-browserless-memory", "2g", "browserless's memory limit.");
-        // These two go to containers that only read them from their environment or a config, so they're kept here rather
-        // than in secrets/
+        // Secrets
+        var ownerPassword = Setting("lookout-owner-password", null,
+            "the password the Owner signs in with, at least 16 characters. Changing it signs out every session.", secret: true);
+        var runnerApiKey = Setting("lookout-runner-api-key", null,
+            "the key the Backend sends the Runner, such as from `openssl rand -hex 32`.", secret: true);
         var browserlessToken = Setting("browserless-token", null,
-            "browserless's token, letters and digits only, such as from `openssl rand -hex 32`.", secret: true);
+            "browserless's token, such as from `openssl rand -hex 32`.", secret: true);
         var gluetunApiKey = Setting("gluetun-api-key", null,
-            "the Backend's key for gluetun's control server, letters and digits only, such as from "
-            + "`openssl rand -hex 32`.", secret: true);
+            "the Backend's key for gluetun's control server, letters and digits only, such as from `openssl rand -hex 32`.",
+            secret: true);
+        var proxyPassword = Setting("gluetun-proxy-password", null,
+            "the password of gluetun's HTTP proxy, such as from `openssl rand -hex 32`.", secret: true);
+        var openVpnUser = Setting("openvpn-user", null, "your VPN provider's OpenVPN username.", secret: true);
+        var openVpnPassword = Setting("openvpn-password", null, "your VPN provider's OpenVPN password.", secret: true);
 
         // A setting as a Compose variable, with its default if it has one
         string Placeholder(IResourceBuilder<ParameterResource> setting, DockerComposeServiceResource service) =>
@@ -133,8 +130,8 @@ public partial class Program
                 // Outside V8's heap, nothing else stops a script taking the host's memory
                 LimitMemory(service, Placeholder(runnerMemory, resource));
                 AddVolume(service, ScriptsVolume, "/app/scripts", readOnly: true);
-                AddSecret(service, RunnerApiKeySecret, LookoutEnvironmentVariables.RunnerApiKey);
-                AddSecret(service, VpnProxyPasswordSecret, LookoutEnvironmentVariables.VpnProxyPassword);
+                service.Environment[LookoutEnvironmentVariables.RunnerApiKey] = Placeholder(runnerApiKey, resource);
+                service.Environment[LookoutEnvironmentVariables.VpnProxyPassword] = Placeholder(proxyPassword, resource);
                 // No route out: scripts reach the network only through browserless
                 service.Networks = [RunnerNetwork, BrowsersNetwork];
                 DependOn(service, BrowserlessService);
@@ -162,9 +159,9 @@ public partial class Program
                 AddVolume(service, DatabaseVolume, "/app/database");
                 // For the servers list, which says which regions there are
                 AddVolume(service, GluetunVolume, "/app/gluetun", readOnly: true);
-                AddSecret(service, OwnerPasswordSecret, LookoutEnvironmentVariables.OwnerPassword);
-                AddSecret(service, RunnerApiKeySecret, LookoutEnvironmentVariables.RunnerApiKey);
-                AddSecret(service, VpnProxyPasswordSecret, LookoutEnvironmentVariables.VpnProxyPassword);
+                service.Environment[LookoutEnvironmentVariables.OwnerPassword] = Placeholder(ownerPassword, resource);
+                service.Environment[LookoutEnvironmentVariables.RunnerApiKey] = Placeholder(runnerApiKey, resource);
+                service.Environment[LookoutEnvironmentVariables.VpnProxyPassword] = Placeholder(proxyPassword, resource);
                 service.Networks = [RunnerNetwork, VpnControlNetwork, EdgeNetwork];
                 DependOn(service, RunnerService);
             });
@@ -177,8 +174,11 @@ public partial class Program
                 gluetunApiKeyPlaceholder = Placeholder(gluetunApiKey, resource);
                 service.Environment["VPN_SERVICE_PROVIDER"] = Placeholder(vpnServiceProvider, resource);
                 service.Environment["VPN_TYPE"] = "openvpn";
+                service.Environment["OPENVPN_USER"] = Placeholder(openVpnUser, resource);
+                service.Environment["OPENVPN_PASSWORD"] = Placeholder(openVpnPassword, resource);
                 service.Environment["HTTPPROXY"] = "on";
                 service.Environment["HTTPPROXY_USER"] = ProxyUsername;
+                service.Environment["HTTPPROXY_PASSWORD"] = Placeholder(proxyPassword, resource);
                 // Otherwise the proxy adds headers to plain-HTTP requests that give away browserless's address
                 service.Environment["HTTPPROXY_STEALTH"] = "on";
                 service.Environment["TZ"] = Placeholder(timeZone, resource);
@@ -188,10 +188,6 @@ public partial class Program
                 service.CapAdd = ["NET_ADMIN"];
                 service.Devices = ["/dev/net/tun:/dev/net/tun"];
                 AddVolume(service, GluetunVolume, "/gluetun");
-                // gluetun reads these from /run/secrets under these names
-                AddSecret(service, OpenVpnUserSecret, "openvpn_user");
-                AddSecret(service, OpenVpnPasswordSecret, "openvpn_password");
-                AddSecret(service, VpnProxyPasswordSecret, "httpproxy_password");
                 service.AddConfig(new ConfigReference
                 {
                     Source = GluetunAuthConfigName,
@@ -232,11 +228,6 @@ public partial class Program
             foreach (var name in new[] { ScriptsVolume, DatabaseVolume, GluetunVolume })
             {
                 file.Volumes[name] = new Volume { Name = name };
-            }
-
-            foreach (var name in SecretFileNames)
-            {
-                file.Secrets[name] = new Secret { Name = name, File = $"./secrets/{name}" };
             }
 
             // Compose fills in the key from deploy/.env
@@ -295,9 +286,6 @@ public partial class Program
 
     private static void AddVolume(Service service, string volume, string target, bool readOnly = false) =>
         service.AddVolume(new Volume { Name = volume, Type = "volume", Source = volume, Target = target, ReadOnly = readOnly });
-
-    private static void AddSecret(Service service, string secret, string target) =>
-        service.Secrets.Add(new SecretReference { Source = secret, Target = target });
 
     private static void DependOn(Service service, string other) =>
         service.DependsOn[other] = new ServiceDependency { Condition = "service_started" };

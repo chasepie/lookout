@@ -14,9 +14,8 @@ servers list in `LOOKOUT_GLUETUN_DIR`. The SQLite schema is managed with EF Core
 - `src/Runner/`: ASP.NET Core service that runs watch scripts, sandboxed with Node's permission model in a container built from `src/Runner/Dockerfile`
 (see `docs/security.md`). Without the AppHost it needs `LOOKOUT_BROWSERLESS_URL` and `LOOKOUT_BROWSERLESS_TOKEN`, and finds the watch CLI through the
 repo root.
-- `src/Core/`: types shared by Backend, Runner and AppHost: the C# records, the environment variable names (`LookoutEnvironmentVariables`), settings read
-from secret files (`SecretFiles`), the watch scripts directory (`WatchScriptsDirectory`), the key the Backend authenticates to the Runner with
-(`RunnerApiKey`) and the repo root lookup (`RepoRoot`).
+- `src/Core/`: types shared by Backend, Runner and AppHost: the C# records, the environment variable names (`LookoutEnvironmentVariables`), the watch
+scripts directory (`WatchScriptsDirectory`), the key the Backend authenticates to the Runner with (`RunnerApiKey`) and the repo root lookup (`RepoRoot`).
 - `src/AppHost/`: Aspire AppHost, in two halves.
   - `dotnet run --project src/AppHost` (`Development.cs`, which needs Docker) starts Runner, Backend, the frontend and browserless (Chromium for watch
     runs) and, when the OpenVPN credentials are in `.env`, gluetun (the VPN proxy for watches with `UseVpn`). It builds the Runner's container from
@@ -34,8 +33,8 @@ from secret files (`SecretFiles`), the watch scripts directory (`WatchScriptsDir
 (`npm run build -w src/watch-sdk`). `AppHost.Tests` publishes in-process and checks the Compose file.
 
 Environment variables are loaded from `.env`. `example.env` lists only the ones you set in development; leave out the ones the AppHost always sets
-itself, such as service URLs and generated keys. Production's are in `deploy/.env.example`, and its secrets are files (`SecretFiles`).
-`LookoutEnvironmentVariables` names them all.
+itself, such as service URLs and generated keys. Production's, secrets included, are in `deploy/.env.example`. `LookoutEnvironmentVariables` names
+them all.
 
 The domain's terms are in `GLOSSARY.md`, and decisions that would surprise a reader are recorded in `docs/adr/`. How signing in, sessions and CSRF
 protection work, and the constraints they put on changes and deployment, are in `docs/security.md`: read it before changing anything in `Auth/`, the

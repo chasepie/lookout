@@ -4,7 +4,7 @@ using Microsoft.Extensions.Configuration;
 namespace ChasePie.Lookout.Backend.UnitTests;
 
 /// <summary>
-/// The URLs whose secret comes from a setting of its own, so it can be read from a secret file.
+/// The URLs whose secret comes from a setting of its own.
 /// </summary>
 [TestClass]
 public sealed class SecretUrlTests

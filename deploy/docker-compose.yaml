@@ -25,6 +25,8 @@ services:
       LOOKOUT_BROWSERLESS_URL: "http://browserless:3000"
       LOOKOUT_BROWSERLESS_TOKEN: "${BROWSERLESS_TOKEN}"
       LOOKOUT_VPN_PROXY_URL: "http://lookout@gluetun:8888"
+      LOOKOUT_RUNNER_API_KEY: "${LOOKOUT_RUNNER_API_KEY}"
+      LOOKOUT_VPN_PROXY_PASSWORD: "${GLUETUN_PROXY_PASSWORD}"
     volumes:
       - type: "volume"
         target: "/app/scripts"
@@ -47,11 +49,6 @@ services:
     read_only: true
     security_opt:
       - "no-new-privileges:true"
-    secrets:
-      - source: "runner_api_key"
-        target: "LOOKOUT_RUNNER_API_KEY"
-      - source: "vpn_proxy_password"
-        target: "LOOKOUT_VPN_PROXY_PASSWORD"
     tmpfs:
       - "/tmp"
   backend:
@@ -66,6 +63,9 @@ services:
       LOOKOUT_GLUETUN_API_KEY: "${GLUETUN_API_KEY}"
       LOOKOUT_GLUETUN_DIR: "/app/gluetun"
       LOOKOUT_VPN_PROXY_URL: "http://lookout@gluetun-proxy:8888"
+      LOOKOUT_OWNER_PASSWORD: "${LOOKOUT_OWNER_PASSWORD}"
+      LOOKOUT_RUNNER_API_KEY: "${LOOKOUT_RUNNER_API_KEY}"
+      LOOKOUT_VPN_PROXY_PASSWORD: "${GLUETUN_PROXY_PASSWORD}"
     ports:
       - "${LOOKOUT_BIND_ADDRESS:-127.0.0.1}:${LOOKOUT_PORT:-8080}:8080"
     volumes:
@@ -95,13 +95,6 @@ services:
     read_only: true
     security_opt:
       - "no-new-privileges:true"
-    secrets:
-      - source: "owner_password"
-        target: "LOOKOUT_OWNER_PASSWORD"
-      - source: "runner_api_key"
-        target: "LOOKOUT_RUNNER_API_KEY"
-      - source: "vpn_proxy_password"
-        target: "LOOKOUT_VPN_PROXY_PASSWORD"
     tmpfs:
       - "/tmp"
   gluetun:
@@ -109,8 +102,11 @@ services:
     environment:
       VPN_SERVICE_PROVIDER: "${VPN_SERVICE_PROVIDER:-private internet access}"
       VPN_TYPE: "openvpn"
+      OPENVPN_USER: "${OPENVPN_USER}"
+      OPENVPN_PASSWORD: "${OPENVPN_PASSWORD}"
       HTTPPROXY: "on"
       HTTPPROXY_USER: "lookout"
+      HTTPPROXY_PASSWORD: "${GLUETUN_PROXY_PASSWORD}"
       HTTPPROXY_STEALTH: "on"
       TZ: "${TZ:-Etc/UTC}"
       UPDATER_PERIOD: "360h"
@@ -129,13 +125,6 @@ services:
       - "NET_ADMIN"
     devices:
       - "/dev/net/tun:/dev/net/tun"
-    secrets:
-      - source: "openvpn_user"
-        target: "openvpn_user"
-      - source: "openvpn_password"
-        target: "openvpn_password"
-      - source: "vpn_proxy_password"
-        target: "httpproxy_password"
     configs:
       - source: "gluetun_auth"
         target: "/gluetun-auth/config.toml"
@@ -197,22 +186,6 @@ volumes:
   scripts: {}
   database: {}
   gluetun: {}
-secrets:
-  owner_password:
-    file: "./secrets/owner_password"
-    name: "owner_password"
-  runner_api_key:
-    file: "./secrets/runner_api_key"
-    name: "runner_api_key"
-  vpn_proxy_password:
-    file: "./secrets/vpn_proxy_password"
-    name: "vpn_proxy_password"
-  openvpn_user:
-    file: "./secrets/openvpn_user"
-    name: "openvpn_user"
-  openvpn_password:
-    file: "./secrets/openvpn_password"
-    name: "openvpn_password"
 configs:
   gluetun_auth:
     content: "[[roles]]\nname = \"lookout-backend\"\nroutes = [\"GET /v1/vpn/settings\", \"PUT /v1/vpn/settings\", \"GET /v1/publicip/ip\"]\nauth = \"apikey\"\napikey = \"${GLUETUN_API_KEY}\"\n"

@@ -2,7 +2,6 @@ using System.Net;
 using System.Net.Http.Json;
 using ChasePie.Lookout.Backend.Auth;
 using ChasePie.Lookout.Backend.Controllers;
-using ChasePie.Lookout.Core;
 
 namespace ChasePie.Lookout.Backend.IntegrationTests;
 
@@ -160,35 +159,6 @@ public sealed class AuthTests
         if (expected == HttpStatusCode.BadRequest)
         {
             Assert.Contains("HTTPS", await login.Content.ReadAsStringAsync(Ct));
-        }
-    }
-
-    [TestMethod]
-    public async Task ThePasswordCanComeFromASecretFile()
-    {
-        var secretsDir = Directory.CreateTempSubdirectory("lookout-secrets-").FullName;
-        try
-        {
-            // With the newline `echo` would leave
-            await File.WriteAllTextAsync(
-                Path.Join(secretsDir, LookoutEnvironmentVariables.OwnerPassword), "the password from a file\n", Ct);
-            await using var factory = new LookoutFactory(settings: new Dictionary<string, string?>
-            {
-                [LookoutEnvironmentVariables.SecretsDir] = secretsDir,
-            });
-            using var client = factory.CreateBrowserClient();
-
-            using var fromFile = await client.PostAsJsonAsync(
-                "/api/auth/login", new { LookoutFactory.Username, Password = "the password from a file" }, Ct);
-            using var fromEnvironment = await client.PostAsJsonAsync(
-                "/api/auth/login", new { LookoutFactory.Username, LookoutFactory.Password }, Ct);
-
-            Assert.AreEqual(HttpStatusCode.OK, fromFile.StatusCode);
-            Assert.AreEqual(HttpStatusCode.Unauthorized, fromEnvironment.StatusCode);
-        }
-        finally
-        {
-            Directory.Delete(secretsDir, recursive: true);
         }
     }
 

@@ -8,47 +8,25 @@ The deployment needs only this directory's `docker-compose.yaml` and `.env.examp
 
 ## 1. Settings
 
-Copy `.env.example` to `.env` beside `docker-compose.yaml`, and fill it in. It says what each setting is for. These are
-required:
+Copy `.env.example` to `.env` beside `docker-compose.yaml`, and fill it in. It says what each setting is for, and which are
+required. The secrets are there too:
 
-- `LOOKOUT_HOST`: the hostname you reach Lookout on. Requests for any other host are refused.
-- `LOOKOUT_OWNER_USERNAME`: the username you sign in with.
-- `BROWSERLESS_TOKEN` and `GLUETUN_API_KEY`: two secrets, made with `openssl rand -hex 32`. They're here rather than
-  in `secrets/` because browserless and gluetun can only read them from their environment or a config file.
-- `LOOKOUT_TRUSTED_PROXIES`: not strictly required, but signing in fails without it; see [step 3](#3-a-reverse-proxy).
+- `LOOKOUT_OWNER_USERNAME` and `LOOKOUT_OWNER_PASSWORD`: what you sign in with. Changing either, other than the username's
+  case, signs out every session once the Backend restarts.
+- `LOOKOUT_RUNNER_API_KEY`, `BROWSERLESS_TOKEN`, `GLUETUN_API_KEY` and `GLUETUN_PROXY_PASSWORD`: secrets the services share
+  among themselves. Make each with `openssl rand -hex 32`.
+- `OPENVPN_USER` and `OPENVPN_PASSWORD`: your VPN provider's OpenVPN credentials.
+
+`LOOKOUT_HOST` is the hostname you reach Lookout on; requests for any other host are refused. `LOOKOUT_TRUSTED_PROXIES` isn't
+required, but signing in fails without it: see [step 2](#2-a-reverse-proxy).
+
+Since `.env` holds the secrets, keep it to yourself:
 
 ```sh
 chmod 600 .env
 ```
 
-## 2. Secrets
-
-Each file in `secrets/` holds one secret, with nothing else in it but an optional trailing newline:
-
-| File | What it holds |
-| --- | --- |
-| `owner_password` | The password you sign in with, at least 16 characters |
-| `runner_api_key` | The key the Backend sends the Runner: `openssl rand -hex 32` |
-| `vpn_proxy_password` | The password of gluetun's HTTP proxy: `openssl rand -hex 32` |
-| `openvpn_user` | Your VPN provider's OpenVPN username |
-| `openvpn_password` | Your VPN provider's OpenVPN password |
-
-Compose mounts each file into the containers that need it, at `/run/secrets`, keeping them out of the containers'
-environments. The files are mounted as they are, owner and mode included, and the Backend and the Runner run as uid
-1654, so give them the first three:
-
-```sh
-mkdir -p secrets && chmod 700 secrets
-openssl rand -hex 32 > secrets/runner_api_key
-openssl rand -hex 32 > secrets/vpn_proxy_password
-# ...and write owner_password, openvpn_user and openvpn_password yourself
-sudo chown 1654 secrets/owner_password secrets/runner_api_key secrets/vpn_proxy_password
-sudo chmod 400 secrets/*
-```
-
-Changing the Owner's password, or their username other than its case, signs out every session once the Backend restarts.
-
-## 3. A reverse proxy
+## 2. A reverse proxy
 
 The Backend serves plain HTTP on its published port, `127.0.0.1:8080` unless `LOOKOUT_BIND_ADDRESS` and `LOOKOUT_PORT`
 say otherwise, and expects a reverse proxy in front of it. It must:
@@ -67,7 +45,7 @@ If the proxy is on another machine, set `LOOKOUT_BIND_ADDRESS` to this machine's
 only the proxy can reach it. Anything else that reaches it can't sign in, since that's plain HTTP, but it shouldn't
 reach it at all.
 
-## 4. Start it
+## 3. Start it
 
 ```sh
 docker compose up -d
