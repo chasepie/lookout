@@ -2,16 +2,22 @@
 
 The Lookout web UI, an Angular v22 app. These rules apply to everything under `src/frontend/`. The TypeScript rules in the root `CLAUDE.md` apply here as well.
 
-## Angular Best Practices
+Load the `angular-developer` skill before writing or reviewing Angular code here. The rules below are this project's additions to it. The skill
+lives in `.agents/skills/` (pinned by `skills-lock.json`); update it with `npx skills update angular-developer --project`.
 
-- Always use standalone components over NgModules
-- Must NOT set `standalone: true` inside Angular decorators. It's the default in Angular v20+.
-- Do NOT set `changeDetection: ChangeDetectionStrategy.OnPush` explicitly. `OnPush` is the default in Angular v22+.
-- Use signals for state management
-- Implement lazy loading for feature routes
-- Do NOT use the `@HostBinding` and `@HostListener` decorators. Put host bindings inside the `host` object of the `@Component` or `@Directive` decorator instead
-- Use `NgOptimizedImage` for all static images.
-  - `NgOptimizedImage` does not work for inline base64 images.
+## Conventions
+
+- Leave Angular's defaults implicit: no `standalone: true`, and no `changeDetection: ChangeDetectionStrategy.OnPush`.
+- Bind classes and styles with `[class.name]` and `[style.prop]`, not `ngClass` or `ngStyle`. Import only the directives and pipes a template
+uses, never `CommonModule`.
+- Use `NgOptimizedImage` for static images; it can't show inline base64 images, such as run screenshots.
+- Keep components and services small, each with one job. Small components keep their template and styles inline; larger ones put them in
+`.html` and `.scss` files beside the component, referenced by relative path.
+
+## Accessibility
+
+- Every page MUST pass all AXE checks and meet WCAG AA, including focus management, colour contrast and ARIA attributes.
+- Check with AXE in light and dark mode, at desktop and phone widths (down to 320px), including with menus and dialogs open.
 
 ## Design
 
@@ -26,28 +32,10 @@ of red), and `--buff` only for the VPN's current region.
 - Report an action's outcome through `Notices` (`say` / `fail`), and ask before destroying anything through `Confirm`, never `window.confirm`.
 - Reload data on live updates with `reloadOn(resource, ...events)`, never by calling `reload()` directly: a resource ignores `reload()`
 while it's loading, and `reloadOn` runs it again once that load ends. A watch's runs come through `injectRunLog`, which pages and merges them.
-- Check pages with AXE in light and dark mode, at desktop and phone widths, including open menus and dialogs.
-
-## Accessibility Requirements
-
-- It MUST pass all AXE checks.
-- It MUST follow all WCAG AA minimums, including focus management, color contrast, and ARIA attributes.
-
-## Components
-
-- Keep components small and focused on a single responsibility
-- Use `input()` and `output()` functions instead of decorators
-- Use `model()` for two-way bound properties with `[(prop)]` syntax instead of pairing `input()` with `output()`
-- Use `computed()` for derived state
-- Use `linkedSignal()` for state derived from multiple reactive sources that must stay synchronized
-- Prefer inline templates for small components
-- Prefer Signal Forms (`@angular/forms/signals`) for new forms. They are stable in Angular v22+ and provide signal-based state, type-safe field access, and
-schema-based validation
-- When not using Signal Forms, prefer Reactive forms instead of Template-driven ones
-- Do NOT use `ngClass`, use `class` bindings instead
-- Do NOT use `ngStyle`, use `style` bindings instead
-- Do NOT import `CommonModule`, import only the directives and pipes the template uses, such as `AsyncPipe` or `DatePipe`
-- When using external templates/styles, use paths relative to the component TS file.
+- Phones are designed for, not just shrunk to. Write those conditions with the mixins in `src/styles/_breakpoints.scss`
+(`@use 'breakpoints' as bp`), never as raw media queries: `bp.phone` for phone layouts, `bp.touch` to grow targets to 44px (desktop
+stays compact), and `bp.hover` around every hover style, so it doesn't stick after a tap. Code that can't use CSS reads `phoneQuery`.
+Anything pinned to the bottom of a phone screen must fit within `scroll-padding-bottom` in `_base.scss`, so it never covers what has focus.
 
 ## Testing
 
@@ -57,24 +45,3 @@ is `provideFakeLiveUpdates()`, for the SignalR connection; push messages through
 only once every request is answered, so use `respond()` for all but the last request out.
 - Coverage counts every file in `src/app`, and `npm run test:ci` fails below the minimums in `angular.json`'s `coverageThresholds`. Raise
 them as coverage grows.
-
-## State Management
-
-- Use signals for local component state
-- Use `computed()` for derived state
-- Keep state transformations pure and predictable
-- Do NOT use `mutate` on signals, use `update` or `set` instead
-
-## Templates
-
-- Keep templates simple and avoid complex logic
-- Use native control flow (`@if`, `@for`, `@switch`) instead of `*ngIf`, `*ngFor`, `*ngSwitch`
-- Use the async pipe to handle observables
-- Do not assume globals like (`new Date()`) are available.
-
-## Services
-
-- Design services around a single responsibility
-- Use the `providedIn: 'root'` option for singleton services
-- Prefer the `@Service` decorator over `@Injectable({providedIn: 'root'})` for new singleton services (Angular v22+)
-- Use the `inject()` function instead of constructor injection
