@@ -21,9 +21,9 @@ public partial class Program
     private const string BrowserlessTimeout = "180000";
 
     // The VPN client, with an HTTP proxy that watches with UseVpn send their browser traffic through, and a control
-    // server the Backend switches regions with. v3 requires a key on the control server.
+    // server the Backend switches regions with. It must require a key on the control server, which v3.40 started to.
     private const string GluetunImage = "qmcgaw/gluetun";
-    private const string GluetunTag = "v3";
+    private const string GluetunTag = "v3.41.3";
 
     // How often gluetun refreshes its servers list; more often risks the VPN provider blocking it
     private const string GluetunUpdaterPeriod = "360h";

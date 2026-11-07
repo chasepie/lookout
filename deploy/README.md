@@ -17,6 +17,9 @@ required. The secrets are there too:
   among themselves. Make each with `openssl rand -hex 32`.
 - `OPENVPN_USER` and `OPENVPN_PASSWORD`: your VPN provider's OpenVPN credentials.
 
+Compose expands `$NAME` in `.env` values, and `#` starts a comment, so put any value with `$`, `#` or spaces in single
+quotes: `LOOKOUT_OWNER_PASSWORD='pa$$word with #'`. The `openssl rand -hex` ones never need it.
+
 `LOOKOUT_HOST` is the hostname you reach Lookout on; requests for any other host are refused. `LOOKOUT_TRUSTED_PROXIES` isn't
 required, but signing in fails without it: see [step 2](#2-a-reverse-proxy).
 
@@ -37,8 +40,10 @@ say otherwise, and expects a reverse proxy in front of it. It must:
 - **Pass the `Host` header through** as `LOOKOUT_HOST`.
 - **Send `X-Forwarded-For` and `X-Forwarded-Proto`**, replacing any the client sent. The Backend only trusts them from
   the addresses in `LOOKOUT_TRUSTED_PROXIES`: set it to the proxy's address as the Backend sees it. For a proxy on another
-  machine, that's the proxy's LAN address. For a proxy on this machine, connecting to the published port, it's usually
-  the gateway of the Backend's `edge` network: `docker network inspect <project>_edge --format '{{(index .IPAM.Config 0).Gateway}}'`.
+  machine, that's the proxy's LAN address. For a proxy on this machine, connecting to the published port, it's the
+  gateway of the Backend's `edge` network: `172.30.240.1`, the first address of `LOOKOUT_EDGE_SUBNET`. The subnet is
+  fixed so the gateway doesn't change when the network is re-created; change it if it overlaps another network. Trusting
+  the gateway trusts every process on this machine that connects to the published port, not just the proxy.
 - **Pass WebSocket upgrades** for `/api/hubs/updates`, which carries live updates. Many proxies need this turned on.
 
 If the proxy is on another machine, set `LOOKOUT_BIND_ADDRESS` to this machine's LAN address, and firewall the port so
@@ -79,7 +84,7 @@ Back up `database` and `scripts` together, with the stack stopped, for example:
 
 ```sh
 docker compose stop
-docker run --rm -v <project>_database:/database:ro -v <project>_scripts:/scripts:ro -v "$PWD":/backup alpine \
+docker run --rm -v lookout_database:/database:ro -v lookout_scripts:/scripts:ro -v "$PWD":/backup alpine \
   tar czf /backup/lookout-backup.tar.gz /database /scripts
 docker compose start
 ```

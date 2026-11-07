@@ -30,13 +30,15 @@ public partial class Program
     private const string EdgeNetwork = "edge"; // the Backend, reached on its published port
     private static readonly string[] InternalNetworks =
         [RunnerNetwork, BrowsersNetwork, VpnProxyNetwork, GluetunRelayNetwork, VpnControlNetwork];
-    private static readonly string[] OutwardNetworks = [EgressNetwork, EdgeNetwork];
 
     private const string ScriptsVolume = "scripts";
     private const string DatabaseVolume = "database";
     private const string GluetunVolume = "gluetun";
 
     private const string GluetunAuthConfigName = "gluetun_auth";
+
+    // For the secrets the Owner chooses: Compose expands $NAME in .env values, and # starts a comment, unless quoted
+    private const string QuoteIfNeeded = "Put it in single quotes if it has $, # or spaces in it.";
 
     private static void AddProduction(IDistributedApplicationBuilder builder)
     {
@@ -75,12 +77,17 @@ public partial class Program
         var ownerUsername = Setting("lookout-owner-username", null,
             "the username the Owner signs in with.");
         var timeZone = Setting("tz", "Etc/UTC", "The time zone of schedules and scripts' dates, such as America/New_York.");
+        var edgeSubnet = Setting("lookout-edge-subnet", "172.30.240.0/24",
+            "The subnet of the Backend's edge network, where its published port's connections come from; its gateway is "
+            + "the subnet's first address, 172.30.240.1 by default. Fixed, so the gateway stays the same when the network is "
+            + "re-created. Change it if it overlaps another network on this machine.");
         var vpnServiceProvider = Setting("vpn-service-provider", "private internet access", "gluetun's VPN_SERVICE_PROVIDER.");
         var runnerMemory = Setting("lookout-runner-memory", "1g", "The Runner's memory limit, which bounds what a script can take.");
         var browserlessMemory = Setting("lookout-browserless-memory", "2g", "browserless's memory limit.");
         // Secrets
         var ownerPassword = Setting("lookout-owner-password", null,
-            "the password the Owner signs in with, at least 16 characters. Changing it signs out every session.", secret: true);
+            "the password the Owner signs in with, at least 16 characters. Changing it signs out every session. "
+            + QuoteIfNeeded, secret: true);
         var runnerApiKey = Setting("lookout-runner-api-key", null,
             "the key the Backend sends the Runner, such as from `openssl rand -hex 32`.", secret: true);
         var browserlessToken = Setting("browserless-token", null,
@@ -90,8 +97,12 @@ public partial class Program
             secret: true);
         var proxyPassword = Setting("gluetun-proxy-password", null,
             "the password of gluetun's HTTP proxy, such as from `openssl rand -hex 32`.", secret: true);
-        var openVpnUser = Setting("openvpn-user", null, "your VPN provider's OpenVPN username.", secret: true);
-        var openVpnPassword = Setting("openvpn-password", null, "your VPN provider's OpenVPN password.", secret: true);
+        var openVpnUser = Setting("openvpn-user", null, "your VPN provider's OpenVPN username. " + QuoteIfNeeded, secret: true);
+        var openVpnPassword = Setting("openvpn-password", null,
+            "your VPN provider's OpenVPN password. " + QuoteIfNeeded, secret: true);
+
+        // The edge network's subnet as a Compose variable, read from the Backend's service for the network
+        string? edgeSubnetPlaceholder = null;
 
         // A setting as a Compose variable, with its default if it has one
         string Placeholder(IResourceBuilder<ParameterResource> setting, DockerComposeServiceResource service) =>
@@ -141,6 +152,7 @@ public partial class Program
             .PublishAsDockerComposeService((resource, service) =>
             {
                 service.Image = $"{BackendImage}:{Placeholder(imageTag, resource)}";
+                edgeSubnetPlaceholder = Placeholder(edgeSubnet, resource);
                 service.Environment["TZ"] = Placeholder(timeZone, resource);
                 service.Environment["AllowedHosts"] = Placeholder(host, resource);
                 service.Environment[LookoutEnvironmentVariables.TrustedProxies] = Placeholder(trustedProxies, resource);
@@ -207,6 +219,10 @@ public partial class Program
 
         compose.ConfigureComposeFile(file =>
         {
+            // So volumes and networks are named lookout_*, wherever the file is, rather than after its directory, which a
+            // copied or renamed deployment would otherwise lose its data to
+            file.Name = "lookout";
+
             // Each service names its own networks, instead of all sharing Aspire's default one
             file.Networks.Clear();
             foreach (var name in InternalNetworks)
@@ -214,10 +230,19 @@ public partial class Program
                 file.Networks[name] = new Network { Name = name, Driver = "bridge", Internal = true };
             }
 
-            foreach (var name in OutwardNetworks)
+            file.Networks[EgressNetwork] = new Network { Name = EgressNetwork, Driver = "bridge" };
+            // A fixed subnet, so the gateway that a reverse proxy on this machine connects from, which the Backend is told
+            // to trust, stays the same when the network is re-created
+            file.Networks[EdgeNetwork] = new Network
             {
-                file.Networks[name] = new Network { Name = name, Driver = "bridge" };
-            }
+                Name = EdgeNetwork,
+                Driver = "bridge",
+                Ipam = new Ipam
+                {
+                    Config = [new() { ["subnet"] = edgeSubnetPlaceholder
+                        ?? throw new InvalidOperationException("the Backend's service must be published before the compose file") }],
+                },
+            };
 
             // Compose fills in the key from deploy/.env
             file.Configs[GluetunAuthConfigName] = new Config

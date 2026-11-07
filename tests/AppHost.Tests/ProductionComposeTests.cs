@@ -72,6 +72,21 @@ public sealed class ProductionComposeTests
     }
 
     [TestMethod]
+    public void VolumesAndNetworksAreNamedTheSameWhereverTheFileIs()
+    {
+        // Otherwise Compose names them after the directory, and a copied deployment starts with empty volumes
+        Assert.AreEqual("lookout", _compose["name"]);
+    }
+
+    [TestMethod]
+    public void TheEdgeNetworkHasAFixedSubnetSoItsGatewayCanBeTrusted()
+    {
+        var config = (List<object>)Map(Map(Map(_compose, "networks"), "edge"), "ipam")["config"];
+
+        Assert.AreEqual("${LOOKOUT_EDGE_SUBNET:-172.30.240.0/24}", ((Dictionary<object, object>)config.Single())["subnet"]);
+    }
+
+    [TestMethod]
     public void OnlyTheBackendIsPublishedAndOnLoopbackByDefault()
     {
         foreach (var service in ServiceNames().Where(service => service != "backend"))
