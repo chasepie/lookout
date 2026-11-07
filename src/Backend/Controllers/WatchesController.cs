@@ -22,7 +22,9 @@ public class WatchesController(
     public async Task<ActionResult<WatchSummary>> Get(int id, CancellationToken cancellationToken)
     {
         var watches = await WatchSummary.ListAsync(
-            _dbContext.Watches.Where(w => w.Id == id), DateTime.UtcNow, cancellationToken);
+            _dbContext.Watches.Where(w => w.Id == id),
+            DateTime.UtcNow,
+            cancellationToken);
         return watches.Count == 0 ? NotFound() : watches[0];
     }
 
@@ -30,7 +32,9 @@ public class WatchesController(
     public async Task<ActionResult<List<WatchSummary>>> GetAll(CancellationToken cancellationToken)
     {
         return await WatchSummary.ListAsync(
-            _dbContext.Watches.OrderBy(w => w.Name), DateTime.UtcNow, cancellationToken);
+            _dbContext.Watches.OrderBy(w => w.Name),
+            DateTime.UtcNow,
+            cancellationToken);
     }
 
     /// <summary>

@@ -47,7 +47,10 @@ public class WatchRunsController(LookoutDbContext dbContext, UpdatesNotifier not
     /// <param name="limit">How many runs at most, from 1 to <see cref="MaxPageSize"/>.</param>
     [HttpGet]
     public async Task<ActionResult<List<WatchRunSummary>>> GetAll(
-        int watchId, int? before, CancellationToken cancellationToken, int limit = DefaultPageSize)
+        int watchId,
+        int? before,
+        CancellationToken cancellationToken,
+        int limit = DefaultPageSize)
     {
         if (limit is < 1 or > MaxPageSize)
         {

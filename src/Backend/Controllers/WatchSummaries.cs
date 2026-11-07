@@ -23,15 +23,15 @@ public sealed record WatchRunSummary(
     /// Selects a summary in the database query, so the screenshot's bytes are never read.
     /// </summary>
     public static readonly Expression<Func<WatchRun, WatchRunSummary>> Projection = run => new WatchRunSummary(
-        run.Id,
-        run.WatchId,
-        run.CreatedTime,
-        run.StartTime,
-        run.EndTime,
-        run.Status,
-        run.Content,
-        run.Error,
-        run.Screenshot != null);
+        Id: run.Id,
+        WatchId: run.WatchId,
+        CreatedTime: run.CreatedTime,
+        StartTime: run.StartTime,
+        EndTime: run.EndTime,
+        Status: run.Status,
+        Content: run.Content,
+        Error: run.Error,
+        HasScreenshot: run.Screenshot != null);
 }
 
 /// <summary>
@@ -80,15 +80,15 @@ public sealed record WatchSummary(
     }
 
     private static WatchSummary From(Watch watch, List<WatchRunSummary> recentRuns, DateTime now) => new(
-        watch.Id,
-        watch.Name,
-        watch.ScheduleEnabled,
-        watch.ScheduleKind,
-        watch.ScheduleInterval,
-        watch.UseVpn,
-        watch.ScriptFileName,
-        recentRuns,
-        NextRunTimeOf(watch, recentRuns, now));
+        Id: watch.Id,
+        Name: watch.Name,
+        ScheduleEnabled: watch.ScheduleEnabled,
+        ScheduleKind: watch.ScheduleKind,
+        ScheduleInterval: watch.ScheduleInterval,
+        UseVpn: watch.UseVpn,
+        ScriptFileName: watch.ScriptFileName,
+        RecentRuns: recentRuns,
+        NextRunTime: NextRunTimeOf(watch, recentRuns, now));
 
     /// <summary>
     /// When <see cref="Services.WatchScheduler"/> next creates a run: counting from the latest run, or now if there's
