@@ -1,8 +1,13 @@
 namespace Chasepie.Lookout.AppHost;
 
-// What development and production have in common, and every third-party image and tag, so they're updated in one place
+// What development and production have in common, and every image and tag, so they're updated in one place
 public partial class Program
 {
+    // Lookout's own images in production, which CD (.github/workflows/cd.yml) pushes. Their tag is a deployment setting,
+    // lookout-image-tag. Development builds the Runner from its Dockerfile and runs the Backend as a project instead.
+    private const string BackendImage = "ghcr.io/chasepie/lookout-backend";
+    private const string RunnerImage = "ghcr.io/chasepie/lookout-runner";
+
     // The relays production puts between the Backend and gluetun (see AddRelay): socat forwards one TCP port to another
     private const string AlpineSocatImage = "alpine/socat";
     private const string AlpineSocatTag = "1.8.0.3";

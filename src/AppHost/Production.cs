@@ -12,9 +12,6 @@ namespace Chasepie.Lookout.AppHost;
 // deploy/README.md says how to run them, and docs/security.md why they're built this way.
 public partial class Program
 {
-    // Where CD (.github/workflows/cd.yml) pushes the images
-    private const string ImageRegistry = "ghcr.io/chasepie";
-
     // The services' names, which are also their hostnames on their networks
     private const string BackendService = "backend";
     private const string RunnerService = "runner";
@@ -116,10 +113,10 @@ public partial class Program
                 service.Networks = [BrowsersNetwork, VpnProxyNetwork, EgressNetwork];
             });
 
-        builder.AddContainer(RunnerService, $"{ImageRegistry}/lookout-runner")
+        builder.AddContainer(RunnerService, RunnerImage)
             .PublishAsDockerComposeService((resource, service) =>
             {
-                service.Image = $"{ImageRegistry}/lookout-runner:{Placeholder(imageTag, resource)}";
+                service.Image = $"{RunnerImage}:{Placeholder(imageTag, resource)}";
                 service.Environment["TZ"] = Placeholder(timeZone, resource);
                 service.Environment[LookoutEnvironmentVariables.BrowserlessUrl] = $"http://{BrowserlessService}:3000";
                 service.Environment[LookoutEnvironmentVariables.BrowserlessToken] = Placeholder(browserlessToken, resource);
@@ -137,10 +134,10 @@ public partial class Program
                 DependOn(service, BrowserlessService);
             });
 
-        builder.AddContainer(BackendService, $"{ImageRegistry}/lookout-backend")
+        builder.AddContainer(BackendService, BackendImage)
             .PublishAsDockerComposeService((resource, service) =>
             {
-                service.Image = $"{ImageRegistry}/lookout-backend:{Placeholder(imageTag, resource)}";
+                service.Image = $"{BackendImage}:{Placeholder(imageTag, resource)}";
                 service.Environment["TZ"] = Placeholder(timeZone, resource);
                 service.Environment["AllowedHosts"] = Placeholder(host, resource);
                 service.Environment[LookoutEnvironmentVariables.TrustedProxies] = Placeholder(trustedProxies, resource);
