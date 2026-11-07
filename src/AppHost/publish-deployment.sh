@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Regenerates docker-compose.yaml and .env.example here from the AppHost's publish mode (src/AppHost/Production.cs).
+# Regenerates deploy/docker-compose.yaml and deploy/.env.example from the AppHost's publish mode (Production.cs).
 # Run it after changing that, and commit the result: ProductionComposeTests fails while they differ.
 set -euo pipefail
-repo_root="$(cd "$(dirname "$0")/.." && pwd)"
+repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
 output="$(mktemp -d)"
 trap 'rm -rf "$output"' EXIT
 

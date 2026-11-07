@@ -1,8 +1,8 @@
 # Deploying Lookout
 
-`docker-compose.yaml` runs Lookout from the images CD (`.github/workflows/cd.yml`) publishes to GHCR. It's generated from the AppHost's publish mode
-(`src/AppHost/Production.cs`) by `publish.sh`, so change it there, not here: CI fails while the two differ. Why it's built
-the way it is (the networks, the read-only containers, the secrets) is in [`docs/security.md`](../docs/security.md).
+`docker-compose.yaml` runs Lookout from the images CD (`.github/workflows/cd.yml`) publishes to GHCR. It's generated from the
+AppHost's publish mode (`src/AppHost/Production.cs`), so change it there, not here: CI fails while the two differ. Why it's
+built the way it is (the networks, the read-only containers, the secrets) is in [`docs/security.md`](../docs/security.md).
 
 The deployment needs only this directory's `docker-compose.yaml` and `.env.example`, not the rest of the repo.
 

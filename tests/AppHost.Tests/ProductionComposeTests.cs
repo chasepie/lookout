@@ -167,7 +167,7 @@ public sealed class ProductionComposeTests
         Assert.AreEqual(
             fileName == ".env.example" ? _envText : _composeText,
             committed,
-            $"deploy/{fileName} is out of date: run deploy/publish.sh and commit the result.");
+            $"deploy/{fileName} is out of date: run src/AppHost/publish-deployment.sh and commit the result.");
     }
 
     private static IEnumerable<string> ServiceNames() => Map(_compose, "services").Keys.Select(key => (string)key);
