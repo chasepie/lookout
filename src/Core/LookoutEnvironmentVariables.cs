@@ -92,6 +92,13 @@ public static class LookoutEnvironmentVariables
     public const int OwnerPasswordMinLength = 16;
 
     /// <summary>
+    /// The reverse proxies the Backend trusts the <c>X-Forwarded-For</c> and <c>X-Forwarded-Proto</c> headers from, as
+    /// comma-separated IP addresses or CIDR networks, such as <c>172.30.0.1, 10.0.0.0/24</c>. Without it, the Backend trusts
+    /// none and ignores both headers.
+    /// </summary>
+    public const string TrustedProxies = "LOOKOUT_TRUSTED_PROXIES";
+
+    /// <summary>
     /// Reads a base URL from configuration, adding a trailing slash so relative request URIs append to its path.
     /// </summary>
     /// <returns>The URL, or <see langword="null"/> if the variable is not set.</returns>

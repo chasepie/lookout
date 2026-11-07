@@ -9,6 +9,12 @@ public class WatchScriptManager(
     WatchScriptsDirectory scriptsDirectory)
 {
     private const int MaxScriptBytes = 64 * 1024;
+
+    /// <summary>
+    /// The largest request that uploads a script: the largest script, plus room for the rest of its multipart form.
+    /// Kestrel stops reading a larger request at this size, rather than buffering all of it for the 64 KiB check.
+    /// </summary>
+    public const int MaxUploadRequestBytes = 2 * MaxScriptBytes;
     private const string InvalidScriptMessage = "Upload a .ts or .js script between 1 byte and 64 KiB.";
 
     private readonly LookoutDbContext _dbContext = dbContext;

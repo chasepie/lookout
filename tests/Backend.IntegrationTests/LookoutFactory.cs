@@ -33,19 +33,23 @@ internal sealed class LookoutFactory : WebApplicationFactory<Program>
     private readonly string _username;
     private readonly string _password;
     private readonly bool _ownsDataDirectory;
+    private readonly IReadOnlyDictionary<string, string?> _settings;
 
     /// <param name="dataDirectory">
     /// A directory to keep the database and keys in, to share them with another factory as if the Backend restarted.
     /// </param>
+    /// <param name="settings">More settings, as if from the environment; these win over the defaults above.</param>
     public LookoutFactory(
         string environment = "Production",
         string username = Username,
         string password = Password,
-        string? dataDirectory = null)
+        string? dataDirectory = null,
+        IReadOnlyDictionary<string, string?>? settings = null)
     {
         _environment = environment;
         _username = username;
         _password = password;
+        _settings = settings ?? new Dictionary<string, string?>();
         _ownsDataDirectory = dataDirectory is null;
         DataDirectory = dataDirectory ?? Directory.CreateTempSubdirectory("lookout-tests-").FullName;
         WebRoot = CreateWebRoot(DataDirectory);
@@ -116,6 +120,11 @@ internal sealed class LookoutFactory : WebApplicationFactory<Program>
         // Nothing listens there; runs aren't exercised
         builder.UseSetting(LookoutEnvironmentVariables.RunnerUrl, "http://127.0.0.1:9");
         builder.UseSetting(LookoutEnvironmentVariables.RunnerApiKey, new string('k', RunnerApiKey.MinLength));
+        foreach (var (name, value) in _settings)
+        {
+            builder.UseSetting(name, value);
+        }
+
         builder.ConfigureServices(services => services
             .AddTransient<IStartupFilter, ClientIpStartupFilter>()
             .AddTransient<IStartupFilter, MatchedRouteStartupFilter>());
