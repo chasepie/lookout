@@ -1,7 +1,7 @@
 import { Component, computed, inject } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { merge } from 'rxjs';
-import { LiveUpdates } from '../watches/live-updates';
+import { LiveUpdates } from '../live/live-updates';
 import { describeError } from '../shared/describe-error';
 import { VpnApi } from './vpn-api';
 import { VpnRotationForm } from './vpn-rotation-form';
@@ -13,35 +13,71 @@ import { VpnSwitchForm } from './vpn-switch-form';
   selector: 'app-vpn-page',
   imports: [VpnStatusCard, VpnSwitchForm, VpnRotationForm],
   template: `
-    <h2>VPN</h2>
+    <h1>VPN</h1>
 
     @if (status.isLoading() && !status.hasValue()) {
-      <p>Loading…</p>
+      <p class="muted" role="status">Loading the VPN's status…</p>
     } @else if (status.error(); as error) {
-      <pre role="alert">{{ describeError(error) }}</pre>
+      <div class="callout callout-failure" role="alert"><p>Couldn't load the VPN's status: {{ describeError(error) }}</p></div>
     } @else if (status.hasValue()) {
       @if (status.value().settings; as settings) {
         <app-vpn-status-card [status]="status.value()" [settings]="settings" />
 
         @if (regions.error(); as error) {
-          <pre role="alert">Couldn't load the regions: {{ describeError(error) }}</pre>
+          <div class="callout callout-failure" role="alert"><p>Couldn't load the regions: {{ describeError(error) }}</p></div>
         } @else if (regions.hasValue()) {
           @if (regions.value().regions.length === 0) {
-            <p role="alert">
-              gluetun's servers list has no regions for {{ regions.value().provider }}, so the VPN can't switch region.
-            </p>
+            <div class="callout callout-failure" role="alert">
+              <p>
+                gluetun's servers list has no regions for {{ regions.value().provider }}, so the VPN can't switch
+                region.
+              </p>
+            </div>
           } @else {
-            <app-vpn-switch-form [regions]="regions.value().regions" [switching]="!!status.value().switch" />
-            <app-vpn-rotation-form [settings]="settings" [regions]="regions.value().regions" />
+            <div class="controls">
+              <app-vpn-switch-form [regions]="regions.value().regions" [switching]="!!status.value().switch" />
+              <app-vpn-rotation-form [settings]="settings" [regions]="regions.value().regions" />
+            </div>
           }
         } @else {
-          <p>Loading regions…</p>
+          <p class="muted" role="status">Loading regions…</p>
         }
       } @else {
-        <p>
-          The VPN isn't set up. Set <code>OPENVPN_USER</code>, <code>OPENVPN_PASSWORD</code> and
-          <code>LOOKOUT_GLUETUN_DIR</code> in <code>.env</code>, then restart the AppHost.
-        </p>
+        <section class="unset" aria-labelledby="unset-title">
+          <h2 id="unset-title">The VPN isn't set up</h2>
+          <p>
+            Watches that use the VPN fail until it is. Set <code>OPENVPN_USER</code>, <code>OPENVPN_PASSWORD</code> and
+            <code>LOOKOUT_GLUETUN_DIR</code> in <code>.env</code>, then restart the AppHost.
+          </p>
+        </section>
+      }
+    }
+  `,
+  styles: `
+    :host {
+      display: grid;
+      gap: var(--space-5);
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+      gap: var(--space-7);
+      align-items: start;
+      padding-top: var(--space-5);
+    }
+
+    .unset {
+      display: grid;
+      gap: var(--space-3);
+      padding: var(--space-5);
+      border-left: 3px solid var(--magenta);
+      background: var(--paper-raised);
+    }
+
+    @media (max-width: 52rem) {
+      .controls {
+        grid-template-columns: minmax(0, 1fr);
       }
     }
   `,

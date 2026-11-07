@@ -11,27 +11,74 @@ import { Session } from './session';
   selector: 'app-login-page',
   imports: [FormField],
   template: `
-    <h2>Sign in</h2>
-    <form (submit)="signIn($event)">
-      <p>
-        <label for="username">Username</label><br />
-        <input id="username" autocomplete="username" [formField]="loginForm.username" />
-        @if (loginForm.username().touched() && loginForm.username().invalid()) {
-          <br /><span role="alert">Username is required.</span>
+    <section class="sheet" aria-labelledby="sign-in-title">
+      <h1 id="sign-in-title">Sign in</h1>
+      <p class="muted">Lookout has one Owner. Use the username and password it was started with.</p>
+      <form class="form" novalidate (submit)="signIn($event)">
+        <div class="field">
+          <label class="field-label" for="username">Username</label>
+          <input
+            id="username"
+            class="input"
+            autocomplete="username"
+            [formField]="loginForm.username"
+            [attr.aria-invalid]="loginForm.username().touched() && loginForm.username().invalid()"
+            aria-describedby="username-error"
+          />
+          <span id="username-error" class="field-error">
+            @if (loginForm.username().touched() && loginForm.username().invalid()) {
+              Enter your username.
+            }
+          </span>
+        </div>
+        <div class="field">
+          <label class="field-label" for="password">Password</label>
+          <input
+            id="password"
+            class="input"
+            type="password"
+            autocomplete="current-password"
+            [formField]="loginForm.password"
+            [attr.aria-invalid]="loginForm.password().touched() && loginForm.password().invalid()"
+            aria-describedby="password-error"
+          />
+          <span id="password-error" class="field-error">
+            @if (loginForm.password().touched() && loginForm.password().invalid()) {
+              Enter your password.
+            }
+          </span>
+        </div>
+        @if (error(); as error) {
+          <div class="callout callout-failure" role="alert"><p>{{ error }}</p></div>
         }
-      </p>
-      <p>
-        <label for="password">Password</label><br />
-        <input id="password" type="password" autocomplete="current-password" [formField]="loginForm.password" />
-        @if (loginForm.password().touched() && loginForm.password().invalid()) {
-          <br /><span role="alert">Password is required.</span>
-        }
-      </p>
-      @if (error(); as error) {
-        <pre role="alert">{{ error }}</pre>
-      }
-      <button type="submit" [disabled]="loginForm().submitting()">Sign in</button>
-    </form>
+        <button type="submit" class="button button-primary" [disabled]="loginForm().submitting()">
+          {{ loginForm().submitting() ? 'Signing in…' : 'Sign in' }}
+        </button>
+      </form>
+    </section>
+  `,
+  styles: `
+    :host {
+      display: grid;
+      min-height: 60vh;
+      place-items: center;
+    }
+
+    .sheet {
+      display: grid;
+      gap: var(--space-3);
+      width: min(24rem, 100%);
+    }
+
+    .form {
+      display: grid;
+      gap: var(--space-4);
+      margin-top: var(--space-4);
+    }
+
+    .button {
+      justify-self: start;
+    }
   `,
 })
 export class LoginPage {

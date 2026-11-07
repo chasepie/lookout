@@ -34,8 +34,19 @@
               }
             ],
             "styles": [
+              "@fontsource/barlow/400.css",
+              "@fontsource/barlow/500.css",
+              "@fontsource/barlow/600.css",
+              "@fontsource/barlow-semi-condensed/500.css",
+              "@fontsource/barlow-semi-condensed/600.css",
+              "@fontsource-variable/source-serif-4/opsz-italic.css",
               "src/styles.scss"
-            ]
+            ],
+            "stylePreprocessorOptions": {
+              "includePaths": [
+                "src/styles"
+              ]
+            }
           },
           "configurations": {
             "production": {

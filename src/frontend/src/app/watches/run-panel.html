@@ -1,0 +1,79 @@
+<header class="head">
+  @if (run.hasValue()) {
+    <h2 #heading tabindex="-1">Run #{{ run.value().id }}</h2>
+  } @else {
+    <h2 #heading tabindex="-1">Run</h2>
+  }
+  <a class="button button-quiet button-icon" [routerLink]="['/watches', id()]">
+    <svg lucideX aria-hidden="true"></svg>
+    <span class="visually-hidden">Close the run</span>
+  </a>
+</header>
+
+@if (run.isLoading() && !run.hasValue()) {
+  <p class="muted" role="status">Loading the run…</p>
+} @else if (missing()) {
+  <p>
+    {{ runId() === 'latest' ? "This watch hasn't run yet." : 'This run was deleted.' }}
+    <a [routerLink]="['/watches', id()]">Back to the log</a>
+  </p>
+} @else if (run.error(); as error) {
+  <div class="callout callout-failure" role="alert">
+    <p>Couldn't load the run: {{ describeError(error) }}</p>
+  </div>
+} @else if (run.hasValue()) {
+  <p class="created">
+    <time [attr.datetime]="run.value().createdTime">{{ created() }}</time>
+  </p>
+
+  <div class="seen" [class.seen-failed]="outcome() === 'failed'">
+    <app-run-outcome [run]="run.value()" [clamp]="false" />
+  </div>
+
+  @if (timings(); as timings) {
+    <dl class="timings">
+      <div>
+        <dt>Waited</dt>
+        <dd>{{ timings.waited ?? '–' }}</dd>
+      </div>
+      <div>
+        <dt>Ran</dt>
+        <dd>{{ timings.ran ?? (run.value().status === statuses.Running ? 'Still running' : '–') }}</dd>
+      </div>
+    </dl>
+  }
+
+  @if (run.value().error; as error) {
+    <section class="section" aria-labelledby="error-title">
+      <h3 id="error-title">Error</h3>
+      <pre class="preformatted callout callout-failure">{{ error }}</pre>
+    </section>
+  }
+
+  @if (screenshotUrl(); as src) {
+    <section class="section" aria-labelledby="screenshot-title">
+      <div class="section-head">
+        <h3 id="screenshot-title">Screenshot</h3>
+        <button type="button" class="button button-quiet" [attr.aria-pressed]="actualSize()" (click)="actualSize.set(!actualSize())">
+          Actual size
+        </button>
+      </div>
+      <div class="screenshot" [class.screenshot-actual]="actualSize()" tabindex="0" aria-label="Screenshot, scrollable">
+        <img [src]="src" alt="The page as the run left it" />
+      </div>
+    </section>
+  }
+
+  <div class="actions foot">
+    <button
+      type="button"
+      class="button button-danger"
+      [disabled]="deleting() || run.value().status === statuses.Running"
+      [title]="run.value().status === statuses.Running ? 'A run can be deleted once it finishes' : ''"
+      (click)="remove(run.value().id)"
+    >
+      <svg lucideTrash2 aria-hidden="true"></svg>
+      Delete run
+    </button>
+  </div>
+}

@@ -1,10 +1,10 @@
-import { Service, effect, inject } from '@angular/core';
+import { Service, effect, inject, signal } from '@angular/core';
 import { DefaultHttpClient, HubConnectionBuilder, HubConnectionState, LogLevel, NullLogger } from '@microsoft/signalr';
 import { Subject } from 'rxjs';
 import { csrfHeaders } from '../auth/csrf';
 import { Session } from '../auth/session';
+import { WatchRunUpdate } from '../watches/watch.model';
 import { SessionAwareHttpClient } from './session-aware-http-client';
-import { WatchRunUpdate } from './watch.model';
 
 /** The Backend's `UpdatesHub`, on the page's own origin like the rest of the API. */
 const hubUrl = '/api/hubs/updates';
@@ -13,6 +13,12 @@ const hubUrl = '/api/hubs/updates';
 function retryDelayMs(previousAttempts: number) {
   return Math.min(30_000, 1_000 * 2 ** previousAttempts);
 }
+
+/**
+ * Whether changes arrive as they happen: `connecting` before the first connection, `live` while connected, and
+ * `reconnecting` after the connection dropped, when pages may be out of date.
+ */
+export type LiveState = 'connecting' | 'live' | 'reconnecting';
 
 /**
  * Real-time watch, run and VPN changes pushed by the Backend over SignalR.
@@ -30,6 +36,9 @@ export class LiveUpdates {
   readonly vpnChanged = new Subject<void>();
   /** The connection is back after being down. Messages sent meanwhile were missed, so reload. */
   readonly reconnected = new Subject<void>();
+
+  private readonly connectionState = signal<LiveState>('connecting');
+  readonly state = this.connectionState.asReadonly();
 
   private readonly session = inject(Session);
 
@@ -55,11 +64,18 @@ export class LiveUpdates {
     );
     this.connection.on('WatchChanged', (watchId: number) => this.watchChanged.next(watchId));
     this.connection.on('VpnChanged', () => this.vpnChanged.next());
-    this.connection.onreconnected(() => this.reconnected.next());
+    this.connection.onreconnecting(() => this.connectionState.set('reconnecting'));
+    this.connection.onreconnected(() => {
+      this.connectionState.set('live');
+      this.reconnected.next();
+    });
     // Covers signing in again while the previous connection was still stopping, when start() had to skip
     this.connection.onclose(() => {
       if (this.session.signedIn()) {
+        this.connectionState.set('reconnecting');
         void this.start(0);
+      } else {
+        this.connectionState.set('connecting');
       }
     });
     effect(() => {
@@ -78,10 +94,12 @@ export class LiveUpdates {
     }
     try {
       await this.connection.start();
+      this.connectionState.set('live');
       if (failedAttempts > 0) {
         this.reconnected.next();
       }
     } catch {
+      this.connectionState.set('reconnecting');
       // A refused session already ended through the HTTP client, so the next start() returns early
       setTimeout(() => void this.start(failedAttempts + 1), retryDelayMs(failedAttempts));
     }

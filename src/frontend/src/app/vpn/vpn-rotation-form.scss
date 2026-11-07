@@ -1,0 +1,87 @@
+:host {
+  display: grid;
+  align-content: start;
+  gap: var(--space-4);
+}
+
+.form {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.timing {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-6);
+}
+
+.with-unit {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.exclusions {
+  display: grid;
+  gap: var(--space-3);
+
+  legend {
+    display: flex;
+    gap: var(--space-3);
+    align-items: baseline;
+    margin-bottom: var(--space-1);
+    font-family: var(--font-condensed);
+    font-size: var(--step-1);
+    font-weight: 600;
+  }
+}
+
+.count {
+  color: var(--ink-muted);
+  font-family: var(--font-interface);
+  font-size: var(--step--1);
+  font-weight: 400;
+}
+
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.filter {
+  flex: 1 1 14rem;
+  width: auto;
+}
+
+.region-list {
+  list-style: none;
+  max-height: 22rem;
+  overflow-y: auto;
+  padding: var(--space-3);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sheet);
+  background: var(--paper-raised);
+  columns: 13rem auto;
+  column-gap: var(--space-5);
+
+  li {
+    break-inside: avoid;
+    padding: var(--space-1) 0;
+  }
+}
+
+// An excluded region is struck from the rotation
+.excluded span {
+  color: var(--ink-muted);
+  text-decoration: line-through;
+  text-decoration-color: var(--magenta);
+}
+
+.unsaved {
+  font-size: var(--step--1);
+}
+
+.field-error:empty {
+  display: none;
+}

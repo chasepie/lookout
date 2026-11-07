@@ -1,9 +1,12 @@
 import { HttpClient, httpResource } from '@angular/common/http';
 import { Service, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
-import { CreateWatchDto, DeleteRunsResult, Watch, WatchRun } from './watch.model';
+import { CreateWatchDto, DeleteRunsResult, Watch, WatchRun, WatchRunSummary, WatchSummary } from './watch.model';
 
 const baseUrl = '/api/Watches';
+
+/** How many runs a page of a watch's log holds. */
+export const runPageSize = 50;
 
 /**
  * Client for the Backend's `/Watches` endpoints.
@@ -14,24 +17,29 @@ export class WatchesApi {
   private readonly http = inject(HttpClient);
 
   watchesResource() {
-    return httpResource<Watch[]>(() => baseUrl);
+    return httpResource<WatchSummary[]>(() => baseUrl);
   }
 
   /** Makes no request while `id` returns `undefined`. */
   watchResource(id: () => string | undefined) {
-    return httpResource<Watch>(() => {
+    return httpResource<WatchSummary>(() => {
       const watchId = id();
       return watchId === undefined ? undefined : `${baseUrl}/${watchId}`;
     });
   }
 
-  runsResource(watchId: () => string) {
-    return httpResource<WatchRun[]>(() => `${baseUrl}/${watchId()}/runs`);
-  }
-
   /** `runId` may be `"latest"`. */
   runResource(watchId: () => string, runId: () => string) {
     return httpResource<WatchRun>(() => `${baseUrl}/${watchId()}/runs/${runId()}`);
+  }
+
+  /** A page of runs, newest first: the newest ones, or those older than the run `before`. */
+  runs(watchId: string, before?: number) {
+    const params: Record<string, number> = { limit: runPageSize };
+    if (before !== undefined) {
+      params['before'] = before;
+    }
+    return firstValueFrom(this.http.get<WatchRunSummary[]>(`${baseUrl}/${watchId}/runs`, { params }));
   }
 
   /** Creates a watch with its script, sent together as multipart form data. */

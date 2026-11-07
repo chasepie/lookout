@@ -1,73 +1,94 @@
-import { DatePipe } from '@angular/common';
 import { Component, inject } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
-import { merge } from 'rxjs';
-import { LiveUpdates } from './live-updates';
-import { WatchRunStatus, WatchScheduleKind } from './watch.model';
+import { LucidePlus } from '@lucide/angular';
+import { LiveUpdates } from '../live/live-updates';
+import { reloadOn } from '../live/reload-on';
 import { describeError } from '../shared/describe-error';
+import { WatchRow } from './watch-row';
 import { WatchesApi } from './watches-api';
 
+/** Every watch, each with what it last saw. */
 @Component({
   selector: 'app-watch-list',
-  imports: [RouterLink, DatePipe],
+  imports: [RouterLink, WatchRow, LucidePlus],
   template: `
-    <h2>Watches</h2>
-    <p><a routerLink="/watches/new">New watch</a></p>
+    <header class="page-head">
+      <h1>Watches</h1>
+      @if (watches.hasValue() && watches.value().length > 0) {
+        <a class="button button-primary" routerLink="/watches/new">
+          <svg lucidePlus aria-hidden="true"></svg>
+          New watch
+        </a>
+      }
+    </header>
 
     @if (watches.isLoading() && !watches.hasValue()) {
-      <p>Loading…</p>
+      <p class="muted" role="status">Loading watches…</p>
     } @else if (watches.error(); as error) {
-      <pre role="alert">{{ describeError(error) }}</pre>
+      <div class="callout callout-failure" role="alert">
+        <p>Couldn't load the watches: {{ describeError(error) }}</p>
+      </div>
     } @else if (watches.hasValue()) {
       @if (watches.value().length === 0) {
-        <p>No watches yet.</p>
+        <section class="empty" aria-labelledby="empty-title">
+          <h2 id="empty-title">Nothing to watch yet</h2>
+          <p>
+            A watch opens a page with a script you write, on a schedule or when you ask, and keeps what the script
+            reports each time.
+          </p>
+          <a class="button button-primary" routerLink="/watches/new">
+            <svg lucidePlus aria-hidden="true"></svg>
+            New watch
+          </a>
+        </section>
       } @else {
-        <table>
-          <thead>
-            <tr>
-              <th scope="col">Name</th>
-              <th scope="col">Schedule</th>
-              <th scope="col">Latest run</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (watch of watches.value(); track watch.id) {
-              <tr>
-                <td><a [routerLink]="['/watches', watch.id]">{{ watch.name }}</a></td>
-                <td>
-                  @if (watch.scheduleEnabled && watch.scheduleKind !== null) {
-                    {{ kinds[watch.scheduleKind] }} ({{ watch.scheduleInterval }})
-                  } @else {
-                    Off
-                  }
-                </td>
-                <td>
-                  @if (watch.watchRuns[0]; as run) {
-                    {{ statuses[run.status] }}, {{ run.createdTime | date: 'medium' }}
-                  } @else {
-                    Never
-                  }
-                </td>
-              </tr>
-            }
-          </tbody>
-        </table>
+        <ol class="watches">
+          @for (watch of watches.value(); track watch.id) {
+            <li><app-watch-row [watch]="watch" /></li>
+          }
+        </ol>
       }
+    }
+  `,
+  styles: `
+    :host {
+      display: grid;
+      gap: var(--space-5);
+    }
+
+    .page-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-4);
+    }
+
+    .watches {
+      list-style: none;
+      border-top: 1px solid var(--rule);
+    }
+
+    .watches > li {
+      border-bottom: 1px solid var(--rule);
+    }
+
+    .empty {
+      display: grid;
+      justify-items: start;
+      gap: var(--space-4);
+      padding: var(--space-7) 0;
+      border-top: 1px solid var(--rule);
     }
   `,
 })
 export class WatchList {
   protected readonly watches = inject(WatchesApi).watchesResource();
-  protected readonly kinds = WatchScheduleKind;
-  protected readonly statuses = WatchRunStatus;
   protected readonly describeError = describeError;
 
   constructor() {
-    // Any watch or run change can alter the list or its "Latest run" column
+    // Any watch or run change can alter the list or what a row last saw
     const updates = inject(LiveUpdates);
-    merge(updates.runUpdated, updates.runsDeleted, updates.watchChanged, updates.reconnected)
-      .pipe(takeUntilDestroyed())
-      .subscribe(() => this.watches.reload());
+    reloadOn(this.watches, updates.runUpdated, updates.runsDeleted, updates.watchChanged, updates.reconnected);
   }
 }

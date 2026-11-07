@@ -1,0 +1,108 @@
+:host {
+  display: grid;
+  gap: var(--space-6);
+}
+
+.day {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.day-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding-bottom: var(--space-2);
+  border-bottom: 2px solid var(--ink);
+  font-size: var(--step-1);
+}
+
+.day-count {
+  color: var(--ink-muted);
+  font-family: var(--font-interface);
+  font-size: var(--step--1);
+  font-weight: 400;
+}
+
+.entries {
+  list-style: none;
+}
+
+.entries > li + li {
+  border-top: 1px solid var(--rule);
+}
+
+.entry {
+  display: grid;
+  grid-template-columns: 4.5rem minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: var(--space-4);
+  padding: var(--space-2);
+  color: var(--ink);
+  text-decoration: none;
+  --clamp-lines: 1;
+
+  &:hover {
+    background: var(--paper-sunk);
+    color: var(--ink);
+  }
+
+  &:focus-visible {
+    outline-offset: -2px;
+  }
+
+  &[aria-current='true'] {
+    background: var(--shoal);
+    box-shadow: inset 3px 0 0 var(--deep);
+  }
+}
+
+// A failure is ruled in the margin, like a correction in a logbook
+.entry-failed {
+  box-shadow: inset 3px 0 0 var(--magenta);
+}
+
+// A run that arrived while the page was open washes in from shoal blue: the page's one unprompted motion
+.entry-arrived {
+  animation: arrive 2.4s var(--ease-out);
+}
+
+@keyframes arrive {
+  from {
+    background-color: var(--shoal-strong);
+  }
+}
+
+.time {
+  color: var(--ink-muted);
+  font-size: var(--step--1);
+  font-weight: 500;
+}
+
+.outcome {
+  font-size: var(--step-1);
+}
+
+.meta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--ink-muted);
+  font-size: var(--step--1);
+
+  svg {
+    width: 1rem;
+    height: 1rem;
+  }
+}
+
+.older {
+  justify-self: start;
+}
+
+@media (max-width: 30rem) {
+  .entry {
+    gap: var(--space-3);
+  }
+}

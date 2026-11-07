@@ -1,164 +1,159 @@
-import { Component, effect, inject, input, signal } from '@angular/core';
-import { FormField, form, required, submit } from '@angular/forms/signals';
+import { HttpErrorResponse } from '@angular/common/http';
+import { Component, computed, effect, inject, input, signal } from '@angular/core';
+import { FormField, form, min, required, submit } from '@angular/forms/signals';
+import { Title } from '@angular/platform-browser';
 import { Router, RouterLink } from '@angular/router';
-import { CreateWatchDto, Watch, WatchScheduleKind } from './watch.model';
 import { describeError } from '../shared/describe-error';
+import { Notices } from '../shared/notices';
+import { ScriptPicker } from './script-picker';
+import { intervalUnits } from './schedule';
+import { CreateWatchDto, Watch, WatchScheduleKind, WatchSummary } from './watch.model';
 import { WatchesApi } from './watches-api';
 
 interface WatchFormModel {
   name: string;
   scheduleEnabled: boolean;
-  /** The numeric enum value as a string, or `''` for none. */
-  scheduleKind: string;
-  scheduleInterval: string;
+  scheduleType: 'interval' | 'cron';
+  every: number;
+  /** An interval kind's numeric value, as a string for the select. */
+  unit: string;
+  cron: string;
   useVpn: boolean;
 }
 
-const scheduleKinds = Object.entries(WatchScheduleKind)
-  .filter(([, value]) => typeof value === 'number')
-  .map(([label, value]) => ({ label, value: String(value) }));
+const units = Object.entries(intervalUnits).map(([value, [, many]]) => ({ value, label: many }));
+
+const blank: WatchFormModel = {
+  name: '',
+  scheduleEnabled: false,
+  scheduleType: 'interval',
+  every: 15,
+  unit: String(WatchScheduleKind.Minutely),
+  cron: '',
+  useVpn: false,
+};
+
+/** The form's view of a saved watch. A schedule that's off keeps its settings, so turning it on again restores them. */
+function toModel(watch: WatchSummary): WatchFormModel {
+  const cron = watch.scheduleKind === WatchScheduleKind.Cron;
+  const interval = watch.scheduleKind !== null && !cron;
+  return {
+    name: watch.name,
+    scheduleEnabled: watch.scheduleEnabled,
+    scheduleType: cron ? 'cron' : 'interval',
+    every: interval ? Number(watch.scheduleInterval) || blank.every : blank.every,
+    unit: interval ? String(watch.scheduleKind) : blank.unit,
+    cron: cron ? (watch.scheduleInterval ?? '') : '',
+    useVpn: watch.useVpn,
+  };
+}
+
+function toDto(value: WatchFormModel): CreateWatchDto {
+  const cron = value.scheduleType === 'cron';
+  return {
+    name: value.name.trim(),
+    scheduleEnabled: value.scheduleEnabled,
+    scheduleKind: cron ? WatchScheduleKind.Cron : Number(value.unit),
+    scheduleInterval: cron ? value.cron.trim() : String(value.every),
+    useVpn: value.useVpn,
+  };
+}
 
 /** Creates a watch, or edits one when the route has an `id`. */
 @Component({
   selector: 'app-watch-form',
-  imports: [FormField, RouterLink],
-  template: `
-    <h2>{{ id() ? 'Edit watch' : 'New watch' }}</h2>
-
-    <form (submit)="save($event)">
-      <p>
-        <label for="name">Name</label><br />
-        <input id="name" [formField]="watchForm.name" />
-        @if (watchForm.name().touched() && watchForm.name().invalid()) {
-          <br /><span role="alert">Name is required.</span>
-        }
-      </p>
-      <p>
-        <label>
-          <input type="checkbox" [formField]="watchForm.scheduleEnabled" />
-          Schedule enabled
-        </label>
-      </p>
-      <p>
-        <label for="kind">Schedule kind</label><br />
-        <select id="kind" [formField]="watchForm.scheduleKind">
-          <option value="">(none)</option>
-          @for (kind of scheduleKinds; track kind.value) {
-            <option [value]="kind.value">{{ kind.label }}</option>
-          }
-        </select>
-      </p>
-      <p>
-        <label for="interval">Schedule interval (a number, or a cron expression)</label><br />
-        <input id="interval" [formField]="watchForm.scheduleInterval" />
-      </p>
-      <p>
-        <label>
-          <input type="checkbox" aria-describedby="vpn-hint" [formField]="watchForm.useVpn" />
-          Use VPN
-        </label>
-        <br /><span id="vpn-hint">Sends the browser's traffic through the VPN. Runs fail if the VPN isn't set up.</span>
-      </p>
-      @if (!id()) {
-        <p>
-          <label for="script">Script (.ts or .js)</label><br />
-          <input
-            id="script"
-            type="file"
-            accept=".ts,.js"
-            required
-            aria-describedby="script-hint"
-            (change)="pickScript($event)"
-          />
-          <br /><span id="script-hint">A watch needs a script to run. You can replace it later.</span>
-        </p>
-      }
-
-      @if (error(); as error) {
-        <pre role="alert">{{ error }}</pre>
-      }
-
-      <button type="submit" [disabled]="watchForm().submitting() || (!id() && !script())">Save</button>
-      <a [routerLink]="id() ? ['/watches', id()] : ['/']">Cancel</a>
-    </form>
-  `,
+  imports: [FormField, RouterLink, ScriptPicker],
+  templateUrl: './watch-form.html',
+  styleUrl: './watch-form.scss',
 })
 export class WatchForm {
   private readonly api = inject(WatchesApi);
   private readonly router = inject(Router);
+  private readonly notices = inject(Notices);
 
   /** Route param; absent when creating. */
   readonly id = input<string>();
 
-  protected readonly scheduleKinds = scheduleKinds;
+  protected readonly units = units;
   protected readonly error = signal<string | null>(null);
-  /** The script to create the watch with; unused when editing. */
+  /** The script to create the watch with, or to replace its script with when editing. */
   protected readonly script = signal<File | null>(null);
+  /** Shown once the Owner tries to create a watch without one. */
+  protected readonly scriptMissing = signal(false);
 
-  private readonly model = signal<WatchFormModel>({
-    name: '',
-    scheduleEnabled: false,
-    scheduleKind: '',
-    scheduleInterval: '',
-    useVpn: false,
-  });
+  private readonly model = signal<WatchFormModel>({ ...blank });
   protected readonly watchForm = form(this.model, (path) => {
-    required(path.name);
+    required(path.name, { message: 'Give the watch a name.' });
+    required(path.every, {
+      message: 'Enter how often to run.',
+      when: ({ valueOf }) => valueOf(path.scheduleEnabled) && valueOf(path.scheduleType) === 'interval',
+    });
+    min(path.every, 1, {
+      message: 'Enter 1 or more.',
+      when: ({ valueOf }) => valueOf(path.scheduleEnabled) && valueOf(path.scheduleType) === 'interval',
+    });
+    required(path.cron, {
+      message: 'Enter a cron expression, such as 0 9 * * 1-5.',
+      when: ({ valueOf }) => valueOf(path.scheduleEnabled) && valueOf(path.scheduleType) === 'cron',
+    });
   });
 
-  private readonly existing = this.api.watchResource(this.id);
+  protected readonly existing = this.api.watchResource(this.id);
+  protected readonly editing = computed(() => this.id() !== undefined);
+  protected readonly cancelLink = computed(() => (this.editing() ? ['/watches', this.id()] : ['/']));
 
   constructor() {
     effect(() => {
-      if (!this.id() || !this.existing.hasValue()) {
-        return;
+      if (this.editing() && this.existing.hasValue()) {
+        this.model.set(toModel(this.existing.value()));
       }
-      const watch = this.existing.value();
-      this.model.set({
-        name: watch.name,
-        scheduleEnabled: watch.scheduleEnabled,
-        scheduleKind: watch.scheduleKind === null ? '' : String(watch.scheduleKind),
-        scheduleInterval: watch.scheduleInterval ?? '',
-        useVpn: watch.useVpn,
-      });
     });
-  }
-
-  protected pickScript(event: Event) {
-    const input = event.target as HTMLInputElement;
-    this.script.set(input.files?.[0] ?? null);
+    const title = inject(Title);
+    effect(() => {
+      if (this.editing() && this.existing.hasValue()) {
+        title.setTitle(`Edit ${this.existing.value().name} – Lookout`);
+      }
+    });
   }
 
   protected save(event: Event) {
     event.preventDefault();
+    const script = this.script();
+    if (!this.editing() && !script) {
+      this.scriptMissing.set(true);
+    }
     // The action catches its own errors and shows them, so nothing is left to handle on the returned promise
     void submit(this.watchForm, async () => {
       this.error.set(null);
-      const value = this.model();
-      const dto: CreateWatchDto = {
-        name: value.name,
-        scheduleEnabled: value.scheduleEnabled,
-        scheduleKind: value.scheduleKind === '' ? null : Number(value.scheduleKind),
-        scheduleInterval: value.scheduleInterval || null,
-        useVpn: value.useVpn,
-      };
+      const dto = toDto(this.model());
       try {
         const id = this.id();
-        const script = this.script();
         let saved: Watch;
         if (id) {
           saved = await this.api.update(id, dto);
+          if (script) {
+            await this.api.uploadScript(id, script);
+          }
         } else if (script) {
           saved = await this.api.create(dto, script);
         } else {
-          this.error.set('Choose a script for the watch.');
           return undefined;
         }
+        this.notices.say(id ? `Saved ${saved.name}.` : `Created ${saved.name}.`);
         await this.router.navigate(['/watches', saved.id]);
       } catch (e) {
-        this.error.set(describeError(e));
+        this.error.set(describeSaveError(e));
       }
       return undefined;
     });
   }
+}
+
+/** ASP.NET's validation problems come back as a map of field to messages; this flattens them into sentences. */
+function describeSaveError(error: unknown): string {
+  if (error instanceof HttpErrorResponse && error.error && typeof error.error === 'object' && 'errors' in error.error) {
+    const errors = (error.error as { errors: Record<string, string[]> }).errors;
+    return Object.values(errors).flat().join('\n');
+  }
+  return describeError(error);
 }

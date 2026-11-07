@@ -1,0 +1,199 @@
+// Buttons, fields and messages, shared by every page so a control looks the same wherever it appears.
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 2.5rem;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-control);
+  background: var(--paper-raised);
+  color: var(--ink);
+  font: 500 var(--step-0) / 1 var(--font-interface);
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 120ms,
+    border-color 120ms;
+
+  &:hover:not(:disabled) {
+    border-color: var(--ink);
+    background: var(--paper-sunk);
+    color: var(--ink);
+    text-decoration: none;
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
+
+  svg {
+    flex: none;
+    width: 1.125rem;
+    height: 1.125rem;
+  }
+}
+
+.button-primary {
+  border-color: var(--deep);
+  background: var(--deep);
+  color: var(--on-deep);
+
+  &:hover:not(:disabled) {
+    border-color: var(--deep-strong);
+    background: var(--deep-strong);
+    color: var(--on-deep);
+  }
+}
+
+.button-danger {
+  border-color: var(--magenta);
+  color: var(--magenta);
+
+  &:hover:not(:disabled) {
+    border-color: var(--magenta);
+    background: var(--magenta-tint);
+    color: var(--magenta);
+  }
+}
+
+// For actions that sit inside dense content, such as a row
+.button-quiet {
+  border-color: transparent;
+  background: transparent;
+  padding: 0 var(--space-2);
+
+  &:hover:not(:disabled) {
+    border-color: var(--rule);
+    background: var(--paper-sunk);
+  }
+}
+
+.button-icon {
+  width: 2.5rem;
+  padding: 0;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+// A labelled field: label, control, then hint and errors
+.field {
+  display: grid;
+  align-content: start;
+  gap: var(--space-1);
+  max-width: 32rem;
+}
+
+.field-label {
+  font-weight: 500;
+}
+
+.field-hint {
+  color: var(--ink-muted);
+  font-size: var(--step--1);
+}
+
+.field-error {
+  color: var(--magenta);
+  font-size: var(--step--1);
+  font-weight: 500;
+}
+
+.input,
+.select {
+  width: 100%;
+  min-height: 2.5rem;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-control);
+  background: var(--paper-raised);
+  color: var(--ink);
+  font: inherit;
+
+  &:hover {
+    border-color: var(--ink);
+  }
+
+  &[aria-invalid='true'] {
+    border-color: var(--magenta);
+    box-shadow: inset 3px 0 0 var(--magenta);
+  }
+}
+
+.input-narrow {
+  width: 7rem;
+}
+
+.select {
+  appearance: none;
+  padding-right: var(--space-6);
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--ink-muted) 50%),
+    linear-gradient(135deg, var(--ink-muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 1.125rem) 55%,
+    calc(100% - 0.8125rem) 55%;
+  background-size: 0.3125rem 0.3125rem;
+  background-repeat: no-repeat;
+}
+
+.check {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  cursor: pointer;
+
+  input {
+    flex: none;
+    width: 1.125rem;
+    height: 1.125rem;
+    margin: 0.1875rem 0 0;
+    accent-color: var(--deep);
+  }
+}
+
+fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+legend {
+  padding: 0;
+  font-weight: 500;
+}
+
+// A message about what just happened or went wrong, inline with the content it's about
+.callout {
+  max-width: var(--measure);
+  padding: var(--space-3) var(--space-4);
+  border-left: 3px solid var(--deep);
+  background: var(--shoal);
+  color: var(--ink);
+}
+
+.callout-failure {
+  border-left-color: var(--magenta);
+  background: var(--magenta-tint);
+}
+
+// Preformatted text a page or the Backend returned, such as a stack trace
+.preformatted {
+  margin: 0;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-code);
+  font-size: var(--step--1);
+  line-height: 1.55;
+}

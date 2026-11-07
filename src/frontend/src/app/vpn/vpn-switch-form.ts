@@ -1,30 +1,52 @@
 import { Component, inject, input, signal } from '@angular/core';
 import { FormField, form, submit } from '@angular/forms/signals';
+import { LucideShuffle } from '@lucide/angular';
 import { describeError } from '../shared/describe-error';
 import { VpnApi } from './vpn-api';
 
 /** Switches the VPN to a chosen region, or a random one, right away. */
 @Component({
   selector: 'app-vpn-switch-form',
-  imports: [FormField],
+  imports: [FormField, LucideShuffle],
   template: `
-    <h3>Switch now</h3>
-    <form (submit)="switchNow($event)">
-      <p>
-        <label for="switch-region">Region</label><br />
-        <select id="switch-region" aria-describedby="switch-hint" [formField]="switchForm.region">
-          <option value="">Random (not excluded from rotation)</option>
+    <h2 id="switch-title">Switch region</h2>
+    <form class="form" aria-labelledby="switch-title" (submit)="switchNow($event)">
+      <div class="field">
+        <label class="field-label" for="switch-region">Region</label>
+        <select id="switch-region" class="select" aria-describedby="switch-hint" [formField]="switchForm.region">
+          <option value="">Any region rotation can pick</option>
           @for (region of regions(); track region) {
             <option [value]="region">{{ region }}</option>
           }
         </select>
-        <br /><span id="switch-hint">Any region can be picked here, even excluded ones. Restarts the rotation timer.</span>
-      </p>
+        <span id="switch-hint" class="field-hint">
+          You can pick any region here, excluded ones too. Switching restarts the rotation timer.
+        </span>
+      </div>
       @if (error(); as error) {
-        <pre role="alert">{{ error }}</pre>
+        <div class="callout callout-failure" role="alert"><p>Couldn't switch: {{ error }}</p></div>
       }
-      <button type="submit" [disabled]="switching() || switchForm().submitting()">Switch</button>
+      <button type="submit" class="button button-primary" [disabled]="switching() || switchForm().submitting()">
+        <svg lucideShuffle aria-hidden="true"></svg>
+        {{ switching() ? 'Switching…' : 'Switch now' }}
+      </button>
     </form>
+  `,
+  styles: `
+    :host {
+      display: grid;
+      align-content: start;
+      gap: var(--space-4);
+    }
+
+    .form {
+      display: grid;
+      gap: var(--space-4);
+    }
+
+    .button {
+      justify-self: start;
+    }
   `,
 })
 export class VpnSwitchForm {

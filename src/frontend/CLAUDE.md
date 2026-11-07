@@ -13,6 +13,20 @@ The Lookout web UI, an Angular v22 app. These rules apply to everything under `s
 - Use `NgOptimizedImage` for all static images.
   - `NgOptimizedImage` does not work for inline base64 images.
 
+## Design
+
+The UI borrows from a ship's deck log and a nautical chart. Tokens (colour, type scale, spacing) are in `src/styles/_tokens.scss`; shared
+control classes (`.button`, `.field`, `.input`, `.callout`, …) are in `src/styles/_controls.scss`. Build new UI from these so it matches.
+
+- Type has two roles: the serif italic (`.observation`, or `RunOutcome`) is reserved for what a watched page said, such as run content;
+everything Lookout itself says is in Barlow.
+- Colour has fixed meanings: `--deep` is for what can be acted on, `--shoal` for what's in progress or new, `--magenta` for failures (in place
+of red), and `--buff` only for the VPN's current region.
+- A run log reads newest first, grouped by day, with a ditto mark where a run saw the same as the one above (`sameAsAbove`).
+- Report an action's outcome through `Notices` (`say` / `fail`), and ask before destroying anything through `Confirm`, never `window.confirm`.
+- Reload data on live updates with `reloadOn(resource, ...events)`. A watch's runs come through `injectRunLog`, which pages and merges them.
+- Check pages with AXE in light and dark mode, at desktop and phone widths, including open menus and dialogs.
+
 ## Accessibility Requirements
 
 - It MUST pass all AXE checks.
