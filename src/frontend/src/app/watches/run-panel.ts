@@ -7,6 +7,7 @@ import { LiveUpdates } from '../live/live-updates';
 import { reloadOn } from '../live/reload-on';
 import { Confirm } from '../shared/confirm';
 import { describeError } from '../shared/describe-error';
+import { lastValue } from '../shared/last-value';
 import { Notices } from '../shared/notices';
 import { duration, fullTime } from '../shared/time';
 import { RunOutcome } from './run-outcome';
@@ -30,26 +31,36 @@ export class RunPanel {
   private readonly router = inject(Router);
   private readonly confirm = inject(Confirm);
   private readonly notices = inject(Notices);
+  private readonly updates = inject(LiveUpdates);
 
   protected readonly run = this.api.runResource(this.id, this.runId);
+  /** The run as last loaded, still shown if a refresh fails. */
+  protected readonly shown = lastValue(this.run);
   /** The ID of the run shown, which `"latest"` resolves to; the log highlights it. */
-  readonly shownRunId = computed(() => (this.run.hasValue() ? this.run.value().id : null));
+  readonly shownRunId = computed(() => this.shown()?.id ?? null);
 
   protected readonly missing = computed(() => {
     const error = this.run.error();
     return error instanceof HttpErrorResponse && error.status === 404;
   });
-  protected readonly outcome = computed(() => (this.run.hasValue() ? outcomeOf(this.run.value()) : null));
-  protected readonly created = computed(() => (this.run.hasValue() ? fullTime(Date.parse(this.run.value().createdTime)) : ''));
+  protected readonly outcome = computed(() => {
+    const run = this.shown();
+    return run ? outcomeOf(run) : null;
+  });
+  protected readonly created = computed(() => {
+    const run = this.shown();
+    return run ? fullTime(Date.parse(run.createdTime)) : '';
+  });
   protected readonly timings = computed(() => {
-    if (!this.run.hasValue()) {
+    const run = this.shown();
+    if (!run) {
       return null;
     }
-    const { waited, ran } = timingsOf(this.run.value());
+    const { waited, ran } = timingsOf(run);
     return { waited: waited === null ? null : duration(waited), ran: ran === null ? null : duration(ran) };
   });
   protected readonly screenshotUrl = computed(() => {
-    const screenshot = this.run.hasValue() ? this.run.value().screenshot : null;
+    const screenshot = this.shown()?.screenshot;
     return screenshot ? `data:image/png;base64,${screenshot}` : null;
   });
   /** Whether the screenshot is shown at its own size, scrolling, rather than fitted to the panel. */
@@ -63,7 +74,7 @@ export class RunPanel {
 
   constructor() {
     // "latest" follows any run of this watch, since a new run becomes the latest one
-    const updates = inject(LiveUpdates);
+    const updates = this.updates;
     const isThisRun = (update: WatchRunUpdate) =>
       update.watchId === Number(this.id()) && (this.runId() === 'latest' || update.id === Number(this.runId()));
     const includesThisRun = (deleted: { watchId: number; runIds: number[] }) =>
@@ -93,6 +104,7 @@ export class RunPanel {
     this.deleting.set(true);
     try {
       await this.api.deleteRun(this.id(), runId);
+      this.updates.runsDeletedHere(Number(this.id()), [runId]);
       this.notices.say(`Deleted run #${runId}.`);
       await this.router.navigate(['/watches', this.id()]);
     } catch (e) {

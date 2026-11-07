@@ -19,11 +19,21 @@ public class WatchesController(
     private readonly WatchScriptManager _scriptManager = scriptManager;
     private readonly UpdatesNotifier _notifier = notifier;
 
+    /// <summary>
+    /// A watch, with its latest runs only if asked for: its page reads them from its run log instead.
+    /// </summary>
+    /// <param name="recentRuns">How many of its latest runs to include, from 0 to <see cref="WatchSummary.RecentRunCount"/>.</param>
     [HttpGet("{id:int}")]
-    public async Task<ActionResult<WatchSummary>> Get(int id, CancellationToken cancellationToken)
+    public async Task<ActionResult<WatchSummary>> Get(int id, CancellationToken cancellationToken, int recentRuns = 0)
     {
+        if (recentRuns is < 0 or > WatchSummary.RecentRunCount)
+        {
+            return BadRequest($"recentRuns must be from 0 to {WatchSummary.RecentRunCount}.");
+        }
+
         var watches = await WatchSummary.ListAsync(
             _dbContext.Watches.Where(w => w.Id == id),
+            recentRuns,
             DateTime.UtcNow,
             cancellationToken);
         return watches.Count == 0 ? NotFound() : watches[0];
@@ -36,7 +46,8 @@ public class WatchesController(
     public async Task<ActionResult<List<WatchSummary>>> GetAll(CancellationToken cancellationToken)
     {
         // Sorted here rather than in SQL: SQLite compares bytes, putting "Zebra" before "apple"
-        var watches = await WatchSummary.ListAsync(_dbContext.Watches, DateTime.UtcNow, cancellationToken);
+        var watches = await WatchSummary.ListAsync(
+            _dbContext.Watches, WatchSummary.RecentRunCount, DateTime.UtcNow, cancellationToken);
         return watches
             .OrderBy(w => w.Name, NameOrder)
             .ThenBy(w => w.Id)

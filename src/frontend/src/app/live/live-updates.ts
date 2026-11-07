@@ -39,6 +39,8 @@ export class LiveUpdates {
 
   private readonly connectionState = signal<LiveState>('connecting');
   readonly state = this.connectionState.asReadonly();
+  /** Whether the hub has ever connected; until it has, a failed attempt is still connecting, not reconnecting. */
+  private connectedOnce = false;
 
   private readonly session = inject(Session);
 
@@ -87,6 +89,19 @@ export class LiveUpdates {
     });
   }
 
+  /**
+   * Passes on a run this page created, as the Backend's message about it would, so the page shows it even while the
+   * connection is down. The Backend's own message may follow; listeners handle it twice harmlessly.
+   */
+  runCreatedHere(run: WatchRunUpdate) {
+    this.runUpdated.next(run);
+  }
+
+  /** Passes on runs this page deleted; see {@link runCreatedHere}. `runIds` may be empty when they aren't known. */
+  runsDeletedHere(watchId: number, runIds: number[]) {
+    this.runsDeleted.next({ watchId, runIds });
+  }
+
   /** Automatic reconnect only covers drops after the first connection, so retry that here. */
   private async start(failedAttempts: number) {
     if (!this.session.signedIn() || this.connection.state !== HubConnectionState.Disconnected) {
@@ -94,12 +109,13 @@ export class LiveUpdates {
     }
     try {
       await this.connection.start();
+      this.connectedOnce = true;
       this.connectionState.set('live');
       if (failedAttempts > 0) {
         this.reconnected.next();
       }
     } catch {
-      this.connectionState.set('reconnecting');
+      this.connectionState.set(this.connectedOnce ? 'reconnecting' : 'connecting');
       // A refused session already ended through the HTTP client, so the next start() returns early
       setTimeout(() => void this.start(failedAttempts + 1), retryDelayMs(failedAttempts));
     }

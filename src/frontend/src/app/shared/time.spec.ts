@@ -50,6 +50,11 @@ describe('duration', () => {
     [185_000, '3 min 5 s'],
     [minutes(130), '2 h 10 min'],
     [minutes(60), '1 h'],
+    // A remainder that rounds up carries into the larger unit
+    [9_960, '10 s'],
+    [59_600, '1 min'],
+    [3_599_700, '1 h'],
+    [7_199_000, '2 h'],
   ])('writes %i ms as %s', (ms, expected) => {
     expect(duration(ms)).toBe(expected);
   });

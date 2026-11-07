@@ -30,7 +30,7 @@ export const routes: Routes = [
       },
       {
         path: 'watches/:id',
-        title: 'Watch – Lookout',
+        // No title here: the router would put it back each time a run opens or closes; the page titles itself
         loadComponent: () => import('./watches/watch-detail').then((m) => m.WatchDetail),
         // A run opens beside the watch's log, so its route is the watch page's child
         children: [

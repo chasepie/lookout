@@ -1,5 +1,5 @@
 import { Component, computed, input } from '@angular/core';
-import { clockTime } from '../shared/time';
+import { briefTime } from '../shared/time';
 import { outcomeOf, repeats } from './runs';
 import { WatchRunSummary } from './watch.model';
 
@@ -72,7 +72,7 @@ interface Tick {
 
     .running {
       fill: var(--deep);
-      animation: sweep 1.6s ease-in-out infinite;
+      animation: pulse 1.6s ease-in-out infinite;
     }
 
     .queued {
@@ -81,11 +81,6 @@ interface Tick {
       stroke-width: 1;
     }
 
-    @keyframes sweep {
-      50% {
-        opacity: 0.3;
-      }
-    }
   `,
 })
 export class RunStrip {
@@ -119,7 +114,8 @@ export class RunStrip {
                   ? 'same'
                   : 'changed';
         const slot = offset + (runs.length - 1 - i);
-        const time = clockTime(Date.parse(run.createdTime));
+        // A strip can span days, so each tick says which
+        const time = briefTime(Date.parse(run.createdTime));
         const shape = {
           changed: { y: 2, height: baseline - 2 },
           same: { y: baseline - 6, height: 6 },
@@ -134,7 +130,7 @@ export class RunStrip {
           running: 'Running',
           queued: 'Waiting to start',
         }[kind];
-        return { id: run.id, x: slot * (tickWidth + gap), ...shape, kind, title: `Run #${run.id} at ${time}. ${what}` };
+        return { id: run.id, x: slot * (tickWidth + gap), ...shape, kind, title: `Run #${run.id}, ${time}. ${what}` };
       })
       .reverse();
   });

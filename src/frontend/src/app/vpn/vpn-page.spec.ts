@@ -107,6 +107,17 @@ describe('VpnPage', () => {
     expect(textOf(page.querySelector('[role=alert]'))).toContain('no regions for private internet access');
   });
 
+  it('keeps the status shown when a refresh fails', async () => {
+    await open();
+
+    liveUpdates().vpnChanged.next();
+    await fail(request('GET', '/api/Vpn'), 502, 'gluetun is unreachable');
+
+    expect(textOf(page.querySelector('.region-name'))).toBe('CA Toronto');
+    expect(page.querySelector('app-vpn-rotation-form')).not.toBeNull();
+    expect(textOf(page.querySelector('.callout-retry p'))).toBe("Couldn't refresh the VPN's status: gluetun is unreachable");
+  });
+
   it('reloads when the VPN changes', async () => {
     await open();
 

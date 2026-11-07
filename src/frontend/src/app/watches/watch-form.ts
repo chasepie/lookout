@@ -48,13 +48,22 @@ function toModel(watch: WatchSummary): WatchFormModel {
   };
 }
 
+/**
+ * The watch to save. A schedule that's off keeps its settings for when it's turned on again, but only valid ones:
+ * the form checks them only while the schedule is on.
+ */
 function toDto(value: WatchFormModel): CreateWatchDto {
   const cron = value.scheduleType === 'cron';
+  const interval = cron
+    ? value.cron.trim() || null
+    : Number.isInteger(value.every) && value.every >= 1
+      ? String(value.every)
+      : null;
   return {
     name: value.name.trim(),
     scheduleEnabled: value.scheduleEnabled,
-    scheduleKind: cron ? WatchScheduleKind.Cron : Number(value.unit),
-    scheduleInterval: cron ? value.cron.trim() : String(value.every),
+    scheduleKind: interval === null ? null : cron ? WatchScheduleKind.Cron : Number(value.unit),
+    scheduleInterval: interval,
     useVpn: value.useVpn,
   };
 }
@@ -75,6 +84,7 @@ export class WatchForm {
   readonly id = input<string>();
 
   protected readonly units = units;
+  protected readonly describeError = describeError;
   protected readonly error = signal<string | null>(null);
   /** The script to create the watch with, or to replace its script with when editing. */
   protected readonly script = signal<File | null>(null);
@@ -104,6 +114,13 @@ export class WatchForm {
     });
   });
 
+  /** Whether there's no such watch to edit. */
+  protected readonly missing = computed(() => {
+    const error = this.existing.error();
+    return error instanceof HttpErrorResponse && error.status === 404;
+  });
+  /** Whether the form can be shown: always when creating, and once the watch has loaded when editing. */
+  protected readonly ready = computed(() => !this.editing() || this.existing.hasValue());
   protected readonly cancelLink = computed(() => (this.editing() ? ['/watches', this.id()] : ['/']));
 
   constructor() {

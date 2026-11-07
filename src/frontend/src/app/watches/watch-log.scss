@@ -106,8 +106,8 @@
   border-top: 1px solid var(--rule);
 }
 
-// On a phone, a narrower time column
-@media (max-width: 30rem) {
+// On a small phone, a narrower time column
+@include bp.small-phone {
   :host {
     --time-column: 4.25rem;
   }

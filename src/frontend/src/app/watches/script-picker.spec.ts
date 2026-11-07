@@ -46,4 +46,17 @@ describe('ScriptPicker', () => {
 
     expect(zone.classList).not.toContain('zone-over');
   });
+
+  it("turns away a file that isn't a script", async () => {
+    const fixture = await render();
+    const element = fixture.nativeElement as HTMLElement;
+
+    element.querySelector('label')!.dispatchEvent(dragEvent('drop', [new File([''], 'screenshot.png')]));
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance.file()).toBeNull();
+    expect(element.querySelector('[role=alert]')?.textContent).toContain(
+      "screenshot.png isn't a script. Choose a .ts or .js file.",
+    );
+  });
 });

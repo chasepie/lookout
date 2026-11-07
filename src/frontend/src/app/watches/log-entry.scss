@@ -79,8 +79,8 @@
   }
 }
 
-// On a phone, two lines for what a run saw, so a place name isn't cut short
-@media (max-width: 30rem) {
+// On a small phone, two lines for what a run saw, so a place name isn't cut short
+@include bp.small-phone {
   .entry {
     gap: var(--space-3);
     --clamp-lines: 2;

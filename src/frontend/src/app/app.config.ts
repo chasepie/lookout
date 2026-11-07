@@ -4,13 +4,13 @@ import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/
 import { provideRouter, withComponentInputBinding, withRouterConfig } from '@angular/router';
 import { routes } from './app.routes';
 import { authInterceptor } from './auth/auth-interceptor';
-import { MainOverlayContainer } from './shared/main-overlay-container';
+import { LandmarkOverlayContainer } from './shared/landmark-overlay-container';
 
 export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
     provideHttpClient(withInterceptors([authInterceptor])),
-    { provide: OverlayContainer, useClass: MainOverlayContainer },
+    { provide: OverlayContainer, useClass: LandmarkOverlayContainer },
     provideRouter(
       routes,
       withComponentInputBinding(),

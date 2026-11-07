@@ -2,6 +2,7 @@ import { Component, computed, inject } from '@angular/core';
 import { LiveUpdates } from '../live/live-updates';
 import { reloadOn } from '../live/reload-on';
 import { describeError } from '../shared/describe-error';
+import { lastValue } from '../shared/last-value';
 import { VpnApi } from './vpn-api';
 import { VpnRotationForm } from './vpn-rotation-form';
 import { VpnStatusCard } from './vpn-status-card';
@@ -14,30 +15,40 @@ import { VpnSwitchForm } from './vpn-switch-form';
   template: `
     <h1>VPN</h1>
 
-    @if (status.isLoading() && !status.hasValue()) {
-      <p class="muted" role="status">Loading the VPN's status…</p>
-    } @else if (status.error(); as error) {
-      <div class="callout callout-failure" role="alert"><p>Couldn't load the VPN's status: {{ describeError(error) }}</p></div>
-    } @else if (status.hasValue()) {
-      @if (status.value().settings; as settings) {
-        <app-vpn-status-card [status]="status.value()" [settings]="settings" />
+    @if (shownStatus(); as vpn) {
+      @if (status.error(); as error) {
+        <div class="callout callout-failure callout-retry" role="alert">
+          <p>Couldn't refresh the VPN's status: {{ describeError(error) }}</p>
+          <button type="button" class="button" (click)="status.reload()">Try again</button>
+        </div>
+      }
+      @if (vpn.settings; as settings) {
+        <app-vpn-status-card [status]="vpn" [settings]="settings" />
 
-        @if (regions.error(); as error) {
-          <div class="callout callout-failure" role="alert"><p>Couldn't load the regions: {{ describeError(error) }}</p></div>
-        } @else if (regions.hasValue()) {
-          @if (regions.value().regions.length === 0) {
+        @if (shownRegions(); as available) {
+          @if (regions.error(); as error) {
+            <div class="callout callout-failure callout-retry" role="alert">
+              <p>Couldn't refresh the regions: {{ describeError(error) }}</p>
+              <button type="button" class="button" (click)="regions.reload()">Try again</button>
+            </div>
+          }
+          @if (available.regions.length === 0) {
             <div class="callout callout-failure" role="alert">
               <p>
-                gluetun's servers list has no regions for {{ regions.value().provider }}, so the VPN can't switch
-                region.
+                gluetun's servers list has no regions for {{ available.provider }}, so the VPN can't switch region.
               </p>
             </div>
           } @else {
             <div class="controls">
-              <app-vpn-switch-form [regions]="regions.value().regions" [switching]="!!status.value().switch" />
-              <app-vpn-rotation-form [settings]="settings" [regions]="regions.value().regions" />
+              <app-vpn-switch-form [regions]="available.regions" [switching]="!!vpn.switch" />
+              <app-vpn-rotation-form [settings]="settings" [regions]="available.regions" />
             </div>
           }
+        } @else if (regions.error(); as error) {
+          <div class="callout callout-failure callout-retry" role="alert">
+            <p>Couldn't load the regions: {{ describeError(error) }}</p>
+            <button type="button" class="button" (click)="regions.reload()">Try again</button>
+          </div>
         } @else {
           <p class="muted" role="status">Loading regions…</p>
         }
@@ -50,6 +61,13 @@ import { VpnSwitchForm } from './vpn-switch-form';
           </p>
         </section>
       }
+    } @else if (status.error(); as error) {
+      <div class="callout callout-failure callout-retry" role="alert">
+        <p>Couldn't load the VPN's status: {{ describeError(error) }}</p>
+        <button type="button" class="button" (click)="status.reload()">Try again</button>
+      </div>
+    } @else {
+      <p class="muted" role="status">Loading the VPN's status…</p>
     }
   `,
   styles: `
@@ -85,8 +103,11 @@ export class VpnPage {
   private readonly api = inject(VpnApi);
 
   protected readonly status = this.api.statusResource();
-  private readonly configured = computed(() => this.status.hasValue() && this.status.value().configured);
+  /** The status as last loaded, still shown if a refresh fails. */
+  protected readonly shownStatus = lastValue(this.status);
+  private readonly configured = computed(() => this.shownStatus()?.configured ?? false);
   protected readonly regions = this.api.regionsResource(this.configured);
+  protected readonly shownRegions = lastValue(this.regions);
 
   protected readonly describeError = describeError;
 

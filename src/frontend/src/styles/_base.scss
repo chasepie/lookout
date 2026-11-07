@@ -1,3 +1,4 @@
+@use 'a11y';
 @use 'breakpoints' as bp;
 
 *,
@@ -13,6 +14,13 @@ html {
 
 // On a phone, bars pinned to the bottom of the screen hold actions; scrolling to something, or focusing it, stops
 // short of them, so they never cover what's in focus
+// Something in progress, such as a run or a VPN switch, pulses gently
+@keyframes pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+
 @include bp.phone {
   html {
     scroll-padding-bottom: 5.5rem;
@@ -66,9 +74,11 @@ a {
   text-underline-offset: 0.18em;
 }
 
-a:hover {
-  color: var(--deep-strong);
-  text-decoration-thickness: 2px;
+@include bp.hover {
+  a:hover {
+    color: var(--deep-strong);
+    text-decoration-thickness: 2px;
+  }
 }
 
 code {
@@ -99,15 +109,7 @@ dd {
 
 // Hidden on screen, still read out
 .visually-hidden {
-  position: absolute !important;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-  border: 0;
+  @include a11y.visually-hidden;
 }
 
 // What a watched page said: the one place the serif appears

@@ -1,11 +1,12 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { ApplicationRef } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { NoticeStrip } from '../shared/notice-strip';
 import { liveUpdates, provideFakeLiveUpdates } from '../testing/fake-live-updates';
-import { answer, fail, fullRun, request, runSummary, textOf, watchSummary } from '../testing/fixtures';
+import { answer, fail, fullRun, nextRequest, request, runSummary, textOf, watchSummary } from '../testing/fixtures';
 import { WatchList } from './watch-list';
 import { WatchRunStatus } from './watch.model';
 
@@ -83,19 +84,61 @@ describe('WatchList', () => {
     expect(page.querySelector('a[href="/watches/new"]')).not.toBeNull();
   });
 
-  it('says why the watches could not be loaded', async () => {
+  it('says why the watches could not be loaded, and tries again', async () => {
     await fail(request('GET', '/api/Watches'), 500, 'Database is locked');
 
-    expect(textOf(page.querySelector('[role=alert]'))).toBe("Couldn't load the watches: Database is locked");
+    expect(textOf(page.querySelector('[role=alert] p'))).toBe("Couldn't load the watches: Database is locked");
+    page.querySelector<HTMLButtonElement>('[role=alert] button')!.click();
+    await answer(request('GET', '/api/Watches'), [watchSummary()]);
+    expect(rows()).toHaveLength(1);
   });
 
-  it('reloads when a run changes', async () => {
-    await answer(request('GET', '/api/Watches'), [watchSummary()]);
+  it('refreshes only the row whose run changed', async () => {
+    await answer(request('GET', '/api/Watches'), [watchSummary(), watchSummary({ id: 2, name: 'Price' })]);
 
     liveUpdates().runUpdated.next({ ...runSummary(3), status: WatchRunStatus.Running });
-    await answer(request('GET', '/api/Watches'), [watchSummary({ name: 'Renamed' })]);
+    const row = await nextRequest(request('GET', '/api/Watches/1'));
+    expect(row.request.params.get('recentRuns')).toBe('24');
+    row.flush(watchSummary({ name: 'Bot check' }));
 
-    expect(textOf(rows()[0])).toContain('Renamed');
+    // The row is put in place once its answer is read
+    await vi.waitFor(async () => {
+      await TestBed.inject(ApplicationRef).whenStable();
+      expect(textOf(rows()[0])).toContain('Bot check');
+    });
+    expect(textOf(rows()[1])).toContain('Price');
+    TestBed.inject(HttpTestingController).expectNone(request('GET', '/api/Watches'));
+  });
+
+  it('takes out the row of a watch that has gone', async () => {
+    await answer(request('GET', '/api/Watches'), [watchSummary(), watchSummary({ id: 2, name: 'Price' })]);
+
+    liveUpdates().runsDeleted.next({ watchId: 2, runIds: [9] });
+    await fail(request('GET', '/api/Watches/2'), 404);
+
+    await vi.waitFor(async () => {
+      await TestBed.inject(ApplicationRef).whenStable();
+      expect(rows()).toHaveLength(1);
+    });
+  });
+
+  it('reloads every row when a watch changes', async () => {
+    await answer(request('GET', '/api/Watches'), [watchSummary()]);
+
+    liveUpdates().watchChanged.next(5);
+    await answer(request('GET', '/api/Watches'), [watchSummary(), watchSummary({ id: 5, name: 'New one' })]);
+
+    expect(rows()).toHaveLength(2);
+  });
+
+  it('keeps the watches shown when a refresh fails, and says so', async () => {
+    await answer(request('GET', '/api/Watches'), [watchSummary()]);
+
+    liveUpdates().reconnected.next();
+    await fail(request('GET', '/api/Watches'), 502, 'Bad Gateway');
+
+    expect(rows()).toHaveLength(1);
+    expect(textOf(page.querySelector('[role=alert] p'))).toBe("Couldn't refresh the watches: Bad Gateway");
   });
 
   describe('Run now', () => {
@@ -111,7 +154,9 @@ describe('WatchList', () => {
 
     it('starts a run and says so', async () => {
       rows()[0].querySelector<HTMLButtonElement>('button')!.click();
-      await answer(request('POST', '/api/Watches/1/runs'), fullRun(7, { status: WatchRunStatus.Created }));
+      (await nextRequest(request('POST', '/api/Watches/1/runs'))).flush(fullRun(7, { status: WatchRunStatus.Created }));
+      // The new run shows in its row straight away, without waiting for the live connection
+      await answer(request('GET', '/api/Watches/1'), watchSummary());
       await strip.whenStable();
 
       expect(textOf(notices)).toContain('Started run #7 of Bot detection.');

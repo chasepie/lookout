@@ -8,6 +8,9 @@ const baseUrl = '/api/Watches';
 /** How many runs a page of a watch's log holds. */
 export const runPageSize = 50;
 
+/** How many of each watch's latest runs the list shows. Mirrors `WatchSummary.RecentRunCount` in the Backend. */
+export const recentRunCount = 24;
+
 /**
  * Client for the Backend's `/Watches` endpoints.
  * The `*Resource` methods must be called in an injection context (e.g. a component field initializer).
@@ -26,6 +29,13 @@ export class WatchesApi {
       const watchId = id();
       return watchId === undefined ? undefined : `${baseUrl}/${watchId}`;
     });
+  }
+
+  /** One watch as the list shows it, with its latest runs. */
+  watchSummary(id: number) {
+    return firstValueFrom(
+      this.http.get<WatchSummary>(`${baseUrl}/${id}`, { params: { recentRuns: recentRunCount } }),
+    );
   }
 
   /** The newest page of a watch's runs, newest first. */

@@ -1,9 +1,10 @@
-import { Component, computed, inject, input, signal } from '@angular/core';
+import { Component, ElementRef, Injector, afterNextRender, computed, inject, input, signal } from '@angular/core';
 import { LucideChevronDown } from '@lucide/angular';
 import { Clock } from '../shared/clock';
 import { describeError } from '../shared/describe-error';
 import { clockTime, dayHeading, dayKey, duration, fullTime } from '../shared/time';
 import { LogEntry, LogEntryLink } from './log-entry';
+import { WatchRunSummary } from './watch.model';
 import { RunLog } from './run-log';
 import { outcomeOf, sameAsAbove, timingsOf } from './runs';
 
@@ -25,8 +26,8 @@ type Item = { kind: 'entry'; id: string; entry: LogEntry } | Fold;
 const entryItem = (entry: LogEntry): Item => ({ kind: 'entry', id: `run-${entry.run.id}`, entry });
 
 interface Day {
+  /** The start of the day, local time. */
   key: number;
-  heading: string;
   items: Item[];
   runs: number;
   failures: number;
@@ -81,59 +82,88 @@ function fold(entries: LogEntry[], isOpen: (key: number, entries: LogEntry[]) =>
 export class WatchLog {
   readonly log = input.required<RunLog>();
   readonly watchId = input.required<string>();
-  /** The run open beside the log, highlighted in it; a fold holding it opens. */
+  /** The run open beside the log, highlighted in it; a fold holding it opens unless the Owner closed it. */
   readonly selectedId = input<number | null>(null);
 
   private readonly clock = inject(Clock);
-  /** The folds the Owner opened, by key. */
-  private readonly opened = signal<ReadonlySet<number>>(new Set());
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly injector = inject(Injector);
+  /** The folds the Owner opened or closed, by key, which win over opening for the selected run. */
+  private readonly folded = signal<ReadonlyMap<number, boolean>>(new Map());
   protected readonly describeError = describeError;
 
   protected readonly days = computed<Day[]>(() => {
-    const runs = this.log().entries();
-    const ditto = sameAsAbove(runs);
-    const now = this.clock.now();
-    const opened = this.opened();
+    const folded = this.folded();
     const selected = this.selectedId();
     const isOpen = (key: number, entries: LogEntry[]) =>
-      opened.has(key) || entries.some((entry) => entry.run.id === selected);
+      folded.get(key) ?? entries.some((entry) => entry.run.id === selected);
 
-    const days: { key: number; heading: string; entries: LogEntry[] }[] = [];
-    runs.forEach((run, i) => {
-      const created = Date.parse(run.createdTime);
-      const key = dayKey(created);
+    const days: { key: number; runs: WatchRunSummary[] }[] = [];
+    for (const run of this.log().entries()) {
+      const key = dayKey(Date.parse(run.createdTime));
       let day = days.at(-1);
       if (day?.key !== key) {
-        day = { key, heading: dayHeading(created, now), entries: [] };
+        day = { key, runs: [] };
         days.push(day);
       }
-      const { ran } = timingsOf(run);
-      day.entries.push({
-        run,
-        time: clockTime(created),
-        exactTime: fullTime(created),
-        ran: ran === null ? null : duration(ran),
-        // A day starts a fresh page, so its first entry is always written out
-        ditto: ditto[i] && day.entries.length > 0,
-        failed: outcomeOf(run) === 'failed',
+      day.runs.push(run);
+    }
+    return days.map(({ key, runs }) => {
+      // A day starts a fresh page, so ditto marks look no further than the day
+      const ditto = sameAsAbove(runs);
+      const entries = runs.map((run, i): LogEntry => {
+        const created = Date.parse(run.createdTime);
+        const { ran } = timingsOf(run);
+        return {
+          run,
+          time: clockTime(created),
+          exactTime: fullTime(created),
+          ran: ran === null ? null : duration(ran),
+          ditto: ditto[i],
+          failed: outcomeOf(run) === 'failed',
+        };
       });
+      return {
+        key,
+        items: fold(entries, isOpen),
+        runs: entries.length,
+        failures: entries.filter((entry) => entry.failed).length,
+      };
     });
-    return days.map(({ key, heading, entries }) => ({
-      key,
-      heading,
-      items: fold(entries, isOpen),
-      runs: entries.length,
-      failures: entries.filter((entry) => entry.failed).length,
-    }));
   });
 
-  protected toggle(key: number) {
-    this.opened.update((keys) => {
-      const next = new Set(keys);
-      if (!next.delete(key)) {
-        next.add(key);
-      }
-      return next;
-    });
+  /** Each day's heading, apart from the days themselves so the clock's tick only touches these. */
+  protected readonly headings = computed(() => {
+    const now = this.clock.now();
+    return new Map(this.days().map((day) => [day.key, dayHeading(day.key, now)]));
+  });
+
+  protected toggle(key: number, open: boolean) {
+    this.folded.update((folds) => new Map(folds).set(key, !open));
   }
+
+  /** Loads an older page, then moves focus to its first line, as the button may go once there's nothing older. */
+  protected async showOlder() {
+    const shown = this.log().entries().length;
+    await this.log().loadOlder();
+    const first = this.log().entries()[shown];
+    if (!first) {
+      return;
+    }
+    const line = this.days()
+      .flatMap((day) => day.items)
+      .find((item) => lineHolds(item, first.id));
+    afterNextRender(
+      () => {
+        const target = line && this.host.nativeElement.querySelector(`[data-line="${line.id}"]`);
+        target?.querySelector<HTMLElement>('a, button')?.focus();
+      },
+      { injector: this.injector },
+    );
+  }
+}
+
+/** Whether a line of the log is the run, or a fold holding it. */
+function lineHolds(item: Item, runId: number) {
+  return item.kind === 'entry' ? item.entry.run.id === runId : item.entries.some((entry) => entry.run.id === runId);
 }

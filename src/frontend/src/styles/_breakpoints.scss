@@ -10,6 +10,13 @@ $phone-width: 40rem;
   }
 }
 
+/** Small phones, where the log's columns tighten. */
+@mixin small-phone {
+  @media (max-width: 30rem) {
+    @content;
+  }
+}
+
 /** The narrowest phones, around 320px wide. */
 @mixin narrow-phone {
   @media (max-width: 22.5rem) {

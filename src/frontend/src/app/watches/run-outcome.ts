@@ -71,15 +71,10 @@ import { WatchRunSummary } from './watch.model';
         height: 0.5rem;
         border-radius: 50%;
         background: currentColor;
-        animation: sweep 1.6s ease-in-out infinite;
+        animation: pulse 1.6s ease-in-out infinite;
       }
     }
 
-    @keyframes sweep {
-      50% {
-        opacity: 0.25;
-      }
-    }
   `,
 })
 export class RunOutcome {

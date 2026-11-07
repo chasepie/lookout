@@ -8,140 +8,151 @@
   </h1>
 </header>
 
-<form class="form" novalidate (submit)="save($event)">
-  <div class="field">
-    <label class="field-label" for="name">Name</label>
-    <input
-      id="name"
-      class="input"
-      autocomplete="off"
-      [formField]="watchForm.name"
-      [attr.aria-invalid]="watchForm.name().touched() && watchForm.name().invalid()"
-      aria-describedby="name-error"
-    />
-    <span id="name-error" class="field-error">
-      @if (watchForm.name().touched() && watchForm.name().invalid()) {
-        {{ watchForm.name().errors()[0].message }}
-      }
-    </span>
+@if (missing()) {
+  <p>There's no such watch to edit; it may have been deleted. <a routerLink="/">See all watches</a></p>
+} @else if (editing() && existing.error(); as error) {
+  <div class="callout callout-failure callout-retry" role="alert">
+    <p>Couldn't load the watch to edit: {{ describeError(error) }}</p>
+    <button type="button" class="button" (click)="existing.reload()">Try again</button>
   </div>
-
-  <div class="field">
-    <label class="field-label" for="script">{{ editing() ? 'Replace the script' : 'Script' }}</label>
-    @if (editing() && existing.hasValue() && existing.value().scriptFileName; as current) {
-      <span class="field-hint" id="script-hint">Now <code>{{ current }}</code>. Leave this empty to keep it.</span>
-    } @else {
-      <span class="field-hint" id="script-hint">
-        A script built on the watch SDK. It opens the page and returns what it finds.
+} @else if (!ready()) {
+  <p class="muted" role="status">Loading the watch…</p>
+} @else {
+  <form class="form" novalidate (submit)="save($event)">
+    <div class="field">
+      <label class="field-label" for="name">Name</label>
+      <input
+        id="name"
+        class="input"
+        autocomplete="off"
+        [formField]="watchForm.name"
+        [attr.aria-invalid]="watchForm.name().touched() && watchForm.name().invalid()"
+        aria-describedby="name-error"
+      />
+      <span id="name-error" class="field-error">
+        @if (watchForm.name().touched() && watchForm.name().invalid()) {
+          {{ watchForm.name().errors()[0].message }}
+        }
       </span>
-    }
-    <app-script-picker
-      inputId="script"
-      describedBy="script-hint script-error"
-      [required]="!editing()"
-      [(file)]="script"
-    />
-    <span id="script-error" class="field-error">
-      @if (scriptMissing() && !script() && !editing()) {
-        Choose a script for the watch to run.
+    </div>
+
+    <div class="field">
+      <label class="field-label" for="script">{{ editing() ? 'Replace the script' : 'Script' }}</label>
+      @if (editing() && existing.hasValue() && existing.value().scriptFileName; as current) {
+        <span class="field-hint" id="script-hint">Now <code>{{ current }}</code>. Leave this empty to keep it.</span>
+      } @else {
+        <span class="field-hint" id="script-hint">
+          A script built on the watch SDK. It opens the page and returns what it finds.
+        </span>
       }
-    </span>
-  </div>
+      <app-script-picker
+        inputId="script"
+        describedBy="script-hint script-error"
+        [required]="!editing()"
+        [(file)]="script"
+      />
+      <span id="script-error" class="field-error">
+        @if (scriptMissing() && !script() && !editing()) {
+          Choose a script for the watch to run.
+        }
+      </span>
+    </div>
 
-  <fieldset class="group">
-    <legend>Schedule</legend>
-    <label class="check">
-      <input type="checkbox" [formField]="watchForm.scheduleEnabled" />
-      <span>Run on a schedule</span>
-    </label>
+    <fieldset class="group">
+      <legend>Schedule</legend>
+      <label class="check">
+        <input type="checkbox" [formField]="watchForm.scheduleEnabled" />
+        <span>Run on a schedule</span>
+      </label>
 
-    @if (watchForm.scheduleEnabled().value()) {
-      <div class="schedule">
-        <label class="check">
-          <input type="radio" value="interval" [formField]="watchForm.scheduleType" />
-          <span>At an interval</span>
-        </label>
-        @if (watchForm.scheduleType().value() === 'interval') {
-          <div class="indent">
-            <div class="every">
-              <label for="every">Every</label>
-              <input
-                id="every"
-                class="input input-narrow"
-                type="number"
-                step="1"
-                [formField]="watchForm.every"
-                [attr.aria-invalid]="watchForm.every().invalid()"
-                aria-describedby="every-error"
-              />
-              <label class="visually-hidden" for="unit">Unit</label>
-              <select id="unit" class="select unit" [formField]="watchForm.unit">
-                @for (unit of units; track unit.value) {
-                  <option [value]="unit.value">{{ unit.label }}</option>
+      @if (watchForm.scheduleEnabled().value()) {
+        <div class="schedule">
+          <label class="check">
+            <input type="radio" value="interval" [formField]="watchForm.scheduleType" />
+            <span>At an interval</span>
+          </label>
+          @if (watchForm.scheduleType().value() === 'interval') {
+            <div class="indent">
+              <div class="every">
+                <label for="every">Every</label>
+                <input
+                  id="every"
+                  class="input input-narrow"
+                  type="number"
+                  step="1"
+                  [formField]="watchForm.every"
+                  [attr.aria-invalid]="watchForm.every().invalid()"
+                  aria-describedby="every-error"
+                />
+                <label class="visually-hidden" for="unit">Unit</label>
+                <select id="unit" class="select unit" [formField]="watchForm.unit">
+                  @for (unit of units; track unit.value) {
+                    <option [value]="unit.value">{{ unit.label }}</option>
+                  }
+                </select>
+              </div>
+              <span id="every-error" class="field-error">
+                @if (watchForm.every().invalid()) {
+                  {{ watchForm.every().errors()[0].message }}
                 }
-              </select>
+              </span>
+              <span class="field-hint">Counted from the start of the last run, including runs you start yourself.</span>
             </div>
-            <span id="every-error" class="field-error">
-              @if (watchForm.every().invalid()) {
-                {{ watchForm.every().errors()[0].message }}
-              }
-            </span>
-            <span class="field-hint">Counted from the start of the last run, including runs you start yourself.</span>
-          </div>
-        }
+          }
 
-        <label class="check">
-          <input type="radio" value="cron" [formField]="watchForm.scheduleType" />
-          <span>On a cron schedule</span>
-        </label>
-        @if (watchForm.scheduleType().value() === 'cron') {
-          <div class="indent field">
-            <label class="visually-hidden" for="cron">Cron expression</label>
-            <input
-              id="cron"
-              class="input cron"
-              autocomplete="off"
-              spellcheck="false"
-              placeholder="0 9 * * 1-5"
-              [formField]="watchForm.cron"
-              [attr.aria-invalid]="watchForm.cron().touched() && watchForm.cron().invalid()"
-              aria-describedby="cron-hint cron-error"
-            />
-            <span id="cron-hint" class="field-hint">
-              Five fields: minute, hour, day of month, month, day of week. Times are in the server's time zone.
-            </span>
-            <span id="cron-error" class="field-error">
-              @if (watchForm.cron().touched() && watchForm.cron().invalid()) {
-                {{ watchForm.cron().errors()[0].message }}
-              }
-            </span>
-          </div>
-        }
+          <label class="check">
+            <input type="radio" value="cron" [formField]="watchForm.scheduleType" />
+            <span>On a cron schedule</span>
+          </label>
+          @if (watchForm.scheduleType().value() === 'cron') {
+            <div class="indent field">
+              <label class="visually-hidden" for="cron">Cron expression</label>
+              <input
+                id="cron"
+                class="input cron"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="0 9 * * 1-5"
+                [formField]="watchForm.cron"
+                [attr.aria-invalid]="watchForm.cron().touched() && watchForm.cron().invalid()"
+                aria-describedby="cron-hint cron-error"
+              />
+              <span id="cron-hint" class="field-hint">
+                Five fields: minute, hour, day of month, month, day of week. Times are in the server's time zone.
+              </span>
+              <span id="cron-error" class="field-error">
+                @if (watchForm.cron().touched() && watchForm.cron().invalid()) {
+                  {{ watchForm.cron().errors()[0].message }}
+                }
+              </span>
+            </div>
+          }
+        </div>
+      }
+    </fieldset>
+
+    <fieldset class="group">
+      <legend>Network</legend>
+      <label class="check">
+        <input type="checkbox" aria-describedby="vpn-hint" [formField]="watchForm.useVpn" />
+        <span>
+          Send the browser's traffic through the VPN
+          <span id="vpn-hint" class="field-hint hint-block">Runs fail if the VPN isn't set up.</span>
+        </span>
+      </label>
+    </fieldset>
+
+    @if (error(); as error) {
+      <div class="callout callout-failure" role="alert">
+        <p class="preformatted-lines">Couldn't save: {{ error }}</p>
       </div>
     }
-  </fieldset>
 
-  <fieldset class="group">
-    <legend>Network</legend>
-    <label class="check">
-      <input type="checkbox" aria-describedby="vpn-hint" [formField]="watchForm.useVpn" />
-      <span>
-        Send the browser's traffic through the VPN
-        <span id="vpn-hint" class="field-hint hint-block">Runs fail if the VPN isn't set up.</span>
-      </span>
-    </label>
-  </fieldset>
-
-  @if (error(); as error) {
-    <div class="callout callout-failure" role="alert">
-      <p class="preformatted-lines">Couldn't save: {{ error }}</p>
+    <div class="actions">
+      <button type="submit" class="button button-primary" [disabled]="watchForm().submitting()">
+        {{ editing() ? 'Save changes' : 'Create watch' }}
+      </button>
+      <a class="button button-quiet" [routerLink]="cancelLink()">Cancel</a>
     </div>
-  }
-
-  <div class="actions">
-    <button type="submit" class="button button-primary" [disabled]="watchForm().submitting()">
-      {{ editing() ? 'Save changes' : 'Create watch' }}
-    </button>
-    <a class="button button-quiet" [routerLink]="cancelLink()">Cancel</a>
-  </div>
-</form>
+  </form>
+}

@@ -31,6 +31,9 @@ import { LucideFileCode } from '@lucide/angular';
         <span>Drop a <code>.ts</code> or <code>.js</code> file here, or <span class="browse">browse</span></span>
       }
     </label>
+    @if (rejected(); as message) {
+      <span class="field-error" role="alert">{{ message }}</span>
+    }
   `,
   styles: `
     @use 'breakpoints' as bp;
@@ -94,9 +97,15 @@ export class ScriptPicker {
   readonly describedBy = input<string | null>(null);
 
   protected readonly over = signal(false);
+  /** Why the last file offered wasn't taken. */
+  protected readonly rejected = signal<string | null>(null);
 
   protected pick(event: Event) {
-    this.file.set((event.target as HTMLInputElement).files?.[0] ?? null);
+    const input = event.target as HTMLInputElement;
+    const picked = input.files?.[0];
+    if (picked) {
+      this.choose(picked);
+    }
   }
 
   protected dragOver(event: DragEvent) {
@@ -109,7 +118,17 @@ export class ScriptPicker {
     this.over.set(false);
     const dropped = event.dataTransfer?.files[0];
     if (dropped) {
-      this.file.set(dropped);
+      this.choose(dropped);
+    }
+  }
+
+  /** Takes a script, or says why a file isn't one: a drop skips the input's `accept`, and that's only a hint anyway. */
+  private choose(file: File) {
+    if (/\.(ts|js)$/i.test(file.name)) {
+      this.rejected.set(null);
+      this.file.set(file);
+    } else {
+      this.rejected.set(`${file.name} isn't a script. Choose a .ts or .js file.`);
     }
   }
 }

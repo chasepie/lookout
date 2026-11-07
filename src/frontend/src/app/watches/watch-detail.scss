@@ -51,6 +51,10 @@
   }
 }
 
+h1:focus {
+  outline: none;
+}
+
 .gone {
   display: grid;
   gap: var(--space-3);

@@ -210,6 +210,20 @@ describe('injectRunLog', () => {
     expect(ids()).toEqual([9]);
   });
 
+  it('starts again from the newest page when more runs than a page arrived at once, rather than leave a gap', async () => {
+    await answer(newestOf('1'), page(60, 11));
+    const older = log.loadOlder();
+    (await nextRequest(olderThan(11))).flush(page(10, 1));
+    await older;
+
+    updates.runUpdated.next(run(130));
+    await answer(newestOf('1'), page(130, 81));
+
+    expect(ids()[0]).toBe(130);
+    expect(ids().at(-1)).toBe(81);
+    expect(log.hasOlder()).toBe(true);
+  });
+
   it("doesn't mark an old run as arrived when a deletion brings it into the page", async () => {
     await answer(newestOf('1'), page(60, 11));
 

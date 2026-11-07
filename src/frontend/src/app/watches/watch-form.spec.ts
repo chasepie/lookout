@@ -4,7 +4,7 @@ import { ApplicationRef, Component } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter, withComponentInputBinding } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
-import { answer, nextRequest, request, respond, textOf, watchSummary } from '../testing/fixtures';
+import { answer, fail, nextRequest, request, respond, textOf, watchSummary } from '../testing/fixtures';
 import { WatchForm } from './watch-form';
 import { Watch, WatchScheduleKind } from './watch.model';
 
@@ -157,6 +157,47 @@ describe('WatchForm', () => {
         );
       });
     });
+  });
+
+  describe('a watch that has not loaded', () => {
+    it("shows no form to save over it, and says why it couldn't load", async () => {
+      await open('/watches/7/edit');
+      await fail(request('GET', '/api/Watches/7'), 500, 'Database is locked');
+
+      expect(page.querySelector('form')).toBeNull();
+      expect(textOf(page.querySelector('[role=alert] p'))).toBe("Couldn't load the watch to edit: Database is locked");
+
+      page.querySelector<HTMLButtonElement>('[role=alert] button')!.click();
+      await answer(request('GET', '/api/Watches/7'), watchSummary({ ...savedWatch, recentRuns: [] }));
+      expect(page.querySelector<HTMLInputElement>('#name')?.value).toBe('Prices');
+    });
+
+    it("says when there's no such watch", async () => {
+      await open('/watches/7/edit');
+      await fail(request('GET', '/api/Watches/7'), 404);
+
+      expect(page.querySelector('form')).toBeNull();
+      expect(textOf(page)).toContain("There's no such watch to edit");
+    });
+  });
+
+  it("doesn't save an interval the schedule was never checked for, while it's off", async () => {
+    await open('/watches/new');
+    type('#name', 'Stock');
+    page.querySelector<HTMLInputElement>('input[type=checkbox]')!.click();
+    await stable();
+    type('#every', '');
+    page.querySelector<HTMLInputElement>('input[type=checkbox]')!.click();
+    chooseScript(new File([''], 'stock.ts'));
+
+    await submitForm();
+    const create = await nextRequest(request('POST', '/api/Watches'));
+    const body = create.request.body as FormData;
+    expect(body.get('scheduleEnabled')).toBe('false');
+    expect(body.has('scheduleKind')).toBe(false);
+    expect(body.has('scheduleInterval')).toBe(false);
+    create.flush({ ...savedWatch, id: 9 });
+    await vi.waitFor(() => expect(TestBed.inject(Router).url).toBe('/watches/9'));
   });
 
   describe('an existing watch', () => {

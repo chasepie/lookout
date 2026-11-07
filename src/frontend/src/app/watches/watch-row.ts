@@ -1,6 +1,7 @@
 import { Component, computed, inject, input, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { LucidePlay, LucideShieldCheck } from '@lucide/angular';
+import { LiveUpdates } from '../live/live-updates';
 import { Notices } from '../shared/notices';
 import { RelativeTime } from '../shared/relative-time';
 import { describeError } from '../shared/describe-error';
@@ -144,8 +145,11 @@ import { WatchesApi } from './watches-api';
       font-size: var(--step-2);
     }
 
+    // Above the row's link, like the run button, so its times and the strip's ticks show their tooltips
     .when {
       grid-area: when;
+      position: relative;
+      z-index: 1;
       display: grid;
       justify-items: end;
       gap: var(--space-1);
@@ -187,6 +191,7 @@ export class WatchRow {
 
   private readonly api = inject(WatchesApi);
   private readonly notices = inject(Notices);
+  private readonly updates = inject(LiveUpdates);
 
   protected readonly starting = signal(false);
   protected readonly schedule = computed(() => describeSchedule(this.watch()));
@@ -201,6 +206,7 @@ export class WatchRow {
     this.starting.set(true);
     try {
       const run = await this.api.run(String(this.watch().id));
+      this.updates.runCreatedHere(run);
       this.notices.say(`Started run #${run.id} of ${this.watch().name}.`);
     } catch (e) {
       this.notices.fail(`Couldn't run ${this.watch().name}: ${describeError(e)}`);

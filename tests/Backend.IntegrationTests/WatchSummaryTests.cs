@@ -79,12 +79,27 @@ public sealed class WatchSummaryTests
         var watchId = await SeedAsync(factory, runCount: WatchSummary.RecentRunCount + 2);
 
         var watches = await client.GetFromJsonAsync<List<WatchSummary>>("/api/Watches", Ct);
-        var watch = await client.GetFromJsonAsync<WatchSummary>($"/api/Watches/{watchId}", Ct);
 
         var recent = watches!.Single().RecentRuns;
         Assert.HasCount(WatchSummary.RecentRunCount, recent);
         Assert.AreEqual($"run {WatchSummary.RecentRunCount + 2}", recent[0].Content);
-        Assert.HasCount(WatchSummary.RecentRunCount, watch!.RecentRuns);
+    }
+
+    [TestMethod]
+    public async Task OneWatchComesWithItsRecentRunsOnlyWhenAsked()
+    {
+        await using var factory = new LookoutFactory();
+        using var client = await factory.CreateSignedInClientAsync(Ct);
+        var watchId = await SeedAsync(factory, runCount: 5);
+
+        var plain = await client.GetFromJsonAsync<WatchSummary>($"/api/Watches/{watchId}", Ct);
+        var withRuns = await client.GetFromJsonAsync<WatchSummary>($"/api/Watches/{watchId}?recentRuns=3", Ct);
+        using var tooMany = await client.GetAsync(
+            $"/api/Watches/{watchId}?recentRuns={WatchSummary.RecentRunCount + 1}", Ct);
+
+        Assert.IsEmpty(plain!.RecentRuns);
+        Assert.AreSequenceEqual(NewestThree, withRuns!.RecentRuns.Select(r => r.Content).ToList());
+        Assert.AreEqual(HttpStatusCode.BadRequest, tooMany.StatusCode);
     }
 
     [TestMethod]

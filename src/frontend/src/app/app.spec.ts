@@ -108,4 +108,20 @@ describe('App focus', () => {
 
     (fixture.nativeElement as HTMLElement).remove();
   });
+
+  it('skips to the content of the page it is on', async () => {
+    const fixture = TestBed.createComponent(App);
+    document.body.appendChild(fixture.nativeElement as HTMLElement);
+    await TestBed.inject(Router).navigateByUrl('/watches/1');
+    await fixture.whenStable();
+    const element = fixture.nativeElement as HTMLElement;
+
+    const skip = element.querySelector<HTMLAnchorElement>('a.skip')!;
+    const followed = skip.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+    expect(followed).toBe(false);
+    expect(document.activeElement).toBe(element.querySelector('main'));
+    expect(TestBed.inject(Router).url).toBe('/watches/1');
+    element.remove();
+  });
 });

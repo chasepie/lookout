@@ -18,6 +18,13 @@ const dayWithYear = new Intl.DateTimeFormat(undefined, {
 });
 const shortDay = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short' });
 const full = new Intl.DateTimeFormat(undefined, { dateStyle: 'full', timeStyle: 'medium' });
+const brief = new Intl.DateTimeFormat(undefined, {
+  weekday: 'short',
+  day: 'numeric',
+  month: 'short',
+  hour: '2-digit',
+  minute: '2-digit',
+});
 
 /** The start of the local day `time` falls in. */
 function startOfDay(time: number) {
@@ -81,6 +88,11 @@ export function clockTime(time: number, withSeconds = false): string {
   return (withSeconds ? timeOfDayWithSeconds : timeOfDay).format(time);
 }
 
+/** The day and time in few words, such as "Tue 3 Nov, 09:00", for runs that may be days apart. */
+export function briefTime(time: number): string {
+  return brief.format(time);
+}
+
 /** The full date and time, for tooltips and wherever the exact moment matters. */
 export function fullTime(time: number): string {
   return full.format(time);
@@ -88,18 +100,21 @@ export function fullTime(time: number): string {
 
 /** A length of time in the largest units that keep it readable: "0.4 s", "12 s", "3 min 5 s", "2 h 10 min". */
 export function duration(ms: number): string {
-  if (ms < 10_000) {
+  if (ms < 9_950) {
     return `${(Math.max(0, ms) / 1000).toFixed(1)} s`;
   }
-  if (ms < minute) {
-    return `${Math.round(ms / 1000)} s`;
+  // Round the whole first, then split it, so a remainder can't round up to a whole unit: never "59 min 60 s"
+  const seconds = Math.round(ms / 1000);
+  if (seconds < 60) {
+    return `${seconds} s`;
   }
-  if (ms < hour) {
-    const minutes = Math.floor(ms / minute);
-    const seconds = Math.round((ms % minute) / 1000);
-    return seconds ? `${minutes} min ${seconds} s` : `${minutes} min`;
+  if (seconds < 3600) {
+    const minutes = Math.floor(seconds / 60);
+    const rest = seconds % 60;
+    return rest ? `${minutes} min ${rest} s` : `${minutes} min`;
   }
-  const hours = Math.floor(ms / hour);
-  const minutes = Math.round((ms % hour) / minute);
-  return minutes ? `${hours} h ${minutes} min` : `${hours} h`;
+  const totalMinutes = Math.round(ms / minute);
+  const hours = Math.floor(totalMinutes / 60);
+  const rest = totalMinutes % 60;
+  return rest ? `${hours} h ${rest} min` : `${hours} h`;
 }

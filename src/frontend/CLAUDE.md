@@ -26,15 +26,18 @@ control classes (`.button`, `.field`, `.input`, `.callout`, …) are in `src/sty
 
 - Type has two roles: the serif italic (`.observation`, or `RunOutcome`) is reserved for what a watched page said, such as run content;
 everything Lookout itself says is in Barlow.
-- Colour has fixed meanings: `--deep` is for what can be acted on, `--shoal` for what's in progress or new, `--magenta` for failures (in place
-of red), and `--buff` only for the VPN's current region.
+- Colour has fixed meanings: `--deep` marks what can be acted on, and is also the ink for anything in progress; `--shoal` fills the
+background of what's in progress or new, being too pale for text; `--magenta` is for failures (in place of red); and `--buff` is only for
+the VPN's current region.
 - A run log reads newest first, grouped by day, with a ditto mark where a run saw the same as the one above (`sameAsAbove`).
 - Report an action's outcome through `Notices` (`say` / `fail`), and ask before destroying anything through `Confirm`, never `window.confirm`.
 - Reload data on live updates with `reloadOn(resource, ...events)`, never by calling `reload()` directly: a resource ignores `reload()`
 while it's loading, and `reloadOn` runs it again once that load ends. A watch's runs come through `injectRunLog`, which pages and merges them.
-- Phones are designed for, not just shrunk to. Write those conditions with the mixins in `src/styles/_breakpoints.scss`
-(`@use 'breakpoints' as bp`), never as raw media queries: `bp.phone` for phone layouts, `bp.touch` to grow targets to 44px (desktop
-stays compact), and `bp.hover` around every hover style, so it doesn't stick after a tap. Code that can't use CSS reads `phoneQuery`.
+- Phones are designed for, not just shrunk to. The shared conditions are mixins in `src/styles/_breakpoints.scss`
+(`@use 'breakpoints' as bp`): `bp.phone` and `bp.small-phone` for phone layouts, `bp.touch` to grow targets to 44px (desktop stays
+compact), and `bp.hover` around every hover style, so it doesn't stick after a tap. Code that can't use CSS reads `phoneQuery`. A width
+where one component's own layout changes, such as the run panel moving beside the log, is that component's plain media query.
+- Hide something on screen but not from screen readers with the `.visually-hidden` class, or `@include a11y.visually-hidden` (`@use 'a11y'`).
 Anything pinned to the bottom of a phone screen must fit within `scroll-padding-bottom` in `_base.scss`, so it never covers what has focus.
 
 ## Testing

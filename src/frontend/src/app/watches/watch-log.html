@@ -7,7 +7,7 @@
 @for (day of days(); track day.key) {
   <section class="day" [attr.aria-labelledby]="'day-' + day.key">
     <h3 class="day-head" [id]="'day-' + day.key">
-      <span>{{ day.heading }}</span>
+      <span>{{ headings().get(day.key) }}</span>
       <span class="day-count"
         >{{ day.runs }} {{ day.runs === 1 ? 'run' : 'runs' }}@if (day.failures > 0) {<span class="failure"
             >, {{ day.failures }} failed</span
@@ -17,7 +17,7 @@
     <ol class="entries">
       @for (item of day.items; track item.id) {
         @if (item.kind === 'entry') {
-          <li>
+          <li [attr.data-line]="item.id">
             <app-log-entry
               [entry]="item.entry"
               [watchId]="watchId()"
@@ -26,13 +26,13 @@
             />
           </li>
         } @else {
-          <li>
+          <li [attr.data-line]="item.id">
             <button
               type="button"
               class="fold"
               [attr.aria-expanded]="item.open"
               [attr.aria-controls]="item.id"
-              (click)="toggle(item.key)"
+              (click)="toggle(item.key, item.open)"
             >
               <span class="fold-mark" aria-hidden="true">″</span>
               <span class="fold-text">
@@ -63,14 +63,14 @@
 }
 
 @if (log().error(); as error) {
-  <div class="callout callout-failure" role="alert">
+  <div class="callout callout-failure callout-retry" role="alert">
     <p>Couldn't load the log: {{ describeError(error) }}</p>
     <button type="button" class="button" (click)="log().reload()">Try again</button>
   </div>
 }
 
 @if (log().hasOlder()) {
-  <button type="button" class="button older" [disabled]="log().loadingOlder()" (click)="log().loadOlder()">
+  <button type="button" class="button older" [disabled]="log().loadingOlder()" (click)="showOlder()">
     {{ log().loadingOlder() ? 'Loading older runs…' : 'Show older runs' }}
   </button>
 }

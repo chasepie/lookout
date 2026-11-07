@@ -12,6 +12,14 @@ export class FakeLiveUpdates {
   readonly vpnChanged = new Subject<void>();
   readonly reconnected = new Subject<void>();
   readonly state = signal<LiveState>('live');
+
+  runCreatedHere(run: WatchRunUpdate) {
+    this.runUpdated.next(run);
+  }
+
+  runsDeletedHere(watchId: number, runIds: number[]) {
+    this.runsDeleted.next({ watchId, runIds });
+  }
 }
 
 export function provideFakeLiveUpdates(): Provider {

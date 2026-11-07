@@ -48,6 +48,15 @@ export class App {
       .subscribe(() => this.main().nativeElement.focus({ preventScroll: true }));
   }
 
+  /**
+   * Moves focus to the page's content. The link's own `#main` would load the home page instead, since links resolve
+   * against `<base href="/">`.
+   */
+  protected skipToContent(event: Event) {
+    event.preventDefault();
+    this.main().nativeElement.focus();
+  }
+
   protected signOut() {
     // On failure the session still works, so say so rather than appear signed out
     void this.session.signOut().catch((error: unknown) => {

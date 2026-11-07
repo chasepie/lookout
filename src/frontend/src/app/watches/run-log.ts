@@ -34,14 +34,21 @@ function withNewest(log: LogState, page: WatchRunSummary[]): LogState {
   // Only runs newer than any shown have arrived; older ones only move up into the page as others are deleted
   const newestShown = log.entries[0]?.id ?? 0;
   const added = page.filter((run) => run.id > newestShown).map((run) => run.id);
+  const arrived = added.length > 0 ? new Set([...log.arrived, ...added]) : log.arrived;
   // A page that isn't full holds every run there is, so nothing older than it is left to keep
   const oldestInPage = page.at(-1)?.id ?? 0;
-  const older = full ? log.entries.filter((run) => run.id < oldestInPage) : [];
+  if (!full) {
+    return { ...log, entries: page, hasOlder: false, arrived };
+  }
+  // A full page that doesn't reach back to the runs shown leaves a gap between them, more runs than a page having
+  // arrived at once, so the log starts again from the page, with the rest a page further back
+  if (oldestInPage > newestShown) {
+    return { ...log, entries: page, hasOlder: true, arrived };
+  }
   return {
     ...log,
-    entries: [...page, ...older],
-    hasOlder: full && (log.hasOlder || older.length === 0),
-    arrived: added.length > 0 ? new Set([...log.arrived, ...added]) : log.arrived,
+    entries: [...page, ...log.entries.filter((run) => run.id < oldestInPage)],
+    arrived,
   };
 }
 

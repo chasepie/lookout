@@ -138,14 +138,9 @@ import { VpnSettings, VpnStatus } from './vpn.model';
       margin-right: var(--space-2);
       border-radius: 50%;
       background: var(--deep);
-      animation: sweep 1.6s ease-in-out infinite;
+      animation: pulse 1.6s ease-in-out infinite;
     }
 
-    @keyframes sweep {
-      50% {
-        opacity: 0.25;
-      }
-    }
   `,
 })
 export class VpnStatusCard {

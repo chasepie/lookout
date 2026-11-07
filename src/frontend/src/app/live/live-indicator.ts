@@ -13,6 +13,7 @@ import { LiveUpdates } from './live-updates';
     '[class]': 'live.state()',
   },
   styles: `
+    @use 'a11y';
     @use 'breakpoints' as bp;
 
     :host {
@@ -46,12 +47,7 @@ import { LiveUpdates } from './live-updates';
     // On a phone the dot alone says it; the label is still read out
     @include bp.phone {
       .label {
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        overflow: hidden;
-        clip-path: inset(50%);
-        white-space: nowrap;
+        @include a11y.visually-hidden;
       }
     }
 

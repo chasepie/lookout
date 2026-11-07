@@ -1,6 +1,6 @@
 import { CdkMenu, CdkMenuItem, CdkMenuTrigger } from '@angular/cdk/menu';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, ElementRef, computed, effect, inject, input, signal, viewChild } from '@angular/core';
+import { Component, ElementRef, Injector, afterNextRender, computed, effect, inject, input, signal, viewChild } from '@angular/core';
 import { Title } from '@angular/platform-browser';
 import { Router, RouterLink, RouterOutlet } from '@angular/router';
 import { LucideChevronLeft, LucideEllipsis, LucideEraser, LucidePencil, LucidePlay, LucideTrash2 } from '@lucide/angular';
@@ -9,6 +9,7 @@ import { LiveUpdates } from '../live/live-updates';
 import { reloadOn } from '../live/reload-on';
 import { Confirm } from '../shared/confirm';
 import { describeError } from '../shared/describe-error';
+import { lastValue } from '../shared/last-value';
 import { Notices } from '../shared/notices';
 import { RelativeTime } from '../shared/relative-time';
 import { injectRunLog } from './run-log';
@@ -47,13 +48,19 @@ export class WatchDetail {
   private readonly notices = inject(Notices);
 
   protected readonly watch = this.api.watchResource(this.id);
+  /** The watch as last loaded, still shown if a refresh fails. */
+  protected readonly shown = lastValue(this.watch);
   protected readonly log = injectRunLog(this.id);
+  private readonly updates = inject(LiveUpdates);
 
   protected readonly missing = computed(() => {
     const error = this.watch.error();
     return error instanceof HttpErrorResponse && error.status === 404;
   });
-  protected readonly schedule = computed(() => (this.watch.hasValue() ? describeSchedule(this.watch.value()) : ''));
+  protected readonly schedule = computed(() => {
+    const watch = this.shown();
+    return watch ? describeSchedule(watch) : '';
+  });
 
   /** The run panel, while a run is open. */
   private readonly panel = signal<RunPanel | null>(null);
@@ -65,9 +72,12 @@ export class WatchDetail {
 
   /** The menu's button, which a dialog opened from the menu returns focus to. */
   private readonly moreActions = viewChild<ElementRef<HTMLElement>>('moreActions');
+  private readonly heading = viewChild<ElementRef<HTMLElement>>('heading');
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly injector = inject(Injector);
 
   constructor() {
-    const updates = inject(LiveUpdates);
+    const updates = this.updates;
     const isThisWatch = (watchId: number) => watchId === Number(this.id());
     // A new run moves the next scheduled run, so the header reloads too
     reloadOn(
@@ -77,11 +87,11 @@ export class WatchDetail {
       updates.reconnected,
     );
 
+    // The page titles itself: the router would put its generic title back each time a run opens or closes
     const title = inject(Title);
     effect(() => {
-      if (this.watch.hasValue()) {
-        title.setTitle(`${this.watch.value().name} – Lookout`);
-      }
+      const watch = this.shown();
+      title.setTitle(watch ? `${watch.name} – Lookout` : 'Watch – Lookout');
     });
   }
 
@@ -89,14 +99,24 @@ export class WatchDetail {
     this.panel.set(component instanceof RunPanel ? component : null);
   }
 
+  /** Gives focus back to the run's line in the log, or to the watch's heading if the run is gone, such as deleted. */
   protected panelClosed() {
+    const closedRunId = this.selectedRunId();
     this.panel.set(null);
+    afterNextRender(
+      () => {
+        const line = this.host.nativeElement.querySelector<HTMLElement>(`a.entry[href$="/runs/${closedRunId}"]`);
+        (line ?? this.heading()?.nativeElement)?.focus();
+      },
+      { injector: this.injector },
+    );
   }
 
   protected async runNow() {
     this.starting.set(true);
     try {
       const run = await this.api.run(this.id());
+      this.updates.runCreatedHere(run);
       this.notices.say(`Started run #${run.id}.`);
     } catch (e) {
       this.notices.fail(`Couldn't start a run: ${describeError(e)}`);
@@ -106,7 +126,7 @@ export class WatchDetail {
   }
 
   protected async remove() {
-    const name = this.watch.hasValue() ? this.watch.value().name : 'this watch';
+    const name = this.shown()?.name ?? 'this watch';
     const sure = await this.confirm.ask({
       title: `Delete ${name}?`,
       body: 'Its script and every run are deleted for good.',
@@ -139,6 +159,8 @@ export class WatchDetail {
     }
     try {
       const result = await this.api.deleteRuns(this.id());
+      // Which runs went isn't said, so the log fetches its newest page again
+      this.updates.runsDeletedHere(Number(this.id()), []);
       const kept = result.keptRunning > 0 ? ` Kept ${result.keptRunning} in progress.` : '';
       this.notices.say(`Deleted ${result.deleted} ${result.deleted === 1 ? 'run' : 'runs'}.${kept}`);
       if (this.runOpen()) {

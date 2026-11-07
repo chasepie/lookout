@@ -3,27 +3,27 @@
   Watches
 </a>
 
-@if (watch.isLoading() && !watch.hasValue()) {
-  <p class="muted" role="status">Loading the watch…</p>
-} @else if (missing()) {
+@if (missing()) {
   <div class="gone">
     <h1>No such watch</h1>
     <p>It may have been deleted. <a routerLink="/">See all watches</a></p>
   </div>
-} @else if (watch.error(); as error) {
-  <div class="callout callout-failure" role="alert">
-    <p>Couldn't load the watch: {{ describeError(error) }}</p>
-  </div>
-} @else if (watch.hasValue()) {
+} @else if (shown(); as shownWatch) {
+  @if (watch.error(); as error) {
+    <div class="callout callout-failure callout-retry" role="alert">
+      <p>Couldn't refresh the watch: {{ describeError(error) }}</p>
+      <button type="button" class="button" (click)="watch.reload()">Try again</button>
+    </div>
+  }
   <header class="head">
     <div class="title">
-      <h1>{{ watch.value().name }}</h1>
+      <h1 #heading tabindex="-1">{{ shownWatch.name }}</h1>
       <dl class="facts">
         <div>
           <dt>Schedule</dt>
           <dd>{{ schedule() }}</dd>
         </div>
-        @if (watch.value().nextRunTime; as next) {
+        @if (shownWatch.nextRunTime; as next) {
           <div>
             <dt>Next run</dt>
             <dd><app-relative-time [value]="next" /></dd>
@@ -31,12 +31,12 @@
         }
         <div>
           <dt>Traffic</dt>
-          <dd>{{ watch.value().useVpn ? 'Through the VPN' : 'Direct' }}</dd>
+          <dd>{{ shownWatch.useVpn ? 'Through the VPN' : 'Direct' }}</dd>
         </div>
         <div>
           <dt>Script</dt>
           <dd>
-            @if (watch.value().scriptFileName; as file) {
+            @if (shownWatch.scriptFileName; as file) {
               <code>{{ file }}</code>
             } @else {
               <span class="failure">None uploaded</span>
@@ -50,7 +50,7 @@
       <button
         type="button"
         class="button button-primary"
-        [disabled]="starting() || !watch.value().scriptFileName"
+        [disabled]="starting() || !shownWatch.scriptFileName"
         (click)="runNow()"
       >
         <svg lucidePlay aria-hidden="true" />
@@ -89,4 +89,11 @@
       <router-outlet (activate)="panelOpened($event)" (deactivate)="panelClosed()" />
     </div>
   </div>
+} @else if (watch.error(); as error) {
+  <div class="callout callout-failure callout-retry" role="alert">
+    <p>Couldn't load the watch: {{ describeError(error) }}</p>
+    <button type="button" class="button" (click)="watch.reload()">Try again</button>
+  </div>
+} @else {
+  <p class="muted" role="status">Loading the watch…</p>
 }

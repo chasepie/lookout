@@ -1,6 +1,6 @@
 <header class="head">
-  @if (run.hasValue()) {
-    <h2 #heading tabindex="-1">Run #{{ run.value().id }}</h2>
+  @if (shown(); as shownRun) {
+    <h2 #heading tabindex="-1">Run #{{ shownRun.id }}</h2>
   } @else {
     <h2 #heading tabindex="-1">Run</h2>
   }
@@ -10,24 +10,24 @@
   </a>
 </header>
 
-@if (run.isLoading() && !run.hasValue()) {
-  <p class="muted" role="status">Loading the run…</p>
-} @else if (missing()) {
+@if (missing()) {
   <p>
     {{ runId() === 'latest' ? "This watch hasn't run yet." : 'This run was deleted.' }}
     <a [routerLink]="['/watches', id()]">Back to the log</a>
   </p>
-} @else if (run.error(); as error) {
-  <div class="callout callout-failure" role="alert">
-    <p>Couldn't load the run: {{ describeError(error) }}</p>
-  </div>
-} @else if (run.hasValue()) {
+} @else if (shown(); as shownRun) {
+  @if (run.error(); as error) {
+    <div class="callout callout-failure callout-retry" role="alert">
+      <p>Couldn't refresh the run: {{ describeError(error) }}</p>
+      <button type="button" class="button" (click)="run.reload()">Try again</button>
+    </div>
+  }
   <p class="created">
-    <time [attr.datetime]="run.value().createdTime">{{ created() }}</time>
+    <time [attr.datetime]="shownRun.createdTime">{{ created() }}</time>
   </p>
 
   <div class="seen" [class.seen-failed]="outcome() === 'failed'">
-    <app-run-outcome [run]="run.value()" [clamp]="false" />
+    <app-run-outcome [run]="shownRun" [clamp]="false" />
   </div>
 
   @if (timings(); as timings) {
@@ -38,12 +38,12 @@
       </div>
       <div>
         <dt>Ran</dt>
-        <dd>{{ timings.ran ?? (run.value().status === statuses.Running ? 'Still running' : '–') }}</dd>
+        <dd>{{ timings.ran ?? (shownRun.status === statuses.Running ? 'Still running' : '–') }}</dd>
       </div>
     </dl>
   }
 
-  @if (run.value().error; as error) {
+  @if (shownRun.error; as error) {
     <section class="section" aria-labelledby="error-title">
       <h3 id="error-title">Error</h3>
       <pre class="preformatted callout callout-failure">{{ error }}</pre>
@@ -68,12 +68,19 @@
     <button
       type="button"
       class="button button-danger"
-      [disabled]="deleting() || run.value().status === statuses.Running"
-      [title]="run.value().status === statuses.Running ? 'A run can be deleted once it finishes' : ''"
-      (click)="remove(run.value().id)"
+      [disabled]="deleting() || shownRun.status === statuses.Running"
+      [title]="shownRun.status === statuses.Running ? 'A run can be deleted once it finishes' : ''"
+      (click)="remove(shownRun.id)"
     >
       <svg lucideTrash2 aria-hidden="true" />
       Delete run
     </button>
   </div>
+} @else if (run.error(); as error) {
+  <div class="callout callout-failure callout-retry" role="alert">
+    <p>Couldn't load the run: {{ describeError(error) }}</p>
+    <button type="button" class="button" (click)="run.reload()">Try again</button>
+  </div>
+} @else {
+  <p class="muted" role="status">Loading the run…</p>
 }

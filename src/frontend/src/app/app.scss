@@ -1,3 +1,4 @@
+@use 'a11y';
 @use 'breakpoints' as bp;
 
 :host {
@@ -46,8 +47,10 @@
   font-weight: 600;
   text-decoration: none;
 
-  &:hover {
-    color: var(--ink);
+  @include bp.hover {
+    &:hover {
+      color: var(--ink);
+    }
   }
 }
 
@@ -85,8 +88,10 @@
     font-weight: 500;
     text-decoration: none;
 
-    &:hover {
-      color: var(--ink);
+    @include bp.hover {
+      &:hover {
+        color: var(--ink);
+      }
     }
 
     &[aria-current='page'] {
@@ -130,12 +135,7 @@ main {
 
   .who,
   .sign-out-label {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
+    @include a11y.visually-hidden;
   }
 
   .owner {
@@ -158,11 +158,6 @@ main {
 // On the narrowest phones the mark stands for the name, which screen readers still hear
 @include bp.narrow-phone {
   .wordmark-name {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
+    @include a11y.visually-hidden;
   }
 }

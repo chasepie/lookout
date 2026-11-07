@@ -166,6 +166,64 @@ describe('WatchDetail', () => {
     expect(notices()).toContain('Deleted 3 runs. Kept 1 in progress.');
   });
 
+  it('keeps the watch shown when a refresh fails, and tries again on request', async () => {
+    await open();
+
+    liveUpdates().reconnected.next();
+    (await nextRequest(request('GET', watchUrl))).flush('Bad Gateway', { status: 502, statusText: 'Bad Gateway' });
+    await answer(request('GET', runsUrl), log);
+
+    expect(textOf(page().querySelector('h1'))).toBe('Bot detection');
+    expect(textOf(page().querySelector('.callout-retry p'))).toBe("Couldn't refresh the watch: Bad Gateway");
+    button('Try again').click();
+    await answer(request('GET', watchUrl), watchSummary());
+    expect(page().querySelector('.callout-retry')).toBeNull();
+  });
+
+  it('adds a run it started to the log without waiting for the live connection', async () => {
+    await open();
+
+    button('Run now').click();
+    await answer(request('POST', runsUrl), fullRun(4, { createdTime: minutesAgo(0), status: WatchRunStatus.Created }));
+    await respond(request('GET', watchUrl), watchSummary());
+    await answer(request('GET', runsUrl), [runSummary(4, { createdTime: minutesAgo(0), status: WatchRunStatus.Created }), ...log]);
+
+    expect(entries()[0].getAttribute('href')).toBe('/watches/1/runs/4');
+  });
+
+  it('starts each day afresh, without a ditto mark pointing across its heading', async () => {
+    await harness.navigateByUrl('/watches/1');
+    await respond(request('GET', watchUrl), watchSummary());
+    await answer(request('GET', runsUrl), [
+      runSummary(3, { createdTime: minutesAgo(1), content: 'Normal' }),
+      // Yesterday: a failure, then what today's first run saw
+      runSummary(2, { createdTime: minutesAgo(24 * 60 + 1), content: null, error: 'Timeout' }),
+      runSummary(1, { createdTime: minutesAgo(24 * 60 + 2), content: 'Normal' }),
+    ]);
+
+    expect(textOf(entries()[2])).toContain('Normal');
+    expect(textOf(entries()[2])).not.toContain('Same as above');
+  });
+
+  it('moves focus to the first older run shown, as the button goes once there are no more', async () => {
+    const full = Array.from({ length: 50 }, (_, i) =>
+      runSummary(60 - i, { createdTime: minutesAgo(1 + i), content: `seen ${60 - i}` }),
+    );
+    await harness.navigateByUrl('/watches/1');
+    await respond(request('GET', watchUrl), watchSummary());
+    await answer(request('GET', runsUrl), full);
+
+    button('Show older runs').click();
+    await answer(request('GET', runsUrl), [runSummary(10, { createdTime: minutesAgo(52), content: 'older' })]);
+
+    expect(button('Show older runs')).toBeUndefined();
+    // Focus moves on the render after the page arrives
+    await vi.waitFor(async () => {
+      await stable();
+      expect(document.activeElement?.getAttribute('href')).toBe('/watches/1/runs/10');
+    });
+  });
+
   describe('a streak of repeats', () => {
     // Five runs that saw the same, under one that saw something else
     const streak = [
@@ -213,6 +271,15 @@ describe('WatchDetail', () => {
 
       expect(fold().getAttribute('aria-expanded')).toBe('true');
       expect(page().querySelector('[aria-current=true]')?.getAttribute('href')).toBe('/watches/1/runs/2');
+    });
+
+    it('closes on request even when it holds the open run', async () => {
+      await openWith('/watches/1/runs/2');
+
+      fold().click();
+      await stable();
+
+      expect(fold().getAttribute('aria-expanded')).toBe('false');
     });
   });
 
@@ -265,6 +332,10 @@ describe('WatchDetail', () => {
 
       expect(TestBed.inject(Router).url).toBe('/watches/1');
       expect(notices()).toContain('Deleted run #3.');
+      // Gone from the log without waiting for the live connection, and focus goes to the watch, not lost
+      expect(entries().map((entry) => entry.getAttribute('href'))).not.toContain('/watches/1/runs/3');
+      expect(document.activeElement).toBe(page().querySelector('h1'));
+      await answer(request('GET', runsUrl), log.filter((run) => run.id !== 3));
     });
 
     it("says so when it's been deleted", async () => {

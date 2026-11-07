@@ -1,5 +1,6 @@
 using System.Linq.Expressions;
 using ChasePie.Lookout.Core;
+using ChasePie.Lookout.Backend.Services;
 using Microsoft.EntityFrameworkCore;
 
 namespace ChasePie.Lookout.Backend.Controllers;
@@ -37,7 +38,9 @@ public sealed record WatchRunSummary(
 /// <summary>
 /// A watch with its latest runs, newest first, and when its schedule next creates a run.
 /// </summary>
-/// <param name="RecentRuns">At most <see cref="RecentRunCount"/> runs, newest first.</param>
+/// <param name="RecentRuns">
+/// At most <see cref="RecentRunCount"/> runs, newest first: as many as were asked for.
+/// </param>
 /// <param name="NextRunTime">
 /// When the schedule next creates a run, in UTC, from <see cref="Watch.GetDueTime"/>; <see langword="null"/> if the
 /// watch isn't scheduled, has no script, or has a run waiting to start. A time in the past means any moment now.
@@ -59,39 +62,35 @@ public sealed record WatchSummary(
     public const int RecentRunCount = 24;
 
     /// <summary>
-    /// Reads watches with their recent runs in one database query, without tracking them.
+    /// Reads watches with up to <paramref name="recentRunCount"/> of their latest runs, in one database query, without
+    /// tracking them.
     /// </summary>
     public static async Task<List<WatchSummary>> ListAsync(
-        IQueryable<Watch> watches, DateTime now, CancellationToken cancellationToken)
+        IQueryable<Watch> watches, int recentRunCount, DateTime now, CancellationToken cancellationToken)
     {
         var rows = await watches
             .AsNoTracking()
-            .Select(w => new
+            .WithScheduleState()
+            .Select(state => new
             {
-                Watch = w,
-                RecentRuns = w.WatchRuns
+                State = state,
+                RecentRuns = state.Watch.WatchRuns
                     .AsQueryable()
                     .OrderByDescending(wr => wr.Id)
-                    .Take(RecentRunCount)
+                    .Take(recentRunCount)
                     .Select(WatchRunSummary.Projection)
                     .ToList(),
-                // As WatchScheduler reads them, so NextRunTime is what it will do
-                LastRunTime = w.WatchRuns
-                    .OrderByDescending(wr => wr.CreatedTime)
-                    .Select(wr => (DateTime?)wr.CreatedTime)
-                    .FirstOrDefault(),
-                HasQueuedRun = w.WatchRuns.Any(wr => wr.Status == WatchRunStatus.Created),
             })
             .ToListAsync(cancellationToken);
         return rows.ConvertAll(row => new WatchSummary(
-            Id: row.Watch.Id,
-            Name: row.Watch.Name,
-            ScheduleEnabled: row.Watch.ScheduleEnabled,
-            ScheduleKind: row.Watch.ScheduleKind,
-            ScheduleInterval: row.Watch.ScheduleInterval,
-            UseVpn: row.Watch.UseVpn,
-            ScriptFileName: row.Watch.ScriptFileName,
+            Id: row.State.Watch.Id,
+            Name: row.State.Watch.Name,
+            ScheduleEnabled: row.State.Watch.ScheduleEnabled,
+            ScheduleKind: row.State.Watch.ScheduleKind,
+            ScheduleInterval: row.State.Watch.ScheduleInterval,
+            UseVpn: row.State.Watch.UseVpn,
+            ScriptFileName: row.State.Watch.ScriptFileName,
             RecentRuns: row.RecentRuns,
-            NextRunTime: row.Watch.GetDueTime(row.LastRunTime, row.HasQueuedRun, now, TimeZoneInfo.Local)));
+            NextRunTime: row.State.DueTime(now)));
     }
 }
