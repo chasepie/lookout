@@ -3,7 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
-    # Releases: their images are tagged with the version and latest
+    # Releases, so CD (cd.yml) publishes their images once this passes
     tags: ['v*']
   pull_request:
   workflow_dispatch:
@@ -104,57 +104,37 @@ jobs:
           name: coverage-report
           path: coverage-report
 
-  # The images the deployment runs, for both platforms a server is likely to be. Built on every run, so a broken
-  # Dockerfile fails a PR, and pushed only from main and release tags, after the tests pass.
+  # The images the deployment runs, built natively for both platforms a server is likely to be, so a broken Dockerfile
+  # fails here. CD (cd.yml) builds and pushes them after this workflow passes on main or a release tag, from the same cache.
   images:
-    name: ${{ matrix.image }} image
-    needs: build-and-test
-    runs-on: ubuntu-26.04
+    name: ${{ matrix.image }} image (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
-    permissions:
-      contents: read
-      packages: write
     strategy:
+      fail-fast: false
       matrix:
+        image: [lookout-backend, lookout-runner]
+        arch: [amd64, arm64]
         include:
           - image: lookout-backend
             dockerfile: src/Backend/Dockerfile
           - image: lookout-runner
             dockerfile: src/Runner/Dockerfile
+          - arch: amd64
+            runner: ubuntu-26.04
+          - arch: arm64
+            runner: ubuntu-26.04-arm
 
     steps:
       - uses: actions/checkout@v7
 
-      # For the final stage on arm64; the Dockerfiles build everything else natively
-      - uses: docker/setup-qemu-action@v4
-
       - uses: docker/setup-buildx-action@v4
-
-      - uses: docker/login-action@v4
-        if: ${{ github.event_name == 'push' }}
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      # main for the latest main, sha-<commit> for every push, and the version and latest for a release tag
-      - id: meta
-        uses: docker/metadata-action@v6
-        with:
-          images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
-          tags: |
-            type=raw,value=main,enable={{is_default_branch}}
-            type=sha,prefix=sha-,format=short
-            type=semver,pattern={{version}}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
 
       - uses: docker/build-push-action@v7
         with:
           context: .
           file: ${{ matrix.dockerfile }}
-          platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name == 'push' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=${{ matrix.image }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+          platforms: linux/${{ matrix.arch }}
+          push: false
+          cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.arch }}

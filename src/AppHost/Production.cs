@@ -12,7 +12,7 @@ namespace Chasepie.Lookout.AppHost;
 // deploy/README.md says how to run them, and docs/security.md why they're built this way.
 public partial class Program
 {
-    // The images CI pushes
+    // Where CD (.github/workflows/cd.yml) pushes the images
     private const string ImageRegistry = "ghcr.io/chasepie";
 
     // The services' names, which are also their hostnames on their networks
