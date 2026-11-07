@@ -117,6 +117,21 @@ public sealed class HostingTests
     }
 
     [TestMethod]
+    [DataRow("")]
+    [DataRow(" ")]
+    public async Task AnEmptyHostnameStopsStartupRatherThanAllowingEveryHost(string allowedHosts)
+    {
+        await using var factory = new LookoutFactory(settings: new Dictionary<string, string?>
+        {
+            ["AllowedHosts"] = allowedHosts,
+        });
+
+        var error = Assert.ThrowsExactly<InvalidOperationException>(() => factory.CreateClient());
+
+        Assert.Contains("AllowedHosts", error.Message);
+    }
+
+    [TestMethod]
     public async Task BrowsersAreToldToUseHttpsForAYear()
     {
         await using var factory = new LookoutFactory(settings: new Dictionary<string, string?>

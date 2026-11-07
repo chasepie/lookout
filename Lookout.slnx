@@ -1,5 +1,7 @@
 <Solution>
+  <Folder Name="/src/" />
   <Folder Name="/tests/">
+    <Project Path="tests/AppHost.Tests/AppHost.Tests.csproj" />
     <Project Path="tests/Backend.IntegrationTests/Backend.IntegrationTests.csproj" />
     <Project Path="tests/Backend.UnitTests/Backend.UnitTests.csproj" />
     <Project Path="tests/Runner.IntegrationTests/Runner.IntegrationTests.csproj" />
