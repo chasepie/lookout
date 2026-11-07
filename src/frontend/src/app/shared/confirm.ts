@@ -1,6 +1,9 @@
 import { DIALOG_DATA, Dialog, DialogRef } from '@angular/cdk/dialog';
+import { BreakpointObserver } from '@angular/cdk/layout';
+import { Overlay } from '@angular/cdk/overlay';
 import { Component, Service, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
+import { phoneQuery } from './breakpoints';
 
 export interface ConfirmOptions {
   /** The question, such as "Delete Bot detection?". */
@@ -18,19 +21,32 @@ export interface ConfirmOptions {
   returnFocusTo?: HTMLElement;
 }
 
-/** Asks before doing something that can't be undone. */
+/** What the dialog is told: the question, and whether to rise from the bottom as a sheet on a phone. */
+interface ConfirmDialogData extends ConfirmOptions {
+  sheet: boolean;
+}
+
+/** Asks before doing something that can't be undone. On a phone it rises from the bottom, within reach of a thumb. */
 @Service()
 export class Confirm {
   private readonly dialog = inject(Dialog);
+  private readonly overlay = inject(Overlay);
+  private readonly breakpoints = inject(BreakpointObserver);
 
   /** Resolves to whether the Owner chose to go ahead. */
   async ask(options: ConfirmOptions): Promise<boolean> {
-    const ref = this.dialog.open<boolean, ConfirmOptions>(ConfirmDialog, {
-      data: options,
+    const sheet = this.breakpoints.isMatched(phoneQuery);
+    const ref = this.dialog.open<boolean, ConfirmDialogData>(ConfirmDialog, {
+      data: { ...options, sheet },
       role: 'alertdialog',
       ariaLabelledBy: 'confirm-title',
       ariaDescribedBy: options.body ? 'confirm-body' : null,
-      panelClass: 'dialog-panel',
+      ...(sheet
+        ? {
+            panelClass: 'dialog-sheet',
+            positionStrategy: this.overlay.position().global().bottom('0').centerHorizontally(),
+          }
+        : { panelClass: 'dialog-panel' }),
       backdropClass: 'dialog-backdrop',
       // Cancel comes first, so Enter on a destructive dialog doesn't destroy anything by accident
       autoFocus: 'first-tabbable',
@@ -42,6 +58,7 @@ export class Confirm {
 
 @Component({
   selector: 'app-confirm-dialog',
+  host: { '[class.sheet]': 'options.sheet' },
   template: `
     <h2 id="confirm-title">{{ options.title }}</h2>
     @if (options.body) {
@@ -78,9 +95,27 @@ export class Confirm {
       justify-content: flex-end;
       margin-top: var(--space-2);
     }
+
+    // A sheet rises from the bottom, its buttons full width: the action on top, Cancel nearest the thumb
+    :host(.sheet) {
+      border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
+      padding-bottom: calc(var(--space-5) + env(safe-area-inset-bottom));
+      animation: sheet-rise 220ms var(--ease-out);
+
+      .actions {
+        flex-direction: column-reverse;
+        align-items: stretch;
+      }
+    }
+
+    @keyframes sheet-rise {
+      from {
+        transform: translateY(100%);
+      }
+    }
   `,
 })
 export class ConfirmDialog {
-  protected readonly options = inject<ConfirmOptions>(DIALOG_DATA);
+  protected readonly options = inject<ConfirmDialogData>(DIALOG_DATA);
   protected readonly ref = inject<DialogRef<boolean>>(DialogRef);
 }

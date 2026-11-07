@@ -28,6 +28,8 @@ import { Notices } from './notices';
     </div>
   `,
   styles: `
+    @use 'breakpoints' as bp;
+
     :host {
       position: fixed;
       inset: auto var(--gutter) var(--space-4) auto;
@@ -36,6 +38,18 @@ import { Notices } from './notices';
       gap: var(--space-2);
       width: min(26rem, calc(100vw - 2 * var(--gutter)));
       pointer-events: none;
+    }
+
+    // On a phone, notices drop in at the top, clear of the actions at the bottom of the screen
+    @include bp.phone {
+      :host {
+        inset: calc(var(--space-2) + env(safe-area-inset-top)) var(--gutter) auto;
+        width: auto;
+      }
+
+      .notice-enter {
+        animation-name: drop;
+      }
     }
 
     .region {
@@ -80,6 +94,13 @@ import { Notices } from './notices';
       from {
         opacity: 0;
         transform: translateY(0.5rem);
+      }
+    }
+
+    @keyframes drop {
+      from {
+        opacity: 0;
+        transform: translateY(-0.5rem);
       }
     }
 

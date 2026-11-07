@@ -1,0 +1,76 @@
+@if (!log().loaded()) {
+  <p class="muted" role="status">Loading the log…</p>
+} @else if (log().isEmpty()) {
+  <p class="muted">No runs yet. Run the watch to see what it finds.</p>
+}
+
+@for (day of days(); track day.key) {
+  <section class="day" [attr.aria-labelledby]="'day-' + day.key">
+    <h3 class="day-head" [id]="'day-' + day.key">
+      <span>{{ day.heading }}</span>
+      <span class="day-count"
+        >{{ day.runs }} {{ day.runs === 1 ? 'run' : 'runs' }}@if (day.failures > 0) {<span class="failure"
+            >, {{ day.failures }} failed</span
+          >}</span
+      >
+    </h3>
+    <ol class="entries">
+      @for (item of day.items; track item.id) {
+        @if (item.kind === 'entry') {
+          <li>
+            <app-log-entry
+              [entry]="item.entry"
+              [watchId]="watchId()"
+              [selected]="selectedId() === item.entry.run.id"
+              [arrived]="log().arrived().has(item.entry.run.id)"
+            />
+          </li>
+        } @else {
+          <li>
+            <button
+              type="button"
+              class="fold"
+              [attr.aria-expanded]="item.open"
+              [attr.aria-controls]="item.id"
+              (click)="toggle(item.key)"
+            >
+              <span class="fold-mark" aria-hidden="true">″</span>
+              <span class="fold-text">
+                {{ item.entries.length }} more<span class="visually-hidden"> runs that saw the same</span>, back to
+                {{ item.earliest }}
+              </span>
+              <svg lucideChevronDown aria-hidden="true" />
+            </button>
+            <ol class="entries fold-entries" [id]="item.id" [hidden]="!item.open">
+              @if (item.open) {
+                @for (entry of item.entries; track entry.run.id) {
+                  <li>
+                    <app-log-entry
+                      [entry]="entry"
+                      [watchId]="watchId()"
+                      [selected]="selectedId() === entry.run.id"
+                      [arrived]="log().arrived().has(entry.run.id)"
+                    />
+                  </li>
+                }
+              }
+            </ol>
+          </li>
+        }
+      }
+    </ol>
+  </section>
+}
+
+@if (log().error(); as error) {
+  <div class="callout callout-failure" role="alert">
+    <p>Couldn't load the log: {{ describeError(error) }}</p>
+    <button type="button" class="button" (click)="log().reload()">Try again</button>
+  </div>
+}
+
+@if (log().hasOlder()) {
+  <button type="button" class="button older" [disabled]="log().loadingOlder()" (click)="log().loadOlder()">
+    {{ log().loadingOlder() ? 'Loading older runs…' : 'Show older runs' }}
+  </button>
+}

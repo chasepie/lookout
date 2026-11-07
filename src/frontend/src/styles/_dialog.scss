@@ -1,3 +1,5 @@
+@use 'breakpoints' as bp;
+
 // CDK dialogs and menus render in the overlay container, outside any component, so their styles live here.
 
 .dialog-backdrop {
@@ -22,7 +24,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  min-height: 2.5rem;
+  min-height: 2.75rem;
   padding: 0 var(--space-3);
   border: 0;
   border-radius: var(--radius-control);
@@ -32,7 +34,13 @@
   text-align: left;
   cursor: pointer;
 
-  &:hover,
+  @include bp.hover {
+    &:hover {
+      background: var(--paper-sunk);
+    }
+  }
+
+  &:active,
   &:focus-visible,
   &.cdk-menu-item-active {
     background: var(--paper-sunk);
@@ -64,4 +72,9 @@
   height: 1px;
   margin: var(--space-1) 0;
   background: var(--rule);
+}
+
+// A confirmation on a phone spans the screen; the dialog styles itself as a sheet
+.dialog-sheet {
+  width: 100vw;
 }

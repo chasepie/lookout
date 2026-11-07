@@ -1,3 +1,5 @@
+@use 'breakpoints' as bp;
+
 // Buttons, fields and messages, shared by every page so a control looks the same wherever it appears.
 
 .button {
@@ -19,11 +21,17 @@
     background-color 120ms,
     border-color 120ms;
 
-  &:hover:not(:disabled) {
-    border-color: var(--ink);
+  @include bp.hover {
+    &:hover:not(:disabled) {
+      border-color: var(--ink);
+      background: var(--paper-sunk);
+      color: var(--ink);
+      text-decoration: none;
+    }
+  }
+
+  &:active:not(:disabled) {
     background: var(--paper-sunk);
-    color: var(--ink);
-    text-decoration: none;
   }
 
   &:disabled {
@@ -43,10 +51,12 @@
   background: var(--deep);
   color: var(--on-deep);
 
-  &:hover:not(:disabled) {
-    border-color: var(--deep-strong);
-    background: var(--deep-strong);
-    color: var(--on-deep);
+  @include bp.hover {
+    &:hover:not(:disabled) {
+      border-color: var(--deep-strong);
+      background: var(--deep-strong);
+      color: var(--on-deep);
+    }
   }
 }
 
@@ -54,10 +64,12 @@
   border-color: var(--magenta);
   color: var(--magenta);
 
-  &:hover:not(:disabled) {
-    border-color: var(--magenta);
-    background: var(--magenta-tint);
-    color: var(--magenta);
+  @include bp.hover {
+    &:hover:not(:disabled) {
+      border-color: var(--magenta);
+      background: var(--magenta-tint);
+      color: var(--magenta);
+    }
   }
 }
 
@@ -67,9 +79,11 @@
   background: transparent;
   padding: 0 var(--space-2);
 
-  &:hover:not(:disabled) {
-    border-color: var(--rule);
-    background: var(--paper-sunk);
+  @include bp.hover {
+    &:hover:not(:disabled) {
+      border-color: var(--rule);
+      background: var(--paper-sunk);
+    }
   }
 }
 
@@ -119,8 +133,10 @@
   color: var(--ink);
   font: inherit;
 
-  &:hover {
-    border-color: var(--ink);
+  @include bp.hover {
+    &:hover {
+      border-color: var(--ink);
+    }
   }
 
   &[aria-invalid='true'] {
@@ -196,4 +212,23 @@ legend {
   font-family: var(--font-code);
   font-size: var(--step--1);
   line-height: 1.55;
+}
+
+// Fingers need bigger targets than a mouse pointer: 44px, as touch platforms recommend. Desktop stays compact.
+@include bp.touch {
+  .button,
+  .input,
+  .select {
+    min-height: 2.75rem;
+  }
+
+  .button-quiet,
+  .button-icon {
+    min-width: 2.75rem;
+  }
+
+  // A checkbox or radio's whole row is its target
+  .check {
+    padding: 0.625rem 0;
+  }
 }

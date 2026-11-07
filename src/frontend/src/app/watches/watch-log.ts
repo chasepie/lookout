@@ -1,123 +1,113 @@
-import { Component, computed, inject, input } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { LucideImage } from '@lucide/angular';
+import { Component, computed, inject, input, signal } from '@angular/core';
+import { LucideChevronDown } from '@lucide/angular';
 import { Clock } from '../shared/clock';
 import { describeError } from '../shared/describe-error';
 import { clockTime, dayHeading, dayKey, duration, fullTime } from '../shared/time';
+import { LogEntry, LogEntryLink } from './log-entry';
 import { RunLog } from './run-log';
-import { RunOutcome } from './run-outcome';
 import { outcomeOf, sameAsAbove, timingsOf } from './runs';
-import { WatchRunSummary } from './watch.model';
 
-interface Entry {
-  run: WatchRunSummary;
-  time: string;
-  exactTime: string;
-  ran: string | null;
-  ditto: boolean;
-  failed: boolean;
+/** A streak of runs that each saw the same as the one above, folded into one line until opened. */
+interface Fold {
+  kind: 'fold';
+  id: string;
+  /** The oldest run in the streak, which stays the same as newer runs join it at the top. */
+  key: number;
+  entries: LogEntry[];
+  /** When the oldest run in the streak ran. */
+  earliest: string;
+  open: boolean;
 }
+
+/** A line of the log: one run, or a folded streak of them. */
+type Item = { kind: 'entry'; id: string; entry: LogEntry } | Fold;
+
+const entryItem = (entry: LogEntry): Item => ({ kind: 'entry', id: `run-${entry.run.id}`, entry });
 
 interface Day {
   key: number;
   heading: string;
-  entries: Entry[];
+  items: Item[];
+  runs: number;
   failures: number;
+}
+
+/** A streak this long or longer folds; shorter ones are quicker to read than to open. */
+const foldFrom = 3;
+
+/** Turns a day's entries into lines, folding each long streak of repeats. */
+function fold(entries: LogEntry[], isOpen: (key: number, entries: LogEntry[]) => boolean): Item[] {
+  const items: Item[] = [];
+  let streak: LogEntry[] = [];
+  const endStreak = () => {
+    const oldest = streak.at(-1);
+    if (oldest && streak.length >= foldFrom) {
+      const key = oldest.run.id;
+      items.push({
+        kind: 'fold',
+        id: `fold-${key}`,
+        key,
+        entries: streak,
+        earliest: oldest.time,
+        open: isOpen(key, streak),
+      });
+    } else {
+      items.push(...streak.map(entryItem));
+    }
+    streak = [];
+  };
+  for (const entry of entries) {
+    if (entry.ditto) {
+      streak.push(entry);
+    } else {
+      endStreak();
+      items.push(entryItem(entry));
+    }
+  }
+  endStreak();
+  return items;
 }
 
 /**
  * A watch's runs as a logbook: grouped by day, newest first, with a ditto mark wherever a run saw the same as the
- * one above it, so the eye goes to what changed.
+ * one above it, so the eye goes to what changed. A long streak of repeats folds into one line.
  */
 @Component({
   selector: 'app-watch-log',
-  imports: [RouterLink, RunOutcome, LucideImage],
-  template: `
-    @if (!log().loaded()) {
-      <p class="muted" role="status">Loading the log…</p>
-    } @else if (log().isEmpty()) {
-      <p class="muted">No runs yet. Run the watch to see what it finds.</p>
-    }
-
-    @for (day of days(); track day.key) {
-      <section class="day" [attr.aria-labelledby]="'day-' + day.key">
-        <h3 class="day-head" [id]="'day-' + day.key">
-          <span>{{ day.heading }}</span>
-          <span class="day-count"
-            >{{ day.entries.length }} {{ day.entries.length === 1 ? 'run' : 'runs' }}@if (day.failures > 0) {<span
-                class="failure"
-                >, {{ day.failures }} failed</span
-              >}</span
-          >
-        </h3>
-        <ol class="entries">
-          @for (entry of day.entries; track entry.run.id) {
-            <li>
-              <a
-                class="entry"
-                [class.entry-arrived]="log().arrived().has(entry.run.id)"
-                [class.entry-failed]="entry.failed"
-                [routerLink]="['/watches', watchId(), 'runs', entry.run.id]"
-                [attr.aria-current]="selectedId() === entry.run.id ? 'true' : null"
-              >
-                <time class="time" [attr.datetime]="entry.run.createdTime" [title]="entry.exactTime">{{ entry.time }}</time>
-                <app-run-outcome class="outcome" [run]="entry.run" [repeat]="entry.ditto" />
-                <span class="meta">
-                  @if (entry.run.hasScreenshot) {
-                    <svg lucideImage aria-hidden="true" />
-                    <span class="visually-hidden">Has a screenshot.</span>
-                  }
-                  @if (entry.ran) {
-                    <span><span class="visually-hidden">Took </span>{{ entry.ran }}</span>
-                  }
-                </span>
-              </a>
-            </li>
-          }
-        </ol>
-      </section>
-    }
-
-    @if (log().error(); as error) {
-      <div class="callout callout-failure" role="alert">
-        <p>Couldn't load the log: {{ describeError(error) }}</p>
-        <button type="button" class="button" (click)="log().reload()">Try again</button>
-      </div>
-    }
-
-    @if (log().hasOlder()) {
-      <button type="button" class="button older" [disabled]="log().loadingOlder()" (click)="log().loadOlder()">
-        {{ log().loadingOlder() ? 'Loading older runs…' : 'Show older runs' }}
-      </button>
-    }
-  `,
+  imports: [LogEntryLink, LucideChevronDown],
+  templateUrl: './watch-log.html',
   styleUrl: './watch-log.scss',
 })
 export class WatchLog {
   readonly log = input.required<RunLog>();
   readonly watchId = input.required<string>();
-  /** The run open beside the log, highlighted in it. */
+  /** The run open beside the log, highlighted in it; a fold holding it opens. */
   readonly selectedId = input<number | null>(null);
 
   private readonly clock = inject(Clock);
+  /** The folds the Owner opened, by key. */
+  private readonly opened = signal<ReadonlySet<number>>(new Set());
   protected readonly describeError = describeError;
 
   protected readonly days = computed<Day[]>(() => {
     const runs = this.log().entries();
     const ditto = sameAsAbove(runs);
     const now = this.clock.now();
-    const days: Day[] = [];
+    const opened = this.opened();
+    const selected = this.selectedId();
+    const isOpen = (key: number, entries: LogEntry[]) =>
+      opened.has(key) || entries.some((entry) => entry.run.id === selected);
+
+    const days: { key: number; heading: string; entries: LogEntry[] }[] = [];
     runs.forEach((run, i) => {
       const created = Date.parse(run.createdTime);
       const key = dayKey(created);
       let day = days.at(-1);
       if (day?.key !== key) {
-        day = { key, heading: dayHeading(created, now), entries: [], failures: 0 };
+        day = { key, heading: dayHeading(created, now), entries: [] };
         days.push(day);
       }
       const { ran } = timingsOf(run);
-      const failed = outcomeOf(run) === 'failed';
-      day.failures += failed ? 1 : 0;
       day.entries.push({
         run,
         time: clockTime(created),
@@ -125,9 +115,25 @@ export class WatchLog {
         ran: ran === null ? null : duration(ran),
         // A day starts a fresh page, so its first entry is always written out
         ditto: ditto[i] && day.entries.length > 0,
-        failed,
+        failed: outcomeOf(run) === 'failed',
       });
     });
-    return days;
+    return days.map(({ key, heading, entries }) => ({
+      key,
+      heading,
+      items: fold(entries, isOpen),
+      runs: entries.length,
+      failures: entries.filter((entry) => entry.failed).length,
+    }));
   });
+
+  protected toggle(key: number) {
+    this.opened.update((keys) => {
+      const next = new Set(keys);
+      if (!next.delete(key)) {
+        next.add(key);
+      }
+      return next;
+    });
+  }
 }

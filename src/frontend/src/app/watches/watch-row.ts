@@ -62,6 +62,8 @@ import { WatchesApi } from './watches-api';
     </button>
   `,
   styles: `
+    @use 'breakpoints' as bp;
+
     :host {
       position: relative;
       display: grid;
@@ -73,7 +75,18 @@ import { WatchesApi } from './watches-api';
       transition: background-color 120ms;
     }
 
-    :host:hover {
+    @include bp.hover {
+      :host:hover {
+        background: var(--paper-sunk);
+      }
+
+      :host:hover .row-link {
+        text-decoration: underline;
+        text-underline-offset: 0.18em;
+      }
+    }
+
+    :host:active {
       background: var(--paper-sunk);
     }
 
@@ -105,11 +118,6 @@ import { WatchesApi } from './watches-api';
           outline-offset: -2px;
         }
       }
-    }
-
-    :host:hover .row-link {
-      text-decoration: underline;
-      text-underline-offset: 0.18em;
     }
 
     .schedule {

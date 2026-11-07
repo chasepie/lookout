@@ -33,6 +33,8 @@ import { LucideFileCode } from '@lucide/angular';
     </label>
   `,
   styles: `
+    @use 'breakpoints' as bp;
+
     .zone {
       display: flex;
       align-items: center;
@@ -44,7 +46,13 @@ import { LucideFileCode } from '@lucide/angular';
       background: var(--paper-raised);
       cursor: pointer;
 
-      &:hover,
+      @include bp.hover {
+        &:hover {
+          border-color: var(--deep);
+          background: var(--shoal);
+        }
+      }
+
       &.zone-over {
         border-color: var(--deep);
         background: var(--shoal);

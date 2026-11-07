@@ -1,4 +1,9 @@
+@use 'breakpoints' as bp;
+
 :host {
+  // The time column's width, shared by entries and folds so they line up
+  --time-column: 4.5rem;
+
   display: grid;
   gap: var(--space-6);
 }
@@ -33,76 +38,81 @@
   border-top: 1px solid var(--rule);
 }
 
-.entry {
-  display: grid;
-  grid-template-columns: 4.5rem minmax(0, 1fr) auto;
-  align-items: baseline;
-  gap: var(--space-4);
-  padding: var(--space-2);
-  color: var(--ink);
-  text-decoration: none;
-  --clamp-lines: 1;
+.older {
+  justify-self: start;
+}
 
-  &:hover {
+// A streak of repeats, folded: the ditto mark where it would stand, and how far back the streak goes
+.fold {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 2.75rem;
+  padding: var(--space-2) var(--space-2) var(--space-2) calc(var(--space-2) + var(--time-column) + var(--space-4));
+  border: 0;
+  background: none;
+  color: var(--ink-muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+
+  @include bp.hover {
+    &:hover {
+      background: var(--paper-sunk);
+      color: var(--ink);
+    }
+  }
+
+  &:active {
     background: var(--paper-sunk);
-    color: var(--ink);
   }
 
   &:focus-visible {
     outline-offset: -2px;
   }
 
-  &[aria-current='true'] {
-    background: var(--shoal);
-    box-shadow: inset 3px 0 0 var(--deep);
-  }
-}
-
-// A failure is ruled in the margin, like a correction in a logbook
-.entry-failed {
-  box-shadow: inset 3px 0 0 var(--magenta);
-}
-
-// A run that arrived while the page was open washes in from shoal blue: the page's one unprompted motion
-.entry-arrived {
-  animation: arrive 2.4s var(--ease-out);
-}
-
-@keyframes arrive {
-  from {
-    background-color: var(--shoal-strong);
-  }
-}
-
-.time {
-  color: var(--ink-muted);
-  font-size: var(--step--1);
-  font-weight: 500;
-}
-
-.outcome {
-  font-size: var(--step-1);
-}
-
-.meta {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  color: var(--ink-muted);
-  font-size: var(--step--1);
-
   svg {
+    flex: none;
     width: 1rem;
     height: 1rem;
+    transition: rotate 150ms var(--ease-out);
+  }
+
+  &[aria-expanded='true'] svg {
+    rotate: 180deg;
   }
 }
 
-.older {
-  justify-self: start;
+.fold-mark {
+  padding-left: 1em;
+  font-family: var(--font-observation);
+  font-size: var(--step-1);
+  line-height: 1;
 }
 
+.fold-text {
+  flex: 1;
+  font-size: var(--step--1);
+}
+
+// An opened streak hangs from its fold, ruled down the margin
+.fold-entries {
+  border-top: 1px solid var(--rule);
+  box-shadow: inset 2px 0 0 var(--rule);
+}
+
+.fold-entries > li + li {
+  border-top: 1px solid var(--rule);
+}
+
+// On a phone, a narrower time column
 @media (max-width: 30rem) {
-  .entry {
-    gap: var(--space-3);
+  :host {
+    --time-column: 4.25rem;
+  }
+
+  .fold {
+    padding-left: calc(var(--space-2) + var(--time-column) + var(--space-3));
   }
 }

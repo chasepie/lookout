@@ -1,3 +1,5 @@
+@use 'breakpoints' as bp;
+
 :host {
   display: grid;
   align-content: start;
@@ -54,7 +56,11 @@
   width: auto;
 }
 
+// A grid that scrolls down; CSS columns in a box of fixed height would spill sideways, out of reach
 .region-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  gap: 0 var(--space-5);
   list-style: none;
   max-height: 22rem;
   overflow-y: auto;
@@ -62,11 +68,8 @@
   border: 1px solid var(--rule);
   border-radius: var(--radius-sheet);
   background: var(--paper-raised);
-  columns: 13rem auto;
-  column-gap: var(--space-5);
 
   li {
-    break-inside: avoid;
     padding: var(--space-1) 0;
   }
 }
@@ -78,10 +81,38 @@
   text-decoration-color: var(--magenta);
 }
 
+// Unsaved changes keep Save within reach at the bottom of the screen
+.save-pending {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  padding: var(--space-3) 0 calc(var(--space-3) + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--rule);
+  background: var(--paper);
+}
+
 .unsaved {
   font-size: var(--step--1);
 }
 
 .field-error:empty {
   display: none;
+}
+
+// The checkbox row is the touch target already, so the list adds no padding of its own
+@include bp.touch {
+  .region-list li {
+    padding: 0;
+  }
+}
+
+// On a phone the filter takes the whole width, and the buttons share the line below it
+@include bp.phone {
+  .filter {
+    flex-basis: 100%;
+  }
+
+  .filter-row .button {
+    flex: 1;
+  }
 }

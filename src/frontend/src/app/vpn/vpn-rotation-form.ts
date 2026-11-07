@@ -113,7 +113,7 @@ const sameSettings = (a: VpnSettingsDto, b: VpnSettingsDto) => JSON.stringify(a)
       @if (error(); as error) {
         <div class="callout callout-failure" role="alert"><p>Couldn't save: {{ error }}</p></div>
       }
-      <div class="actions save">
+      <div class="actions save" [class.save-pending]="dirty()">
         <button type="submit" class="button button-primary" [disabled]="rotationForm().submitting() || !dirty()">
           Save rotation
         </button>

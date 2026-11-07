@@ -1,3 +1,5 @@
+@use 'breakpoints' as bp;
+
 *,
 *::before,
 *::after {
@@ -7,6 +9,14 @@
 html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
+}
+
+// On a phone, bars pinned to the bottom of the screen hold actions; scrolling to something, or focusing it, stops
+// short of them, so they never cover what's in focus
+@include bp.phone {
+  html {
+    scroll-padding-bottom: 5.5rem;
+  }
 }
 
 body {

@@ -1,3 +1,5 @@
+@use 'breakpoints' as bp;
+
 :host {
   display: grid;
   align-content: start;
@@ -93,4 +95,18 @@
 .foot {
   padding-top: var(--space-4);
   border-top: 1px solid var(--rule);
+}
+
+// On a phone the run takes the whole width, as it takes the log's place
+@include bp.phone {
+  :host {
+    margin-inline: calc(-1 * var(--gutter));
+    padding-inline: var(--gutter);
+    border-inline: 0;
+    border-radius: 0;
+  }
+
+  .seen {
+    font-size: var(--step-3);
+  }
 }

@@ -1,0 +1,32 @@
+// The conditions layouts change at, shared by global and component styles (`@use 'breakpoints' as bp`).
+// `$phone-width` must match `phoneQuery` in src/app/shared/breakpoints.ts, which code that can't use CSS reads.
+
+$phone-width: 40rem;
+
+/** Phone-sized screens, which get layouts of their own rather than shrunken desktop ones. */
+@mixin phone {
+  @media (max-width: $phone-width) {
+    @content;
+  }
+}
+
+/** The narrowest phones, around 320px wide. */
+@mixin narrow-phone {
+  @media (max-width: 22.5rem) {
+    @content;
+  }
+}
+
+/** Touch screens, whose targets need room for a finger: 44px, as touch platforms recommend. */
+@mixin touch {
+  @media (pointer: coarse) {
+    @content;
+  }
+}
+
+/** Devices that can hover; on touch screens a hover style sticks after a tap. */
+@mixin hover {
+  @media (hover: hover) {
+    @content;
+  }
+}

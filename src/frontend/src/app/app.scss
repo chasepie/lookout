@@ -1,3 +1,5 @@
+@use 'breakpoints' as bp;
+
 :host {
   display: block;
 }
@@ -116,7 +118,7 @@ main {
   }
 }
 
-@media (max-width: 40rem) {
+@include bp.phone {
   .bar-inner {
     flex-wrap: nowrap;
     gap: var(--space-4);
@@ -138,5 +140,29 @@ main {
 
   .owner {
     gap: var(--space-2);
+  }
+}
+
+@include bp.touch {
+  .wordmark {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
+
+  .nav a {
+    justify-content: center;
+    min-width: 2.75rem;
+  }
+}
+
+// On the narrowest phones the mark stands for the name, which screen readers still hear
+@include bp.narrow-phone {
+  .wordmark-name {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 }

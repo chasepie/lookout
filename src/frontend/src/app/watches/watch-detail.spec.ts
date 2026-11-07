@@ -166,6 +166,56 @@ describe('WatchDetail', () => {
     expect(notices()).toContain('Deleted 3 runs. Kept 1 in progress.');
   });
 
+  describe('a streak of repeats', () => {
+    // Five runs that saw the same, under one that saw something else
+    const streak = [
+      runSummary(6, { createdTime: minutesAgo(1), content: 'Robot' }),
+      ...[5, 4, 3, 2, 1].map((id) => runSummary(id, { createdTime: minutesAgo(7 - id), content: 'Normal' })),
+    ];
+    const fold = () => page().querySelector<HTMLButtonElement>('.fold')!;
+
+    async function openWith(url: string) {
+      await harness.navigateByUrl(url);
+      await respond(request('GET', watchUrl), watchSummary());
+      if (url.includes('/runs/')) {
+        await respond(request('GET', runsUrl), streak);
+        await answer(request('GET', `${runsUrl}/2`), fullRun(2, { content: 'Normal' }));
+      } else {
+        await answer(request('GET', runsUrl), streak);
+      }
+    }
+
+    it('folds into one line, saying how far back it goes', async () => {
+      await openWith('/watches/1');
+
+      // The first of the streak is written out; the four repeats after it fold
+      expect(entries().map((entry) => entry.getAttribute('href'))).toEqual(['/watches/1/runs/6', '/watches/1/runs/5']);
+      expect(textOf(fold())).toContain('4 more runs that saw the same, back to');
+      expect(fold().getAttribute('aria-expanded')).toBe('false');
+    });
+
+    it('opens and closes on request', async () => {
+      await openWith('/watches/1');
+
+      fold().click();
+      await stable();
+      expect(fold().getAttribute('aria-expanded')).toBe('true');
+      expect(entries()).toHaveLength(6);
+      expect(textOf(entries()[2])).toContain('Same as above: Normal');
+
+      fold().click();
+      await stable();
+      expect(entries()).toHaveLength(2);
+    });
+
+    it('opens by itself when it holds the open run', async () => {
+      await openWith('/watches/1/runs/2');
+
+      expect(fold().getAttribute('aria-expanded')).toBe('true');
+      expect(page().querySelector('[aria-current=true]')?.getAttribute('href')).toBe('/watches/1/runs/2');
+    });
+  });
+
   describe('an open run', () => {
     const panel = () => page().querySelector('app-run-panel')!;
 
