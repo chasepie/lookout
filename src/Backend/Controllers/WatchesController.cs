@@ -19,30 +19,18 @@ public class WatchesController(
     private readonly UpdatesNotifier _notifier = notifier;
 
     [HttpGet("{id}")]
-    public async Task<ActionResult<Watch>> Get(int id, CancellationToken cancellationToken)
+    public async Task<ActionResult<WatchSummary>> Get(int id, CancellationToken cancellationToken)
     {
-        var watch = await _dbContext.Watches
-            .Include(w => w.WatchRuns
-                .OrderByDescending(wr => wr.CreatedTime)
-                .Take(25))
-            .SingleOrDefaultAsync(w => w.Id == id, cancellationToken);
-        if (watch is null)
-        {
-            return NotFound();
-        }
-
-        return watch;
+        var watches = await WatchSummary.ListAsync(
+            _dbContext.Watches.Where(w => w.Id == id), DateTime.UtcNow, cancellationToken);
+        return watches.Count == 0 ? NotFound() : watches[0];
     }
 
     [HttpGet]
-    public async Task<ActionResult<List<Watch>>> GetAll(CancellationToken cancellationToken)
+    public async Task<ActionResult<List<WatchSummary>>> GetAll(CancellationToken cancellationToken)
     {
-        var watches = await _dbContext.Watches
-            .Include(w => w.WatchRuns
-                .OrderByDescending(wr => wr.CreatedTime)
-                .Take(1))
-            .ToListAsync(cancellationToken);
-        return watches;
+        return await WatchSummary.ListAsync(
+            _dbContext.Watches.OrderBy(w => w.Name), DateTime.UtcNow, cancellationToken);
     }
 
     /// <summary>

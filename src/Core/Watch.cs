@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Text.Json.Serialization;
 using Cronos;
 
 namespace ChasePie.Lookout.Core;
@@ -90,6 +91,10 @@ public class Watch : CreateWatchDto
     /// </summary>
     public Guid? ScriptFileId { get; set; }
 
+    /// <summary>
+    /// Left out of the JSON: the API sends a watch's runs as <c>WatchRunSummary</c>s, without their screenshots.
+    /// </summary>
+    [JsonIgnore]
     public ICollection<WatchRun> WatchRuns { get; set; } = [];
 
     public Watch() { }

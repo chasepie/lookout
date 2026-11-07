@@ -39,9 +39,21 @@ public class WatchRunsController(LookoutDbContext dbContext, UpdatesNotifier not
         return CreatedAtAction(nameof(Get), new { watchId, runId = watchRun.Id }, watchRun);
     }
 
+    /// <summary>
+    /// Lists a watch's runs, newest first, without their screenshots. Page back through older runs by passing the
+    /// last ID received as <paramref name="before"/>.
+    /// </summary>
+    /// <param name="before">Only runs with a lower ID than this, which are older.</param>
+    /// <param name="limit">How many runs at most, from 1 to <see cref="MaxPageSize"/>.</param>
     [HttpGet]
-    public async Task<ActionResult<List<WatchRun>>> GetAll(int watchId, CancellationToken cancellationToken)
+    public async Task<ActionResult<List<WatchRunSummary>>> GetAll(
+        int watchId, int? before, CancellationToken cancellationToken, int limit = DefaultPageSize)
     {
+        if (limit is < 1 or > MaxPageSize)
+        {
+            return BadRequest($"limit must be from 1 to {MaxPageSize}.");
+        }
+
         var watchExists = await _dbContext.Watches
             .AnyAsync(w => w.Id == watchId, cancellationToken);
         if (!watchExists)
@@ -49,11 +61,21 @@ public class WatchRunsController(LookoutDbContext dbContext, UpdatesNotifier not
             return NotFound();
         }
 
-        var watchRuns = await _dbContext.WatchRuns
-            .Where(wr => wr.WatchId == watchId)
+        var runs = _dbContext.WatchRuns.Where(wr => wr.WatchId == watchId);
+        if (before is { } beforeId)
+        {
+            runs = runs.Where(wr => wr.Id < beforeId);
+        }
+
+        return await runs
+            .OrderByDescending(wr => wr.Id)
+            .Take(limit)
+            .Select(WatchRunSummary.Projection)
             .ToListAsync(cancellationToken);
-        return watchRuns;
     }
+
+    public const int DefaultPageSize = 50;
+    public const int MaxPageSize = 200;
 
     [HttpGet("{runId:int}")]
     public async Task<ActionResult<WatchRun>> Get(int watchId, int runId, CancellationToken cancellationToken)
