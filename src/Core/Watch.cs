@@ -116,6 +116,30 @@ public class Watch : CreateWatchDto
     }
 
     /// <summary>
+    /// When the scheduler next creates a run for this watch: counting from the latest run, or right away if it has
+    /// never run. The scheduler and the API both go by this, so what the API reports is what the scheduler does.
+    /// </summary>
+    /// <param name="lastRunTime">When the latest run was created, in UTC, or <see langword="null"/> if none.</param>
+    /// <param name="hasQueuedRun">
+    /// Whether a run is waiting to start. The scheduler creates no other until it does, so nothing is due meanwhile.
+    /// </param>
+    /// <param name="now">The current time, in UTC.</param>
+    /// <param name="timeZone">The time zone cron expressions are evaluated in.</param>
+    /// <returns>
+    /// The due time in UTC, which may be past; <see langword="null"/> if the schedule is off, the watch has no script,
+    /// a run is queued, or the schedule has no further occurrences.
+    /// </returns>
+    public DateTime? GetDueTime(DateTime? lastRunTime, bool hasQueuedRun, DateTime now, TimeZoneInfo timeZone)
+    {
+        if (!ScheduleEnabled || ScriptFileId is null || hasQueuedRun)
+        {
+            return null;
+        }
+
+        return lastRunTime is { } last ? GetNextRunTime(last, timeZone) : now;
+    }
+
+    /// <summary>
     /// When the next scheduled run is due, given when the previous run was created.
     /// </summary>
     /// <param name="lastRunTime">When the previous run was created, in UTC.</param>

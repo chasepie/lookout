@@ -69,14 +69,8 @@ public partial class WatchScheduler(
         var createdRuns = new List<WatchRun>();
         foreach (var scheduled in scheduledWatches)
         {
-            if (scheduled.HasQueuedRun)
-            {
-                continue;
-            }
-
-            var dueTime = scheduled.LastRunTime is { } lastRunTime
-                ? scheduled.Watch.GetNextRunTime(lastRunTime, TimeZoneInfo.Local)
-                : now;
+            var dueTime = scheduled.Watch.GetDueTime(
+                scheduled.LastRunTime, scheduled.HasQueuedRun, now, TimeZoneInfo.Local);
             if (dueTime <= now)
             {
                 var watchRun = new WatchRun(scheduled.Watch) { CreatedTime = now };

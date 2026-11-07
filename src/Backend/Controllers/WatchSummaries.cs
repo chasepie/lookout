@@ -39,8 +39,8 @@ public sealed record WatchRunSummary(
 /// </summary>
 /// <param name="RecentRuns">At most <see cref="RecentRunCount"/> runs, newest first.</param>
 /// <param name="NextRunTime">
-/// When the schedule is next due, in UTC; <see langword="null"/> if the watch isn't scheduled or has no script.
-/// A time in the past means the run is about to be created.
+/// When the schedule next creates a run, in UTC, from <see cref="Watch.GetDueTime"/>; <see langword="null"/> if the
+/// watch isn't scheduled, has no script, or has a run waiting to start. A time in the past means any moment now.
 /// </param>
 public sealed record WatchSummary(
     int Id,
@@ -59,12 +59,13 @@ public sealed record WatchSummary(
     public const int RecentRunCount = 24;
 
     /// <summary>
-    /// Reads watches with their recent runs in one database query.
+    /// Reads watches with their recent runs in one database query, without tracking them.
     /// </summary>
     public static async Task<List<WatchSummary>> ListAsync(
         IQueryable<Watch> watches, DateTime now, CancellationToken cancellationToken)
     {
         var rows = await watches
+            .AsNoTracking()
             .Select(w => new
             {
                 Watch = w,
@@ -74,35 +75,23 @@ public sealed record WatchSummary(
                     .Take(RecentRunCount)
                     .Select(WatchRunSummary.Projection)
                     .ToList(),
+                // As WatchScheduler reads them, so NextRunTime is what it will do
+                LastRunTime = w.WatchRuns
+                    .OrderByDescending(wr => wr.CreatedTime)
+                    .Select(wr => (DateTime?)wr.CreatedTime)
+                    .FirstOrDefault(),
+                HasQueuedRun = w.WatchRuns.Any(wr => wr.Status == WatchRunStatus.Created),
             })
             .ToListAsync(cancellationToken);
-        return rows.ConvertAll(row => From(row.Watch, row.RecentRuns, now));
-    }
-
-    private static WatchSummary From(Watch watch, List<WatchRunSummary> recentRuns, DateTime now) => new(
-        Id: watch.Id,
-        Name: watch.Name,
-        ScheduleEnabled: watch.ScheduleEnabled,
-        ScheduleKind: watch.ScheduleKind,
-        ScheduleInterval: watch.ScheduleInterval,
-        UseVpn: watch.UseVpn,
-        ScriptFileName: watch.ScriptFileName,
-        RecentRuns: recentRuns,
-        NextRunTime: NextRunTimeOf(watch, recentRuns, now));
-
-    /// <summary>
-    /// When <see cref="Services.WatchScheduler"/> next creates a run: counting from the latest run, or now if there's
-    /// none.
-    /// </summary>
-    private static DateTime? NextRunTimeOf(Watch watch, List<WatchRunSummary> recentRuns, DateTime now)
-    {
-        if (!watch.ScheduleEnabled || watch.ScriptFileId is null)
-        {
-            return null;
-        }
-
-        return recentRuns.Count > 0
-            ? watch.GetNextRunTime(recentRuns.Max(r => r.CreatedTime), TimeZoneInfo.Local)
-            : now;
+        return rows.ConvertAll(row => new WatchSummary(
+            Id: row.Watch.Id,
+            Name: row.Watch.Name,
+            ScheduleEnabled: row.Watch.ScheduleEnabled,
+            ScheduleKind: row.Watch.ScheduleKind,
+            ScheduleInterval: row.Watch.ScheduleInterval,
+            UseVpn: row.Watch.UseVpn,
+            ScriptFileName: row.Watch.ScriptFileName,
+            RecentRuns: row.RecentRuns,
+            NextRunTime: row.Watch.GetDueTime(row.LastRunTime, row.HasQueuedRun, now, TimeZoneInfo.Local)));
     }
 }

@@ -57,24 +57,25 @@ public class WatchRunsController(LookoutDbContext dbContext, UpdatesNotifier not
             return BadRequest($"limit must be from 1 to {MaxPageSize}.");
         }
 
-        var watchExists = await _dbContext.Watches
-            .AnyAsync(w => w.Id == watchId, cancellationToken);
-        if (!watchExists)
-        {
-            return NotFound();
-        }
-
         var runs = _dbContext.WatchRuns.Where(wr => wr.WatchId == watchId);
         if (before is { } beforeId)
         {
             runs = runs.Where(wr => wr.Id < beforeId);
         }
 
-        return await runs
+        var page = await runs
             .OrderByDescending(wr => wr.Id)
             .Take(limit)
             .Select(WatchRunSummary.Projection)
             .ToListAsync(cancellationToken);
+
+        // Only an empty page could mean there's no such watch, so only then is it worth asking
+        if (page.Count == 0 && !await _dbContext.Watches.AnyAsync(w => w.Id == watchId, cancellationToken))
+        {
+            return NotFound();
+        }
+
+        return page;
     }
 
     public const int DefaultPageSize = 50;

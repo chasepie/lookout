@@ -21,6 +21,7 @@ public sealed class WatchSummaryTests
     private static readonly byte[] Screenshot = [1, 2, 3];
     private static readonly string?[] NewestThree = ["run 5", "run 4", "run 3"];
     private static readonly string?[] OldestTwo = ["run 2", "run 1"];
+    private static readonly string[] SortedNames = ["apple", "Banana", "Écluse", "zebra"];
 
     private static readonly DateTime Start = new(2026, 11, 1, 12, 0, 0, DateTimeKind.Utc);
 
@@ -112,6 +113,47 @@ public sealed class WatchSummaryTests
         Assert.IsNull(watch!.NextRunTime);
     }
 
+    [TestMethod]
+    public async Task WatchesAreListedByNameIgnoringCaseAndAccents()
+    {
+        await using var factory = new LookoutFactory();
+        using var client = await factory.CreateSignedInClientAsync(Ct);
+        foreach (var name in new[] { "zebra", "Écluse", "apple", "Banana" })
+        {
+            await SeedAsync(factory, runCount: 0, name: name);
+        }
+
+        var watches = await client.GetFromJsonAsync<List<WatchSummary>>("/api/Watches", Ct);
+
+        Assert.AreSequenceEqual(SortedNames, watches!.ConvertAll(w => w.Name));
+    }
+
+    [TestMethod]
+    [DataRow("/api/Watches/abc")]
+    [DataRow("/api/Watches/999")]
+    [DataRow("/api/Watches/999/runs")]
+    public async Task AWatchThatDoesNotExistIsNotFound(string url)
+    {
+        await using var factory = new LookoutFactory();
+        using var client = await factory.CreateSignedInClientAsync(Ct);
+
+        using var response = await client.GetAsync(url, Ct);
+
+        Assert.AreEqual(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [TestMethod]
+    public async Task AWatchWithNoRunsHasAnEmptyLog()
+    {
+        await using var factory = new LookoutFactory();
+        using var client = await factory.CreateSignedInClientAsync(Ct);
+        var watchId = await SeedAsync(factory, runCount: 0);
+
+        var runs = await client.GetFromJsonAsync<List<WatchRunSummary>>($"/api/Watches/{watchId}/runs", Ct);
+
+        Assert.IsEmpty(runs!);
+    }
+
     /// <summary>
     /// Adds a watch with finished runs, a minute apart and numbered in their content, so the worker leaves them be.
     /// </summary>
@@ -120,13 +162,14 @@ public sealed class WatchSummaryTests
         int runCount,
         byte[]? screenshot = null,
         bool scheduled = false,
-        DateTime? lastRunTime = null)
+        DateTime? lastRunTime = null,
+        string name = "Prices")
     {
         using var scope = factory.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<LookoutDbContext>();
         var watch = new Watch
         {
-            Name = "Prices",
+            Name = name,
             ScheduleEnabled = scheduled,
             ScheduleKind = scheduled ? WatchScheduleKind.Hourly : null,
             ScheduleInterval = scheduled ? "1" : null,

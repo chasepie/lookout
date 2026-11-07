@@ -1,3 +1,4 @@
+using System.Globalization;
 using ChasePie.Lookout.Backend.Database;
 using ChasePie.Lookout.Backend.Hubs;
 using ChasePie.Lookout.Backend.Services;
@@ -18,7 +19,7 @@ public class WatchesController(
     private readonly WatchScriptManager _scriptManager = scriptManager;
     private readonly UpdatesNotifier _notifier = notifier;
 
-    [HttpGet("{id}")]
+    [HttpGet("{id:int}")]
     public async Task<ActionResult<WatchSummary>> Get(int id, CancellationToken cancellationToken)
     {
         var watches = await WatchSummary.ListAsync(
@@ -28,14 +29,22 @@ public class WatchesController(
         return watches.Count == 0 ? NotFound() : watches[0];
     }
 
+    /// <summary>
+    /// Lists every watch by name, ignoring case and accents, as a person would sort them.
+    /// </summary>
     [HttpGet]
     public async Task<ActionResult<List<WatchSummary>>> GetAll(CancellationToken cancellationToken)
     {
-        return await WatchSummary.ListAsync(
-            _dbContext.Watches.OrderBy(w => w.Name),
-            DateTime.UtcNow,
-            cancellationToken);
+        // Sorted here rather than in SQL: SQLite compares bytes, putting "Zebra" before "apple"
+        var watches = await WatchSummary.ListAsync(_dbContext.Watches, DateTime.UtcNow, cancellationToken);
+        return watches
+            .OrderBy(w => w.Name, NameOrder)
+            .ThenBy(w => w.Id)
+            .ToList();
     }
+
+    private static readonly StringComparer NameOrder =
+        StringComparer.Create(CultureInfo.InvariantCulture, CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace);
 
     /// <summary>
     /// Creates a watch with its script. Send the watch's fields and the <c>script</c> file as multipart form data.
@@ -59,7 +68,7 @@ public class WatchesController(
         return CreatedAtAction(nameof(Get), new { id = watchEntity.Id }, watchEntity);
     }
 
-    [HttpPut("{id}")]
+    [HttpPut("{id:int}")]
     public async Task<ActionResult<Watch>> Update(int id, CreateWatchDto watch, CancellationToken cancellationToken)
     {
         var watchEntity = await _dbContext.Watches
@@ -75,7 +84,7 @@ public class WatchesController(
         return watchEntity;
     }
 
-    [HttpDelete("{id}")]
+    [HttpDelete("{id:int}")]
     public async Task<ActionResult<Watch>> Delete(int id, CancellationToken cancellationToken)
     {
         var watchEntity = await _dbContext.Watches
@@ -95,7 +104,7 @@ public class WatchesController(
     /// <summary>
     /// Replaces the watch's script.
     /// </summary>
-    [HttpPost("{id}/script")]
+    [HttpPost("{id:int}/script")]
     [RequestSizeLimit(WatchScriptManager.MaxUploadRequestBytes)]
     public async Task<ActionResult<Watch>> UploadScript(
         int id, IFormFile script, CancellationToken cancellationToken)

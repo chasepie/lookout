@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { Subject } from 'rxjs';
 import { LiveUpdates } from '../live/live-updates';
+import { settleMs } from '../live/reload-on';
 import { RunLog, injectRunLog } from './run-log';
 import { WatchRunStatus, WatchRunSummary, WatchRunUpdate } from './watch.model';
 import { WatchesApi, runPageSize } from './watches-api';
@@ -104,8 +105,61 @@ describe('injectRunLog', () => {
     await start(page(3, 1));
 
     updates.runUpdated.next({ ...run(9), watchId: 2 });
+    await new Promise((resolve) => setTimeout(resolve, settleMs + 50));
 
     expect(runs).toHaveBeenCalledTimes(1);
+  });
+
+  it('fetches once for a burst of updates', async () => {
+    await start(page(3, 1));
+    runs.mockResolvedValue(page(4, 1));
+
+    updates.runUpdated.next({ ...run(4), status: WatchRunStatus.Created });
+    updates.runUpdated.next({ ...run(4), status: WatchRunStatus.Running });
+    updates.runUpdated.next(run(4));
+    await vi.waitFor(() => expect(ids()[0]).toBe(4));
+
+    expect(runs).toHaveBeenCalledTimes(2);
+  });
+
+  it('starts properly once a failed first load is tried again', async () => {
+    runs.mockRejectedValueOnce(new Error('offline'));
+    log = TestBed.runInInjectionContext(() => injectRunLog(() => '1'));
+    TestBed.tick();
+    await vi.waitFor(() => expect(log.error()).toBeTruthy());
+    expect(log.isEmpty()).toBe(false);
+    runs.mockResolvedValueOnce(page(60, 11));
+
+    await log.reload();
+
+    expect(log.hasOlder()).toBe(true);
+    expect(log.arrived().size).toBe(0);
+  });
+
+  it('drops an older page asked for before the log started over', async () => {
+    await start(page(60, 11));
+    let answerOlder: (value: WatchRunSummary[]) => void = () => undefined;
+    runs.mockReturnValueOnce(new Promise((resolve) => (answerOlder = resolve)));
+    const older = log.loadOlder();
+    runs.mockResolvedValueOnce(page(70, 21));
+
+    updates.reconnected.next();
+    await vi.waitFor(() => expect(ids()[0]).toBe(70));
+    answerOlder(page(10, 1));
+    await older;
+
+    expect(ids().at(-1)).toBe(21);
+    expect(log.loadingOlder()).toBe(false);
+  });
+
+  it("doesn't mark an old run as arrived when a deletion brings it into the page", async () => {
+    await start(page(60, 11));
+    runs.mockResolvedValueOnce(page(59, 10));
+
+    updates.runsDeleted.next({ watchId: 1, runIds: [60] });
+    await vi.waitFor(() => expect(ids().at(-1)).toBe(10));
+
+    expect(log.arrived().size).toBe(0);
   });
 
   it('keeps the newest answer when responses arrive out of order', async () => {
@@ -115,6 +169,7 @@ describe('injectRunLog', () => {
     runs.mockResolvedValueOnce(page(5, 1));
 
     updates.runUpdated.next(run(4));
+    await vi.waitFor(() => expect(runs).toHaveBeenCalledTimes(2));
     updates.runUpdated.next(run(5));
     await vi.waitFor(() => expect(ids()[0]).toBe(5));
     answerSlow(page(4, 1));

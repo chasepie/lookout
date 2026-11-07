@@ -74,4 +74,41 @@ public sealed class WatchNextRunTimeTests
     {
         Assert.IsNull(ScheduledWatch(kind, interval).GetNextRunTime(LastRun, TimeZoneInfo.Utc));
     }
+
+    private static readonly DateTime Now = LastRun.AddMinutes(2);
+
+    private static Watch RunnableWatch()
+    {
+        var watch = ScheduledWatch(WatchScheduleKind.Minutely, "5");
+        watch.ScriptFileId = Guid.NewGuid();
+        return watch;
+    }
+
+    [TestMethod]
+    public void IsDueAnIntervalAfterTheLastRun()
+    {
+        Assert.AreEqual(LastRun.AddMinutes(5), RunnableWatch().GetDueTime(LastRun, hasQueuedRun: false, Now, TimeZoneInfo.Utc));
+    }
+
+    [TestMethod]
+    public void AWatchThatHasNeverRunIsDueNow()
+    {
+        Assert.AreEqual(Now, RunnableWatch().GetDueTime(lastRunTime: null, hasQueuedRun: false, Now, TimeZoneInfo.Utc));
+    }
+
+    [TestMethod]
+    public void NothingIsDueWhileARunIsQueued()
+    {
+        // The scheduler creates no run until the queued one starts, so no time can be promised
+        Assert.IsNull(RunnableWatch().GetDueTime(LastRun, hasQueuedRun: true, Now, TimeZoneInfo.Utc));
+    }
+
+    [TestMethod]
+    public void AWatchWithoutAScriptIsNeverDue()
+    {
+        var watch = RunnableWatch();
+        watch.ScriptFileId = null;
+
+        Assert.IsNull(watch.GetDueTime(lastRunTime: null, hasQueuedRun: false, Now, TimeZoneInfo.Utc));
+    }
 }

@@ -1,7 +1,6 @@
 import { Component, computed, inject } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { merge } from 'rxjs';
 import { LiveUpdates } from '../live/live-updates';
+import { reloadOn } from '../live/reload-on';
 import { describeError } from '../shared/describe-error';
 import { VpnApi } from './vpn-api';
 import { VpnRotationForm } from './vpn-rotation-form';
@@ -93,9 +92,7 @@ export class VpnPage {
 
   constructor() {
     const updates = inject(LiveUpdates);
-    merge(updates.vpnChanged, updates.reconnected)
-      .pipe(takeUntilDestroyed())
-      .subscribe(() => this.status.reload());
-    updates.reconnected.pipe(takeUntilDestroyed()).subscribe(() => this.regions.reload());
+    reloadOn(this.status, updates.vpnChanged, updates.reconnected);
+    reloadOn(this.regions, updates.reconnected);
   }
 }
