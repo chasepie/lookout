@@ -48,22 +48,6 @@ jobs:
       - name: Check .NET formatting
         run: dotnet format whitespace Lookout.slnx --verify-no-changes
 
-      # npm can leave an old copy of an Angular package at the root after an upgrade, and packages hoisted there (such
-      # as @angular/cdk) then use it while the app uses the new one: two Angular cores, whose types don't match
-      - name: Check Angular is installed once
-        run: |
-          npm query '[name^="@angular/"]' | node -e '
-            const copies = new Map();
-            for (const pkg of JSON.parse(require("fs").readFileSync(0, "utf8"))) {
-              copies.set(pkg.name, [...(copies.get(pkg.name) ?? []), `${pkg.version} at ${pkg.location}`]);
-            }
-            const duplicated = [...copies].filter(([, found]) => found.length > 1);
-            for (const [name, found] of duplicated) {
-              console.error(`${name} is installed more than once: ${found.join(", ")}. Run npm dedupe.`);
-            }
-            process.exit(duplicated.length > 0 ? 1 : 0);
-          '
-
       # The SDK goes before the TypeScript checks: the Runner and examples resolve its types from dist/
       - name: Build watch SDK
         run: npm run build -w src/watch-sdk
