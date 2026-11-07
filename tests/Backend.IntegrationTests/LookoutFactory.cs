@@ -33,19 +33,23 @@ internal sealed class LookoutFactory : WebApplicationFactory<Program>
     private readonly string _username;
     private readonly string _password;
     private readonly bool _ownsDataDirectory;
+    private readonly IReadOnlyDictionary<string, string?> _settings;
 
     /// <param name="dataDirectory">
     /// A directory to keep the database and keys in, to share them with another factory as if the Backend restarted.
     /// </param>
+    /// <param name="settings">More settings, as if from the environment; these win over the defaults above.</param>
     public LookoutFactory(
         string environment = "Production",
         string username = Username,
         string password = Password,
-        string? dataDirectory = null)
+        string? dataDirectory = null,
+        IReadOnlyDictionary<string, string?>? settings = null)
     {
         _environment = environment;
         _username = username;
         _password = password;
+        _settings = settings ?? new Dictionary<string, string?>();
         _ownsDataDirectory = dataDirectory is null;
         DataDirectory = dataDirectory ?? Directory.CreateTempSubdirectory("lookout-tests-").FullName;
         WebRoot = CreateWebRoot(DataDirectory);
@@ -63,6 +67,11 @@ internal sealed class LookoutFactory : WebApplicationFactory<Program>
     /// </summary>
     public const string BundleFileName = "chunk-AB12cd34.js";
 
+    /// <summary>
+    /// Another bundle in <see cref="WebRoot"/>, whose hash has an underscore, as Angular's sometimes do.
+    /// </summary>
+    public const string UnderscoreBundleFileName = "chunk-BJ1G_bZo.js";
+
     public const string IndexHtml = "<!doctype html><title>Lookout</title>";
 
     private static string CreateWebRoot(string dataDirectory)
@@ -71,6 +80,7 @@ internal sealed class LookoutFactory : WebApplicationFactory<Program>
         Directory.CreateDirectory(webRoot);
         File.WriteAllText(Path.Join(webRoot, "index.html"), IndexHtml);
         File.WriteAllText(Path.Join(webRoot, BundleFileName), "export {};");
+        File.WriteAllText(Path.Join(webRoot, UnderscoreBundleFileName), "export {};");
         return webRoot;
     }
 
@@ -88,10 +98,27 @@ internal sealed class LookoutFactory : WebApplicationFactory<Program>
             AllowAutoRedirect = false,
             HandleCookies = handleCookies,
         });
-        client.DefaultRequestHeaders.Add(CsrfProtection.HeaderName, "1");
-        client.DefaultRequestHeaders.Add("Sec-Fetch-Site", "same-origin");
+        AddBrowserHeaders(client);
         return client;
     }
+
+    /// <summary>
+    /// Makes <paramref name="client"/> send the headers a browser sends from Lookout's own pages, which
+    /// <see cref="CsrfProtection"/> requires.
+    /// </summary>
+    public static void AddBrowserHeaders(HttpClient client)
+    {
+        client.DefaultRequestHeaders.Add(CsrfProtection.HeaderName, "1");
+        client.DefaultRequestHeaders.Add("Sec-Fetch-Site", "same-origin");
+    }
+
+    /// <summary>
+    /// The session cookie a sign-in's response sets, as just "name=value", as a browser would send it back.
+    /// </summary>
+    public static string SessionCookie(HttpResponseMessage login) =>
+        login.Headers.GetValues("Set-Cookie")
+            .Single(c => c.StartsWith(OwnerAuthentication.CookieName + "=", StringComparison.Ordinal))
+            .Split(';')[0];
 
     /// <summary>
     /// Signs in with the Owner's credentials and returns the browser client holding the session.
@@ -116,6 +143,11 @@ internal sealed class LookoutFactory : WebApplicationFactory<Program>
         // Nothing listens there; runs aren't exercised
         builder.UseSetting(LookoutEnvironmentVariables.RunnerUrl, "http://127.0.0.1:9");
         builder.UseSetting(LookoutEnvironmentVariables.RunnerApiKey, new string('k', RunnerApiKey.MinLength));
+        foreach (var (name, value) in _settings)
+        {
+            builder.UseSetting(name, value);
+        }
+
         builder.ConfigureServices(services => services
             .AddTransient<IStartupFilter, ClientIpStartupFilter>()
             .AddTransient<IStartupFilter, MatchedRouteStartupFilter>());

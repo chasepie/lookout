@@ -29,12 +29,14 @@ public sealed class FrontendServingTests
     }
 
     [TestMethod]
-    public async Task HashedBundlesAreCachedForGood()
+    [DataRow(LookoutFactory.BundleFileName)]
+    [DataRow(LookoutFactory.UnderscoreBundleFileName)]
+    public async Task HashedBundlesAreCachedForGood(string bundle)
     {
         await using var factory = new LookoutFactory();
         using var client = factory.CreateBrowserClient();
 
-        using var response = await client.GetAsync("/" + LookoutFactory.BundleFileName, Ct);
+        using var response = await client.GetAsync("/" + bundle, Ct);
 
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
         Assert.Contains("immutable", response.Headers.CacheControl?.ToString() ?? "");

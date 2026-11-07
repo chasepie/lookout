@@ -220,3 +220,6 @@ src/Backend/wwwroot/
 # playwright mcp output files
 .playwright-mcp/
 coverage-report/
+
+# A deployment's settings and secrets, if it's run from this directory (see deploy/README.md)
+deploy/.env

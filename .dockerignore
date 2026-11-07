@@ -1,18 +1,25 @@
-# Only what the Runner's image is built from, so .env, the database and the rest of the repo never reach a build.
+# Only what the images are built from, so .env, the database and the rest of the repo never reach a build.
 *
 !global.json
+# The analyzer settings the build enforces
+!.editorconfig
 !Directory.Build.props
 !Directory.Packages.props
 !package.json
 !package-lock.json
 # npm ci checks every workspace's package.json against the lockfile
 !examples/package.json
-!src/frontend/package.json
 !src/Core/
 !src/ServiceDefaults/
+!src/Backend/
+!src/frontend/
 !src/Runner/
 !src/watch-sdk/
 **/bin/
 **/obj/
 **/node_modules/
 **/dist/
+# The frontend's build output in development; the Backend's image builds its own
+src/Backend/wwwroot/
+src/frontend/coverage/
+src/frontend/.angular/

@@ -89,9 +89,11 @@ public partial class ScriptRunner(
         var stderrTail = new Queue<string>();
         process.OutputDataReceived += (_, args) =>
         {
-            if (args.Data is not null)
+            // Redacted only when it's logged
+            if (args.Data is not null && logger.IsEnabled(LogLevel.Information))
             {
-                LogScriptOutput(scriptName, args.Data);
+                var line = watchCli.Redact(args.Data);
+                LogScriptOutput(scriptName, line);
             }
         };
         process.ErrorDataReceived += (_, args) =>
@@ -101,10 +103,11 @@ public partial class ScriptRunner(
                 return;
             }
 
-            LogScriptError(scriptName, args.Data);
+            var line = watchCli.Redact(args.Data);
+            LogScriptError(scriptName, line);
             lock (stderrTail)
             {
-                stderrTail.Enqueue(args.Data);
+                stderrTail.Enqueue(line);
                 if (stderrTail.Count > StderrTailLines)
                 {
                     stderrTail.Dequeue();
@@ -147,7 +150,8 @@ public partial class ScriptRunner(
             }
             catch (JsonException ex)
             {
-                throw new InvalidOperationException($"lookout-watch wrote output that isn't a run result: {json}", ex);
+                throw new InvalidOperationException(
+                    $"lookout-watch wrote output that isn't a run result: {watchCli.Redact(json)}", ex);
             }
         }
         finally

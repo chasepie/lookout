@@ -1,5 +1,6 @@
 using ChasePie.Lookout.Backend.Auth;
 using ChasePie.Lookout.Backend.Database;
+using ChasePie.Lookout.Backend.Hosting;
 using ChasePie.Lookout.Backend.Hubs;
 using ChasePie.Lookout.Backend.Services;
 using System.Text.RegularExpressions;
@@ -29,6 +30,9 @@ public partial class Program
 
     private static void ConfigureServices(IServiceCollection services, IConfiguration configuration)
     {
+        AllowedHosts.Require(configuration);
+        services.AddReverseProxy(configuration);
+        services.AddSecurityHeaders();
         services.AddOwnerAuthentication(configuration);
         services.Configure<RouteOptions>(options => options.SetParameterPolicy<NotApiRouteConstraint>(NotApiRouteConstraint.Name));
         services.AddControllers();
@@ -81,12 +85,15 @@ public partial class Program
             }
         }
 
-        // Configure the HTTP request pipeline.
+        // First, so everything after sees the client's address and scheme rather than the proxy's
+        app.UseForwardedHeaders();
+        app.UseSecurityHeaders();
+
         if (app.Environment.IsDevelopment())
         {
             // Open, but requests made from Scalar still need a session; see docs/security.md
             app.MapOpenApi().AllowAnonymous();
-            app.MapScalarApiReference("/api-docs", options => options
+            app.MapScalarApiReference(SecurityHeaders.ApiReferencePath, options => options
                 .AddPreferredSecuritySchemes(CsrfHeaderDocumentTransformer.SchemeName)
                 .AddApiKeyAuthentication(CsrfHeaderDocumentTransformer.SchemeName, scheme => scheme.WithValue("1")))
                 .AllowAnonymous();
@@ -151,8 +158,9 @@ public partial class Program
     };
 
     /// <summary>
-    /// The Angular build's content-hashed bundles, such as <c>chunk-CPKy0xWZ.js</c> or <c>styles-5INURTSO.css</c>.
+    /// The Angular build's content-hashed bundles, such as <c>chunk-CPKy0xWZ.js</c>, <c>chunk-BJ1G_bZo.js</c> or
+    /// <c>styles-5INURTSO.css</c>.
     /// </summary>
-    [GeneratedRegex(@"-[A-Za-z0-9]{8}\.(js|css)$")]
+    [GeneratedRegex(@"-[A-Za-z0-9_]{8}\.(js|css)$")]
     private static partial Regex HashedBundleName();
 }

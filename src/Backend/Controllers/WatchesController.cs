@@ -49,6 +49,7 @@ public class WatchesController(
     /// Creates a watch with its script. Send the watch's fields and the <c>script</c> file as multipart form data.
     /// </summary>
     [HttpPost]
+    [RequestSizeLimit(WatchScriptManager.MaxUploadRequestBytes)]
     public async Task<ActionResult<Watch>> Create(
         [FromForm] CreateWatchDto watch, IFormFile script, CancellationToken cancellationToken)
     {
@@ -103,6 +104,7 @@ public class WatchesController(
     /// Replaces the watch's script.
     /// </summary>
     [HttpPost("{id}/script")]
+    [RequestSizeLimit(WatchScriptManager.MaxUploadRequestBytes)]
     public async Task<ActionResult<Watch>> UploadScript(
         int id, IFormFile script, CancellationToken cancellationToken)
     {

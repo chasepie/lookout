@@ -26,14 +26,22 @@ internal sealed class RunnerFactory : WebApplicationFactory<Program>
     /// </summary>
     public const string BrowserlessUrl = "http://127.0.0.1:9";
 
+    public const string BrowserlessToken = "browserless-token";
+
     private readonly string _environment;
     private readonly string? _browserlessUrl;
+    private readonly string? _browserlessToken;
 
     /// <param name="browserlessUrl">The Runner's <c>LOOKOUT_BROWSERLESS_URL</c>, or <see langword="null"/> for none.</param>
-    public RunnerFactory(string environment = "Production", string? browserlessUrl = BrowserlessUrl)
+    /// <param name="browserlessToken">The Runner's <c>LOOKOUT_BROWSERLESS_TOKEN</c>, or <see langword="null"/> for none.</param>
+    public RunnerFactory(
+        string environment = "Production",
+        string? browserlessUrl = BrowserlessUrl,
+        string? browserlessToken = BrowserlessToken)
     {
         _environment = environment;
         _browserlessUrl = browserlessUrl;
+        _browserlessToken = browserlessToken;
         DataDirectory = Directory.CreateTempSubdirectory("lookout-runner-tests-").FullName;
         ScriptsDirectory = Path.Join(DataDirectory, "scripts");
     }
@@ -68,6 +76,7 @@ internal sealed class RunnerFactory : WebApplicationFactory<Program>
         builder.UseEnvironment(_environment);
         builder.UseSetting(LookoutEnvironmentVariables.WatchScriptsDir, ScriptsDirectory);
         builder.UseSetting(LookoutEnvironmentVariables.BrowserlessUrl, _browserlessUrl);
+        builder.UseSetting(LookoutEnvironmentVariables.BrowserlessToken, _browserlessToken);
         builder.UseSetting(LookoutEnvironmentVariables.RunnerApiKey, ApiKey);
         builder.ConfigureServices(services => services.AddTransient<IStartupFilter, MatchedRouteStartupFilter>());
     }

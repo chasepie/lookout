@@ -3,10 +3,11 @@ using Microsoft.Extensions.Configuration;
 namespace ChasePie.Lookout.Core;
 
 /// <summary>
-/// Names of the environment variables the services read. The AppHost sets them: the ones the user chooses come from
-/// <c>.env</c> and are listed in <c>example.env</c>; it works out or generates the rest. The Runner's image sets two of
-/// its own: <see cref="WatchCliRoot"/>, and <see cref="WatchScriptsDir"/> as <c>/app/scripts</c>, where the AppHost mounts
-/// the scripts directory.
+/// Names of the environment variables the services read. In development the AppHost sets them: the ones you choose come
+/// from <c>.env</c> and are listed in <c>example.env</c>; it works out or generates the rest. In production they come
+/// from <c>deploy/docker-compose.yaml</c> and its <c>.env</c>.
+/// The images set some of their own: the Runner's <see cref="WatchCliRoot"/>, and both <see cref="WatchScriptsDir"/> as
+/// <c>/app/scripts</c>, where the scripts are mounted, and the Backend's <see cref="DatabaseDir"/>.
 /// </summary>
 public static class LookoutEnvironmentVariables
 {
@@ -43,19 +44,32 @@ public static class LookoutEnvironmentVariables
     public const string WatchCliRoot = "LOOKOUT_WATCH_CLI_ROOT";
 
     /// <summary>
-    /// The browserless container's base URL, used by the Runner, with browserless's token in its <c>token</c> query
-    /// parameter.
+    /// The browserless container's base URL, used by the Runner. Its token is <see cref="BrowserlessToken"/>.
     /// </summary>
     public const string BrowserlessUrl = "LOOKOUT_BROWSERLESS_URL";
+
+    /// <summary>
+    /// browserless's token, which the Runner requires and adds to <see cref="BrowserlessUrl"/> as its <c>token</c> query
+    /// parameter. A setting of its own, so the token is set once beside browserless's own and kept out of URLs that end
+    /// up in logs. See <see cref="GetBrowserlessUrl"/>.
+    /// </summary>
+    public const string BrowserlessToken = "LOOKOUT_BROWSERLESS_TOKEN";
 
     /// <summary>
     /// The HTTP proxy that watches with <see cref="CreateWatchDto.UseVpn"/> send their browser traffic through.
     /// The Runner passes it to the browser, so its value must be reachable from wherever the browser runs.
     /// The Backend sends a request through it after a region switch, to tell when the new tunnel is up, so its
     /// value must be reachable from the Backend. The Backend requires it along with <see cref="GluetunUrl"/>.
-    /// Its credentials go in the URL, as in <c>http://user:password@host:8888</c>.
+    /// Its username goes in the URL, as in <c>http://user@host:8888</c>, and its password in
+    /// <see cref="VpnProxyPassword"/>. See <see cref="GetVpnProxyUrl"/>.
     /// </summary>
     public const string VpnProxyUrl = "LOOKOUT_VPN_PROXY_URL";
+
+    /// <summary>
+    /// The password of <see cref="VpnProxyUrl"/>, which the Backend and the Runner add to its URL. A setting of its own,
+    /// so the password is set once beside gluetun's own and kept out of URLs that end up in logs.
+    /// </summary>
+    public const string VpnProxyPassword = "LOOKOUT_VPN_PROXY_PASSWORD";
 
     /// <summary>
     /// The base URL of gluetun's HTTP control server, used by the Backend to switch VPN regions.
@@ -92,6 +106,13 @@ public static class LookoutEnvironmentVariables
     public const int OwnerPasswordMinLength = 16;
 
     /// <summary>
+    /// The reverse proxies the Backend trusts the <c>X-Forwarded-For</c> and <c>X-Forwarded-Proto</c> headers from, as
+    /// comma-separated IP addresses or CIDR networks, such as <c>172.30.0.1, 10.0.0.0/24</c>. Without it, the Backend trusts
+    /// none and ignores both headers.
+    /// </summary>
+    public const string TrustedProxies = "LOOKOUT_TRUSTED_PROXIES";
+
+    /// <summary>
     /// Reads a base URL from configuration, adding a trailing slash so relative request URIs append to its path.
     /// </summary>
     /// <returns>The URL, or <see langword="null"/> if the variable is not set.</returns>
@@ -107,6 +128,56 @@ public static class LookoutEnvironmentVariables
         return Uri.TryCreate(value.EndsWith('/') ? value : value + "/", UriKind.Absolute, out var url)
             ? url
             : throw new InvalidOperationException($"Environment variable {name} must be an absolute URL");
+    }
+
+    /// <summary>
+    /// <see cref="VpnProxyUrl"/>, with <see cref="VpnProxyPassword"/> as its password if that's set.
+    /// </summary>
+    /// <returns>The URL, or <see langword="null"/> if <see cref="VpnProxyUrl"/> is not set.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// <see cref="VpnProxyUrl"/> is not an absolute URL, or has no password, in itself or in <see cref="VpnProxyPassword"/>:
+    /// gluetun's proxy without one lets anyone who reaches it out through the VPN.
+    /// </exception>
+    public static Uri? GetVpnProxyUrl(IConfiguration configuration)
+    {
+        if (GetBaseUrl(configuration, VpnProxyUrl) is not { } url)
+        {
+            return null;
+        }
+
+        if (configuration[VpnProxyPassword] is not { Length: > 0 } password)
+        {
+            return url.UserInfo.Split(':', 2) is [_, { Length: > 0 }]
+                ? url
+                : throw new InvalidOperationException(
+                    $"Environment variable {VpnProxyPassword} must be set to the password of gluetun's HTTP proxy.");
+        }
+
+        // UriBuilder doesn't escape the user info, and a password may hold any character
+        return new UriBuilder(url) { Password = Uri.EscapeDataString(password) }.Uri;
+    }
+
+    /// <summary>
+    /// <see cref="BrowserlessUrl"/>, with <see cref="BrowserlessToken"/> as its <c>token</c> query parameter.
+    /// </summary>
+    /// <returns>The URL, or <see langword="null"/> if <see cref="BrowserlessUrl"/> is not set.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// <see cref="BrowserlessUrl"/> is not an absolute URL, or <see cref="BrowserlessToken"/> is not set: without a token,
+    /// browserless accepts anyone.
+    /// </exception>
+    public static string? GetBrowserlessUrl(IConfiguration configuration)
+    {
+        if (GetBaseUrl(configuration, BrowserlessUrl) is not { } url)
+        {
+            return null;
+        }
+
+        if (configuration[BrowserlessToken] is not { Length: > 0 } token)
+        {
+            throw new InvalidOperationException($"Environment variable {BrowserlessToken} must be set to browserless's token.");
+        }
+
+        return new UriBuilder(url) { Query = "token=" + Uri.EscapeDataString(token) }.Uri.AbsoluteUri;
     }
 
     /// <summary>

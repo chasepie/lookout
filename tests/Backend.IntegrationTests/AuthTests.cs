@@ -278,10 +278,7 @@ public sealed class AuthTests
         using var login = await client.PostAsJsonAsync(
             "/api/auth/login", new { LookoutFactory.Username, LookoutFactory.Password }, Ct);
         login.EnsureSuccessStatusCode();
-        // Just "name=value", as a browser would send it back
-        return login.Headers.GetValues("Set-Cookie")
-            .Single(c => c.StartsWith(OwnerAuthentication.CookieName + "=", StringComparison.Ordinal))
-            .Split(';')[0];
+        return LookoutFactory.SessionCookie(login);
     }
 
     private Task<HttpResponseMessage> GetMeWithCookieAsync(LookoutFactory factory, string cookie) =>
