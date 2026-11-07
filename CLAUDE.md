@@ -33,8 +33,9 @@ scripts directory (`WatchScriptsDirectory`), the key the Backend authenticates t
 (`npm run build -w src/watch-sdk`). `AppHost.Tests` publishes in-process and checks the Compose file.
 
 Environment variables are loaded from `.env`. `example.env` lists only the ones you set in development; leave out the ones the AppHost always sets
-itself, such as service URLs and generated keys. Production's, secrets included, are in `deploy/.env.example`. `LookoutEnvironmentVariables` names
-them all.
+itself, such as service URLs and generated keys. `LookoutEnvironmentVariables` names every variable the services read. Production's settings,
+secrets included, are listed in `deploy/.env.example`, which `Production.cs` generates; the ones only Compose reads, such as `LOOKOUT_IMAGE_TAG`, are
+named only there.
 
 The domain's terms are in `GLOSSARY.md`, and decisions that would surprise a reader are recorded in `docs/adr/`. How signing in, sessions and CSRF
 protection work, and the constraints they put on changes and deployment, are in `docs/security.md`: read it before changing anything in `Auth/`, the

@@ -169,8 +169,10 @@ secret that the AppHost generates on each start:
 | gluetun's control server | `gluetun-api-key`, in `X-API-Key` | gluetun and the Backend |
 
 Production takes them from the deployment's `.env` instead: see [Production deployment](#production-deployment). The token and the password are settings
-of their own rather than part of their URLs, so each is set once beside the container's own and kept out of URLs that end up in logs. The Runner
-refuses to start without a browserless token, since browserless without one accepts anyone, and the Runner having none means it was started without one.
+of their own rather than part of their URLs, so each is set once beside the container's own. A script's environment still holds them in URLs, and
+Playwright prints the browserless URL when it can't connect, so the Runner masks both secrets in a script's output before logging it or keeping it as
+the run's error. The Runner refuses to start without a browserless token, since browserless without one accepts anyone, and the Runner having none
+means it was started without one. Likewise, the Backend and the Runner refuse a proxy URL without a password, and the Backend gluetun without its key.
 
 gluetun's control-server key may only use the routes the Backend does (reading and changing the VPN's settings, and the public IP), through a role in
 gluetun's auth file; gluetun refuses every other route. Its proxy runs in stealth mode, without which it adds headers to plain-HTTP requests that give away
@@ -211,7 +213,10 @@ read whole before the 64 KiB check. Requests over it get `400`, like other inval
 ## Production deployment
 
 `aspire publish` writes the production deployment, `deploy/docker-compose.yaml`, from `src/AppHost/Production.cs`; `deploy/README.md` says how to run it.
-Every service is a container, which development can't do without losing the Backend's debugger, so production can limit what each one reaches.
+Every service is a container, which development can't do without losing the Backend's debugger, so production can limit what each one reaches. Why
+the file is generated and committed, why the Backend reaches gluetun through relays, and why the secrets are in `.env` are ADRs
+[0002](adr/0002-generated-and-committed-compose-file.md), [0003](adr/0003-socat-relays-to-gluetun.md) and
+[0004](adr/0004-production-secrets-in-env.md).
 
 **One network per pair of services that talk:**
 
@@ -232,7 +237,11 @@ Runner, which refuses requests without its key. A script in a VPN run gets the p
 it can through Chromium.
 
 The Backend's port is published on `127.0.0.1` unless `LOOKOUT_BIND_ADDRESS` says otherwise, for a reverse proxy that terminates TLS. Docker only
-publishes ports from containers on a network that leads out, so the Backend can reach the internet, though it has no reason to.
+publishes ports from containers on a network that leads out, so the Backend can reach the internet, though it has no reason to. The `edge` network has
+a fixed subnet (`LOOKOUT_EDGE_SUBNET`), so its gateway, which connections to the published port come from and which a reverse proxy on the same machine
+is trusted as, stays the same when the network is re-created. That trusts every process on the host that connects to the port, not just the proxy;
+a proxy on another machine is trusted by its own address instead. The Compose project is named `lookout`, so the volumes are `lookout_*` wherever the
+file is.
 
 **Containers.** The Backend, the Runner and the relays run with a read-only root filesystem (a tmpfs for `/tmp`), no Linux capabilities and
 `no-new-privileges`, and the Backend and the Runner as uid 1654. Both images start with `tini` as PID 1: as PID 1 itself, .NET ignores the `SIGABRT`
@@ -243,7 +252,8 @@ look like it was running. There's no Aspire dashboard, which would show every se
 environment, only the ones it needs. gluetun's control-server key also goes into its auth file, which Compose writes from `.env`. Compose's secret files
 were the alternative, keeping secrets out of the containers' environments and `docker inspect`, but browserless only reads its token from its
 environment, so some secrets would have been in `.env` anyway, and one place is simpler than two. `docker inspect` shows them only to those who can
-already run containers on the host. Scripts don't get them: the Runner starts each with a clean environment ([Watch scripts](#watch-scripts)).
+already run containers on the host. Scripts get only the browserless token and, in VPN runs, the proxy password: the Runner starts each with a clean
+environment ([Watch scripts](#watch-scripts)).
 
 Optional settings have defaults in the Compose file, so a setting left empty can't publish the port on every address. The required ones have none, and
 the service that needs one refuses to start without it. Nothing in the generated files comes from the publisher's machine, and `ProductionComposeTests`
