@@ -19,13 +19,25 @@ namespace ChasePie.Lookout.Runner.Services;
 /// The proxy that runs using the VPN send their browser's traffic through, with its password, if there is one.
 /// </param>
 /// <param name="OutputDirectory">Where the CLI writes each run's result, as a real path: the temp directory.</param>
+/// <param name="Secrets">
+/// The secrets in <paramref name="BrowserlessUrl"/> and <paramref name="VpnProxyUrl"/>, as they are and as they appear
+/// in URLs, which <see cref="Redact"/> masks.
+/// </param>
 public sealed record WatchCli(
     string CliPath,
     IReadOnlyList<string> ReadablePaths,
     string BrowserlessUrl,
     string? VpnProxyUrl,
-    string OutputDirectory)
+    string OutputDirectory,
+    IReadOnlyList<string>? Secrets = null)
 {
+    /// <summary>
+    /// <paramref name="text"/> with <see cref="Secrets"/> masked. A script's output can hold them: Playwright prints the
+    /// browserless URL it failed to connect to, token included, and a script can print its own environment.
+    /// </summary>
+    public string Redact(string text) =>
+        (Secrets ?? []).Aggregate(text, (redacted, secret) => redacted.Replace(secret, "***", StringComparison.Ordinal));
+
     // When it loads, Playwright tests for these to tell whether it runs under WSL. Node's permission model makes the test
     // throw instead of returning false, so reading them must be allowed. On Linux they say nothing beyond that.
     private static readonly string[] PlaywrightLinuxChecks = ["/proc/sys/fs/binfmt_misc/WSLInterop", "/run/WSL"];
@@ -64,12 +76,27 @@ public sealed record WatchCli(
                 + "script's browser on browserless.");
         }
 
+        var vpnProxyUrl = LookoutEnvironmentVariables.GetVpnProxyUrl(configuration);
+        var proxyPassword = vpnProxyUrl?.UserInfo.Split(':', 2) is [_, var escapedPassword]
+            ? Uri.UnescapeDataString(escapedPassword)
+            : null;
         return new WatchCli(
             CliPath: cliPath,
             ReadablePaths: [nodeModules, sdkDirectory, .. OperatingSystem.IsLinux() ? PlaywrightLinuxChecks : []],
             BrowserlessUrl: browserlessUrl,
-            VpnProxyUrl: LookoutEnvironmentVariables.GetVpnProxyUrl(configuration)?.AbsoluteUri,
+            VpnProxyUrl: vpnProxyUrl?.AbsoluteUri,
             // A link on macOS
-            OutputDirectory: RealPath.Of(Path.GetTempPath()));
+            OutputDirectory: RealPath.Of(Path.GetTempPath()),
+            Secrets: SecretForms(configuration[LookoutEnvironmentVariables.BrowserlessToken], proxyPassword));
     }
+
+    /// <summary>
+    /// Each secret as it is and as it appears in a URL, longest first, so masking one form can't leave part of another.
+    /// </summary>
+    private static string[] SecretForms(params string?[] secrets) =>
+        [.. secrets
+            .Where(secret => !string.IsNullOrEmpty(secret))
+            .SelectMany(secret => new[] { secret!, Uri.EscapeDataString(secret!) })
+            .Distinct()
+            .OrderByDescending(form => form.Length)];
 }

@@ -112,6 +112,27 @@ public sealed class ScriptSandboxTests
         Assert.Contains(LookoutEnvironmentVariables.BrowserlessToken, ex.Message);
     }
 
+    [TestMethod]
+    public async Task SecretsInAScriptsOutputAreRedactedFromTheRunsError()
+    {
+        // Playwright prints the browserless URL, token included, when it can't connect
+        await using var factory = new RunnerFactory();
+        Directory.CreateDirectory(factory.ScriptsDirectory);
+        await File.WriteAllTextAsync(Path.Join(factory.ScriptsDirectory, "leaky.ts"), """
+            console.error(`connecting to ${process.env.LOOKOUT_BROWSERLESS_URL}`);
+            throw new Error('failed');
+            """, Ct);
+        using var client = factory.CreateClient(RunnerFactory.ApiKey);
+
+        using var response = await client.GetAsync("/WatchRun?scriptName=leaky.ts", Ct);
+
+        var problem = await response.Content.ReadFromJsonAsync<ProblemDetails>(JsonSerializerOptions.Web, Ct);
+        var detail = problem?.Detail ?? "";
+        Assert.Contains("connecting to", detail);
+        Assert.DoesNotContain(RunnerFactory.BrowserlessToken, detail);
+        Assert.Contains("token=***", detail);
+    }
+
     /// <summary>
     /// Runs a script that evaluates <paramref name="expression"/> at its top level, and returns "allowed" if it
     /// succeeded, or else its error's code, or its message if it has none.

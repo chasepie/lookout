@@ -134,7 +134,10 @@ public static class LookoutEnvironmentVariables
     /// <see cref="VpnProxyUrl"/>, with <see cref="VpnProxyPassword"/> as its password if that's set.
     /// </summary>
     /// <returns>The URL, or <see langword="null"/> if <see cref="VpnProxyUrl"/> is not set.</returns>
-    /// <exception cref="InvalidOperationException"><see cref="VpnProxyUrl"/> is not an absolute URL.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// <see cref="VpnProxyUrl"/> is not an absolute URL, or has no password, in itself or in <see cref="VpnProxyPassword"/>:
+    /// gluetun's proxy without one lets anyone who reaches it out through the VPN.
+    /// </exception>
     public static Uri? GetVpnProxyUrl(IConfiguration configuration)
     {
         if (GetBaseUrl(configuration, VpnProxyUrl) is not { } url)
@@ -144,7 +147,10 @@ public static class LookoutEnvironmentVariables
 
         if (configuration[VpnProxyPassword] is not { Length: > 0 } password)
         {
-            return url;
+            return url.UserInfo.Split(':', 2) is [_, { Length: > 0 }]
+                ? url
+                : throw new InvalidOperationException(
+                    $"Environment variable {VpnProxyPassword} must be set to the password of gluetun's HTTP proxy.");
         }
 
         // UriBuilder doesn't escape the user info, and a password may hold any character

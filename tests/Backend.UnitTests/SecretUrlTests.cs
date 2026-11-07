@@ -34,6 +34,18 @@ public sealed class SecretUrlTests
     }
 
     [TestMethod]
+    [DataRow("http://lookout@gluetun:8888")]
+    [DataRow("http://gluetun:8888")]
+    public void AProxyUrlWithoutAPasswordIsRefused(string proxyUrl)
+    {
+        // gluetun's proxy without a password lets anyone who reaches it out through the VPN
+        var error = Assert.ThrowsExactly<InvalidOperationException>(() => LookoutEnvironmentVariables.GetVpnProxyUrl(
+            Configuration((LookoutEnvironmentVariables.VpnProxyUrl, proxyUrl))));
+
+        Assert.Contains(LookoutEnvironmentVariables.VpnProxyPassword, error.Message);
+    }
+
+    [TestMethod]
     public void WithoutAProxyUrlThereIsNoProxy()
     {
         var url = LookoutEnvironmentVariables.GetVpnProxyUrl(Configuration(

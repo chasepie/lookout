@@ -151,7 +151,7 @@ public sealed record GluetunPublicIp(
     string? Organization);
 
 /// <summary>
-/// Where the Backend finds gluetun, read once at startup. Either every setting but the API key is set, or none is.
+/// Where the Backend finds gluetun, read once at startup. Either every setting is set, or none is.
 /// </summary>
 /// <param name="GluetunUrl">The control server's base URL; <see langword="null"/> turns the VPN features off.</param>
 /// <param name="DataDirectory">The host directory mounted as gluetun's <c>/gluetun</c>.</param>
@@ -175,10 +175,17 @@ public sealed record VpnConfiguration(Uri? GluetunUrl, string? ApiKey, string? D
         var proxyUrl = LookoutEnvironmentVariables.GetVpnProxyUrl(configuration)
             ?? throw new InvalidOperationException(
                 $"Environment variable {LookoutEnvironmentVariables.VpnProxyUrl} must be set when {LookoutEnvironmentVariables.GluetunUrl} is");
+        // gluetun's control server refuses every request without it, so the VPN would only look configured
         var apiKey = configuration[LookoutEnvironmentVariables.GluetunApiKey];
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            throw new InvalidOperationException(
+                $"Environment variable {LookoutEnvironmentVariables.GluetunApiKey} must be set when {LookoutEnvironmentVariables.GluetunUrl} is");
+        }
+
         return new VpnConfiguration(
             GluetunUrl: gluetunUrl,
-            ApiKey: string.IsNullOrWhiteSpace(apiKey) ? null : apiKey,
+            ApiKey: apiKey,
             DataDirectory: LookoutEnvironmentVariables.GetRequiredDirectory(configuration, LookoutEnvironmentVariables.GluetunDir),
             ProxyUrl: proxyUrl);
     }
