@@ -72,16 +72,20 @@ public sealed record WatchCli(
         }
 
         return new WatchCli(
-            cliPath,
-            [nodeModules, sdkDirectory, .. OperatingSystem.IsLinux() ? PlaywrightLinuxChecks : []],
-            browserlessUrl,
-            LookoutEnvironmentVariables.GetVpnProxyUrl(configuration)?.AbsoluteUri,
+            CliPath: cliPath,
+            ReadablePaths: [nodeModules, sdkDirectory, .. OperatingSystem.IsLinux() ? PlaywrightLinuxChecks : []],
+            BrowserlessUrl: browserlessUrl,
+            VpnProxyUrl: LookoutEnvironmentVariables.GetVpnProxyUrl(configuration)?.AbsoluteUri,
             // A link on macOS
-            RealPath.Of(Path.GetTempPath()));
+            OutputDirectory: RealPath.Of(Path.GetTempPath()));
     }
 
-    private static bool HasToken(string browserlessUrl) =>
-        Uri.TryCreate(browserlessUrl, UriKind.Absolute, out var url)
-        && url.Query.TrimStart('?').Split('&').Any(parameter => parameter.StartsWith("token=", StringComparison.Ordinal)
-            && parameter.Length > "token=".Length);
+    private static bool HasToken(string browserlessUrl)
+    {
+        return Uri.TryCreate(browserlessUrl, UriKind.Absolute, out var url)
+            && url.Query.TrimStart('?').Split('&')
+                .Any(parameter =>
+                    parameter.StartsWith("token=", StringComparison.Ordinal)
+                    && parameter.Length > "token=".Length);
+    }
 }

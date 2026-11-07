@@ -183,7 +183,14 @@ public static class LookoutEnvironmentVariables
 
         var query = url.Query.TrimStart('?');
         var tokenParameter = "token=" + Uri.EscapeDataString(token);
-        return new UriBuilder(url) { Query = query.Length > 0 ? $"{query}&{tokenParameter}" : tokenParameter }.Uri.AbsoluteUri;
+
+        var uriBuilder = new UriBuilder(url)
+        {
+            Query = query.Length > 0
+                ? $"{query}&{tokenParameter}"
+                : tokenParameter
+        };
+        return uriBuilder.Uri.AbsoluteUri;
     }
 
     /// <summary>

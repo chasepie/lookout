@@ -65,7 +65,8 @@ public partial class Program
             if (defaultValue is not null)
             {
                 settingDefaults[name] = defaultValue;
-                description += defaultValue.Length > 0 ? $" Default: {defaultValue}." : " Default: none.";
+                var dv =
+                description += $" Default: {(defaultValue.Length > 0 ? defaultValue : "none")}.";
             }
             else
             {
