@@ -25,24 +25,8 @@ public partial class Program
     private const string GluetunImage = "qmcgaw/gluetun";
     private const string GluetunTag = "v3.41.3";
 
-    // How often gluetun refreshes its servers list while it runs; more often risks the VPN provider blocking it
+    // How often gluetun refreshes its servers list; more often risks the VPN provider blocking it
     private const string GluetunUpdaterPeriod = "360h";
-
-    // gluetun only refreshes its servers list a period after it starts, and its container starts afresh with each run
-    // or deployment, so the list goes stale and gluetun dials servers the provider has retired, failing every
-    // connection. This one-off container refreshes the list before gluetun starts.
-    private const string GluetunServersUpdate = "gluetun-servers";
-
-    /// <summary>
-    /// The shell command <see cref="GluetunServersUpdate"/> runs: gluetun's updater for <paramref name="provider"/>. It
-    /// always succeeds, so a refresh that fails, such as while offline, leaves gluetun to start with the list it has.
-    /// </summary>
-    private static string[] GluetunServersUpdateCommand(string provider) =>
-    [
-        "-c",
-        $"/gluetun-entrypoint update -enduser -providers '{provider}' "
-            + "|| echo \"Couldn't refresh gluetun's servers list; it starts with the one it has\"",
-    ];
 
     // The username for gluetun's HTTP proxy; only the password needs to be secret
     private const string ProxyUsername = "lookout";

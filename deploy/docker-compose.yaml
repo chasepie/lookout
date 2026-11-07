@@ -96,28 +96,6 @@ services:
       - "no-new-privileges:true"
     tmpfs:
       - "/tmp"
-  gluetun-servers:
-    image: "qmcgaw/gluetun:v3.41.3"
-    command:
-      - "-c"
-      - "/gluetun-entrypoint update -enduser -providers '${VPN_SERVICE_PROVIDER:-private internet access}' || echo \"Couldn't refresh gluetun's servers list; it starts with the one it has\""
-    entrypoint:
-      - "/bin/sh"
-    volumes:
-      - type: "volume"
-        target: "/gluetun"
-        source: "gluetun"
-        read_only: false
-    networks:
-      - "egress"
-    restart: "no"
-    cap_drop:
-      - "ALL"
-    read_only: true
-    security_opt:
-      - "no-new-privileges:true"
-    tmpfs:
-      - "/tmp"
   gluetun:
     image: "qmcgaw/gluetun:v3.41.3"
     environment:
@@ -137,9 +115,6 @@ services:
         target: "/gluetun"
         source: "gluetun"
         read_only: false
-    depends_on:
-      gluetun-servers:
-        condition: "service_completed_successfully"
     networks:
       - "vpn-proxy"
       - "gluetun-relay"
