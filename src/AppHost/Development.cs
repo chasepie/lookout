@@ -165,7 +165,7 @@ public partial class Program
         }
 
         // Runs `npm run start` (ng serve) on its default port. The dev server forwards /api to the
-        // Backend through proxy.conf.json, which targets the Backend's launch profile port (7070). Serving both from
+        // Backend through proxy.conf.mjs, which targets the Backend's launch profile port (7070). Serving both from
         // one origin is what lets the session cookie and the CSRF checks work.
         // Packages come from the root npm workspace, so run `npm install` at the repo root first.
         var frontend = builder.AddJavaScriptApp("frontend", "../frontend", "start")
