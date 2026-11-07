@@ -43,23 +43,22 @@ public sealed class SecretUrlTests
     }
 
     [TestMethod]
-    [DataRow("http://browserless:3000", "http://browserless:3000/?token=t0k%2Ben")]
-    [DataRow("http://browserless:3000/?timeout=1000", "http://browserless:3000/?timeout=1000&token=t0k%2Ben")]
-    public void TheBrowserlessTokenIsAddedToItsUrl(string browserlessUrl, string expected)
+    public void TheBrowserlessTokenIsAddedToItsUrl()
     {
         var url = LookoutEnvironmentVariables.GetBrowserlessUrl(Configuration(
-            (LookoutEnvironmentVariables.BrowserlessUrl, browserlessUrl),
+            (LookoutEnvironmentVariables.BrowserlessUrl, "http://browserless:3000"),
             (LookoutEnvironmentVariables.BrowserlessToken, "t0k+en")));
 
-        Assert.AreEqual(expected, url);
+        Assert.AreEqual("http://browserless:3000/?token=t0k%2Ben", url);
     }
 
     [TestMethod]
-    public void ABrowserlessUrlWithoutATokenSettingIsKeptAsItIs()
+    public void ABrowserlessUrlWithoutATokenIsRefused()
     {
-        var url = LookoutEnvironmentVariables.GetBrowserlessUrl(Configuration(
-            (LookoutEnvironmentVariables.BrowserlessUrl, "http://browserless:3000?token=abc")));
+        // browserless accepts anyone without one
+        var error = Assert.ThrowsExactly<InvalidOperationException>(() => LookoutEnvironmentVariables.GetBrowserlessUrl(
+            Configuration((LookoutEnvironmentVariables.BrowserlessUrl, "http://browserless:3000"))));
 
-        Assert.AreEqual("http://browserless:3000?token=abc", url);
+        Assert.Contains(LookoutEnvironmentVariables.BrowserlessToken, error.Message);
     }
 }

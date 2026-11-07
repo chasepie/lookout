@@ -137,4 +137,5 @@ jobs:
           platforms: linux/${{ matrix.arch }}
           push: false
           cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.arch }}
+          # Only from pushes: a pull request's cache can't be read from main, and would evict the one CD builds from
+          cache-to: ${{ github.event_name == 'push' && format('type=gha,mode=max,scope={0}-{1}', matrix.image, matrix.arch) || '' }}

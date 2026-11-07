@@ -51,8 +51,7 @@ public partial class Program
         // either, since that needs the Backend in a container too; production does both. docs/security.md explains.
         var runner = builder.AddDockerfile("runner", repoRoot, "src/Runner/Dockerfile")
             .WithBindMount(watchScriptsDir, "/app/scripts", isReadOnly: true)
-            // An init as PID 1, since .NET as PID 1 ignores the SIGABRT of its own crash and spins instead of exiting
-            .WithContainerRuntimeArgs("--cap-drop=ALL", "--security-opt=no-new-privileges", "--init")
+            .WithContainerRuntimeArgs("--cap-drop=ALL", "--security-opt=no-new-privileges")
             // Plain HTTP: this hop stays on this machine
             .WithHttpEndpoint(targetPort: 8080, name: "http")
             // Always Development, as the Runner's launch profile was: /health, which the AppHost polls, is only mapped there
@@ -124,7 +123,7 @@ public partial class Program
                 .WithEnvironment("TZ", timeZone)
                 .WithEnvironment("UPDATER_PERIOD", GluetunUpdaterPeriod)
                 // The Backend's key may only use the routes it needs
-                .WithEnvironment("HTTP_CONTROL_SERVER_AUTH_CONFIG_FILEPATH", $"{GluetunAuthDirectory}/{GluetunAuthFileName}")
+                .WithEnvironment("HTTP_CONTROL_SERVER_AUTH_CONFIG_FILEPATH", GluetunAuthPath)
                 .WithContainerFiles(GluetunAuthDirectory, async (_, cancellationToken) =>
                 [
                     new ContainerFile

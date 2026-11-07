@@ -44,15 +44,14 @@ public static class LookoutEnvironmentVariables
     public const string WatchCliRoot = "LOOKOUT_WATCH_CLI_ROOT";
 
     /// <summary>
-    /// The browserless container's base URL, used by the Runner, with browserless's token in its <c>token</c> query
-    /// parameter.
+    /// The browserless container's base URL, used by the Runner. Its token is <see cref="BrowserlessToken"/>.
     /// </summary>
     public const string BrowserlessUrl = "LOOKOUT_BROWSERLESS_URL";
 
     /// <summary>
-    /// browserless's token, which the Runner adds to <see cref="BrowserlessUrl"/> as its <c>token</c> query parameter.
-    /// A setting of its own, so the token is set once beside browserless's own and kept out of URLs that end up in logs.
-    /// See <see cref="GetBrowserlessUrl"/>.
+    /// browserless's token, which the Runner requires and adds to <see cref="BrowserlessUrl"/> as its <c>token</c> query
+    /// parameter. A setting of its own, so the token is set once beside browserless's own and kept out of URLs that end
+    /// up in logs. See <see cref="GetBrowserlessUrl"/>.
     /// </summary>
     public const string BrowserlessToken = "LOOKOUT_BROWSERLESS_TOKEN";
 
@@ -153,39 +152,26 @@ public static class LookoutEnvironmentVariables
     }
 
     /// <summary>
-    /// <see cref="BrowserlessUrl"/>, with <see cref="BrowserlessToken"/> added as its <c>token</c> query parameter if
-    /// that's set.
+    /// <see cref="BrowserlessUrl"/>, with <see cref="BrowserlessToken"/> as its <c>token</c> query parameter.
     /// </summary>
     /// <returns>The URL, or <see langword="null"/> if <see cref="BrowserlessUrl"/> is not set.</returns>
-    /// <exception cref="InvalidOperationException"><see cref="BrowserlessUrl"/> is not an absolute URL.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// <see cref="BrowserlessUrl"/> is not an absolute URL, or <see cref="BrowserlessToken"/> is not set: without a token,
+    /// browserless accepts anyone.
+    /// </exception>
     public static string? GetBrowserlessUrl(IConfiguration configuration)
     {
-        var value = configuration[BrowserlessUrl];
-        if (string.IsNullOrWhiteSpace(value))
+        if (GetBaseUrl(configuration, BrowserlessUrl) is not { } url)
         {
             return null;
         }
 
-        if (!Uri.TryCreate(value, UriKind.Absolute, out var url))
-        {
-            throw new InvalidOperationException($"Environment variable {BrowserlessUrl} must be an absolute URL");
-        }
-
         if (configuration[BrowserlessToken] is not { Length: > 0 } token)
         {
-            return value;
+            throw new InvalidOperationException($"Environment variable {BrowserlessToken} must be set to browserless's token.");
         }
 
-        var query = url.Query.TrimStart('?');
-        var tokenParameter = "token=" + Uri.EscapeDataString(token);
-
-        var uriBuilder = new UriBuilder(url)
-        {
-            Query = query.Length > 0
-                ? $"{query}&{tokenParameter}"
-                : tokenParameter
-        };
-        return uriBuilder.Uri.AbsoluteUri;
+        return new UriBuilder(url) { Query = "token=" + Uri.EscapeDataString(token) }.Uri.AbsoluteUri;
     }
 
     /// <summary>

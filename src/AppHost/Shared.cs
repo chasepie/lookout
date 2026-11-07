@@ -35,6 +35,7 @@ public partial class Program
     // written there
     private const string GluetunAuthDirectory = "/gluetun-auth";
     private const string GluetunAuthFileName = "config.toml";
+    private const string GluetunAuthPath = GluetunAuthDirectory + "/" + GluetunAuthFileName;
 
     /// <summary>
     /// The routes of gluetun's control server that the Backend uses: reading and changing the VPN's settings, which

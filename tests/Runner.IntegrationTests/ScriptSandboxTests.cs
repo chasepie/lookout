@@ -112,14 +112,6 @@ public sealed class ScriptSandboxTests
         Assert.Contains(LookoutEnvironmentVariables.BrowserlessToken, ex.Message);
     }
 
-    [TestMethod]
-    public void ATokenInTheBrowserlessUrlIsEnough()
-    {
-        using var factory = new RunnerFactory(browserlessUrl: RunnerFactory.BrowserlessUrl + "?token=abc", browserlessToken: null);
-
-        Assert.IsNotNull(factory.Server);
-    }
-
     /// <summary>
     /// Runs a script that evaluates <paramref name="expression"/> at its top level, and returns "allowed" if it
     /// succeeded, or else its error's code, or its message if it has none.

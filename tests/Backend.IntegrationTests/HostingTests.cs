@@ -25,14 +25,11 @@ public sealed class HostingTests
     [TestMethod]
     public async Task ATrustedProxyTerminatingTlsCanSignIn()
     {
-        await using var factory = new LookoutFactory(settings: new Dictionary<string, string?>
-        {
-            [LookoutEnvironmentVariables.TrustedProxies] = ProxyIp,
-        });
+        await using var factory = Factory(LookoutEnvironmentVariables.TrustedProxies, ProxyIp);
         // The proxy talks to the Backend over plain HTTP
         using var client = factory.CreateBrowserClient(new Uri("http://localhost"));
 
-        using var login = await SignInThroughProxyAsync(client, ProxyIp, clientIp: "10.0.0.1", LookoutFactory.Password);
+        using var login = await SignInThroughProxyAsync(client, clientIp: "10.0.0.1", LookoutFactory.Password);
 
         Assert.AreEqual(HttpStatusCode.OK, login.StatusCode);
     }
@@ -42,14 +39,11 @@ public sealed class HostingTests
     [DataRow("10.0.0.0/24")]
     public async Task ForwardedHeadersFromAnUntrustedSourceAreIgnored(string? trustedProxies)
     {
-        await using var factory = new LookoutFactory(settings: new Dictionary<string, string?>
-        {
-            [LookoutEnvironmentVariables.TrustedProxies] = trustedProxies,
-        });
+        await using var factory = Factory(LookoutEnvironmentVariables.TrustedProxies, trustedProxies);
         using var client = factory.CreateBrowserClient(new Uri("http://localhost"));
 
         // Claiming HTTPS, and even this machine, doesn't make plain HTTP from elsewhere acceptable
-        using var login = await SignInThroughProxyAsync(client, ProxyIp, clientIp: "127.0.0.1", LookoutFactory.Password);
+        using var login = await SignInThroughProxyAsync(client, clientIp: "127.0.0.1", LookoutFactory.Password);
 
         Assert.AreEqual(HttpStatusCode.BadRequest, login.StatusCode);
     }
@@ -57,31 +51,25 @@ public sealed class HostingTests
     [TestMethod]
     public async Task EachClientBehindTheProxyHasItsOwnSignInLimit()
     {
-        await using var factory = new LookoutFactory(settings: new Dictionary<string, string?>
-        {
-            [LookoutEnvironmentVariables.TrustedProxies] = "172.30.0.0/24",
-        });
+        await using var factory = Factory(LookoutEnvironmentVariables.TrustedProxies, "172.30.0.0/24");
         using var client = factory.CreateBrowserClient(new Uri("http://localhost"));
 
         for (var i = 0; i < OwnerAuthentication.SignInsPerClient; i++)
         {
-            using var attempt = await SignInThroughProxyAsync(client, ProxyIp, clientIp: "10.0.0.1", "wrong password!");
+            using var attempt = await SignInThroughProxyAsync(client, clientIp: "10.0.0.1", "wrong password!");
             Assert.AreEqual(HttpStatusCode.Unauthorized, attempt.StatusCode);
         }
 
-        using var limited = await SignInThroughProxyAsync(client, ProxyIp, clientIp: "10.0.0.1", LookoutFactory.Password);
+        using var limited = await SignInThroughProxyAsync(client, clientIp: "10.0.0.1", LookoutFactory.Password);
         Assert.AreEqual(HttpStatusCode.TooManyRequests, limited.StatusCode);
-        using var owner = await SignInThroughProxyAsync(client, ProxyIp, clientIp: "10.0.0.2", LookoutFactory.Password);
+        using var owner = await SignInThroughProxyAsync(client, clientIp: "10.0.0.2", LookoutFactory.Password);
         Assert.AreEqual(HttpStatusCode.OK, owner.StatusCode);
     }
 
     [TestMethod]
     public async Task AMistypedTrustedProxyStopsStartup()
     {
-        await using var factory = new LookoutFactory(settings: new Dictionary<string, string?>
-        {
-            [LookoutEnvironmentVariables.TrustedProxies] = "172.30.0.1, proxy.local",
-        });
+        await using var factory = Factory(LookoutEnvironmentVariables.TrustedProxies, "172.30.0.1, proxy.local");
 
         var error = Assert.ThrowsExactly<InvalidOperationException>(() => factory.CreateClient());
 
@@ -94,10 +82,7 @@ public sealed class HostingTests
     [DataRow("https://other.example.com", HttpStatusCode.BadRequest)]
     public async Task OnlyTheConfiguredHostnameIsServed(string address, HttpStatusCode expected)
     {
-        await using var factory = new LookoutFactory(settings: new Dictionary<string, string?>
-        {
-            ["AllowedHosts"] = "lookout.example.com",
-        });
+        await using var factory = Factory("AllowedHosts", "lookout.example.com");
         using var client = factory.CreateBrowserClient(new Uri(address));
 
         using var response = await client.GetAsync("/", Ct);
@@ -121,10 +106,7 @@ public sealed class HostingTests
     [DataRow(" ")]
     public async Task AnEmptyHostnameStopsStartupRatherThanAllowingEveryHost(string allowedHosts)
     {
-        await using var factory = new LookoutFactory(settings: new Dictionary<string, string?>
-        {
-            ["AllowedHosts"] = allowedHosts,
-        });
+        await using var factory = Factory("AllowedHosts", allowedHosts);
 
         var error = Assert.ThrowsExactly<InvalidOperationException>(() => factory.CreateClient());
 
@@ -134,10 +116,7 @@ public sealed class HostingTests
     [TestMethod]
     public async Task BrowsersAreToldToUseHttpsForAYear()
     {
-        await using var factory = new LookoutFactory(settings: new Dictionary<string, string?>
-        {
-            ["AllowedHosts"] = "lookout.example.com",
-        });
+        await using var factory = Factory("AllowedHosts", "lookout.example.com");
         using var client = factory.CreateBrowserClient(new Uri("https://lookout.example.com"));
 
         using var response = await client.GetAsync("/", Ct);
@@ -149,10 +128,7 @@ public sealed class HostingTests
     [TestMethod]
     public async Task DevelopmentDoesNotPinHttps()
     {
-        await using var factory = new LookoutFactory(environment: "Development", settings: new Dictionary<string, string?>
-        {
-            ["AllowedHosts"] = "lookout.example.com",
-        });
+        await using var factory = Factory("AllowedHosts", "lookout.example.com", environment: "Development");
         using var client = factory.CreateBrowserClient(new Uri("https://lookout.example.com"));
 
         using var response = await client.GetAsync("/", Ct);
@@ -210,14 +186,11 @@ public sealed class HostingTests
         // By name, as the only host allowed
         var baseAddress = new UriBuilder(address) { Host = "localhost" }.Uri;
         using var client = new HttpClient(new HttpClientHandler { UseCookies = false }) { BaseAddress = baseAddress };
-        client.DefaultRequestHeaders.Add(CsrfProtection.HeaderName, "1");
-        client.DefaultRequestHeaders.Add("Sec-Fetch-Site", "same-origin");
+        LookoutFactory.AddBrowserHeaders(client);
         using var login = await client.PostAsJsonAsync(
             "/api/auth/login", new { LookoutFactory.Username, LookoutFactory.Password }, Ct);
         login.EnsureSuccessStatusCode();
-        var cookie = login.Headers.GetValues("Set-Cookie")
-            .Single(c => c.StartsWith(OwnerAuthentication.CookieName + "=", StringComparison.Ordinal))
-            .Split(';')[0];
+        var cookie = LookoutFactory.SessionCookie(login);
         using var request = new HttpRequestMessage(HttpMethod.Post, "/api/Watches")
         {
             Content = new MultipartFormDataContent
@@ -234,21 +207,26 @@ public sealed class HostingTests
         Assert.Contains(expectedError, await response.Content.ReadAsStringAsync(Ct));
     }
 
+    /// <summary>
+    /// A Backend with one setting changed, as if from the environment.
+    /// </summary>
+    private static LookoutFactory Factory(string name, string? value, string environment = "Production") =>
+        new(environment, settings: new Dictionary<string, string?> { [name] = value });
+
     private static string Header(HttpResponseMessage response, string name) =>
         response.Headers.TryGetValues(name, out var values) ? string.Join(", ", values) : "(none)";
 
     /// <summary>
-    /// Signs in as if through a reverse proxy at <paramref name="proxyIp"/> that received the request over HTTPS from
+    /// Signs in as if through a reverse proxy at <see cref="ProxyIp"/> that received the request over HTTPS from
     /// <paramref name="clientIp"/>.
     /// </summary>
-    private async Task<HttpResponseMessage> SignInThroughProxyAsync(
-        HttpClient client, string proxyIp, string clientIp, string password)
+    private async Task<HttpResponseMessage> SignInThroughProxyAsync(HttpClient client, string clientIp, string password)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "/api/auth/login")
         {
             Content = JsonContent.Create(new { LookoutFactory.Username, Password = password }),
         };
-        request.Headers.Add(LookoutFactory.ClientIpHeader, proxyIp);
+        request.Headers.Add(LookoutFactory.ClientIpHeader, ProxyIp);
         request.Headers.Add("X-Forwarded-For", clientIp);
         request.Headers.Add("X-Forwarded-Proto", "https");
         return await client.SendAsync(request, Ct);

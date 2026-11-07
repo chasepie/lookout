@@ -95,14 +95,6 @@ public sealed class ProductionComposeTests
     }
 
     [TestMethod]
-    [DataRow("backend")]
-    [DataRow("runner")]
-    public void TheDotNetServicesRunUnderAnInitSoACrashEndsThem(string service)
-    {
-        Assert.AreEqual("true", Service(service).GetValueOrDefault("init")?.ToString());
-    }
-
-    [TestMethod]
     public void TheRunnerHasAMemoryLimit()
     {
         var runner = Service("runner");

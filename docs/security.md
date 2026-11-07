@@ -144,11 +144,12 @@ of these and checks they're refused. Node calls its model a seat belt, not a san
 - A local browser needs child processes, so the Runner refuses to start without `LOOKOUT_BROWSERLESS_URL`.
 
 **The Runner's container.** The Runner runs from `src/Runner/Dockerfile` as the image's non-root user, with no Linux capabilities, `no-new-privileges`,
-an init as PID 1, and the scripts mounted read-only at `/app/scripts`. The container has no `.env`, database, Data Protection keys or repo. In production its
-root filesystem is read-only too, with a tmpfs for `/tmp`, and it has a memory limit, since outside V8's heap nothing else stops a script taking the host's
-memory. In development the root filesystem stays writable: Aspire copies the development certificate into it, which the Runner's telemetry needs, and
-`--read-only` refuses that. The image's files belong to root, so the Runner's user can only write `/tmp` and its home directory anyway. The Runner's user is
-uid 1654, so on a Linux host the scripts directory must be readable by it, for example with the default `umask`; Docker Desktop on macOS hides this.
+`tini` as PID 1 (see [Production deployment](#production-deployment)), and the scripts mounted read-only at `/app/scripts`. The container has no `.env`,
+database, Data Protection keys or repo. In production its root filesystem is read-only too, with a tmpfs for `/tmp`, and it has a memory limit, since
+outside V8's heap nothing else stops a script taking the host's memory. In development the root filesystem stays writable: Aspire copies the development
+certificate into it, which the Runner's telemetry needs, and `--read-only` refuses that. The image's files belong to root, so the Runner's user can only
+write `/tmp` and its home directory anyway. The Runner's user is uid 1654, so on a Linux host the scripts directory must be readable by it, for example
+with the default `umask`; Docker Desktop on macOS hides this.
 
 **What they don't limit.** A script drives Chromium in browserless, which reaches the internet and the LAN, so it can still send out what it can read,
 which is its own source, and reach services on the network. In production, that's its only way out: the Runner's networks lead only to the Backend and
@@ -234,9 +235,9 @@ The Backend's port is published on `127.0.0.1` unless `LOOKOUT_BIND_ADDRESS` say
 publishes ports from containers on a network that leads out, so the Backend can reach the internet, though it has no reason to.
 
 **Containers.** The Backend, the Runner and the relays run with a read-only root filesystem (a tmpfs for `/tmp`), no Linux capabilities and
-`no-new-privileges`, and the Backend and the Runner as uid 1654. The two .NET services run under an init: as PID 1, .NET ignores the `SIGABRT` its own crash
-raises, since the kernel drops signals PID 1 has no handler for, and spins instead of exiting, so a service that failed to start would look like it was
-running. There's no Aspire dashboard, which would show every service's environment.
+`no-new-privileges`, and the Backend and the Runner as uid 1654. Both images start with `tini` as PID 1: as PID 1 itself, .NET ignores the `SIGABRT`
+its own crash raises, since the kernel drops signals PID 1 has no handler for, and spins instead of exiting, so a service that failed to start would
+look like it was running. There's no Aspire dashboard, which would show every service's environment.
 
 **Settings and secrets** are Compose variables in the deployment's `.env`, which it keeps unreadable to other users, and reach each container in its
 environment, only the ones it needs. gluetun's control-server key also goes into its auth file, which Compose writes from `.env`. Compose's secret files

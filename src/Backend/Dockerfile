@@ -22,17 +22,24 @@ RUN npm run build -w src/frontend
 # Without an apphost, the published app runs on any platform's runtime, so it's built natively too
 FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0 AS backend
 WORKDIR /src
-COPY .editorconfig global.json Directory.Build.props Directory.Packages.props ./
+COPY global.json Directory.Build.props Directory.Packages.props ./
 COPY src/Core/Core.csproj src/Core/
 COPY src/ServiceDefaults/ServiceDefaults.csproj src/ServiceDefaults/
 COPY src/Backend/Backend.csproj src/Backend/
 RUN dotnet restore src/Backend/Backend.csproj
+# The analyzer settings the build enforces. After restore, which doesn't read them, so editing them reuses its layer.
+COPY .editorconfig ./
 COPY src/Core/ src/Core/
 COPY src/ServiceDefaults/ src/ServiceDefaults/
 COPY src/Backend/ src/Backend/
 RUN dotnet publish src/Backend/Backend.csproj -c Release --no-restore -p:UseAppHost=false -o /out
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
+# tini as PID 1, which reaps processes and passes signals on. .NET as PID 1 would ignore the SIGABRT of its own crash,
+# since the kernel drops signals PID 1 has no handler for, and spin instead of exiting.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends tini \
+  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=backend /out ./
 COPY --from=frontend /src/src/Backend/wwwroot wwwroot/
@@ -43,4 +50,4 @@ ENV LOOKOUT_WATCH_SCRIPTS_DIR=/app/scripts \
   LOOKOUT_DATABASE_DIR=/app/database
 # The non-root user the .NET images provide
 USER $APP_UID
-ENTRYPOINT ["dotnet", "/app/Backend.dll"]
+ENTRYPOINT ["tini", "--", "dotnet", "/app/Backend.dll"]

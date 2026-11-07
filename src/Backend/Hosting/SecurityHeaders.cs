@@ -31,13 +31,13 @@ public static class SecurityHeaders
 
     public static WebApplication UseSecurityHeaders(this WebApplication app)
     {
+        var isDevelopment = app.Environment.IsDevelopment();
         // Not in development, where pinning HTTPS on localhost would affect every other app served there
-        if (!app.Environment.IsDevelopment())
+        if (!isDevelopment)
         {
             app.UseHsts();
         }
 
-        var isDevelopment = app.Environment.IsDevelopment();
         app.Use((context, next) =>
         {
             var headers = context.Response.Headers;

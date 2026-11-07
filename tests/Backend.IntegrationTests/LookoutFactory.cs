@@ -92,10 +92,27 @@ internal sealed class LookoutFactory : WebApplicationFactory<Program>
             AllowAutoRedirect = false,
             HandleCookies = handleCookies,
         });
-        client.DefaultRequestHeaders.Add(CsrfProtection.HeaderName, "1");
-        client.DefaultRequestHeaders.Add("Sec-Fetch-Site", "same-origin");
+        AddBrowserHeaders(client);
         return client;
     }
+
+    /// <summary>
+    /// Makes <paramref name="client"/> send the headers a browser sends from Lookout's own pages, which
+    /// <see cref="CsrfProtection"/> requires.
+    /// </summary>
+    public static void AddBrowserHeaders(HttpClient client)
+    {
+        client.DefaultRequestHeaders.Add(CsrfProtection.HeaderName, "1");
+        client.DefaultRequestHeaders.Add("Sec-Fetch-Site", "same-origin");
+    }
+
+    /// <summary>
+    /// The session cookie a sign-in's response sets, as just "name=value", as a browser would send it back.
+    /// </summary>
+    public static string SessionCookie(HttpResponseMessage login) =>
+        login.Headers.GetValues("Set-Cookie")
+            .Single(c => c.StartsWith(OwnerAuthentication.CookieName + "=", StringComparison.Ordinal))
+            .Split(';')[0];
 
     /// <summary>
     /// Signs in with the Owner's credentials and returns the browser client holding the session.

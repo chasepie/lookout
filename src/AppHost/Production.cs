@@ -52,7 +52,6 @@ public partial class Program
             if (defaultValue is not null)
             {
                 settingDefaults[name] = defaultValue;
-                var dv =
                 description += $" Default: {(defaultValue.Length > 0 ? defaultValue : "none")}.";
             }
             else
@@ -101,7 +100,7 @@ public partial class Program
                 ? $"{placeholder[..^1]}:-{defaultValue}}}"
                 : placeholder;
 
-        builder.AddContainer(BrowserlessService, BrowserlessImage, BrowserlessTag)
+        var browserless = builder.AddContainer(BrowserlessService, BrowserlessImage, BrowserlessTag)
             .PublishAsDockerComposeService((resource, service) =>
             {
                 service.Environment["TZ"] = Placeholder(timeZone, resource);
@@ -113,7 +112,9 @@ public partial class Program
                 service.Networks = [BrowsersNetwork, VpnProxyNetwork, EgressNetwork];
             });
 
-        builder.AddContainer(RunnerService, RunnerImage)
+        var runner = builder.AddContainer(RunnerService, RunnerImage)
+            .WithVolume(ScriptsVolume, "/app/scripts", isReadOnly: true)
+            .WaitFor(browserless)
             .PublishAsDockerComposeService((resource, service) =>
             {
                 service.Image = $"{RunnerImage}:{Placeholder(imageTag, resource)}";
@@ -123,18 +124,20 @@ public partial class Program
                 // browserless connects to it, on the network they share
                 service.Environment[LookoutEnvironmentVariables.VpnProxyUrl] = $"http://{ProxyUsername}@{GluetunService}:8888";
                 Harden(service, readOnly: true);
-                RunUnderInit(service);
                 // Outside V8's heap, nothing else stops a script taking the host's memory
                 LimitMemory(service, Placeholder(runnerMemory, resource));
-                AddVolume(service, ScriptsVolume, "/app/scripts", readOnly: true);
                 service.Environment[LookoutEnvironmentVariables.RunnerApiKey] = Placeholder(runnerApiKey, resource);
                 service.Environment[LookoutEnvironmentVariables.VpnProxyPassword] = Placeholder(proxyPassword, resource);
                 // No route out: scripts reach the network only through browserless
                 service.Networks = [RunnerNetwork, BrowsersNetwork];
-                DependOn(service, BrowserlessService);
             });
 
         builder.AddContainer(BackendService, BackendImage)
+            .WithVolume(ScriptsVolume, "/app/scripts")
+            .WithVolume(DatabaseVolume, "/app/database")
+            // For the servers list, which says which regions there are
+            .WithVolume(GluetunVolume, "/app/gluetun", isReadOnly: true)
+            .WaitFor(runner)
             .PublishAsDockerComposeService((resource, service) =>
             {
                 service.Image = $"{BackendImage}:{Placeholder(imageTag, resource)}";
@@ -149,23 +152,18 @@ public partial class Program
                 // Through the relay, since the Backend shares no network with gluetun
                 service.Environment[LookoutEnvironmentVariables.VpnProxyUrl] = $"http://{ProxyUsername}@{GluetunProxyRelay}:8888";
                 Harden(service, readOnly: true);
-                RunUnderInit(service);
                 // Plain HTTP, for a reverse proxy that terminates TLS
                 service.Ports = [$"{Placeholder(bindAddress, resource)}:{Placeholder(port, resource)}:8080"];
-                AddVolume(service, ScriptsVolume, "/app/scripts");
-                AddVolume(service, DatabaseVolume, "/app/database");
-                // For the servers list, which says which regions there are
-                AddVolume(service, GluetunVolume, "/app/gluetun", readOnly: true);
                 service.Environment[LookoutEnvironmentVariables.OwnerPassword] = Placeholder(ownerPassword, resource);
                 service.Environment[LookoutEnvironmentVariables.RunnerApiKey] = Placeholder(runnerApiKey, resource);
                 service.Environment[LookoutEnvironmentVariables.VpnProxyPassword] = Placeholder(proxyPassword, resource);
                 service.Networks = [RunnerNetwork, VpnControlNetwork, EdgeNetwork];
-                DependOn(service, RunnerService);
             });
 
         // The key as a Compose variable, for gluetun's auth config
         string? gluetunApiKeyPlaceholder = null;
         builder.AddContainer(GluetunService, GluetunImage, GluetunTag)
+            .WithVolume(GluetunVolume, "/gluetun")
             .PublishAsDockerComposeService((resource, service) =>
             {
                 gluetunApiKeyPlaceholder = Placeholder(gluetunApiKey, resource);
@@ -180,15 +178,14 @@ public partial class Program
                 service.Environment["HTTPPROXY_STEALTH"] = "on";
                 service.Environment["TZ"] = Placeholder(timeZone, resource);
                 service.Environment["UPDATER_PERIOD"] = GluetunUpdaterPeriod;
-                service.Environment["HTTP_CONTROL_SERVER_AUTH_CONFIG_FILEPATH"] = $"{GluetunAuthDirectory}/{GluetunAuthFileName}";
+                service.Environment["HTTP_CONTROL_SERVER_AUTH_CONFIG_FILEPATH"] = GluetunAuthPath;
                 service.Restart = "unless-stopped";
                 service.CapAdd = ["NET_ADMIN"];
                 service.Devices = ["/dev/net/tun:/dev/net/tun"];
-                AddVolume(service, GluetunVolume, "/gluetun");
                 service.AddConfig(new ConfigReference
                 {
                     Source = GluetunAuthConfigName,
-                    Target = $"{GluetunAuthDirectory}/{GluetunAuthFileName}",
+                    Target = GluetunAuthPath,
                 });
                 // Its proxy forwards to every network it's on, so the Backend reaches it only through the relays
                 service.Networks = [VpnProxyNetwork, GluetunRelayNetwork, EgressNetwork];
@@ -220,11 +217,6 @@ public partial class Program
             foreach (var name in OutwardNetworks)
             {
                 file.Networks[name] = new Network { Name = name, Driver = "bridge" };
-            }
-
-            foreach (var name in new[] { ScriptsVolume, DatabaseVolume, GluetunVolume })
-            {
-                file.Volumes[name] = new Volume { Name = name };
             }
 
             // Compose fills in the key from deploy/.env
@@ -269,28 +261,8 @@ public partial class Program
     }
 
     /// <summary>
-    /// An init process as PID 1, for the .NET services. As PID 1 itself, .NET would ignore the SIGABRT its own crash
-    /// raises and spin instead of exiting, so a service that failed to start would look like it was running. The init
-    /// also reaps the Runner's scripts' processes.
-    /// </summary>
-    private static void RunUnderInit(Service service) => service.Init = true;
-
-    /// <summary>
     /// A memory limit. Compose applies <c>deploy.resources</c> without Swarm too.
     /// </summary>
     private static void LimitMemory(Service service, string memory) =>
         service.Deploy = new Deploy { Resources = new Resources { Limits = new ResourceSpec { Memory = memory } } };
-
-    private static void AddVolume(Service service, string volume, string target, bool readOnly = false) =>
-        service.AddVolume(new Volume
-        {
-            Name = volume,
-            Type = "volume",
-            Source = volume,
-            Target = target,
-            ReadOnly = readOnly
-        });
-
-    private static void DependOn(Service service, string other) =>
-        service.DependsOn[other] = new ServiceDependency { Condition = "service_started" };
 }

@@ -35,8 +35,8 @@ public sealed record WatchCli(
     /// reads the URLs it needs.
     /// </summary>
     /// <exception cref="InvalidOperationException">
-    /// The CLI isn't built, <c>LOOKOUT_BROWSERLESS_URL</c> isn't set or has no token, or it or <c>LOOKOUT_VPN_PROXY_URL</c>
-    /// isn't an absolute URL.
+    /// The CLI isn't built, <c>LOOKOUT_BROWSERLESS_URL</c> or <c>LOOKOUT_BROWSERLESS_TOKEN</c> isn't set, or either URL
+    /// isn't absolute.
     /// </exception>
     public static WatchCli FromConfiguration(IConfiguration configuration, string currentDirectory)
     {
@@ -64,13 +64,6 @@ public sealed record WatchCli(
                 + "script's browser on browserless.");
         }
 
-        // Without a token browserless accepts anyone, so a Runner without one means a browserless open to the network
-        if (!HasToken(browserlessUrl))
-        {
-            throw new InvalidOperationException(
-                $"Environment variable {LookoutEnvironmentVariables.BrowserlessToken} must be set to browserless's token.");
-        }
-
         return new WatchCli(
             CliPath: cliPath,
             ReadablePaths: [nodeModules, sdkDirectory, .. OperatingSystem.IsLinux() ? PlaywrightLinuxChecks : []],
@@ -78,14 +71,5 @@ public sealed record WatchCli(
             VpnProxyUrl: LookoutEnvironmentVariables.GetVpnProxyUrl(configuration)?.AbsoluteUri,
             // A link on macOS
             OutputDirectory: RealPath.Of(Path.GetTempPath()));
-    }
-
-    private static bool HasToken(string browserlessUrl)
-    {
-        return Uri.TryCreate(browserlessUrl, UriKind.Absolute, out var url)
-            && url.Query.TrimStart('?').Split('&')
-                .Any(parameter =>
-                    parameter.StartsWith("token=", StringComparison.Ordinal)
-                    && parameter.Length > "token=".Length);
     }
 }

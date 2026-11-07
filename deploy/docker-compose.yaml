@@ -45,7 +45,6 @@ services:
           memory: "${LOOKOUT_RUNNER_MEMORY:-1g}"
     cap_drop:
       - "ALL"
-    init: true
     read_only: true
     security_opt:
       - "no-new-privileges:true"
@@ -91,7 +90,6 @@ services:
     restart: "unless-stopped"
     cap_drop:
       - "ALL"
-    init: true
     read_only: true
     security_opt:
       - "no-new-privileges:true"
@@ -183,9 +181,12 @@ networks:
   edge:
     driver: "bridge"
 volumes:
-  scripts: {}
-  database: {}
-  gluetun: {}
+  scripts:
+    driver: "local"
+  database:
+    driver: "local"
+  gluetun:
+    driver: "local"
 configs:
   gluetun_auth:
     content: "[[roles]]\nname = \"lookout-backend\"\nroutes = [\"GET /v1/vpn/settings\", \"PUT /v1/vpn/settings\", \"GET /v1/publicip/ip\"]\nauth = \"apikey\"\napikey = \"${GLUETUN_API_KEY}\"\n"

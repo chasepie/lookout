@@ -30,6 +30,7 @@ public partial class Program
 
     private static void ConfigureServices(IServiceCollection services, IConfiguration configuration)
     {
+        AllowedHosts.Require(configuration);
         services.AddReverseProxy(configuration);
         services.AddSecurityHeaders();
         services.AddOwnerAuthentication(configuration);

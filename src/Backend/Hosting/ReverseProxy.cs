@@ -12,18 +12,10 @@ namespace ChasePie.Lookout.Backend.Hosting;
 public static class ReverseProxy
 {
     /// <exception cref="InvalidOperationException">
-    /// <c>AllowedHosts</c> is empty, or <c>LOOKOUT_TRUSTED_PROXIES</c> has an entry that isn't an IP or a CIDR network.
+    /// <c>LOOKOUT_TRUSTED_PROXIES</c> has an entry that isn't an IP or a CIDR network.
     /// </exception>
     public static IServiceCollection AddReverseProxy(this IServiceCollection services, IConfiguration configuration)
     {
-        // Host filtering allows every host when the list is empty, which a deployment leaving its hostname unset would
-        // otherwise get without noticing. appsettings.json sets localhost, so this is only empty if set to be.
-        if (string.IsNullOrWhiteSpace(configuration["AllowedHosts"]))
-        {
-            throw new InvalidOperationException(
-                "Set AllowedHosts to the hostname Lookout is served on, such as lookout.example.com.");
-        }
-
         // Parsed here, so a mistyped entry stops startup instead of leaving the proxy untrusted
         var trustedProxies = ParseTrustedProxies(configuration[LookoutEnvironmentVariables.TrustedProxies]);
         services.Configure<ForwardedHeadersOptions>(options =>

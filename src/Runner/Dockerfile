@@ -31,11 +31,13 @@ RUN npm ci --workspace src/Runner --omit=dev --ignore-scripts
 # Without an apphost, the published app runs on any platform's runtime, so it's built natively too
 FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0 AS runner
 WORKDIR /src
-COPY .editorconfig global.json Directory.Build.props Directory.Packages.props ./
+COPY global.json Directory.Build.props Directory.Packages.props ./
 COPY src/Core/Core.csproj src/Core/
 COPY src/ServiceDefaults/ServiceDefaults.csproj src/ServiceDefaults/
 COPY src/Runner/Runner.csproj src/Runner/
 RUN dotnet restore src/Runner/Runner.csproj
+# The analyzer settings the build enforces. After restore, which doesn't read them, so editing them reuses its layer.
+COPY .editorconfig ./
 COPY src/Core/ src/Core/
 COPY src/ServiceDefaults/ src/ServiceDefaults/
 COPY src/Runner/ src/Runner/
@@ -44,9 +46,11 @@ RUN dotnet publish src/Runner/Runner.csproj -c Release --no-restore -p:UseAppHos
 # The layout under /app mirrors the repo's, so the SDK's workspace link in node_modules resolves, and scripts mounted
 # at /app/scripts import from /app/node_modules
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
-# Node needs libatomic, which the ASP.NET image doesn't have
+# Node needs libatomic, which the ASP.NET image doesn't have.
+# tini as PID 1, which reaps processes and passes signals on. .NET as PID 1 would ignore the SIGABRT of its own crash,
+# since the kernel drops signals PID 1 has no handler for, and spin instead of exiting.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends libatomic1 \
+  && apt-get install -y --no-install-recommends libatomic1 tini \
   && rm -rf /var/lib/apt/lists/*
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 WORKDIR /app
@@ -63,4 +67,4 @@ ENV LOOKOUT_WATCH_CLI_ROOT=/app \
   LOOKOUT_WATCH_SCRIPTS_DIR=/app/scripts
 # The non-root user the .NET images provide
 USER $APP_UID
-ENTRYPOINT ["dotnet", "/app/runner/Runner.dll"]
+ENTRYPOINT ["tini", "--", "dotnet", "/app/runner/Runner.dll"]
