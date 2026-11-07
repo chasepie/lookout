@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, effect, inject, input, signal } from '@angular/core';
+import { Component, computed, effect, inject, input, linkedSignal, signal } from '@angular/core';
 import { FormField, form, min, required, submit } from '@angular/forms/signals';
 import { Title } from '@angular/platform-browser';
 import { Router, RouterLink } from '@angular/router';
@@ -81,7 +81,13 @@ export class WatchForm {
   /** Shown once the Owner tries to create a watch without one. */
   protected readonly scriptMissing = signal(false);
 
-  private readonly model = signal<WatchFormModel>({ ...blank });
+  protected readonly existing = this.api.watchResource(this.id);
+  protected readonly editing = computed(() => this.id() !== undefined);
+
+  /** Starts blank, or as the saved watch once it loads when editing; then holds the Owner's edits. */
+  private readonly model = linkedSignal<WatchFormModel>(() =>
+    this.editing() && this.existing.hasValue() ? toModel(this.existing.value()) : { ...blank },
+  );
   protected readonly watchForm = form(this.model, (path) => {
     required(path.name, { message: 'Give the watch a name.' });
     required(path.every, {
@@ -98,16 +104,9 @@ export class WatchForm {
     });
   });
 
-  protected readonly existing = this.api.watchResource(this.id);
-  protected readonly editing = computed(() => this.id() !== undefined);
   protected readonly cancelLink = computed(() => (this.editing() ? ['/watches', this.id()] : ['/']));
 
   constructor() {
-    effect(() => {
-      if (this.editing() && this.existing.hasValue()) {
-        this.model.set(toModel(this.existing.value()));
-      }
-    });
     const title = inject(Title);
     effect(() => {
       if (this.editing() && this.existing.hasValue()) {

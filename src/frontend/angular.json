@@ -96,7 +96,22 @@
           }
         },
         "test": {
-          "builder": "@angular/build:unit-test"
+          "builder": "@angular/build:unit-test",
+          "options": {
+            "coverageInclude": [
+              "src/app/**/*.ts"
+            ],
+            "coverageExclude": [
+              "**/*.spec.ts",
+              "src/app/testing/**"
+            ],
+            "coverageThresholds": {
+              "statements": 85,
+              "branches": 80,
+              "functions": 75,
+              "lines": 85
+            }
+          }
         }
       }
     }

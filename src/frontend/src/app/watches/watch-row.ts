@@ -26,7 +26,7 @@ import { WatchesApi } from './watches-api';
       <p class="schedule">
         <span>{{ schedule() }}</span>
         @if (watch().useVpn) {
-          <span class="vpn"><svg lucideShieldCheck aria-hidden="true"></svg>VPN</span>
+          <span class="vpn"><svg lucideShieldCheck aria-hidden="true" />VPN</span>
         }
       </p>
     </div>
@@ -57,7 +57,7 @@ import { WatchesApi } from './watches-api';
       [title]="watch().scriptFileName ? 'Run ' + watch().name + ' now' : 'Upload a script to run this watch'"
       (click)="runNow()"
     >
-      <svg lucidePlay aria-hidden="true"></svg>
+      <svg lucidePlay aria-hidden="true" />
       <span class="visually-hidden">Run {{ watch().name }} now</span>
     </button>
   `,

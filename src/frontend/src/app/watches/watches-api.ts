@@ -28,18 +28,24 @@ export class WatchesApi {
     });
   }
 
+  /** The newest page of a watch's runs, newest first. */
+  newestRunsResource(watchId: () => string) {
+    return httpResource<WatchRunSummary[]>(() => ({
+      url: `${baseUrl}/${watchId()}/runs`,
+      params: { limit: runPageSize },
+    }));
+  }
+
   /** `runId` may be `"latest"`. */
   runResource(watchId: () => string, runId: () => string) {
     return httpResource<WatchRun>(() => `${baseUrl}/${watchId()}/runs/${runId()}`);
   }
 
-  /** A page of runs, newest first: the newest ones, or those older than the run `before`. */
-  runs(watchId: string, before?: number) {
-    const params: Record<string, number> = { limit: runPageSize };
-    if (before !== undefined) {
-      params['before'] = before;
-    }
-    return firstValueFrom(this.http.get<WatchRunSummary[]>(`${baseUrl}/${watchId}/runs`, { params }));
+  /** A page of the runs older than the run `before`, newest first. */
+  olderRuns(watchId: string, before: number) {
+    return firstValueFrom(
+      this.http.get<WatchRunSummary[]>(`${baseUrl}/${watchId}/runs`, { params: { limit: runPageSize, before } }),
+    );
   }
 
   /** Creates a watch with its script, sent together as multipart form data. */

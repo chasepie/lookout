@@ -1,8 +1,8 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
-import { signal } from '@angular/core';
+import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
 import { App } from './app';
 import { Session } from './auth/session';
 import { LiveUpdates } from './live/live-updates';
@@ -67,5 +67,45 @@ describe('App', () => {
 
     expect(compiled.querySelector('[role=alert]')?.textContent).toContain("Couldn't sign out");
     expect(compiled.textContent).toContain('Signed in as owner');
+  });
+});
+
+describe('App focus', () => {
+  @Component({ template: '<h1>A page</h1>' })
+  class AnyPage {}
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [App],
+      providers: [
+        provideRouter([
+          { path: 'watches/:id', component: AnyPage, children: [{ path: 'runs/:runId', component: AnyPage }] },
+          { path: '**', component: AnyPage },
+        ]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        { provide: LiveUpdates, useValue: { state: signal('live') } },
+      ],
+    }).compileComponents();
+  });
+
+  it('moves focus to the content on a new page, but not when a run opens beside the log', async () => {
+    const fixture = TestBed.createComponent(App);
+    const router = TestBed.inject(Router);
+    const main = (fixture.nativeElement as HTMLElement).querySelector('main')!;
+    document.body.appendChild(fixture.nativeElement as HTMLElement);
+    await router.navigateByUrl('/');
+    await fixture.whenStable();
+
+    await router.navigateByUrl('/watches/1');
+    await fixture.whenStable();
+    expect(document.activeElement).toBe(main);
+
+    (document.activeElement as HTMLElement).blur();
+    await router.navigateByUrl('/watches/1/runs/2');
+    await fixture.whenStable();
+    expect(document.activeElement).not.toBe(main);
+
+    (fixture.nativeElement as HTMLElement).remove();
   });
 });

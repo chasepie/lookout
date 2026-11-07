@@ -5,7 +5,7 @@
     <h2 #heading tabindex="-1">Run</h2>
   }
   <a class="button button-quiet button-icon" [routerLink]="['/watches', id()]">
-    <svg lucideX aria-hidden="true"></svg>
+    <svg lucideX aria-hidden="true" />
     <span class="visually-hidden">Close the run</span>
   </a>
 </header>
@@ -72,7 +72,7 @@
       [title]="run.value().status === statuses.Running ? 'A run can be deleted once it finishes' : ''"
       (click)="remove(run.value().id)"
     >
-      <svg lucideTrash2 aria-hidden="true"></svg>
+      <svg lucideTrash2 aria-hidden="true" />
       Delete run
     </button>
   </div>

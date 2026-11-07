@@ -1,5 +1,5 @@
 <a class="back" routerLink="/">
-  <svg lucideChevronLeft aria-hidden="true"></svg>
+  <svg lucideChevronLeft aria-hidden="true" />
   Watches
 </a>
 
@@ -53,26 +53,26 @@
         [disabled]="starting() || !watch.value().scriptFileName"
         (click)="runNow()"
       >
-        <svg lucidePlay aria-hidden="true"></svg>
+        <svg lucidePlay aria-hidden="true" />
         Run now
       </button>
       <a class="button" [routerLink]="['/watches', id(), 'edit']">
-        <svg lucidePencil aria-hidden="true"></svg>
+        <svg lucidePencil aria-hidden="true" />
         Edit
       </a>
       <button #moreActions type="button" class="button button-icon" [cdkMenuTriggerFor]="more">
-        <svg lucideEllipsis aria-hidden="true"></svg>
+        <svg lucideEllipsis aria-hidden="true" />
         <span class="visually-hidden">More actions</span>
       </button>
       <ng-template #more>
         <div class="menu" cdkMenu>
           <button type="button" class="menu-item" cdkMenuItem [disabled]="log.isEmpty()" (cdkMenuItemTriggered)="clearLog()">
-            <svg lucideEraser aria-hidden="true"></svg>
+            <svg lucideEraser aria-hidden="true" />
             Delete every run
           </button>
           <div class="menu-separator" role="separator"></div>
           <button type="button" class="menu-item menu-item-danger" cdkMenuItem (cdkMenuItemTriggered)="remove()">
-            <svg lucideTrash2 aria-hidden="true"></svg>
+            <svg lucideTrash2 aria-hidden="true" />
             Delete watch
           </button>
         </div>

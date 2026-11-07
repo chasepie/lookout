@@ -64,7 +64,7 @@ interface Day {
                 <app-run-outcome class="outcome" [run]="entry.run" [repeat]="entry.ditto" />
                 <span class="meta">
                   @if (entry.run.hasScreenshot) {
-                    <svg lucideImage aria-hidden="true"></svg>
+                    <svg lucideImage aria-hidden="true" />
                     <span class="visually-hidden">Has a screenshot.</span>
                   }
                   @if (entry.ran) {

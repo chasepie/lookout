@@ -24,7 +24,8 @@ everything Lookout itself says is in Barlow.
 of red), and `--buff` only for the VPN's current region.
 - A run log reads newest first, grouped by day, with a ditto mark where a run saw the same as the one above (`sameAsAbove`).
 - Report an action's outcome through `Notices` (`say` / `fail`), and ask before destroying anything through `Confirm`, never `window.confirm`.
-- Reload data on live updates with `reloadOn(resource, ...events)`. A watch's runs come through `injectRunLog`, which pages and merges them.
+- Reload data on live updates with `reloadOn(resource, ...events)`, never by calling `reload()` directly: a resource ignores `reload()`
+while it's loading, and `reloadOn` runs it again once that load ends. A watch's runs come through `injectRunLog`, which pages and merges them.
 - Check pages with AXE in light and dark mode, at desktop and phone widths, including open menus and dialogs.
 
 ## Accessibility Requirements
@@ -47,6 +48,15 @@ schema-based validation
 - Do NOT use `ngStyle`, use `style` bindings instead
 - Do NOT import `CommonModule`, import only the directives and pipes the template uses, such as `AsyncPipe` or `DatePipe`
 - When using external templates/styles, use paths relative to the component TS file.
+
+## Testing
+
+- Test a page through `RouterTestingHarness` and its HTTP through `HttpTestingController`, as `watch-detail.spec.ts` does. The only stand-in
+is `provideFakeLiveUpdates()`, for the SignalR connection; push messages through its subjects.
+- `src/app/testing/fixtures.ts` builds sample watches and runs and answers requests. `answer()` waits for the page to settle, which happens
+only once every request is answered, so use `respond()` for all but the last request out.
+- Coverage counts every file in `src/app`, and `npm run test:ci` fails below the minimums in `angular.json`'s `coverageThresholds`. Raise
+them as coverage grows.
 
 ## State Management
 

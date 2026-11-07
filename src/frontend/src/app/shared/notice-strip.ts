@@ -12,15 +12,15 @@ import { Notices } from './notices';
   template: `
     <div role="status" class="region">
       @for (notice of info(); track notice.id) {
-        <p class="notice">{{ notice.text }}</p>
+        <p class="notice" animate.enter="notice-enter" animate.leave="notice-leave">{{ notice.text }}</p>
       }
     </div>
     <div role="alert" class="region">
       @for (notice of failures(); track notice.id) {
-        <div class="notice notice-failure">
+        <div class="notice notice-failure" animate.enter="notice-enter" animate.leave="notice-leave">
           <p>{{ notice.text }}</p>
           <button type="button" class="button button-quiet button-icon" (click)="notices.dismiss(notice.id)">
-            <svg lucideX aria-hidden="true"></svg>
+            <svg lucideX aria-hidden="true" />
             <span class="visually-hidden">Dismiss</span>
           </button>
         </div>
@@ -55,8 +55,16 @@ import { Notices } from './notices';
       background: var(--paper-raised);
       box-shadow: var(--shadow);
       pointer-events: auto;
-      animation: arrive 200ms var(--ease-out);
       white-space: pre-line;
+    }
+
+    // Answers the action that raised it: slides in, and fades as it goes
+    .notice-enter {
+      animation: arrive 200ms var(--ease-out);
+    }
+
+    .notice-leave {
+      animation: depart 150ms ease-in forwards;
     }
 
     .notice-failure {
@@ -72,6 +80,12 @@ import { Notices } from './notices';
       from {
         opacity: 0;
         transform: translateY(0.5rem);
+      }
+    }
+
+    @keyframes depart {
+      to {
+        opacity: 0;
       }
     }
   `,

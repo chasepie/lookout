@@ -23,7 +23,7 @@ import { LucideFileCode } from '@lucide/angular';
         [attr.aria-describedby]="describedBy()"
         (change)="pick($event)"
       />
-      <svg lucideFileCode aria-hidden="true"></svg>
+      <svg lucideFileCode aria-hidden="true" />
       @if (file(); as chosen) {
         <code class="chosen">{{ chosen.name }}</code>
         <span class="browse">Choose another</span>

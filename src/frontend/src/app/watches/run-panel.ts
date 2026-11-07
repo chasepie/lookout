@@ -72,9 +72,11 @@ export class RunPanel {
     reloadOn(this.run, updates.runUpdated.pipe(filter(isThisRun)), updates.runsDeleted.pipe(filter(includesThisRun)), updates.reconnected);
 
     // Opening another run moves focus to it, so keyboard and screen reader users land on what they opened
-    afterRenderEffect(() => {
-      this.runId();
-      this.heading()?.nativeElement.focus({ preventScroll: false });
+    afterRenderEffect({
+      write: () => {
+        this.runId();
+        this.heading()?.nativeElement.focus();
+      },
     });
   }
 

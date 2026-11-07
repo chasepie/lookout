@@ -27,7 +27,7 @@ import { VpnApi } from './vpn-api';
         <div class="callout callout-failure" role="alert"><p>Couldn't switch: {{ error }}</p></div>
       }
       <button type="submit" class="button button-primary" [disabled]="switching() || switchForm().submitting()">
-        <svg lucideShuffle aria-hidden="true"></svg>
+        <svg lucideShuffle aria-hidden="true" />
         {{ switching() ? 'Switching…' : 'Switch now' }}
       </button>
     </form>

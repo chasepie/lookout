@@ -16,7 +16,7 @@ import { WatchesApi } from './watches-api';
       <h1>Watches</h1>
       @if (watches.hasValue() && watches.value().length > 0) {
         <a class="button button-primary" routerLink="/watches/new">
-          <svg lucidePlus aria-hidden="true"></svg>
+          <svg lucidePlus aria-hidden="true" />
           New watch
         </a>
       }
@@ -37,7 +37,7 @@ import { WatchesApi } from './watches-api';
             reports each time.
           </p>
           <a class="button button-primary" routerLink="/watches/new">
-            <svg lucidePlus aria-hidden="true"></svg>
+            <svg lucidePlus aria-hidden="true" />
             New watch
           </a>
         </section>
