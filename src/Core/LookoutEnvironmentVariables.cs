@@ -3,8 +3,8 @@ using Microsoft.Extensions.Configuration;
 namespace ChasePie.Lookout.Core;
 
 /// <summary>
-/// Names of the environment variables the services read. In development the AppHost sets them: the ones the user chooses
-/// come from <c>.env</c> and are listed in <c>example.env</c>; it works out or generates the rest. In production they come
+/// Names of the environment variables the services read. In development the AppHost sets them: the ones you choose come
+/// from <c>.env</c> and are listed in <c>example.env</c>; it works out or generates the rest. In production they come
 /// from <c>deploy/docker-compose.yaml</c> and its <c>.env</c>, and the secrets from files (see <see cref="SecretFiles"/>).
 /// The images set some of their own: the Runner's <see cref="WatchCliRoot"/>, and both <see cref="WatchScriptsDir"/> as
 /// <c>/app/scripts</c>, where the scripts are mounted, and the Backend's <see cref="DatabaseDir"/>.
@@ -171,14 +171,14 @@ public static class LookoutEnvironmentVariables
             return null;
         }
 
-        if (configuration[BrowserlessToken] is not { Length: > 0 } token)
-        {
-            return value;
-        }
-
         if (!Uri.TryCreate(value, UriKind.Absolute, out var url))
         {
             throw new InvalidOperationException($"Environment variable {BrowserlessUrl} must be an absolute URL");
+        }
+
+        if (configuration[BrowserlessToken] is not { Length: > 0 } token)
+        {
+            return value;
         }
 
         var query = url.Query.TrimStart('?');

@@ -33,7 +33,7 @@ from secret files (`SecretFiles`), the watch scripts directory (`WatchScriptsDir
 - `tests/`: MSTest projects for Backend, Runner and AppHost. The Runner's tests run real scripts, so they need Node and the built watch SDK
 (`npm run build -w src/watch-sdk`). `AppHost.Tests` publishes in-process and checks the Compose file.
 
-Environment variables are loaded from `.env`. `example.env` lists only the ones the user sets in development; leave out the ones the AppHost always sets
+Environment variables are loaded from `.env`. `example.env` lists only the ones you set in development; leave out the ones the AppHost always sets
 itself, such as service URLs and generated keys. Production's are in `deploy/.env.example`, and its secrets are files (`SecretFiles`).
 `LookoutEnvironmentVariables` names them all.
 
