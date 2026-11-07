@@ -34,8 +34,19 @@
               }
             ],
             "styles": [
+              "@fontsource/barlow/400.css",
+              "@fontsource/barlow/500.css",
+              "@fontsource/barlow/600.css",
+              "@fontsource/barlow-semi-condensed/500.css",
+              "@fontsource/barlow-semi-condensed/600.css",
+              "@fontsource-variable/source-serif-4/opsz-italic.css",
               "src/styles.scss"
-            ]
+            ],
+            "stylePreprocessorOptions": {
+              "includePaths": [
+                "src/styles"
+              ]
+            }
           },
           "configurations": {
             "production": {
@@ -81,11 +92,26 @@
           },
           "defaultConfiguration": "development",
           "options": {
-            "proxyConfig": "proxy.conf.json"
+            "proxyConfig": "proxy.conf.mjs"
           }
         },
         "test": {
-          "builder": "@angular/build:unit-test"
+          "builder": "@angular/build:unit-test",
+          "options": {
+            "coverageInclude": [
+              "src/app/**/*.ts"
+            ],
+            "coverageExclude": [
+              "**/*.spec.ts",
+              "src/app/testing/**"
+            ],
+            "coverageThresholds": {
+              "statements": 85,
+              "branches": 80,
+              "functions": 75,
+              "lines": 85
+            }
+          }
         }
       }
     }

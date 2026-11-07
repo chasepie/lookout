@@ -54,30 +54,14 @@ public partial class WatchScheduler(
 
         var scheduledWatches = await dbContext.Watches
             .Where(w => w.ScheduleEnabled && w.ScriptFileId != null)
-            .Select(w => new
-            {
-                Watch = w,
-                LastRunTime = w.WatchRuns
-                    .OrderByDescending(wr => wr.CreatedTime)
-                    .Select(wr => (DateTime?)wr.CreatedTime)
-                    .FirstOrDefault(),
-                HasQueuedRun = w.WatchRuns.Any(wr => wr.Status == WatchRunStatus.Created),
-            })
+            .WithScheduleState()
             .ToListAsync(cancellationToken);
 
         var now = DateTime.UtcNow;
         var createdRuns = new List<WatchRun>();
         foreach (var scheduled in scheduledWatches)
         {
-            if (scheduled.HasQueuedRun)
-            {
-                continue;
-            }
-
-            var dueTime = scheduled.LastRunTime is { } lastRunTime
-                ? scheduled.Watch.GetNextRunTime(lastRunTime, TimeZoneInfo.Local)
-                : now;
-            if (dueTime <= now)
+            if (scheduled.DueTime(now) <= now)
             {
                 var watchRun = new WatchRun(scheduled.Watch) { CreatedTime = now };
                 dbContext.WatchRuns.Add(watchRun);

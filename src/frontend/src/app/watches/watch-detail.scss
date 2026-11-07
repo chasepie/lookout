@@ -1,0 +1,122 @@
+@use 'breakpoints' as bp;
+
+:host {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  justify-self: start;
+  margin-left: calc(-1 * var(--space-1));
+  font-weight: 500;
+  text-decoration: none;
+
+  svg {
+    width: 1.125rem;
+    height: 1.125rem;
+  }
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-5);
+  padding-bottom: var(--space-5);
+  border-bottom: 1px solid var(--rule);
+}
+
+.title {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-6);
+
+  dt {
+    color: var(--ink-muted);
+    font-size: var(--step--1);
+  }
+
+  dd {
+    font-weight: 500;
+  }
+}
+
+h1:focus {
+  outline: none;
+}
+
+.gone {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.body {
+  display: grid;
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.body:not(.body-run-open) {
+  grid-template-columns: minmax(0, 52rem);
+
+  .panel {
+    display: none;
+  }
+}
+
+// With a run open, it sits beside the log on wide screens and takes its place on narrow ones
+@media (min-width: 60rem) {
+  .body-run-open {
+    grid-template-columns: minmax(0, 1fr) minmax(22rem, 34rem);
+  }
+
+  .panel {
+    position: sticky;
+    top: var(--space-5);
+    max-height: calc(100vh - 2 * var(--space-5));
+    overflow-y: auto;
+  }
+}
+
+@media (max-width: 59.99rem) {
+  .body-run-open .log {
+    display: none;
+  }
+}
+
+// On a phone the watch's actions stay within reach at the bottom of the screen while the log scrolls
+@include bp.phone {
+  :host {
+    padding-bottom: 4.5rem;
+  }
+
+  .head .actions {
+    position: fixed;
+    inset: auto 0 0;
+    z-index: 800;
+    flex-wrap: nowrap;
+    padding: var(--space-3) var(--gutter) calc(var(--space-3) + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--rule);
+    background: var(--paper);
+  }
+
+  .head .actions .button-primary {
+    flex: 1;
+  }
+}
+
+@include bp.touch {
+  .back {
+    min-height: 2.75rem;
+  }
+}

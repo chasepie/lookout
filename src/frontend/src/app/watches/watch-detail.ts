@@ -1,219 +1,173 @@
-import { DatePipe } from '@angular/common';
-import { Component, inject, input, signal } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { Router, RouterLink } from '@angular/router';
-import { filter, merge } from 'rxjs';
-import { LiveUpdates } from './live-updates';
-import { WatchRunStatus, WatchScheduleKind } from './watch.model';
+import { CdkMenu, CdkMenuItem, CdkMenuTrigger } from '@angular/cdk/menu';
+import { HttpErrorResponse } from '@angular/common/http';
+import { Component, ElementRef, Injector, afterNextRender, computed, effect, inject, input, signal, viewChild } from '@angular/core';
+import { Title } from '@angular/platform-browser';
+import { Router, RouterLink, RouterOutlet } from '@angular/router';
+import { LucideChevronLeft, LucideEllipsis, LucideEraser, LucidePencil, LucidePlay, LucideTrash2 } from '@lucide/angular';
+import { filter } from 'rxjs';
+import { LiveUpdates } from '../live/live-updates';
+import { reloadOn } from '../live/reload-on';
+import { Confirm } from '../shared/confirm';
 import { describeError } from '../shared/describe-error';
+import { lastValue } from '../shared/last-value';
+import { Notices } from '../shared/notices';
+import { RelativeTime } from '../shared/relative-time';
+import { injectRunLog } from './run-log';
+import { RunPanel } from './run-panel';
+import { describeSchedule } from './schedule';
+import { WatchLog } from './watch-log';
 import { WatchesApi } from './watches-api';
 
+/** A watch: its settings and actions, its log of runs, and the run that's open beside the log. */
 @Component({
   selector: 'app-watch-detail',
-  imports: [RouterLink, DatePipe],
-  template: `
-    <p><a routerLink="/">All watches</a></p>
-
-    @if (watch.isLoading() && !watch.hasValue()) {
-      <p>Loading…</p>
-    } @else if (watch.error(); as error) {
-      <pre role="alert">{{ describeError(error) }}</pre>
-    } @else if (watch.hasValue()) {
-      <h2>{{ watch.value().name }}</h2>
-      <dl>
-        <dt>ID</dt>
-        <dd>{{ watch.value().id }}</dd>
-        <dt>Schedule</dt>
-        <dd>
-          @if (watch.value().scheduleEnabled && watch.value().scheduleKind !== null) {
-            {{ kinds[watch.value().scheduleKind!] }} ({{ watch.value().scheduleInterval }})
-          } @else {
-            Off
-          }
-        </dd>
-        <dt>VPN</dt>
-        <dd>{{ watch.value().useVpn ? 'On' : 'Off' }}</dd>
-      </dl>
-
-      <p>
-        <a [routerLink]="['/watches', id(), 'edit']">Edit</a>
-        <button type="button" (click)="run()">Run now</button>
-        <button type="button" (click)="remove()">Delete</button>
-      </p>
-
-      <h3>Script</h3>
-      <form (submit)="upload($event)">
-        <label for="script">Script file</label>
-        <input id="script" type="file" (change)="pickFile($event)" />
-        <button type="submit" [disabled]="!file()">Upload</button>
-      </form>
-    }
-
-    @if (message(); as message) {
-      <pre role="status">{{ message }}</pre>
-    }
-
-    <h3>Runs</h3>
-    <p>
-      <a [routerLink]="['/watches', id(), 'runs', 'latest']">Latest run</a>
-      @if (runs.hasValue() && runs.value().length > 0) {
-        <button type="button" (click)="deleteAllRuns()">Delete all runs</button>
-      }
-    </p>
-    @if (runs.error(); as error) {
-      <pre role="alert">{{ describeError(error) }}</pre>
-    } @else if (runs.hasValue()) {
-      @if (runs.value().length === 0) {
-        <p>No runs yet.</p>
-      } @else {
-        <table>
-          <thead>
-            <tr>
-              <th scope="col">Run</th>
-              <th scope="col">Status</th>
-              <th scope="col">Content</th>
-              <th scope="col">Created</th>
-              <th scope="col">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (run of runs.value(); track run.id) {
-              <tr>
-                <td><a [routerLink]="['/watches', id(), 'runs', run.id]">#{{ run.id }}</a></td>
-                <td>{{ statuses[run.status] }}</td>
-                @if (run.content; as content) {
-                  <td class="content" [title]="content">{{ content }}</td>
-                } @else if (run.error; as error) {
-                  <td class="content error" [title]="error">Error: {{ error }}</td>
-                } @else {
-                  <td>-</td>
-                }
-                <td>{{ run.createdTime | date: 'medium' }}</td>
-                <td>
-                  @if (run.status !== statuses.Running) {
-                    <button type="button" [attr.aria-label]="'Delete run #' + run.id" (click)="deleteRun(run.id)">
-                      Delete
-                    </button>
-                  }
-                </td>
-              </tr>
-            }
-          </tbody>
-        </table>
-      }
-    }
-  `,
-  styles: `
-    /* Long output is cut to one line; the run's page and the tooltip show all of it */
-    .content {
-      max-width: 40ch;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .error {
-      color: #b00020;
-    }
-  `,
+  imports: [
+    RouterLink,
+    RouterOutlet,
+    WatchLog,
+    RelativeTime,
+    CdkMenu,
+    CdkMenuItem,
+    CdkMenuTrigger,
+    LucideChevronLeft,
+    LucideEllipsis,
+    LucideEraser,
+    LucidePencil,
+    LucidePlay,
+    LucideTrash2,
+  ],
+  templateUrl: './watch-detail.html',
+  styleUrl: './watch-detail.scss',
 })
 export class WatchDetail {
-  private readonly api = inject(WatchesApi);
-  private readonly router = inject(Router);
-
   readonly id = input.required<string>();
 
-  protected readonly watch = this.api.watchResource(this.id);
-  protected readonly runs = this.api.runsResource(this.id);
-  protected readonly file = signal<File | null>(null);
-  protected readonly message = signal<string | null>(null);
+  private readonly api = inject(WatchesApi);
+  private readonly router = inject(Router);
+  private readonly confirm = inject(Confirm);
+  private readonly notices = inject(Notices);
 
-  protected readonly kinds = WatchScheduleKind;
-  protected readonly statuses = WatchRunStatus;
+  protected readonly watch = this.api.watchResource(this.id);
+  /** The watch as last loaded, still shown if a refresh fails. */
+  protected readonly shown = lastValue(this.watch);
+  protected readonly log = injectRunLog(this.id);
+  private readonly updates = inject(LiveUpdates);
+
+  protected readonly missing = computed(() => {
+    const error = this.watch.error();
+    return error instanceof HttpErrorResponse && error.status === 404;
+  });
+  protected readonly schedule = computed(() => {
+    const watch = this.shown();
+    return watch ? describeSchedule(watch) : '';
+  });
+
+  /** The run panel, while a run is open. */
+  private readonly panel = signal<RunPanel | null>(null);
+  protected readonly runOpen = computed(() => this.panel() !== null);
+  protected readonly selectedRunId = computed(() => this.panel()?.shownRunId() ?? null);
+
+  protected readonly starting = signal(false);
   protected readonly describeError = describeError;
 
-  constructor() {
-    const updates = inject(LiveUpdates);
-    const isThisWatch = (watchId: number) => watchId === Number(this.id());
+  /** The menu's button, which a dialog opened from the menu returns focus to. */
+  private readonly moreActions = viewChild<ElementRef<HTMLElement>>('moreActions');
+  private readonly heading = viewChild<ElementRef<HTMLElement>>('heading');
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly injector = inject(Injector);
 
-    updates.watchChanged
-      .pipe(filter(isThisWatch), takeUntilDestroyed())
-      .subscribe(() => this.watch.reload());
-    merge(updates.runUpdated, updates.runsDeleted)
-      .pipe(filter((update) => isThisWatch(update.watchId)), takeUntilDestroyed())
-      .subscribe(() => this.runs.reload());
-    updates.reconnected.pipe(takeUntilDestroyed()).subscribe(() => {
-      this.watch.reload();
-      this.runs.reload();
+  constructor() {
+    const updates = this.updates;
+    const isThisWatch = (watchId: number) => watchId === Number(this.id());
+    // A new run moves the next scheduled run, so the header reloads too
+    reloadOn(
+      this.watch,
+      updates.watchChanged.pipe(filter(isThisWatch)),
+      updates.runUpdated.pipe(filter((update) => isThisWatch(update.watchId))),
+      updates.reconnected,
+    );
+
+    // The page titles itself: the router would put its generic title back each time a run opens or closes
+    const title = inject(Title);
+    effect(() => {
+      const watch = this.shown();
+      title.setTitle(watch ? `${watch.name} – Lookout` : 'Watch – Lookout');
     });
   }
 
-  protected async run() {
+  protected panelOpened(component: unknown) {
+    this.panel.set(component instanceof RunPanel ? component : null);
+  }
+
+  /** Gives focus back to the run's line in the log, or to the watch's heading if the run is gone, such as deleted. */
+  protected panelClosed() {
+    const closedRunId = this.selectedRunId();
+    this.panel.set(null);
+    afterNextRender(
+      () => {
+        const line = this.host.nativeElement.querySelector<HTMLElement>(`a.entry[href$="/runs/${closedRunId}"]`);
+        (line ?? this.heading()?.nativeElement)?.focus();
+      },
+      { injector: this.injector },
+    );
+  }
+
+  protected async runNow() {
+    this.starting.set(true);
     try {
       const run = await this.api.run(this.id());
-      this.message.set(`Created run #${run.id}.`);
-      this.runs.reload();
+      this.updates.runCreatedHere(run);
+      this.notices.say(`Started run #${run.id}.`);
     } catch (e) {
-      this.message.set(describeError(e));
+      this.notices.fail(`Couldn't start a run: ${describeError(e)}`);
+    } finally {
+      this.starting.set(false);
     }
   }
 
   protected async remove() {
-    if (!confirm('Delete this watch?')) {
+    const name = this.shown()?.name ?? 'this watch';
+    const sure = await this.confirm.ask({
+      title: `Delete ${name}?`,
+      body: 'Its script and every run are deleted for good.',
+      confirmLabel: 'Delete watch',
+      destructive: true,
+      returnFocusTo: this.moreActions()?.nativeElement,
+    });
+    if (!sure) {
       return;
     }
     try {
       await this.api.delete(this.id());
+      this.notices.say(`Deleted ${name}.`);
       await this.router.navigate(['/']);
     } catch (e) {
-      this.message.set(describeError(e));
+      this.notices.fail(`Couldn't delete ${name}: ${describeError(e)}`);
     }
   }
 
-  protected async deleteRun(runId: number) {
-    if (!confirm(`Delete run #${runId}?`)) {
-      return;
-    }
-    try {
-      await this.api.deleteRun(this.id(), runId);
-      this.message.set(`Deleted run #${runId}.`);
-      this.runs.reload();
-    } catch (e) {
-      this.message.set(describeError(e));
-    }
-  }
-
-  protected async deleteAllRuns() {
-    if (!confirm('Delete all runs of this watch? Runs in progress are kept.')) {
+  protected async clearLog() {
+    const sure = await this.confirm.ask({
+      title: 'Delete every run?',
+      body: 'The whole log is deleted for good. A run in progress is kept.',
+      confirmLabel: 'Delete runs',
+      destructive: true,
+      returnFocusTo: this.moreActions()?.nativeElement,
+    });
+    if (!sure) {
       return;
     }
     try {
       const result = await this.api.deleteRuns(this.id());
+      // Which runs went isn't said, so the log fetches its newest page again
+      this.updates.runsDeletedHere(Number(this.id()), []);
       const kept = result.keptRunning > 0 ? ` Kept ${result.keptRunning} in progress.` : '';
-      this.message.set(`Deleted ${result.deleted} runs.${kept}`);
-      this.runs.reload();
+      this.notices.say(`Deleted ${result.deleted} ${result.deleted === 1 ? 'run' : 'runs'}.${kept}`);
+      if (this.runOpen()) {
+        await this.router.navigate(['/watches', this.id()]);
+      }
     } catch (e) {
-      this.message.set(describeError(e));
-    }
-  }
-
-  protected pickFile(event: Event) {
-    const input = event.target as HTMLInputElement;
-    this.file.set(input.files?.[0] ?? null);
-  }
-
-  protected async upload(event: Event) {
-    event.preventDefault();
-    const file = this.file();
-    if (!file) {
-      return;
-    }
-    try {
-      await this.api.uploadScript(this.id(), file);
-      this.message.set(`Uploaded ${file.name}.`);
-      this.watch.reload();
-    } catch (e) {
-      this.message.set(describeError(e));
+      this.notices.fail(`Couldn't delete the runs: ${describeError(e)}`);
     }
   }
 }

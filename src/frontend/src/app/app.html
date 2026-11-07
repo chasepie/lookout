@@ -1,19 +1,36 @@
-<header>
-  <h1><a routerLink="/">Lookout</a></h1>
-  @if (session.signedIn()) {
-    <nav aria-label="Main">
-      <a routerLink="/" routerLinkActive="active" ariaCurrentWhenActive="page" [routerLinkActiveOptions]="{ exact: true }">Watches</a>
-      <a routerLink="/vpn" routerLinkActive="active" ariaCurrentWhenActive="page">VPN</a>
-    </nav>
-    <p>
-      Signed in as {{ session.username() }}
-      <button type="button" (click)="signOut()">Sign out</button>
-    </p>
-    @if (signOutError(); as error) {
-      <pre role="alert">{{ error }}</pre>
+<a class="skip" href="#main" (click)="skipToContent($event)">Skip to content</a>
+
+<header class="bar">
+  <div class="bar-inner">
+    <a class="wordmark" routerLink="/">
+      <svg class="mark" viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="9" r="3.5" />
+        <path d="M2 15.5h20" />
+        <path d="M6 19h12" />
+      </svg>
+      <span class="wordmark-name">Lookout</span>
+    </a>
+
+    @if (session.signedIn()) {
+      <nav class="nav" aria-label="Main">
+        <a routerLink="/" [attr.aria-current]="section() === 'watches' ? 'page' : null">Watches</a>
+        <a routerLink="/vpn" [attr.aria-current]="section() === 'vpn' ? 'page' : null">VPN</a>
+      </nav>
+
+      <div class="owner">
+        <app-live-indicator />
+        <span class="who">Signed in as {{ session.username() }}</span>
+        <button type="button" class="button button-quiet sign-out" (click)="signOut()">
+          <svg lucideLogOut aria-hidden="true" />
+          <span class="sign-out-label">Sign out</span>
+        </button>
+      </div>
     }
-  }
+  </div>
 </header>
-<main>
+
+<main id="main" #main tabindex="-1">
   <router-outlet />
 </main>
+
+<app-notice-strip />

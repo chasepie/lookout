@@ -1,0 +1,112 @@
+@use 'breakpoints' as bp;
+
+:host {
+  display: grid;
+  align-content: start;
+  gap: var(--space-5);
+  padding: var(--space-5);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sheet);
+  background: var(--paper-raised);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin: calc(-1 * var(--space-2)) calc(-1 * var(--space-2)) 0 0;
+
+  // Focus lands here when a run opens, to start reading from; it isn't something to act on
+  h2:focus {
+    outline: none;
+  }
+}
+
+.created {
+  margin-top: calc(-1 * var(--space-4));
+  color: var(--ink-muted);
+  font-size: var(--step--1);
+}
+
+// What the run saw is the largest thing in the panel
+.seen {
+  padding: var(--space-2) 0 var(--space-2) var(--space-4);
+  border-left: 3px solid var(--deep);
+  font-size: var(--step-4);
+  line-height: 1.15;
+  white-space: pre-line;
+}
+
+.seen-failed {
+  border-left-color: var(--magenta);
+  font-size: var(--step-2);
+}
+
+.timings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-6);
+
+  dt {
+    color: var(--ink-muted);
+    font-size: var(--step--1);
+  }
+
+  dd {
+    font-size: var(--step-1);
+    font-weight: 500;
+  }
+}
+
+.section {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.screenshot {
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  background: var(--paper-sunk);
+
+  img {
+    display: block;
+    width: 100%;
+  }
+}
+
+.screenshot-actual {
+  max-height: 70vh;
+  overflow: auto;
+
+  img {
+    width: auto;
+    max-width: none;
+  }
+}
+
+.foot {
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--rule);
+}
+
+// On a phone the run takes the whole width, as it takes the log's place
+@include bp.phone {
+  :host {
+    margin-inline: calc(-1 * var(--gutter));
+    padding-inline: var(--gutter);
+    border-inline: 0;
+    border-radius: 0;
+  }
+
+  .seen {
+    font-size: var(--step-3);
+  }
+}

@@ -23,14 +23,15 @@ export interface CreateWatchDto {
   useVpn: boolean;
 }
 
+/** A watch as creating or editing one returns it. Mirrors `Watch` in src/Core/Watch.cs. */
 export interface Watch extends CreateWatchDto {
   id: number;
   scriptFileName: string | null;
   scriptFileId: string | null;
-  watchRuns: WatchRun[];
 }
 
-export interface WatchRun {
+/** A run without its screenshot. Mirrors `WatchRunSummary` in src/Backend/Controllers/WatchSummaries.cs. */
+export interface WatchRunSummary {
   id: number;
   watchId: number;
   createdTime: string;
@@ -39,8 +40,23 @@ export interface WatchRun {
   status: WatchRunStatus;
   content: string | null;
   error: string | null;
-  /** Base64-encoded image bytes. */
+  hasScreenshot: boolean;
+}
+
+/** A single run, with its screenshot. Mirrors `WatchRun` in src/Core/WatchRun.cs. */
+export interface WatchRun extends Omit<WatchRunSummary, 'hasScreenshot'> {
+  /** Base64-encoded PNG bytes. */
   screenshot: string | null;
+}
+
+/** A watch with its latest runs. Mirrors `WatchSummary` in src/Backend/Controllers/WatchSummaries.cs. */
+export interface WatchSummary extends CreateWatchDto {
+  id: number;
+  scriptFileName: string | null;
+  /** At most 24, newest first. */
+  recentRuns: WatchRunSummary[];
+  /** When the schedule next creates a run; `null` if it isn't scheduled. In the past means any moment now. */
+  nextRunTime: string | null;
 }
 
 /** The result of deleting all of a watch's runs. Mirrors `DeleteRunsResult` in src/Backend/Controllers/WatchRunsController.cs. */

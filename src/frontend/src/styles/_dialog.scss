@@ -1,0 +1,80 @@
+@use 'breakpoints' as bp;
+
+// CDK dialogs and menus render in the overlay container, outside any component, so their styles live here.
+
+.dialog-backdrop {
+  background: var(--scrim);
+}
+
+.dialog-panel {
+  width: min(28rem, calc(100vw - 2rem));
+}
+
+.menu {
+  display: grid;
+  min-width: 13rem;
+  padding: var(--space-1);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sheet);
+  background: var(--paper-raised);
+  box-shadow: var(--shadow);
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 2.75rem;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+
+  @include bp.hover {
+    &:hover {
+      background: var(--paper-sunk);
+    }
+  }
+
+  &:active,
+  &:focus-visible,
+  &.cdk-menu-item-active {
+    background: var(--paper-sunk);
+    outline: none;
+  }
+
+  &:focus-visible {
+    box-shadow: inset 0 0 0 2px var(--deep);
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
+
+  svg {
+    width: 1.125rem;
+    height: 1.125rem;
+    color: var(--ink-muted);
+  }
+}
+
+.menu-item-danger,
+.menu-item-danger svg {
+  color: var(--magenta);
+}
+
+.menu-separator {
+  height: 1px;
+  margin: var(--space-1) 0;
+  background: var(--rule);
+}
+
+// A confirmation on a phone spans the screen; the dialog styles itself as a sheet
+.dialog-sheet {
+  width: 100vw;
+}

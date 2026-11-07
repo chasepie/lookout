@@ -1,0 +1,142 @@
+@use 'a11y';
+@use 'breakpoints' as bp;
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+// On a phone, bars pinned to the bottom of the screen hold actions; scrolling to something, or focusing it, stops
+// short of them, so they never cover what's in focus
+// Something in progress, such as a run or a VPN switch, pulses gently
+@keyframes pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@include bp.phone {
+  html {
+    scroll-padding-bottom: 5.5rem;
+  }
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-interface);
+  font-size: var(--step-0);
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin: 0;
+  font-family: var(--font-condensed);
+  font-weight: 600;
+  line-height: 1.15;
+  text-wrap: balance;
+}
+
+h1 {
+  font-size: var(--step-4);
+  letter-spacing: -0.01em;
+}
+
+h2 {
+  font-size: var(--step-3);
+}
+
+h3 {
+  font-size: var(--step-1);
+}
+
+p {
+  margin: 0;
+  max-width: var(--measure);
+}
+
+a {
+  color: var(--deep);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+}
+
+@include bp.hover {
+  a:hover {
+    color: var(--deep-strong);
+    text-decoration-thickness: 2px;
+  }
+}
+
+code {
+  font-family: var(--font-code);
+  font-size: 0.875em;
+}
+
+:focus-visible {
+  outline: 2px solid var(--deep);
+  outline-offset: 2px;
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+ol,
+ul {
+  margin: 0;
+  padding: 0;
+}
+
+dl,
+dd {
+  margin: 0;
+}
+
+// Hidden on screen, still read out
+.visually-hidden {
+  @include a11y.visually-hidden;
+}
+
+// What a watched page said: the one place the serif appears
+.observation {
+  font-family: var(--font-observation);
+  font-style: italic;
+  font-weight: 420;
+  font-optical-sizing: auto;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+// Lookout's own words about a failure
+.failure {
+  color: var(--magenta);
+}
+
+.muted {
+  color: var(--ink-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

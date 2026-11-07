@@ -13,8 +13,10 @@ ng serve
 Once the server is running, open your browser and navigate to `http://localhost:4200/`. The application will automatically reload whenever you modify any of the
 source files.
 
-The dev server forwards `/api` to the Backend (see `proxy.conf.json`), so the app and the API share one origin. Signing in depends on that: the session cookie
-is `Secure` and `SameSite=Strict`, and the Backend rejects requests that change data unless they come from the same origin. Chrome and Firefox treat
+The dev server forwards `/api` to the Backend (see `proxy.conf.mjs`), so the app and the API share one origin. Signing in depends on that: the session cookie
+is `Secure` and `SameSite=Strict`, and the Backend rejects requests that change data unless they come from the same origin. The Backend is on another
+origin behind the proxy, so the proxy presents requests from the app's own page as coming from the Backend's: without that, the live updates hub's WebSocket,
+which browsers open without `Sec-Fetch-Site`, would be refused. Other origins pass through unchanged, and the Backend still refuses them. Chrome and Firefox treat
 `http://localhost` as secure. Safari doesn't accept `Secure` cookies over plain HTTP, so develop in Safari with `ng serve --ssl`.
 
 ## Code scaffolding

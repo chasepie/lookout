@@ -13,91 +13,115 @@ const sameSettings = (a: VpnSettingsDto, b: VpnSettingsDto) => JSON.stringify(a)
 @Component({
   selector: 'app-vpn-rotation-form',
   imports: [FormField],
-  styles: `
-    .region-list {
-      list-style: none;
-      padding: 0;
-      max-height: 20rem;
-      overflow-y: auto;
-      columns: 14rem auto;
-      border: 1px solid #999;
-      padding: 0.5rem;
-    }
-  `,
+  styleUrl: './vpn-rotation-form.scss',
   template: `
-    <h3>Rotation</h3>
-    <form (submit)="save($event)">
-      <p>
-        <label>
-          <input type="checkbox" [formField]="rotationForm.rotationEnabled" />
-          Rotate regions automatically
-        </label>
-      </p>
-      <p>
-        <label for="interval">Every (minutes)</label><br />
-        <input id="interval" type="number" [formField]="rotationForm.rotationIntervalMinutes" />
-        @if (rotationForm.rotationIntervalMinutes().invalid()) {
-          @for (error of rotationForm.rotationIntervalMinutes().errors(); track error) {
-            <br /><span role="alert">{{ error.message }}</span>
-          }
-        }
-      </p>
-      <p>
-        <label for="jitter">Give or take (minutes)</label><br />
-        <input
-          id="jitter"
-          type="number"
-          aria-describedby="jitter-hint"
-          [formField]="rotationForm.rotationJitterMinutes"
-        />
-        <br /><span id="jitter-hint">Each rotation lands at a random point this far either side of the interval.</span>
-        @if (rotationForm.rotationJitterMinutes().invalid()) {
-          @for (error of rotationForm.rotationJitterMinutes().errors(); track error) {
-            <br /><span role="alert">{{ error.message }}</span>
-          }
-        }
-      </p>
+    <h2 id="rotation-title">Rotation</h2>
+    <form class="form" aria-labelledby="rotation-title" (submit)="save($event)">
+      <label class="check">
+        <input type="checkbox" [formField]="rotationForm.rotationEnabled" />
+        <span>Switch to a random region on a timer</span>
+      </label>
 
-      <fieldset>
-        <legend>Excluded regions ({{ excludedCount() }} of {{ regions().length }})</legend>
-        <p id="exclusion-hint">Rotation never picks these. You can still switch to them manually.</p>
-        <p>
-          <label for="region-filter">Filter regions</label><br />
-          <input id="region-filter" type="search" [value]="filter()" (input)="setFilter($event)" />
-          <button type="button" [disabled]="visibleRegions().length === 0" (click)="setExcluded(true)">
-            Exclude shown
+      <div class="timing">
+        <div class="field">
+          <label class="field-label" for="interval">Every</label>
+          <span class="with-unit">
+            <input
+              id="interval"
+              class="input input-narrow"
+              type="number"
+              aria-describedby="interval-error"
+              [attr.aria-invalid]="rotationForm.rotationIntervalMinutes().invalid()"
+              [formField]="rotationForm.rotationIntervalMinutes"
+            />
+            minutes
+          </span>
+          <span id="interval-error" class="field-error">
+            @for (error of rotationForm.rotationIntervalMinutes().errors(); track error) {
+              {{ error.message }}
+            }
+          </span>
+        </div>
+        <div class="field">
+          <label class="field-label" for="jitter">Give or take</label>
+          <span class="with-unit">
+            <input
+              id="jitter"
+              class="input input-narrow"
+              type="number"
+              aria-describedby="jitter-hint jitter-error"
+              [attr.aria-invalid]="rotationForm.rotationJitterMinutes().invalid()"
+              [formField]="rotationForm.rotationJitterMinutes"
+            />
+            minutes
+          </span>
+          <span id="jitter-hint" class="field-hint">Each switch lands at a random point this far either side.</span>
+          <span id="jitter-error" class="field-error">
+            @for (error of rotationForm.rotationJitterMinutes().errors(); track error) {
+              {{ error.message }}
+            }
+          </span>
+        </div>
+      </div>
+
+      <fieldset class="exclusions" aria-describedby="exclusion-hint">
+        <legend>Excluded regions <span class="count">{{ excludedCount() }} of {{ regions().length }}</span></legend>
+        <p id="exclusion-hint" class="field-hint">Rotation never picks these. You can still switch to them yourself.</p>
+        <div class="filter-row">
+          <label class="visually-hidden" for="region-filter">Filter regions</label>
+          <input
+            id="region-filter"
+            class="input filter"
+            type="search"
+            placeholder="Filter regions"
+            [value]="filter()"
+            (input)="setFilter($event)"
+          />
+          <button type="button" class="button" [disabled]="visibleRegions().length === 0" (click)="setExcluded(true)">
+            Exclude {{ filter() ? 'these' : 'all' }}
           </button>
-          <button type="button" [disabled]="visibleRegions().length === 0" (click)="setExcluded(false)">
-            Include shown
+          <button type="button" class="button" [disabled]="visibleRegions().length === 0" (click)="setExcluded(false)">
+            Include {{ filter() ? 'these' : 'all' }}
           </button>
-        </p>
+        </div>
         @if (visibleRegions().length === 0) {
-          <p>No regions match.</p>
+          <p class="muted">No regions match "{{ filter() }}".</p>
         } @else {
-          <ul class="region-list" aria-describedby="exclusion-hint">
+          <ul class="region-list">
             @for (region of visibleRegions(); track region) {
               <li>
-                <label>
+                <label class="check" [class.excluded]="excluded().has(region)">
                   <input type="checkbox" [checked]="excluded().has(region)" (change)="toggle(region, $event)" />
-                  {{ region }}
+                  <span>{{ region }}</span>
                 </label>
               </li>
             }
           </ul>
         }
         @if (tooFewIncluded()) {
-          <p role="alert">Leave at least {{ minimumIncludedRegions }} regions included, or rotation has nowhere to go.</p>
+          <div class="callout callout-failure" role="alert">
+            <p>Leave at least {{ minimumIncludedRegions }} regions included, or rotation has nowhere to go.</p>
+          </div>
         }
       </fieldset>
 
-      @if (message(); as message) {
-        <p role="status">{{ message }}</p>
-      }
+      <div role="status">
+        @if (message(); as message) {
+          <p class="muted">{{ message }}</p>
+        }
+      </div>
       @if (error(); as error) {
-        <pre role="alert">{{ error }}</pre>
+        <div class="callout callout-failure" role="alert"><p>Couldn't save: {{ error }}</p></div>
       }
-      <button type="submit" [disabled]="rotationForm().submitting() || !dirty()">Save</button>
-      <button type="button" [disabled]="!dirty()" (click)="reset()">Discard changes</button>
+      <div class="actions save" [class.save-pending]="dirty()">
+        <button type="submit" class="button button-primary" [disabled]="rotationForm().submitting() || !dirty()">
+          Save rotation
+        </button>
+        <button type="button" class="button button-quiet" [disabled]="!dirty()" (click)="reset()">Discard changes</button>
+        @if (dirty()) {
+          <span class="muted unsaved">Unsaved changes</span>
+        }
+      </div>
     </form>
   `,
 })
@@ -197,7 +221,7 @@ export class VpnRotationForm {
       this.error.set(null);
       try {
         await this.api.updateSettings(this.model());
-        this.message.set('Saved.');
+        this.message.set('Saved the rotation.');
       } catch (e) {
         this.error.set(describeError(e));
       }

@@ -1,0 +1,62 @@
+:host {
+  display: grid;
+  gap: var(--space-6);
+  max-width: 40rem;
+}
+
+.form {
+  display: grid;
+  gap: var(--space-6);
+}
+
+.group {
+  display: grid;
+  gap: var(--space-3);
+
+  legend {
+    margin-bottom: var(--space-3);
+    font-family: var(--font-condensed);
+    font-size: var(--step-1);
+    font-weight: 600;
+  }
+}
+
+.schedule {
+  display: grid;
+  gap: var(--space-3);
+  padding-left: var(--space-5);
+  border-left: 2px solid var(--rule);
+}
+
+.indent {
+  display: grid;
+  gap: var(--space-1);
+  padding-left: calc(1.125rem + var(--space-2));
+}
+
+.every {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.unit {
+  width: auto;
+}
+
+.cron {
+  max-width: 16rem;
+  font-family: var(--font-code);
+}
+
+.hint-block {
+  display: block;
+}
+
+.preformatted-lines {
+  white-space: pre-line;
+}
+
+.field-error:empty {
+  display: none;
+}

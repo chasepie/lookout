@@ -1,0 +1,118 @@
+@use 'breakpoints' as bp;
+
+:host {
+  // The time column's width, shared by entries and folds so they line up
+  --time-column: 4.5rem;
+
+  display: grid;
+  gap: var(--space-6);
+}
+
+.day {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.day-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding-bottom: var(--space-2);
+  border-bottom: 2px solid var(--ink);
+  font-size: var(--step-1);
+}
+
+.day-count {
+  color: var(--ink-muted);
+  font-family: var(--font-interface);
+  font-size: var(--step--1);
+  font-weight: 400;
+}
+
+.entries {
+  list-style: none;
+}
+
+.entries > li + li {
+  border-top: 1px solid var(--rule);
+}
+
+.older {
+  justify-self: start;
+}
+
+// A streak of repeats, folded: the ditto mark where it would stand, and how far back the streak goes
+.fold {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 2.75rem;
+  padding: var(--space-2) var(--space-2) var(--space-2) calc(var(--space-2) + var(--time-column) + var(--space-4));
+  border: 0;
+  background: none;
+  color: var(--ink-muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+
+  @include bp.hover {
+    &:hover {
+      background: var(--paper-sunk);
+      color: var(--ink);
+    }
+  }
+
+  &:active {
+    background: var(--paper-sunk);
+  }
+
+  &:focus-visible {
+    outline-offset: -2px;
+  }
+
+  svg {
+    flex: none;
+    width: 1rem;
+    height: 1rem;
+    transition: rotate 150ms var(--ease-out);
+  }
+
+  &[aria-expanded='true'] svg {
+    rotate: 180deg;
+  }
+}
+
+.fold-mark {
+  padding-left: 1em;
+  font-family: var(--font-observation);
+  font-size: var(--step-1);
+  line-height: 1;
+}
+
+.fold-text {
+  flex: 1;
+  font-size: var(--step--1);
+}
+
+// An opened streak hangs from its fold, ruled down the margin
+.fold-entries {
+  border-top: 1px solid var(--rule);
+  box-shadow: inset 2px 0 0 var(--rule);
+}
+
+.fold-entries > li + li {
+  border-top: 1px solid var(--rule);
+}
+
+// On a small phone, a narrower time column
+@include bp.small-phone {
+  :host {
+    --time-column: 4.25rem;
+  }
+
+  .fold {
+    padding-left: calc(var(--space-2) + var(--time-column) + var(--space-3));
+  }
+}
