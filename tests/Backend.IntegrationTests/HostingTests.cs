@@ -67,13 +67,33 @@ public sealed class HostingTests
     }
 
     [TestMethod]
-    public async Task AMistypedTrustedProxyStopsStartup()
+    [DataRow("proxy.local")]
+    // Shorthand IPv4 that parses as something else: 172.30.0.0 and 0.0.6.193
+    [DataRow("172.30.0")]
+    [DataRow("1721")]
+    [DataRow("172.30/16")]
+    // A network with host bits set, which is likely a typo for an address
+    [DataRow("fd00::1/64")]
+    [DataRow("172.30.0.1/24")]
+    public async Task AMistypedTrustedProxyStopsStartup(string mistyped)
     {
-        await using var factory = Factory(LookoutEnvironmentVariables.TrustedProxies, "172.30.0.1, proxy.local");
+        await using var factory = Factory(LookoutEnvironmentVariables.TrustedProxies, $"172.30.0.1, {mistyped}");
 
         var error = Assert.ThrowsExactly<InvalidOperationException>(() => factory.CreateClient());
 
-        Assert.Contains("proxy.local", error.Message);
+        Assert.Contains(mistyped, error.Message);
+    }
+
+    [TestMethod]
+    [DataRow("172.30.0.1")]
+    [DataRow("172.30.0.0/24")]
+    [DataRow("fd00::1")]
+    [DataRow("fd00::/64")]
+    public async Task TrustedProxiesTakeAddressesAndNetworks(string trustedProxy)
+    {
+        await using var factory = Factory(LookoutEnvironmentVariables.TrustedProxies, trustedProxy);
+
+        Assert.IsNotNull(factory.CreateClient());
     }
 
     [TestMethod]

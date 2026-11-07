@@ -158,8 +158,9 @@ public partial class Program
     };
 
     /// <summary>
-    /// The Angular build's content-hashed bundles, such as <c>chunk-CPKy0xWZ.js</c> or <c>styles-5INURTSO.css</c>.
+    /// The Angular build's content-hashed bundles, such as <c>chunk-CPKy0xWZ.js</c>, <c>chunk-BJ1G_bZo.js</c> or
+    /// <c>styles-5INURTSO.css</c>.
     /// </summary>
-    [GeneratedRegex(@"-[A-Za-z0-9]{8}\.(js|css)$")]
+    [GeneratedRegex(@"-[A-Za-z0-9_]{8}\.(js|css)$")]
     private static partial Regex HashedBundleName();
 }

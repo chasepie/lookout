@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Sockets;
 using ChasePie.Lookout.Core;
 using Microsoft.AspNetCore.HttpOverrides;
 
@@ -39,7 +40,8 @@ public static class ReverseProxy
     }
 
     /// <summary>
-    /// Parses comma-separated IP addresses and CIDR networks. An address is a network of one.
+    /// Parses comma-separated IP addresses and CIDR networks. An address is a network of one. IPv4 must be written out in
+    /// full, and a network without host bits, so a typo can't parse as some other address.
     /// </summary>
     /// <exception cref="InvalidOperationException">An entry is neither.</exception>
     internal static IReadOnlyList<System.Net.IPNetwork> ParseTrustedProxies(string? value)
@@ -47,22 +49,33 @@ public static class ReverseProxy
         var networks = new List<System.Net.IPNetwork>();
         foreach (var entry in (value ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
-            if (System.Net.IPNetwork.TryParse(entry, out var network))
+            var slash = entry.IndexOf('/', StringComparison.Ordinal);
+            var addressText = slash < 0 ? entry : entry[..slash];
+            // IPAddress.Parse also takes shorthand IPv4, such as 172.30.0 for 172.30.0.0
+            if (!IPAddress.TryParse(addressText, out var address)
+                || (address.AddressFamily == AddressFamily.InterNetwork && address.ToString() != addressText))
             {
-                networks.Add(network);
+                throw InvalidEntry(entry);
             }
-            else if (IPAddress.TryParse(entry, out var address))
+
+            if (slash < 0)
             {
                 networks.Add(new System.Net.IPNetwork(address, address.GetAddressBytes().Length * 8));
             }
+            else if (System.Net.IPNetwork.TryParse(entry, out var network) && network.BaseAddress.Equals(address))
+            {
+                networks.Add(network);
+            }
             else
             {
-                throw new InvalidOperationException(
-                    $"{LookoutEnvironmentVariables.TrustedProxies} must list IP addresses or CIDR networks, such as "
-                    + $"172.30.0.1 or 10.0.0.0/24; '{entry}' is neither.");
+                throw InvalidEntry(entry);
             }
         }
 
         return networks;
     }
+
+    private static InvalidOperationException InvalidEntry(string entry) => new(
+        $"{LookoutEnvironmentVariables.TrustedProxies} must list IP addresses or CIDR networks, such as 172.30.0.1 or "
+        + $"10.0.0.0/24; '{entry}' is neither.");
 }

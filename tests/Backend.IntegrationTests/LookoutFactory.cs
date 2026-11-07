@@ -67,6 +67,11 @@ internal sealed class LookoutFactory : WebApplicationFactory<Program>
     /// </summary>
     public const string BundleFileName = "chunk-AB12cd34.js";
 
+    /// <summary>
+    /// Another bundle in <see cref="WebRoot"/>, whose hash has an underscore, as Angular's sometimes do.
+    /// </summary>
+    public const string UnderscoreBundleFileName = "chunk-BJ1G_bZo.js";
+
     public const string IndexHtml = "<!doctype html><title>Lookout</title>";
 
     private static string CreateWebRoot(string dataDirectory)
@@ -75,6 +80,7 @@ internal sealed class LookoutFactory : WebApplicationFactory<Program>
         Directory.CreateDirectory(webRoot);
         File.WriteAllText(Path.Join(webRoot, "index.html"), IndexHtml);
         File.WriteAllText(Path.Join(webRoot, BundleFileName), "export {};");
+        File.WriteAllText(Path.Join(webRoot, UnderscoreBundleFileName), "export {};");
         return webRoot;
     }
 
