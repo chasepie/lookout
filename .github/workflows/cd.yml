@@ -11,7 +11,8 @@ on:
 permissions:
   contents: read
 
-# One publish per branch or tag at a time, in order, so an older run can't move a tag after a newer one
+# One publish per branch or tag at a time. Runs are queued in the order CI finishes, not the order of their commits, so
+# the publish job also checks that main and latest only move forward.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.workflow_run.head_branch }}
   cancel-in-progress: false
@@ -123,6 +124,30 @@ jobs:
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: echo "short=${HEAD_SHA::7}" >> "$GITHUB_OUTPUT"
 
+      # A re-run of an older commit's CI mustn't move main or latest back: main only moves to main's current head, and
+      # latest only to the highest stable version, so never to a pre-release such as v1.3.0-rc.1
+      - name: Check which tags may move
+        id: moving
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ github.event.workflow_run.head_branch }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          main=false
+          latest=false
+          if [ "$REF" = main ] && [ "$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)" = "$HEAD_SHA" ]; then
+            main=true
+          fi
+          if [[ "$REF" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            highest=$(gh api --paginate "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/v" --jq '.[].ref | ltrimstr("refs/tags/")' \
+              | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+            if [ "$REF" = "$highest" ]; then
+              latest=true
+            fi
+          fi
+          echo "main=$main" >> "$GITHUB_OUTPUT"
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+
       # head_branch is main, or the release's tag
       - id: meta
         uses: docker/metadata-action@v6
@@ -130,10 +155,10 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ matrix.image }}
           flavor: latest=false
           tags: |
-            type=raw,value=main,enable=${{ github.event.workflow_run.head_branch == 'main' }}
+            type=raw,value=main,enable=${{ steps.moving.outputs.main == 'true' }}
             type=raw,value=sha-${{ steps.commit.outputs.short }}
             type=semver,pattern={{version}},value=${{ github.event.workflow_run.head_branch }},enable=${{ startsWith(github.event.workflow_run.head_branch, 'v') }}
-            type=raw,value=latest,enable=${{ startsWith(github.event.workflow_run.head_branch, 'v') }}
+            type=raw,value=latest,enable=${{ steps.moving.outputs.latest == 'true' }}
 
       - name: Tag both platforms' images
         working-directory: ${{ runner.temp }}/digests
