@@ -34,14 +34,14 @@ public class LookoutDbContext(DbContextOptions<LookoutDbContext> options) : DbCo
         value => DateTime.SpecifyKind(value, DateTimeKind.Utc));
 
     /// <summary>
-    /// The connection string for the database file in the <c>LOOKOUT_DATABASE_DIR</c> directory,
+    /// The connection string for the database file in the <c>LOOKOUT_BACKEND_DATABASE_DIR</c> directory,
     /// which is created if it doesn't exist yet.
     /// </summary>
-    /// <exception cref="InvalidOperationException"><c>LOOKOUT_DATABASE_DIR</c> is not set.</exception>
+    /// <exception cref="InvalidOperationException"><c>LOOKOUT_BACKEND_DATABASE_DIR</c> is not set.</exception>
     public static string GetConnectionString(IConfiguration configuration)
     {
-        var databaseDir = LookoutEnvironmentVariables.GetRequiredDirectory(
-            configuration, LookoutEnvironmentVariables.DatabaseDir);
+        var databaseDir = EnvironmentVariables.GetRequiredDirectory(
+            configuration, EnvironmentVariables.DatabaseDir);
         return new SqliteConnectionStringBuilder
         {
             DataSource = Path.Join(databaseDir, DatabaseFileName),

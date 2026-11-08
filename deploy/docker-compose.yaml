@@ -14,7 +14,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: "${LOOKOUT_BROWSERLESS_MEMORY:-2g}"
+          memory: "${BROWSERLESS_MEMORY:-2g}"
     cap_drop:
       - "ALL"
     security_opt:
@@ -23,8 +23,8 @@ services:
     image: "ghcr.io/chasepie/lookout-runner:${LOOKOUT_IMAGE_TAG:-main}"
     environment:
       TZ: "${TZ:-Etc/UTC}"
-      LOOKOUT_BROWSERLESS_URL: "http://browserless:3000"
-      LOOKOUT_BROWSERLESS_TOKEN: "${BROWSERLESS_TOKEN}"
+      LOOKOUT_RUNNER_BROWSERLESS_URL: "http://browserless:3000"
+      LOOKOUT_RUNNER_BROWSERLESS_TOKEN: "${BROWSERLESS_TOKEN}"
       LOOKOUT_VPN_PROXY_URL: "http://lookout@gluetun:8888"
       LOOKOUT_RUNNER_API_KEY: "${LOOKOUT_RUNNER_API_KEY}"
       LOOKOUT_VPN_PROXY_PASSWORD: "${GLUETUN_PROXY_PASSWORD}"
@@ -55,19 +55,19 @@ services:
     image: "ghcr.io/chasepie/lookout-backend:${LOOKOUT_IMAGE_TAG:-main}"
     environment:
       TZ: "${TZ:-Etc/UTC}"
-      AllowedHosts: "${LOOKOUT_HOST}"
-      LOOKOUT_TRUSTED_PROXIES: "${LOOKOUT_TRUSTED_PROXIES:-}"
-      LOOKOUT_OWNER_USERNAME: "${LOOKOUT_OWNER_USERNAME}"
-      LOOKOUT_RUNNER_URL: "http://runner:8080"
-      LOOKOUT_GLUETUN_URL: "http://gluetun-control:8000"
-      LOOKOUT_GLUETUN_API_KEY: "${GLUETUN_API_KEY}"
-      LOOKOUT_GLUETUN_DIR: "/app/gluetun"
+      AllowedHosts: "${LOOKOUT_BACKEND_HOST}"
+      LOOKOUT_BACKEND_TRUSTED_PROXIES: "${LOOKOUT_BACKEND_TRUSTED_PROXIES:-}"
+      LOOKOUT_BACKEND_OWNER_USERNAME: "${LOOKOUT_BACKEND_OWNER_USERNAME}"
+      LOOKOUT_BACKEND_RUNNER_URL: "http://runner:8080"
+      LOOKOUT_BACKEND_GLUETUN_URL: "http://gluetun-control:8000"
+      LOOKOUT_BACKEND_GLUETUN_API_KEY: "${GLUETUN_API_KEY}"
+      LOOKOUT_BACKEND_GLUETUN_DIR: "/app/gluetun"
       LOOKOUT_VPN_PROXY_URL: "http://lookout@gluetun-proxy:8888"
-      LOOKOUT_OWNER_PASSWORD: "${LOOKOUT_OWNER_PASSWORD}"
+      LOOKOUT_BACKEND_OWNER_PASSWORD: "${LOOKOUT_BACKEND_OWNER_PASSWORD}"
       LOOKOUT_RUNNER_API_KEY: "${LOOKOUT_RUNNER_API_KEY}"
       LOOKOUT_VPN_PROXY_PASSWORD: "${GLUETUN_PROXY_PASSWORD}"
     ports:
-      - "${LOOKOUT_BIND_ADDRESS:-127.0.0.1}:${LOOKOUT_PORT:-8080}:8080"
+      - "${LOOKOUT_BACKEND_BIND_ADDRESS:-127.0.0.1}:${LOOKOUT_BACKEND_PORT:-8080}:8080"
     volumes:
       - type: "volume"
         target: "/app/scripts"
@@ -99,10 +99,10 @@ services:
   gluetun:
     image: "qmcgaw/gluetun:v3.41.3"
     environment:
-      VPN_SERVICE_PROVIDER: "${VPN_SERVICE_PROVIDER:-private internet access}"
+      VPN_SERVICE_PROVIDER: "${GLUETUN_VPN_SERVICE_PROVIDER:-private internet access}"
       VPN_TYPE: "openvpn"
-      OPENVPN_USER: "${OPENVPN_USER}"
-      OPENVPN_PASSWORD: "${OPENVPN_PASSWORD}"
+      OPENVPN_USER: "${GLUETUN_OPENVPN_USER}"
+      OPENVPN_PASSWORD: "${GLUETUN_OPENVPN_PASSWORD}"
       HTTPPROXY: "on"
       HTTPPROXY_USER: "lookout"
       HTTPPROXY_PASSWORD: "${GLUETUN_PROXY_PASSWORD}"
@@ -183,7 +183,7 @@ networks:
     driver: "bridge"
     ipam:
       config:
-        - subnet: "${LOOKOUT_EDGE_SUBNET:-172.30.240.0/24}"
+        - subnet: "${LOOKOUT_BACKEND_EDGE_SUBNET:-172.30.240.0/24}"
 volumes:
   scripts:
     driver: "local"

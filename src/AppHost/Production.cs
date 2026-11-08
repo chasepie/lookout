@@ -66,26 +66,26 @@ public partial class Program
 
         var imageTag = Setting("lookout-image-tag", "main",
             "The tag of the Backend's and the Runner's images: main, a version such as 1.2.0, or sha-<commit>.");
-        var host = Setting("lookout-host", null,
+        var host = Setting("lookout-backend-host", null,
             "the hostname Lookout is served on, such as lookout.example.com. Requests for any other are refused.");
-        var bindAddress = Setting("lookout-bind-address", "127.0.0.1",
+        var bindAddress = Setting("lookout-backend-bind-address", "127.0.0.1",
             "The host address the Backend's port is published on: 127.0.0.1 for a reverse proxy on this machine.");
-        var port = Setting("lookout-port", "8080", "The host port the Backend is published on.");
-        var trustedProxies = Setting("lookout-trusted-proxies", "",
+        var port = Setting("lookout-backend-port", "8080", "The host port the Backend is published on.");
+        var trustedProxies = Setting("lookout-backend-trusted-proxies", "",
             "The reverse proxy's address as the Backend sees it, as comma-separated IPs or CIDR networks. Without it, "
             + "X-Forwarded-For and X-Forwarded-Proto are ignored, and signing in through the proxy fails.");
-        var ownerUsername = Setting("lookout-owner-username", null,
+        var ownerUsername = Setting("lookout-backend-owner-username", null,
             "the username the Owner signs in with.");
         var timeZone = Setting("tz", "Etc/UTC", "The time zone of schedules and scripts' dates, such as America/New_York.");
-        var edgeSubnet = Setting("lookout-edge-subnet", "172.30.240.0/24",
+        var edgeSubnet = Setting("lookout-backend-edge-subnet", "172.30.240.0/24",
             "The subnet of the Backend's edge network, where its published port's connections come from; its gateway is "
             + "the subnet's first address, 172.30.240.1 by default. Fixed, so the gateway stays the same when the network is "
             + "re-created. Change it if it overlaps another network on this machine.");
-        var vpnServiceProvider = Setting("vpn-service-provider", "private internet access", "gluetun's VPN_SERVICE_PROVIDER.");
+        var vpnServiceProvider = Setting("gluetun-vpn-service-provider", "private internet access", "gluetun's VPN_SERVICE_PROVIDER.");
         var runnerMemory = Setting("lookout-runner-memory", "1g", "The Runner's memory limit, which bounds what a script can take.");
-        var browserlessMemory = Setting("lookout-browserless-memory", "2g", "browserless's memory limit.");
+        var browserlessMemory = Setting("browserless-memory", "2g", "browserless's memory limit.");
         // Secrets
-        var ownerPassword = Setting("lookout-owner-password", null,
+        var ownerPassword = Setting("lookout-backend-owner-password", null,
             "the password the Owner signs in with, at least 16 characters. Changing it signs out every session. "
             + QuoteIfNeeded, secret: true);
         var runnerApiKey = Setting("lookout-runner-api-key", null,
@@ -97,8 +97,8 @@ public partial class Program
             secret: true);
         var proxyPassword = Setting("gluetun-proxy-password", null,
             "the password of gluetun's HTTP proxy, such as from `openssl rand -hex 32`.", secret: true);
-        var openVpnUser = Setting("openvpn-user", null, "your VPN provider's OpenVPN username. " + QuoteIfNeeded, secret: true);
-        var openVpnPassword = Setting("openvpn-password", null,
+        var openVpnUser = Setting("gluetun-openvpn-user", null, "your VPN provider's OpenVPN username. " + QuoteIfNeeded, secret: true);
+        var openVpnPassword = Setting("gluetun-openvpn-password", null,
             "your VPN provider's OpenVPN password. " + QuoteIfNeeded, secret: true);
 
         // The edge network's subnet as a Compose variable, read from the Backend's service for the network
@@ -130,15 +130,15 @@ public partial class Program
             {
                 service.Image = $"{RunnerImage}:{Placeholder(imageTag, resource)}";
                 service.Environment["TZ"] = Placeholder(timeZone, resource);
-                service.Environment[LookoutEnvironmentVariables.BrowserlessUrl] = $"http://{BrowserlessService}:3000";
-                service.Environment[LookoutEnvironmentVariables.BrowserlessToken] = Placeholder(browserlessToken, resource);
+                service.Environment[EnvironmentVariables.BrowserlessUrl] = $"http://{BrowserlessService}:3000";
+                service.Environment[EnvironmentVariables.BrowserlessToken] = Placeholder(browserlessToken, resource);
                 // browserless connects to it, on the network they share
-                service.Environment[LookoutEnvironmentVariables.VpnProxyUrl] = $"http://{ProxyUsername}@{GluetunService}:8888";
+                service.Environment[EnvironmentVariables.VpnProxyUrl] = $"http://{ProxyUsername}@{GluetunService}:8888";
                 Harden(service, readOnly: true);
                 // Outside V8's heap, nothing else stops a script taking the host's memory
                 LimitMemory(service, Placeholder(runnerMemory, resource));
-                service.Environment[LookoutEnvironmentVariables.RunnerApiKey] = Placeholder(runnerApiKey, resource);
-                service.Environment[LookoutEnvironmentVariables.VpnProxyPassword] = Placeholder(proxyPassword, resource);
+                service.Environment[EnvironmentVariables.RunnerApiKey] = Placeholder(runnerApiKey, resource);
+                service.Environment[EnvironmentVariables.VpnProxyPassword] = Placeholder(proxyPassword, resource);
                 // No route out: scripts reach the network only through browserless
                 service.Networks = [RunnerNetwork, BrowsersNetwork];
             });
@@ -155,20 +155,20 @@ public partial class Program
                 edgeSubnetPlaceholder = Placeholder(edgeSubnet, resource);
                 service.Environment["TZ"] = Placeholder(timeZone, resource);
                 service.Environment["AllowedHosts"] = Placeholder(host, resource);
-                service.Environment[LookoutEnvironmentVariables.TrustedProxies] = Placeholder(trustedProxies, resource);
-                service.Environment[LookoutEnvironmentVariables.OwnerUsername] = Placeholder(ownerUsername, resource);
-                service.Environment[LookoutEnvironmentVariables.RunnerUrl] = $"http://{RunnerService}:8080";
-                service.Environment[LookoutEnvironmentVariables.GluetunUrl] = $"http://{GluetunControlRelay}:8000";
-                service.Environment[LookoutEnvironmentVariables.GluetunApiKey] = Placeholder(gluetunApiKey, resource);
-                service.Environment[LookoutEnvironmentVariables.GluetunDir] = "/app/gluetun";
+                service.Environment[EnvironmentVariables.TrustedProxies] = Placeholder(trustedProxies, resource);
+                service.Environment[EnvironmentVariables.OwnerUsername] = Placeholder(ownerUsername, resource);
+                service.Environment[EnvironmentVariables.RunnerUrl] = $"http://{RunnerService}:8080";
+                service.Environment[EnvironmentVariables.GluetunUrl] = $"http://{GluetunControlRelay}:8000";
+                service.Environment[EnvironmentVariables.GluetunApiKey] = Placeholder(gluetunApiKey, resource);
+                service.Environment[EnvironmentVariables.GluetunDir] = "/app/gluetun";
                 // Through the relay, since the Backend shares no network with gluetun
-                service.Environment[LookoutEnvironmentVariables.VpnProxyUrl] = $"http://{ProxyUsername}@{GluetunProxyRelay}:8888";
+                service.Environment[EnvironmentVariables.VpnProxyUrl] = $"http://{ProxyUsername}@{GluetunProxyRelay}:8888";
                 Harden(service, readOnly: true);
                 // Plain HTTP, for a reverse proxy that terminates TLS
                 service.Ports = [$"{Placeholder(bindAddress, resource)}:{Placeholder(port, resource)}:8080"];
-                service.Environment[LookoutEnvironmentVariables.OwnerPassword] = Placeholder(ownerPassword, resource);
-                service.Environment[LookoutEnvironmentVariables.RunnerApiKey] = Placeholder(runnerApiKey, resource);
-                service.Environment[LookoutEnvironmentVariables.VpnProxyPassword] = Placeholder(proxyPassword, resource);
+                service.Environment[EnvironmentVariables.OwnerPassword] = Placeholder(ownerPassword, resource);
+                service.Environment[EnvironmentVariables.RunnerApiKey] = Placeholder(runnerApiKey, resource);
+                service.Environment[EnvironmentVariables.VpnProxyPassword] = Placeholder(proxyPassword, resource);
                 service.Networks = [RunnerNetwork, VpnControlNetwork, EdgeNetwork];
             });
 

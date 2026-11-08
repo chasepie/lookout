@@ -17,8 +17,8 @@ public sealed class RunnerApiKeyTests
         new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                [LookoutEnvironmentVariables.RunnerUrl] = "https://runner.test",
-                [LookoutEnvironmentVariables.RunnerApiKey] = apiKey,
+                [EnvironmentVariables.RunnerUrl] = "https://runner.test",
+                [EnvironmentVariables.RunnerApiKey] = apiKey,
             })
             .Build();
 
@@ -58,7 +58,7 @@ public sealed class RunnerApiKeyTests
     {
         var ex = Assert.ThrowsExactly<InvalidOperationException>(() => RunnerApiKey.FromConfiguration(Configuration(value)));
 
-        Assert.Contains(LookoutEnvironmentVariables.RunnerApiKey, ex.Message);
+        Assert.Contains(EnvironmentVariables.RunnerApiKey, ex.Message);
     }
 
     [TestMethod]
@@ -96,7 +96,7 @@ public sealed class RunnerApiKeyTests
             .RunWatchScriptAsync("script.ts", useVpn: false, TestContext.CancellationToken));
 
         Assert.AreEqual(HttpStatusCode.Unauthorized, ex.StatusCode);
-        Assert.Contains(LookoutEnvironmentVariables.RunnerApiKey, ex.Message);
+        Assert.Contains(EnvironmentVariables.RunnerApiKey, ex.Message);
     }
 
     // The Backend's registration of RunnerHttpClient, with the Runner replaced by the handler

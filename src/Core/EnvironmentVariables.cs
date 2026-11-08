@@ -9,7 +9,7 @@ namespace ChasePie.Lookout.Core;
 /// The images set some of their own: the Runner's <see cref="WatchCliRoot"/>, and both <see cref="WatchScriptsDir"/> as
 /// <c>/app/scripts</c>, where the scripts are mounted, and the Backend's <see cref="DatabaseDir"/>.
 /// </summary>
-public static class LookoutEnvironmentVariables
+public static class EnvironmentVariables
 {
     /// <summary>
     /// The directory watch scripts are saved to and run from.
@@ -19,12 +19,12 @@ public static class LookoutEnvironmentVariables
     /// <summary>
     /// The directory the Backend keeps its SQLite database files in.
     /// </summary>
-    public const string DatabaseDir = "LOOKOUT_DATABASE_DIR";
+    public const string DatabaseDir = "LOOKOUT_BACKEND_DATABASE_DIR";
 
     /// <summary>
     /// The Runner's base URL, used by the Backend.
     /// </summary>
-    public const string RunnerUrl = "LOOKOUT_RUNNER_URL";
+    public const string RunnerUrl = "LOOKOUT_BACKEND_RUNNER_URL";
 
     /// <summary>
     /// The key the Backend sends the Runner, and without which the Runner refuses requests. Both require it, at least
@@ -41,19 +41,19 @@ public static class LookoutEnvironmentVariables
     /// The directory whose <c>node_modules</c> holds the watch SDK and Playwright, which the Runner runs scripts with.
     /// The Runner's image sets it; without it, the Runner uses the repo root.
     /// </summary>
-    public const string WatchCliRoot = "LOOKOUT_WATCH_CLI_ROOT";
+    public const string WatchCliRoot = "LOOKOUT_RUNNER_WATCH_CLI_ROOT";
 
     /// <summary>
     /// The browserless container's base URL, used by the Runner. Its token is <see cref="BrowserlessToken"/>.
     /// </summary>
-    public const string BrowserlessUrl = "LOOKOUT_BROWSERLESS_URL";
+    public const string BrowserlessUrl = "LOOKOUT_RUNNER_BROWSERLESS_URL";
 
     /// <summary>
     /// browserless's token, which the Runner requires and adds to <see cref="BrowserlessUrl"/> as its <c>token</c> query
     /// parameter. A setting of its own, so the token is set once beside browserless's own and kept out of URLs that end
     /// up in logs. See <see cref="GetBrowserlessUrl"/>.
     /// </summary>
-    public const string BrowserlessToken = "LOOKOUT_BROWSERLESS_TOKEN";
+    public const string BrowserlessToken = "LOOKOUT_RUNNER_BROWSERLESS_TOKEN";
 
     /// <summary>
     /// The HTTP proxy that watches with <see cref="CreateWatchDto.UseVpn"/> send their browser traffic through.
@@ -75,30 +75,29 @@ public static class LookoutEnvironmentVariables
     /// The base URL of gluetun's HTTP control server, used by the Backend to switch VPN regions.
     /// Without it the Backend's VPN features are off.
     /// </summary>
-    public const string GluetunUrl = "LOOKOUT_GLUETUN_URL";
+    public const string GluetunUrl = "LOOKOUT_BACKEND_GLUETUN_URL";
 
     /// <summary>
     /// The API key gluetun's control server requires, sent in the <c>X-API-Key</c> header.
     /// </summary>
-    public const string GluetunApiKey = "LOOKOUT_GLUETUN_API_KEY";
+    public const string GluetunApiKey = "LOOKOUT_BACKEND_GLUETUN_API_KEY";
 
     /// <summary>
-    /// The host directory mounted as gluetun's <c>/gluetun</c> data directory. The Backend reads the VPN
-    /// servers list from its <c>servers</c> folder to know which regions it can switch to, and requires it along
-    /// with <see cref="GluetunUrl"/>.
+    /// gluetun's <c>/gluetun</c> data directory, as the Backend sees it. The Backend reads the VPN servers list from
+    /// its <c>servers.json</c> to know which regions it can switch to, and requires it along with <see cref="GluetunUrl"/>.
     /// </summary>
-    public const string GluetunDir = "LOOKOUT_GLUETUN_DIR";
+    public const string GluetunDir = "LOOKOUT_BACKEND_GLUETUN_DIR";
 
     /// <summary>
     /// The Owner's username, which the Backend requires. The Owner is the one person who signs in to Lookout.
     /// </summary>
-    public const string OwnerUsername = "LOOKOUT_OWNER_USERNAME";
+    public const string OwnerUsername = "LOOKOUT_BACKEND_OWNER_USERNAME";
 
     /// <summary>
     /// The Owner's password, which the Backend requires, at least <see cref="OwnerPasswordMinLength"/> characters.
     /// Changing it, or <see cref="OwnerUsername"/> other than its case, signs out every session once the Backend restarts.
     /// </summary>
-    public const string OwnerPassword = "LOOKOUT_OWNER_PASSWORD";
+    public const string OwnerPassword = "LOOKOUT_BACKEND_OWNER_PASSWORD";
 
     /// <summary>
     /// The shortest <see cref="OwnerPassword"/> the Backend and the AppHost accept.
@@ -110,7 +109,7 @@ public static class LookoutEnvironmentVariables
     /// comma-separated IP addresses or CIDR networks, such as <c>172.30.0.1, 10.0.0.0/24</c>. Without it, the Backend trusts
     /// none and ignores both headers.
     /// </summary>
-    public const string TrustedProxies = "LOOKOUT_TRUSTED_PROXIES";
+    public const string TrustedProxies = "LOOKOUT_BACKEND_TRUSTED_PROXIES";
 
     /// <summary>
     /// Reads a base URL from configuration, adding a trailing slash so relative request URIs append to its path.

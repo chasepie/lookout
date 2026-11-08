@@ -63,7 +63,7 @@ COPY --from=runner /out runner/
 # starts as a copy of whichever mount point it's first mounted at, owner included, so the Runner's is the Backend's
 # user's like the Backend's own.
 RUN mkdir scripts && chown $APP_UID scripts
-ENV LOOKOUT_WATCH_CLI_ROOT=/app \
+ENV LOOKOUT_RUNNER_WATCH_CLI_ROOT=/app \
   LOOKOUT_WATCH_SCRIPTS_DIR=/app/scripts
 # The non-root user the .NET images provide
 USER $APP_UID

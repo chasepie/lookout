@@ -14,6 +14,9 @@ namespace ChasePie.Lookout.Runner.IntegrationTests;
 [TestClass]
 public sealed class ScriptSandboxTests
 {
+    // What the Runner gives a script's process: FORCE_COLOR, and the watch CLI's name for browserless, not the Runner's
+    private static readonly string[] CliVariables = ["FORCE_COLOR", "LOOKOUT_BROWSERLESS_URL"];
+
     public TestContext TestContext { get; set; } = null!;
 
     private CancellationToken Ct => TestContext.CancellationToken;
@@ -88,7 +91,7 @@ public sealed class ScriptSandboxTests
 
         // macOS adds __CF_USER_TEXT_ENCODING to every process; TZ is passed through when the Runner has it
         var names = outcome.Split(',').Except(["__CF_USER_TEXT_ENCODING", "TZ"]);
-        Assert.AreSequenceEqual(new[] { "FORCE_COLOR", LookoutEnvironmentVariables.BrowserlessUrl }, names);
+        Assert.AreSequenceEqual(CliVariables, names);
     }
 
     [TestMethod]
@@ -98,7 +101,7 @@ public sealed class ScriptSandboxTests
 
         var ex = Assert.Throws<InvalidOperationException>(() => factory.Server);
 
-        Assert.Contains(LookoutEnvironmentVariables.BrowserlessUrl, ex.Message);
+        Assert.Contains(EnvironmentVariables.BrowserlessUrl, ex.Message);
     }
 
     [TestMethod]
@@ -109,7 +112,7 @@ public sealed class ScriptSandboxTests
 
         var ex = Assert.Throws<InvalidOperationException>(() => factory.Server);
 
-        Assert.Contains(LookoutEnvironmentVariables.BrowserlessToken, ex.Message);
+        Assert.Contains(EnvironmentVariables.BrowserlessToken, ex.Message);
     }
 
     [TestMethod]

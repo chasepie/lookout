@@ -22,6 +22,12 @@ public partial class ScriptRunner(
     /// </summary>
     internal const string CliProxyUrlVariable = "LOOKOUT_WATCH_PROXY_URL";
 
+    /// <summary>
+    /// The variable the watch CLI reads the browserless server from. The CLI's own name, unlike the Runner's
+    /// <see cref="EnvironmentVariables.BrowserlessUrl"/>, since the CLI is also run by hand.
+    /// </summary>
+    internal const string CliBrowserlessUrlVariable = "LOOKOUT_BROWSERLESS_URL";
+
     // Variables scripts get from the Runner's own environment, when it has them. Neither is secret: TZ keeps a script's
     // dates in the configured time zone, and Node can't open network connections on Windows without SystemRoot.
     private static readonly string[] PassedThroughVariables = ["TZ", "SystemRoot"];
@@ -66,7 +72,7 @@ public partial class ScriptRunner(
     private string GetVpnProxyUrl() =>
         // Never run without the VPN when the watch asked for it
         watchCli.VpnProxyUrl ?? throw new InvalidOperationException(
-            $"The watch uses the VPN, but the Runner has no VPN proxy. Set {LookoutEnvironmentVariables.VpnProxyUrl}.");
+            $"The watch uses the VPN, but the Runner has no VPN proxy. Set {EnvironmentVariables.VpnProxyUrl}.");
 
     /// <param name="useVpn">Whether the browser's traffic goes through the VPN proxy.</param>
     /// <exception cref="InvalidOperationException">
@@ -188,7 +194,7 @@ public partial class ScriptRunner(
         // The output ends up in logs and in run errors, not a terminal. Playwright colours its errors even when stderr
         // isn't a TTY, and ignores NO_COLOR, so without this the escape codes show up as text.
         environment["FORCE_COLOR"] = "0";
-        environment[LookoutEnvironmentVariables.BrowserlessUrl] = cli.BrowserlessUrl;
+        environment[CliBrowserlessUrlVariable] = cli.BrowserlessUrl;
         // The CLI reads the proxy from the environment rather than its command line, which any user on the machine
         // can list, since the URL holds the proxy's password. Only a run that uses the VPN gets it.
         if (proxyUrl is not null)

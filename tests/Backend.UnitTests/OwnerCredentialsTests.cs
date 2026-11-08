@@ -15,8 +15,8 @@ public sealed class OwnerCredentialsTests
         new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                [LookoutEnvironmentVariables.OwnerUsername] = username,
-                [LookoutEnvironmentVariables.OwnerPassword] = password,
+                [EnvironmentVariables.OwnerUsername] = username,
+                [EnvironmentVariables.OwnerPassword] = password,
             })
             .Build();
 
@@ -79,7 +79,7 @@ public sealed class OwnerCredentialsTests
         var exception = Assert.ThrowsExactly<InvalidOperationException>(
             () => OwnerCredentials.FromConfiguration(Configuration(username, password)));
 
-        Assert.Contains(LookoutEnvironmentVariables.OwnerUsername, exception.Message);
+        Assert.Contains(EnvironmentVariables.OwnerUsername, exception.Message);
     }
 
     [TestMethod]
@@ -90,7 +90,7 @@ public sealed class OwnerCredentialsTests
         var exception = Assert.ThrowsExactly<InvalidOperationException>(
             () => OwnerCredentials.FromConfiguration(Configuration("owner", password)));
 
-        Assert.Contains(LookoutEnvironmentVariables.OwnerPassword, exception.Message);
+        Assert.Contains(EnvironmentVariables.OwnerPassword, exception.Message);
         Assert.Contains("16", exception.Message);
         Assert.DoesNotContain(password, exception.Message);
     }

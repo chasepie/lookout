@@ -33,16 +33,16 @@ These aren't visible in any one file, and breaking them breaks signing in or wea
   that origin pass every CSRF check.
 - **Forwarded headers behind a reverse proxy.** Without them, the Backend sees the proxy's IP for every client, so the per-client sign-in limit becomes
   one shared limit, and a proxy terminating TLS looks like plain HTTP, so sign-ins are refused. The Backend takes the client's address and scheme from
-  `X-Forwarded-For` and `X-Forwarded-Proto` (one hop), but only from the addresses in `LOOKOUT_TRUSTED_PROXIES`: anyone else could set them to dodge the
+  `X-Forwarded-For` and `X-Forwarded-Proto` (one hop), but only from the addresses in `LOOKOUT_BACKEND_TRUSTED_PROXIES`: anyone else could set them to dodge the
   sign-in limit or pass for HTTPS. With none listed, it ignores both headers. ASP.NET Core would otherwise trust every source when no proxy is listed,
   so `ReverseProxy` turns forwarding off instead. `Host` isn't taken from the proxy, so it must pass the browser's through. (The dev server's proxy
   rewrites `Host`; requests still pass because browsers send `Sec-Fetch-Site`.)
-- **One hostname.** `AllowedHosts` is the hostname Lookout is served on, `localhost` unless set (`LOOKOUT_HOST` in production), and requests for any
+- **One hostname.** `AllowedHosts` is the hostname Lookout is served on, `localhost` unless set (`LOOKOUT_BACKEND_HOST` in production), and requests for any
   other get `400`. The Backend refuses to start with it empty, which ASP.NET Core would take as "every host".
 
 ## Credentials
 
-The Owner's username and password come only from `LOOKOUT_OWNER_USERNAME` and `LOOKOUT_OWNER_PASSWORD`, in development, E2E tests and production alike.
+The Owner's username and password come only from `LOOKOUT_BACKEND_OWNER_USERNAME` and `LOOKOUT_BACKEND_OWNER_PASSWORD`, in development, E2E tests and production alike.
 There's no user table, no setup page and no way to change them in the UI: with one Owner and credentials in `.env`, a user store would only be a copy to keep
 in sync. If TOTP, passkeys or changing the password in the UI are added later, ASP.NET Core Identity and its tables become worth adopting then.
 
@@ -79,7 +79,7 @@ next generation, so every existing cookie stops working, including copies of the
 stolen copy. With one Owner, "sign out" and "sign out everywhere" are the same thing. Only a request with a session can sign out; without one, signing out
 just clears the caller's cookie, so anyone can't sign the Owner out.
 
-**Data Protection keys** encrypt the cookie. They're kept in `LOOKOUT_DATABASE_DIR/keys`, so sessions survive restarts and are backed up with the database.
+**Data Protection keys** encrypt the cookie. They're kept in `LOOKOUT_BACKEND_DATABASE_DIR/keys`, so sessions survive restarts and are backed up with the database.
 Deleting the keys signs everyone out. They're stored unencrypted, as anyone who can read them can also read the database and `.env`.
 
 ## Which endpoints are open
@@ -141,7 +141,7 @@ of these and checks they're refused. Node calls its model a seat belt, not a san
 - Outside the container, as in the Runner's tests, `node_modules` is the repo's, and npm links every workspace into it. Node follows those links, so a
   script run there can read the `src/Runner`, `src/frontend` and `examples` workspaces. In the container, those links point nowhere.
 - The CLI needs the network to reach browserless, and Node can't limit it to one host, so scripts get `--allow-net`.
-- A local browser needs child processes, so the Runner refuses to start without `LOOKOUT_BROWSERLESS_URL`.
+- A local browser needs child processes, so the Runner refuses to start without `LOOKOUT_RUNNER_BROWSERLESS_URL`.
 
 **The Runner's container.** The Runner runs from `src/Runner/Dockerfile` as the image's non-root user, with no Linux capabilities, `no-new-privileges`,
 `tini` as PID 1 (see [Production deployment](#production-deployment)), and the scripts mounted read-only at `/app/scripts`. The container has no `.env`,
@@ -164,7 +164,7 @@ secret that the AppHost generates on each start:
 
 | Container | Secret | Who has it |
 | --- | --- | --- |
-| browserless | `browserless-token`, the Runner's `LOOKOUT_BROWSERLESS_TOKEN`, sent as the `token` query parameter | browserless and the Runner |
+| browserless | `browserless-token`, the Runner's `LOOKOUT_RUNNER_BROWSERLESS_TOKEN`, sent as the `token` query parameter | browserless and the Runner |
 | gluetun's HTTP proxy | `gluetun-proxy-password`, `LOOKOUT_VPN_PROXY_PASSWORD`, for the username `lookout` | gluetun, the Runner and the Backend; see below |
 | gluetun's control server | `gluetun-api-key`, in `X-API-Key` | gluetun and the Backend |
 
@@ -236,9 +236,9 @@ the VPN probe) through two `socat` relays, which a page loaded through the proxy
 Runner, which refuses requests without its key. A script in a VPN run gets the proxy's URL and password, so it can send traffic out through gluetun, just as
 it can through Chromium.
 
-The Backend's port is published on `127.0.0.1` unless `LOOKOUT_BIND_ADDRESS` says otherwise, for a reverse proxy that terminates TLS. Docker only
+The Backend's port is published on `127.0.0.1` unless `LOOKOUT_BACKEND_BIND_ADDRESS` says otherwise, for a reverse proxy that terminates TLS. Docker only
 publishes ports from containers on a network that leads out, so the Backend can reach the internet, though it has no reason to. The `edge` network has
-a fixed subnet (`LOOKOUT_EDGE_SUBNET`), so its gateway, which connections to the published port come from and which a reverse proxy on the same machine
+a fixed subnet (`LOOKOUT_BACKEND_EDGE_SUBNET`), so its gateway, which connections to the published port come from and which a reverse proxy on the same machine
 is trusted as, stays the same when the network is re-created. That trusts every process on the host that connects to the port, not just the proxy;
 a proxy on another machine is trusted by its own address instead. The Compose project is named `lookout`, so the volumes are `lookout_*` wherever the
 file is.

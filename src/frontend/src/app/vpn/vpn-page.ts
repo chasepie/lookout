@@ -56,8 +56,8 @@ import { VpnSwitchForm } from './vpn-switch-form';
         <section class="unset" aria-labelledby="unset-title">
           <h2 id="unset-title">The VPN isn't set up</h2>
           <p>
-            Watches that use the VPN fail until it is. Set <code>OPENVPN_USER</code>, <code>OPENVPN_PASSWORD</code> and
-            <code>LOOKOUT_GLUETUN_DIR</code> in <code>.env</code>, then restart the AppHost.
+            Watches that use the VPN fail until it is. Set <code>GLUETUN_OPENVPN_USER</code>, <code>GLUETUN_OPENVPN_PASSWORD</code> and
+            <code>GLUETUN_DIR</code> in <code>.env</code>, then restart the AppHost.
           </p>
         </section>
       }

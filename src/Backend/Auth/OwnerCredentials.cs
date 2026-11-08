@@ -5,12 +5,12 @@ using ChasePie.Lookout.Core;
 namespace ChasePie.Lookout.Backend.Auth;
 
 /// <summary>
-/// The Owner's username and password, from <c>LOOKOUT_OWNER_USERNAME</c> and <c>LOOKOUT_OWNER_PASSWORD</c>: the only
+/// The Owner's username and password, from <c>LOOKOUT_BACKEND_OWNER_USERNAME</c> and <c>LOOKOUT_BACKEND_OWNER_PASSWORD</c>: the only
 /// credentials Lookout accepts. See <c>docs/security.md</c>.
 /// </summary>
 public sealed class OwnerCredentials
 {
-    public const int MinPasswordLength = LookoutEnvironmentVariables.OwnerPasswordMinLength;
+    public const int MinPasswordLength = EnvironmentVariables.OwnerPasswordMinLength;
 
     // Iterations for deriving the fingerprint. It's derived once per start, so it can afford to be slow.
     private const int FingerprintIterations = 100_000;
@@ -53,13 +53,13 @@ public sealed class OwnerCredentials
     /// <exception cref="InvalidOperationException">A variable is missing, or the password is too short.</exception>
     public static OwnerCredentials FromConfiguration(IConfiguration configuration)
     {
-        var username = configuration[LookoutEnvironmentVariables.OwnerUsername];
-        var password = configuration[LookoutEnvironmentVariables.OwnerPassword];
+        var username = configuration[EnvironmentVariables.OwnerUsername];
+        var password = configuration[EnvironmentVariables.OwnerPassword];
         if (string.IsNullOrWhiteSpace(username) || string.IsNullOrEmpty(password))
         {
             throw new InvalidOperationException(
-                $"Environment variables {LookoutEnvironmentVariables.OwnerUsername} and "
-                + $"{LookoutEnvironmentVariables.OwnerPassword} must be set to the Owner's sign-in.");
+                $"Environment variables {EnvironmentVariables.OwnerUsername} and "
+                + $"{EnvironmentVariables.OwnerPassword} must be set to the Owner's sign-in.");
         }
 
         try
@@ -70,7 +70,7 @@ public sealed class OwnerCredentials
         {
             // The constructor holds the rules; this only names the variable to fix
             throw new InvalidOperationException(
-                $"Environment variable {LookoutEnvironmentVariables.OwnerPassword} must be at least "
+                $"Environment variable {EnvironmentVariables.OwnerPassword} must be at least "
                 + $"{MinPasswordLength} characters.", ex);
         }
     }

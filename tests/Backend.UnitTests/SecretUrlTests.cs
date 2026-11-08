@@ -17,9 +17,9 @@ public sealed class SecretUrlTests
     [TestMethod]
     public void TheProxyPasswordIsAddedToTheProxyUrl()
     {
-        var url = LookoutEnvironmentVariables.GetVpnProxyUrl(Configuration(
-            (LookoutEnvironmentVariables.VpnProxyUrl, "http://lookout@gluetun:8888"),
-            (LookoutEnvironmentVariables.VpnProxyPassword, "pa:ss/w@rd")));
+        var url = EnvironmentVariables.GetVpnProxyUrl(Configuration(
+            (EnvironmentVariables.VpnProxyUrl, "http://lookout@gluetun:8888"),
+            (EnvironmentVariables.VpnProxyPassword, "pa:ss/w@rd")));
 
         Assert.AreEqual("http://lookout:pa%3Ass%2Fw%40rd@gluetun:8888/", url?.AbsoluteUri);
     }
@@ -27,8 +27,8 @@ public sealed class SecretUrlTests
     [TestMethod]
     public void AProxyUrlWithoutAPasswordSettingIsKeptAsItIs()
     {
-        var url = LookoutEnvironmentVariables.GetVpnProxyUrl(Configuration(
-            (LookoutEnvironmentVariables.VpnProxyUrl, "http://lookout:secret@gluetun:8888")));
+        var url = EnvironmentVariables.GetVpnProxyUrl(Configuration(
+            (EnvironmentVariables.VpnProxyUrl, "http://lookout:secret@gluetun:8888")));
 
         Assert.AreEqual("http://lookout:secret@gluetun:8888/", url?.AbsoluteUri);
     }
@@ -39,17 +39,17 @@ public sealed class SecretUrlTests
     public void AProxyUrlWithoutAPasswordIsRefused(string proxyUrl)
     {
         // gluetun's proxy without a password lets anyone who reaches it out through the VPN
-        var error = Assert.ThrowsExactly<InvalidOperationException>(() => LookoutEnvironmentVariables.GetVpnProxyUrl(
-            Configuration((LookoutEnvironmentVariables.VpnProxyUrl, proxyUrl))));
+        var error = Assert.ThrowsExactly<InvalidOperationException>(() => EnvironmentVariables.GetVpnProxyUrl(
+            Configuration((EnvironmentVariables.VpnProxyUrl, proxyUrl))));
 
-        Assert.Contains(LookoutEnvironmentVariables.VpnProxyPassword, error.Message);
+        Assert.Contains(EnvironmentVariables.VpnProxyPassword, error.Message);
     }
 
     [TestMethod]
     public void WithoutAProxyUrlThereIsNoProxy()
     {
-        var url = LookoutEnvironmentVariables.GetVpnProxyUrl(Configuration(
-            (LookoutEnvironmentVariables.VpnProxyPassword, "secret")));
+        var url = EnvironmentVariables.GetVpnProxyUrl(Configuration(
+            (EnvironmentVariables.VpnProxyPassword, "secret")));
 
         Assert.IsNull(url);
     }
@@ -57,9 +57,9 @@ public sealed class SecretUrlTests
     [TestMethod]
     public void TheBrowserlessTokenIsAddedToItsUrl()
     {
-        var url = LookoutEnvironmentVariables.GetBrowserlessUrl(Configuration(
-            (LookoutEnvironmentVariables.BrowserlessUrl, "http://browserless:3000"),
-            (LookoutEnvironmentVariables.BrowserlessToken, "t0k+en")));
+        var url = EnvironmentVariables.GetBrowserlessUrl(Configuration(
+            (EnvironmentVariables.BrowserlessUrl, "http://browserless:3000"),
+            (EnvironmentVariables.BrowserlessToken, "t0k+en")));
 
         Assert.AreEqual("http://browserless:3000/?token=t0k%2Ben", url);
     }
@@ -68,9 +68,9 @@ public sealed class SecretUrlTests
     public void ABrowserlessUrlWithoutATokenIsRefused()
     {
         // browserless accepts anyone without one
-        var error = Assert.ThrowsExactly<InvalidOperationException>(() => LookoutEnvironmentVariables.GetBrowserlessUrl(
-            Configuration((LookoutEnvironmentVariables.BrowserlessUrl, "http://browserless:3000"))));
+        var error = Assert.ThrowsExactly<InvalidOperationException>(() => EnvironmentVariables.GetBrowserlessUrl(
+            Configuration((EnvironmentVariables.BrowserlessUrl, "http://browserless:3000"))));
 
-        Assert.Contains(LookoutEnvironmentVariables.BrowserlessToken, error.Message);
+        Assert.Contains(EnvironmentVariables.BrowserlessToken, error.Message);
     }
 }

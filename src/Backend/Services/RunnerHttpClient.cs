@@ -26,7 +26,7 @@ public class RunnerHttpClient(HttpClient httpClient)
         if (!response.IsSuccessStatusCode)
         {
             var error = response.StatusCode == HttpStatusCode.Unauthorized
-                ? $"it refused the API key. Check that {LookoutEnvironmentVariables.RunnerApiKey} is the same for the "
+                ? $"it refused the API key. Check that {EnvironmentVariables.RunnerApiKey} is the same for the "
                     + "Backend and the Runner."
                 : await ReadErrorAsync(response, cancellationToken);
             throw new HttpRequestException(
@@ -60,14 +60,14 @@ public class RunnerHttpClient(HttpClient httpClient)
     }
 
     /// <summary>
-    /// Configures the client's base address from the <c>LOOKOUT_RUNNER_URL</c> environment variable, and has it send
+    /// Configures the client's base address from the <c>LOOKOUT_BACKEND_RUNNER_URL</c> environment variable, and has it send
     /// the <see cref="RunnerApiKey"/> on every request.
     /// </summary>
     internal static void Configure(IServiceProvider services, HttpClient client)
     {
         var configuration = services.GetRequiredService<IConfiguration>();
-        client.BaseAddress = LookoutEnvironmentVariables.GetBaseUrl(configuration, LookoutEnvironmentVariables.RunnerUrl)
-            ?? throw new InvalidOperationException($"Environment variable {LookoutEnvironmentVariables.RunnerUrl} must be set");
+        client.BaseAddress = EnvironmentVariables.GetBaseUrl(configuration, EnvironmentVariables.RunnerUrl)
+            ?? throw new InvalidOperationException($"Environment variable {EnvironmentVariables.RunnerUrl} must be set");
         client.DefaultRequestHeaders.Add(
             RunnerApiKey.HeaderName,
             services.GetRequiredService<RunnerApiKey>().Value);
