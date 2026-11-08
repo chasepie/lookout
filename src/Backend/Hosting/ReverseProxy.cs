@@ -7,18 +7,18 @@ namespace ChasePie.Lookout.Backend.Hosting;
 
 /// <summary>
 /// Serving Lookout behind a reverse proxy that terminates TLS. The Backend takes the client's address and scheme from
-/// <c>X-Forwarded-For</c> and <c>X-Forwarded-Proto</c>, but only from the proxies in <c>LOOKOUT_BACKEND_TRUSTED_PROXIES</c>:
+/// <c>X-Forwarded-For</c> and <c>X-Forwarded-Proto</c>, but only from the proxies in <c>LOOKOUT_TRUSTED_PROXIES</c>:
 /// anyone else could set them to dodge the sign-in limit or pass for HTTPS. See docs/security.md.
 /// </summary>
 public static class ReverseProxy
 {
     /// <exception cref="InvalidOperationException">
-    /// <c>LOOKOUT_BACKEND_TRUSTED_PROXIES</c> has an entry that isn't an IP or a CIDR network.
+    /// <c>LOOKOUT_TRUSTED_PROXIES</c> has an entry that isn't an IP or a CIDR network.
     /// </exception>
     public static IServiceCollection AddReverseProxy(this IServiceCollection services, IConfiguration configuration)
     {
         // Parsed here, so a mistyped entry stops startup instead of leaving the proxy untrusted
-        var trustedProxies = ParseTrustedProxies(configuration[EnvironmentVariables.TrustedProxies]);
+        var trustedProxies = ParseTrustedProxies(configuration[EnvironmentVariables.LookoutTrustedProxies]);
         services.Configure<ForwardedHeadersOptions>(options =>
         {
             // With no known proxies or networks, the middleware trusts every source, so without a configured proxy the
@@ -76,6 +76,6 @@ public static class ReverseProxy
     }
 
     private static InvalidOperationException InvalidEntry(string entry) => new(
-        $"{EnvironmentVariables.TrustedProxies} must list IP addresses or CIDR networks, such as 172.30.0.1 or "
+        $"{EnvironmentVariables.LookoutTrustedProxies} must list IP addresses or CIDR networks, such as 172.30.0.1 or "
         + $"10.0.0.0/24; '{entry}' is neither.");
 }

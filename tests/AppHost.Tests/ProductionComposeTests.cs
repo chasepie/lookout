@@ -127,7 +127,7 @@ public sealed class ProductionComposeTests
     }
 
     [TestMethod]
-    [DataRow("LOOKOUT_BACKEND_OWNER_PASSWORD", "backend")]
+    [DataRow("LOOKOUT_OWNER_PASSWORD", "backend")]
     [DataRow("LOOKOUT_RUNNER_API_KEY", "backend,runner")]
     [DataRow("GLUETUN_PROXY_PASSWORD", "backend,gluetun,runner")]
     [DataRow("BROWSERLESS_TOKEN", "browserless,runner")]

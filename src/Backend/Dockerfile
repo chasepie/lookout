@@ -47,7 +47,7 @@ COPY --from=frontend /src/src/Backend/wwwroot wwwroot/
 # user owns the ones it writes; gluetun's is only read.
 RUN mkdir scripts database gluetun && chown $APP_UID scripts database
 ENV LOOKOUT_WATCH_SCRIPTS_DIR=/app/scripts \
-  LOOKOUT_BACKEND_DATABASE_DIR=/app/database
+  LOOKOUT_DATABASE_DIR=/app/database
 # The non-root user the .NET images provide
 USER $APP_UID
 ENTRYPOINT ["tini", "--", "dotnet", "/app/Backend.dll"]

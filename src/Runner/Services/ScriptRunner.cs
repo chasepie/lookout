@@ -18,15 +18,15 @@ public partial class ScriptRunner(
 
     /// <summary>
     /// The variable the watch CLI reads its proxy from. Only the Runner sets it, and only for runs that use the VPN, so a
-    /// shell that happens to have <c>LOOKOUT_VPN_PROXY_URL</c> doesn't send direct CLI runs through the VPN.
+    /// shell that happens to have <c>GLUETUN_PROXY_URL</c> doesn't send direct CLI runs through the VPN.
     /// </summary>
     internal const string CliProxyUrlVariable = "LOOKOUT_WATCH_PROXY_URL";
 
     /// <summary>
-    /// The variable the watch CLI reads the browserless server from. The CLI's own name, unlike the Runner's
-    /// <see cref="EnvironmentVariables.BrowserlessUrl"/>, since the CLI is also run by hand.
+    /// The variable the watch CLI reads the browserless server from. The same name as the Runner's
+    /// <see cref="EnvironmentVariables.BrowserlessUrl"/>, but part of the CLI's interface, since it's also run by hand.
     /// </summary>
-    internal const string CliBrowserlessUrlVariable = "LOOKOUT_BROWSERLESS_URL";
+    internal const string CliBrowserlessUrlVariable = "BROWSERLESS_URL";
 
     // Variables scripts get from the Runner's own environment, when it has them. Neither is secret: TZ keeps a script's
     // dates in the configured time zone, and Node can't open network connections on Windows without SystemRoot.
@@ -68,11 +68,11 @@ public partial class ScriptRunner(
     /// <summary>
     /// The proxy that VPN runs send the browser's traffic through.
     /// </summary>
-    /// <exception cref="InvalidOperationException"><c>LOOKOUT_VPN_PROXY_URL</c> is not set.</exception>
+    /// <exception cref="InvalidOperationException"><c>GLUETUN_PROXY_URL</c> is not set.</exception>
     private string GetVpnProxyUrl() =>
         // Never run without the VPN when the watch asked for it
         watchCli.VpnProxyUrl ?? throw new InvalidOperationException(
-            $"The watch uses the VPN, but the Runner has no VPN proxy. Set {EnvironmentVariables.VpnProxyUrl}.");
+            $"The watch uses the VPN, but the Runner has no VPN proxy. Set {EnvironmentVariables.GluetunProxyUrl}.");
 
     /// <param name="useVpn">Whether the browser's traffic goes through the VPN proxy.</param>
     /// <exception cref="InvalidOperationException">

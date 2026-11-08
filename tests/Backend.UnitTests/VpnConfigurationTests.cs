@@ -13,9 +13,9 @@ public sealed class VpnConfigurationTests
             {
                 [EnvironmentVariables.GluetunUrl] = "http://gluetun-control:8000",
                 [EnvironmentVariables.GluetunApiKey] = apiKey,
-                [EnvironmentVariables.VpnProxyUrl] = "http://lookout@gluetun-proxy:8888",
-                [EnvironmentVariables.VpnProxyPassword] = "secret",
-                [EnvironmentVariables.GluetunDir] = Path.Join(Path.GetTempPath(), "lookout-vpn-configuration-tests"),
+                [EnvironmentVariables.GluetunProxyUrl] = "http://lookout@gluetun-proxy:8888",
+                [EnvironmentVariables.GluetunProxyPassword] = "secret",
+                [EnvironmentVariables.GluetunDataDir] = Path.Join(Path.GetTempPath(), "lookout-vpn-configuration-tests"),
             })
             .Build();
 

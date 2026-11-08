@@ -33,7 +33,7 @@ These aren't visible in any one file, and breaking them breaks signing in or wea
   that origin pass every CSRF check.
 - **Forwarded headers behind a reverse proxy.** Without them, the Backend sees the proxy's IP for every client, so the per-client sign-in limit becomes
   one shared limit, and a proxy terminating TLS looks like plain HTTP, so sign-ins are refused. The Backend takes the client's address and scheme from
-  `X-Forwarded-For` and `X-Forwarded-Proto` (one hop), but only from the addresses in `LOOKOUT_BACKEND_TRUSTED_PROXIES`: anyone else could set them to dodge the
+  `X-Forwarded-For` and `X-Forwarded-Proto` (one hop), but only from the addresses in `LOOKOUT_TRUSTED_PROXIES`: anyone else could set them to dodge the
   sign-in limit or pass for HTTPS. With none listed, it ignores both headers. ASP.NET Core would otherwise trust every source when no proxy is listed,
   so `ReverseProxy` turns forwarding off instead. `Host` isn't taken from the proxy, so it must pass the browser's through. (The dev server's proxy
   rewrites `Host`; requests still pass because browsers send `Sec-Fetch-Site`.)
@@ -42,7 +42,7 @@ These aren't visible in any one file, and breaking them breaks signing in or wea
 
 ## Credentials
 
-The Owner's username and password come only from `LOOKOUT_BACKEND_OWNER_USERNAME` and `LOOKOUT_BACKEND_OWNER_PASSWORD`, in development, E2E tests and production alike.
+The Owner's username and password come only from `LOOKOUT_OWNER_USERNAME` and `LOOKOUT_OWNER_PASSWORD`, in development, E2E tests and production alike.
 There's no user table, no setup page and no way to change them in the UI: with one Owner and credentials in `.env`, a user store would only be a copy to keep
 in sync. If TOTP, passkeys or changing the password in the UI are added later, ASP.NET Core Identity and its tables become worth adopting then.
 
@@ -79,7 +79,7 @@ next generation, so every existing cookie stops working, including copies of the
 stolen copy. With one Owner, "sign out" and "sign out everywhere" are the same thing. Only a request with a session can sign out; without one, signing out
 just clears the caller's cookie, so anyone can't sign the Owner out.
 
-**Data Protection keys** encrypt the cookie. They're kept in `LOOKOUT_BACKEND_DATABASE_DIR/keys`, so sessions survive restarts and are backed up with the database.
+**Data Protection keys** encrypt the cookie. They're kept in `LOOKOUT_DATABASE_DIR/keys`, so sessions survive restarts and are backed up with the database.
 Deleting the keys signs everyone out. They're stored unencrypted, as anyone who can read them can also read the database and `.env`.
 
 ## Which endpoints are open
@@ -132,7 +132,7 @@ A watch script is code, so it runs inside two limits, for when the sign-in is by
 **Node's permission model.** `ScriptRunner` starts the watch CLI with `--permission`, so a script may only read itself (not the other watches' scripts),
 the `node_modules` the CLI imports from and the SDK's own directory; write only the file the CLI puts its result in; and start no child processes or worker
 threads. It
-starts with a clean environment: only `FORCE_COLOR`, `LOOKOUT_BROWSERLESS_URL`, `LOOKOUT_WATCH_PROXY_URL` for VPN runs, and `TZ` and `SystemRoot` when the
+starts with a clean environment: only `FORCE_COLOR`, `BROWSERLESS_URL`, `LOOKOUT_WATCH_PROXY_URL` for VPN runs, and `TZ` and `SystemRoot` when the
 Runner has them. So the Runner key, and anything else in the Runner's environment, never reach a script. `ScriptSandboxTests` runs scripts that try each
 of these and checks they're refused. Node calls its model a seat belt, not a sandbox, so it isn't the only limit:
 
@@ -141,7 +141,7 @@ of these and checks they're refused. Node calls its model a seat belt, not a san
 - Outside the container, as in the Runner's tests, `node_modules` is the repo's, and npm links every workspace into it. Node follows those links, so a
   script run there can read the `src/Runner`, `src/frontend` and `examples` workspaces. In the container, those links point nowhere.
 - The CLI needs the network to reach browserless, and Node can't limit it to one host, so scripts get `--allow-net`.
-- A local browser needs child processes, so the Runner refuses to start without `LOOKOUT_RUNNER_BROWSERLESS_URL`.
+- A local browser needs child processes, so the Runner refuses to start without `BROWSERLESS_URL`.
 
 **The Runner's container.** The Runner runs from `src/Runner/Dockerfile` as the image's non-root user, with no Linux capabilities, `no-new-privileges`,
 `tini` as PID 1 (see [Production deployment](#production-deployment)), and the scripts mounted read-only at `/app/scripts`. The container has no `.env`,
@@ -164,8 +164,8 @@ secret that the AppHost generates on each start:
 
 | Container | Secret | Who has it |
 | --- | --- | --- |
-| browserless | `browserless-token`, the Runner's `LOOKOUT_RUNNER_BROWSERLESS_TOKEN`, sent as the `token` query parameter | browserless and the Runner |
-| gluetun's HTTP proxy | `gluetun-proxy-password`, `LOOKOUT_VPN_PROXY_PASSWORD`, for the username `lookout` | gluetun, the Runner and the Backend; see below |
+| browserless | `browserless-token`, the Runner's `BROWSERLESS_TOKEN`, sent as the `token` query parameter | browserless and the Runner |
+| gluetun's HTTP proxy | `gluetun-proxy-password`, `GLUETUN_PROXY_PASSWORD`, for the username `lookout` | gluetun, the Runner and the Backend; see below |
 | gluetun's control server | `gluetun-api-key`, in `X-API-Key` | gluetun and the Backend |
 
 Production takes them from the deployment's `.env` instead: see [Production deployment](#production-deployment). The token and the password are settings

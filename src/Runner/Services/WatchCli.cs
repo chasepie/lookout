@@ -47,7 +47,7 @@ public sealed record WatchCli(
     /// reads the URLs it needs.
     /// </summary>
     /// <exception cref="InvalidOperationException">
-    /// The CLI isn't built, <c>LOOKOUT_RUNNER_BROWSERLESS_URL</c> or <c>LOOKOUT_RUNNER_BROWSERLESS_TOKEN</c> isn't set, or either URL
+    /// The CLI isn't built, <c>BROWSERLESS_URL</c> or <c>BROWSERLESS_TOKEN</c> isn't set, or either URL
     /// isn't absolute.
     /// </exception>
     public static WatchCli FromConfiguration(IConfiguration configuration, string currentDirectory)

@@ -77,9 +77,9 @@ program
   .argument('<script>', 'path to a .ts or .js file whose default export implements LookoutWatchScript')
   .option('-o, --output <file>', 'write the result to a file instead of stdout')
   .option('--headless', 'run the browser in headless mode (default: false)')
-  // The Runner sets LOOKOUT_BROWSERLESS_URL in the environment it starts the CLI with
+  // The Runner sets BROWSERLESS_URL in the environment it starts the CLI with
   .addOption(new Option('--browserless <url>', 'run the browser on this browserless server instead of launching Chromium locally')
-    .env('LOOKOUT_BROWSERLESS_URL'))
+    .env('BROWSERLESS_URL'))
   // The Runner passes the VPN proxy in the environment, since the URL holds its password and command lines aren't private
   .addOption(new Option('--proxy <url>', 'send all browser traffic through this proxy, such as http://user:password@host:8888')
     .env('LOOKOUT_WATCH_PROXY_URL'))

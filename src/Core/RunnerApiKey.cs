@@ -50,13 +50,13 @@ public sealed class RunnerApiKey
     {
         try
         {
-            return new RunnerApiKey(configuration[EnvironmentVariables.RunnerApiKey] ?? "");
+            return new RunnerApiKey(configuration[EnvironmentVariables.LookoutRunnerApiKey] ?? "");
         }
         catch (ArgumentException ex)
         {
             // The constructor holds the rules; this only names the variable to fix
             throw new InvalidOperationException(
-                $"Environment variable {EnvironmentVariables.RunnerApiKey} must be set to a key of at least "
+                $"Environment variable {EnvironmentVariables.LookoutRunnerApiKey} must be set to a key of at least "
                 + $"{MinLength} printable ASCII characters, without leading or trailing spaces. The AppHost generates "
                 + "one; outside it, set the same key for the Backend and the Runner.",
                 ex);

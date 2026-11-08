@@ -5,7 +5,7 @@ using ChasePie.Lookout.Core;
 namespace ChasePie.Lookout.Backend.VpnServices;
 
 /// <summary>
-/// Typed HTTP client for gluetun's control server (<c>LOOKOUT_BACKEND_GLUETUN_URL</c>).
+/// Typed HTTP client for gluetun's control server (<c>GLUETUN_URL</c>).
 /// </summary>
 /// <remarks>
 /// Switching regions uses <c>PUT /v1/vpn/settings</c>, which the gluetun wiki doesn't document. It merges the
@@ -107,7 +107,7 @@ public class GluetunHttpClient(HttpClient httpClient)
     }
 
     /// <summary>
-    /// Configures the client from <c>LOOKOUT_BACKEND_GLUETUN_URL</c> and <c>LOOKOUT_BACKEND_GLUETUN_API_KEY</c>.
+    /// Configures the client from <c>GLUETUN_URL</c> and <c>GLUETUN_API_KEY</c>.
     /// Without a URL the client has no base address; nothing calls it then, see <see cref="VpnConfiguration.IsEnabled"/>.
     /// </summary>
     internal static void Configure(IServiceProvider services, HttpClient client)
@@ -163,7 +163,7 @@ public sealed record VpnConfiguration(Uri? GluetunUrl, string? ApiKey, string? D
     public bool IsEnabled => GluetunUrl is not null;
 
     /// <exception cref="InvalidOperationException">
-    /// <c>LOOKOUT_BACKEND_GLUETUN_URL</c> is set but isn't an absolute URL, or the settings it needs are missing.
+    /// <c>GLUETUN_URL</c> is set but isn't an absolute URL, or the settings it needs are missing.
     /// </exception>
     public static VpnConfiguration FromConfiguration(IConfiguration configuration)
     {
@@ -174,7 +174,7 @@ public sealed record VpnConfiguration(Uri? GluetunUrl, string? ApiKey, string? D
 
         var proxyUrl = EnvironmentVariables.GetVpnProxyUrl(configuration)
             ?? throw new InvalidOperationException(
-                $"Environment variable {EnvironmentVariables.VpnProxyUrl} must be set when {EnvironmentVariables.GluetunUrl} is");
+                $"Environment variable {EnvironmentVariables.GluetunProxyUrl} must be set when {EnvironmentVariables.GluetunUrl} is");
         // gluetun's control server refuses every request without it, so the VPN would only look configured
         var apiKey = configuration[EnvironmentVariables.GluetunApiKey];
         if (string.IsNullOrWhiteSpace(apiKey))
@@ -186,7 +186,7 @@ public sealed record VpnConfiguration(Uri? GluetunUrl, string? ApiKey, string? D
         return new VpnConfiguration(
             GluetunUrl: gluetunUrl,
             ApiKey: apiKey,
-            DataDirectory: EnvironmentVariables.GetRequiredDirectory(configuration, EnvironmentVariables.GluetunDir),
+            DataDirectory: EnvironmentVariables.GetRequiredDirectory(configuration, EnvironmentVariables.GluetunDataDir),
             ProxyUrl: proxyUrl);
     }
 }

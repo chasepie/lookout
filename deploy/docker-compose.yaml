@@ -23,11 +23,11 @@ services:
     image: "ghcr.io/chasepie/lookout-runner:${LOOKOUT_IMAGE_TAG:-main}"
     environment:
       TZ: "${TZ:-Etc/UTC}"
-      LOOKOUT_RUNNER_BROWSERLESS_URL: "http://browserless:3000"
-      LOOKOUT_RUNNER_BROWSERLESS_TOKEN: "${BROWSERLESS_TOKEN}"
-      LOOKOUT_VPN_PROXY_URL: "http://lookout@gluetun:8888"
+      BROWSERLESS_URL: "http://browserless:3000"
+      BROWSERLESS_TOKEN: "${BROWSERLESS_TOKEN}"
+      GLUETUN_PROXY_URL: "http://lookout@gluetun:8888"
       LOOKOUT_RUNNER_API_KEY: "${LOOKOUT_RUNNER_API_KEY}"
-      LOOKOUT_VPN_PROXY_PASSWORD: "${GLUETUN_PROXY_PASSWORD}"
+      GLUETUN_PROXY_PASSWORD: "${GLUETUN_PROXY_PASSWORD}"
     volumes:
       - type: "volume"
         target: "/app/scripts"
@@ -54,20 +54,20 @@ services:
   backend:
     image: "ghcr.io/chasepie/lookout-backend:${LOOKOUT_IMAGE_TAG:-main}"
     environment:
+      AllowedHosts: "${LOOKOUT_HOST}"
       TZ: "${TZ:-Etc/UTC}"
-      AllowedHosts: "${LOOKOUT_BACKEND_HOST}"
-      LOOKOUT_BACKEND_TRUSTED_PROXIES: "${LOOKOUT_BACKEND_TRUSTED_PROXIES:-}"
-      LOOKOUT_BACKEND_OWNER_USERNAME: "${LOOKOUT_BACKEND_OWNER_USERNAME}"
-      LOOKOUT_BACKEND_RUNNER_URL: "http://runner:8080"
-      LOOKOUT_BACKEND_GLUETUN_URL: "http://gluetun-control:8000"
-      LOOKOUT_BACKEND_GLUETUN_API_KEY: "${GLUETUN_API_KEY}"
-      LOOKOUT_BACKEND_GLUETUN_DIR: "/app/gluetun"
-      LOOKOUT_VPN_PROXY_URL: "http://lookout@gluetun-proxy:8888"
-      LOOKOUT_BACKEND_OWNER_PASSWORD: "${LOOKOUT_BACKEND_OWNER_PASSWORD}"
+      GLUETUN_API_KEY: "${GLUETUN_API_KEY}"
+      GLUETUN_DATA_DIR: "/app/gluetun"
+      GLUETUN_PROXY_PASSWORD: "${GLUETUN_PROXY_PASSWORD}"
+      GLUETUN_PROXY_URL: "http://lookout@gluetun-proxy:8888"
+      GLUETUN_URL: "http://gluetun-control:8000"
+      LOOKOUT_OWNER_PASSWORD: "${LOOKOUT_OWNER_PASSWORD}"
+      LOOKOUT_OWNER_USERNAME: "${LOOKOUT_OWNER_USERNAME}"
       LOOKOUT_RUNNER_API_KEY: "${LOOKOUT_RUNNER_API_KEY}"
-      LOOKOUT_VPN_PROXY_PASSWORD: "${GLUETUN_PROXY_PASSWORD}"
+      LOOKOUT_RUNNER_URL: "http://runner:8080"
+      LOOKOUT_TRUSTED_PROXIES: "${LOOKOUT_TRUSTED_PROXIES:-}"
     ports:
-      - "${LOOKOUT_BACKEND_BIND_ADDRESS:-127.0.0.1}:${LOOKOUT_BACKEND_PORT:-8080}:8080"
+      - "${LOOKOUT_BIND_ADDRESS:-127.0.0.1}:${LOOKOUT_PORT:-8080}:8080"
     volumes:
       - type: "volume"
         target: "/app/scripts"
@@ -183,7 +183,7 @@ networks:
     driver: "bridge"
     ipam:
       config:
-        - subnet: "${LOOKOUT_BACKEND_EDGE_SUBNET:-172.30.240.0/24}"
+        - subnet: "${LOOKOUT_EDGE_SUBNET:-172.30.240.0/24}"
 volumes:
   scripts:
     driver: "local"

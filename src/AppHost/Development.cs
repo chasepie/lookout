@@ -42,7 +42,7 @@ public partial class Program
         var runnerApiKey = AddGeneratedSecret(builder, "runner-api-key");
 
         // The Backend saves uploaded scripts there and the Runner runs them from there
-        var watchScriptsDir = RequiredDirectory(EnvironmentVariables.WatchScriptsDir, "watch scripts are kept in");
+        var watchScriptsDir = RequiredDirectory(EnvironmentVariables.LookoutWatchScriptsDir, "watch scripts are kept in");
 
         // Watch scripts are code, so the Runner runs in a container that can't see the rest of this machine: as the
         // image's non-root user, with the scripts read-only, no .env or database, no Linux capabilities, and no way to
@@ -58,7 +58,7 @@ public partial class Program
             .WithEnvironment("ASPNETCORE_ENVIRONMENT", "Development")
             // Scripts' dates follow the configured time zone, not the container's UTC
             .WithEnvironment("TZ", timeZone)
-            .WithEnvironment(EnvironmentVariables.RunnerApiKey, runnerApiKey)
+            .WithEnvironment(EnvironmentVariables.LookoutRunnerApiKey, runnerApiKey)
             // On the container network
             .WithEnvironment(
                 EnvironmentVariables.BrowserlessUrl,
@@ -69,29 +69,29 @@ public partial class Program
             .WaitFor(browserless);
 
         // The Owner's sign-in. The Backend checks them too; checking here stops startup before anything else starts.
-        if (DotEnvValue(EnvironmentVariables.OwnerUsername) is not { } ownerUsername
-            || DotEnvValue(EnvironmentVariables.OwnerPassword) is not { } ownerPasswordValue)
+        if (DotEnvValue(EnvironmentVariables.LookoutOwnerUsername) is not { } ownerUsername
+            || DotEnvValue(EnvironmentVariables.LookoutOwnerPassword) is not { } ownerPasswordValue)
         {
             throw new InvalidOperationException(
-                $"Set {EnvironmentVariables.OwnerUsername} and {EnvironmentVariables.OwnerPassword} "
+                $"Set {EnvironmentVariables.LookoutOwnerUsername} and {EnvironmentVariables.LookoutOwnerPassword} "
                 + "in .env to the username and password you sign in to Lookout with.");
         }
 
         if (ownerPasswordValue.Length < EnvironmentVariables.OwnerPasswordMinLength)
         {
             throw new InvalidOperationException(
-                $"{EnvironmentVariables.OwnerPassword} in .env must be at least "
+                $"{EnvironmentVariables.LookoutOwnerPassword} in .env must be at least "
                 + $"{EnvironmentVariables.OwnerPasswordMinLength} characters.");
         }
 
         var ownerPassword = builder.AddParameter("owner-password", ownerPasswordValue, secret: true);
 
         var backend = builder.AddProject<Projects.Backend>("backend")
-            .WithEnvironment(EnvironmentVariables.OwnerUsername, ownerUsername)
-            .WithEnvironment(EnvironmentVariables.OwnerPassword, ownerPassword)
-            .WithEnvironment(EnvironmentVariables.RunnerUrl, runner.GetEndpoint("http"))
-            .WithEnvironment(EnvironmentVariables.WatchScriptsDir, watchScriptsDir)
-            .WithEnvironment(EnvironmentVariables.RunnerApiKey, runnerApiKey)
+            .WithEnvironment(EnvironmentVariables.LookoutOwnerUsername, ownerUsername)
+            .WithEnvironment(EnvironmentVariables.LookoutOwnerPassword, ownerPassword)
+            .WithEnvironment(EnvironmentVariables.LookoutRunnerUrl, runner.GetEndpoint("http"))
+            .WithEnvironment(EnvironmentVariables.LookoutWatchScriptsDir, watchScriptsDir)
+            .WithEnvironment(EnvironmentVariables.LookoutRunnerApiKey, runnerApiKey)
             .WithHttpHealthCheck("/health")
             .WaitFor(runner);
 
@@ -99,7 +99,7 @@ public partial class Program
         if (DotEnvValue("GLUETUN_OPENVPN_USER") is { } openVpnUser && DotEnvValue("GLUETUN_OPENVPN_PASSWORD") is { } openVpnPasswordValue)
         {
             // gluetun keeps its servers list there, and the Backend reads the list to know which regions exist
-            var gluetunDir = RequiredDirectory("GLUETUN_DIR", "gluetun keeps its data in");
+            var gluetunDir = RequiredDirectory(EnvironmentVariables.GluetunDataDir, "gluetun keeps its data in");
 
             var openVpnPassword = builder.AddParameter("openvpn-password", openVpnPasswordValue, secret: true);
             // A new key every time the AppHost starts; only gluetun and the Backend need it
@@ -159,22 +159,22 @@ public partial class Program
             // without the VPN don't need it, and a VPN run fails while the proxy is down instead of leaking.
             var proxyOnContainerNetwork = gluetun.Resource.GetEndpoint("proxy", KnownNetworkIdentifiers.DefaultAspireContainerNetwork);
             runner
-                .WithEnvironment(EnvironmentVariables.VpnProxyUrl, ProxyUrl(proxyOnContainerNetwork))
-                .WithEnvironment(EnvironmentVariables.VpnProxyPassword, proxyPassword);
+                .WithEnvironment(EnvironmentVariables.GluetunProxyUrl, ProxyUrl(proxyOnContainerNetwork))
+                .WithEnvironment(EnvironmentVariables.GluetunProxyPassword, proxyPassword);
 
             // The Backend doesn't wait for gluetun either: it retries, and shows gluetun as unreachable meanwhile
             backend
                 .WithEnvironment(EnvironmentVariables.GluetunUrl, gluetun.GetEndpoint("control"))
                 .WithEnvironment(EnvironmentVariables.GluetunApiKey, gluetunApiKey)
-                .WithEnvironment(EnvironmentVariables.GluetunDir, gluetunDir)
+                .WithEnvironment(EnvironmentVariables.GluetunDataDir, gluetunDir)
                 // Unlike the Runner's, on the host, since the Backend connects to it itself
-                .WithEnvironment(EnvironmentVariables.VpnProxyUrl, ProxyUrl(gluetun.GetEndpoint("proxy")))
-                .WithEnvironment(EnvironmentVariables.VpnProxyPassword, proxyPassword);
+                .WithEnvironment(EnvironmentVariables.GluetunProxyUrl, ProxyUrl(gluetun.GetEndpoint("proxy")))
+                .WithEnvironment(EnvironmentVariables.GluetunProxyPassword, proxyPassword);
         }
 
-        if (DotEnvDirectory(EnvironmentVariables.DatabaseDir) is { } databaseDir)
+        if (DotEnvDirectory(EnvironmentVariables.LookoutDatabaseDir) is { } databaseDir)
         {
-            backend.WithEnvironment(EnvironmentVariables.DatabaseDir, databaseDir);
+            backend.WithEnvironment(EnvironmentVariables.LookoutDatabaseDir, databaseDir);
         }
 
         // Runs `npm run start` (ng serve) on its default port. The dev server forwards /api to the

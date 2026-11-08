@@ -5,14 +5,14 @@ A monorepo with a .NET solution (`Lookout.slnx`) and npm workspaces (root `packa
 ## Layout
 
 - `src/Backend/`: ASP.NET Core API that manages watches and their runs, under `/api`. It also serves the built frontend from `wwwroot`, which its image
-(`src/Backend/Dockerfile`) builds in. Only the Owner can use it: they sign in with `LOOKOUT_BACKEND_OWNER_USERNAME` and `LOOKOUT_BACKEND_OWNER_PASSWORD` (`Auth/`), and
+(`src/Backend/Dockerfile`) builds in. Only the Owner can use it: they sign in with `LOOKOUT_OWNER_USERNAME` and `LOOKOUT_OWNER_PASSWORD` (`Auth/`), and
 outside `localhost` it must be served over HTTPS, behind a reverse proxy in production (`Hosting/`); see `docs/security.md`. It calls the Runner over HTTP
-(`LOOKOUT_BACKEND_RUNNER_URL`). It also rotates the VPN between regions through gluetun's control server (`VpnServices/`); the region list comes from gluetun's
-servers list in `LOOKOUT_BACKEND_GLUETUN_DIR`. The SQLite schema is managed with EF Core migrations in `Database/Migrations`: after changing the model, run
+(`LOOKOUT_RUNNER_URL`). It also rotates the VPN between regions through gluetun's control server (`VpnServices/`); the region list comes from gluetun's
+servers list in `GLUETUN_DATA_DIR`. The SQLite schema is managed with EF Core migrations in `Database/Migrations`: after changing the model, run
 `dotnet tool restore` once, then `dotnet ef migrations add <Name> --project src/Backend --output-dir Database/Migrations`. In Development,
 `DevelopmentDataSeeder` gives a database with no watches one watch per script in `examples/`.
 - `src/Runner/`: ASP.NET Core service that runs watch scripts, sandboxed with Node's permission model in a container built from `src/Runner/Dockerfile`
-(see `docs/security.md`). Without the AppHost it needs `LOOKOUT_RUNNER_BROWSERLESS_URL` and `LOOKOUT_RUNNER_BROWSERLESS_TOKEN`, and finds the watch CLI through the
+(see `docs/security.md`). Without the AppHost it needs `BROWSERLESS_URL` and `BROWSERLESS_TOKEN`, and finds the watch CLI through the
 repo root.
 - `src/Core/`: types shared by Backend, Runner and AppHost: the C# records, the environment variable names (`EnvironmentVariables`), the watch
 scripts directory (`WatchScriptsDirectory`), the key the Backend authenticates to the Runner with (`RunnerApiKey`) and the repo root lookup (`RepoRoot`).
@@ -21,7 +21,7 @@ scripts directory (`WatchScriptsDirectory`), the key the Backend authenticates t
     runs) and, when the OpenVPN credentials are in `.env`, gluetun (the VPN proxy for watches with `UseVpn`). It builds the Runner's container from
     `src/Runner/Dockerfile` and mounts the scripts directory into it read-only. It forwards the Owner's credentials and the directory settings from `.env`
     (relative paths resolve against the repo root), refusing to start without the credentials, sets the services' URLs, generates new secrets on each
-    start, bind-mounts `GLUETUN_DIR` as gluetun's data directory (running gluetun's updater there first if it has no servers list), and opens the Aspire dashboard.
+    start, bind-mounts `GLUETUN_DATA_DIR` as gluetun's data directory (running gluetun's updater there first if it has no servers list), and opens the Aspire dashboard.
   - `aspire publish` (`Production.cs`) describes the production deployment as `deploy/docker-compose.yaml`. After changing it, run
     `src/AppHost/publish-deployment.sh` and commit the result, which `AppHost.Tests` checks is current.
 - `src/ServiceDefaults/`: shared Aspire setup (OpenTelemetry, health checks, service discovery) referenced by Backend and Runner.

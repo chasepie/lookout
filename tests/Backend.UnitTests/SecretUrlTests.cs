@@ -18,8 +18,8 @@ public sealed class SecretUrlTests
     public void TheProxyPasswordIsAddedToTheProxyUrl()
     {
         var url = EnvironmentVariables.GetVpnProxyUrl(Configuration(
-            (EnvironmentVariables.VpnProxyUrl, "http://lookout@gluetun:8888"),
-            (EnvironmentVariables.VpnProxyPassword, "pa:ss/w@rd")));
+            (EnvironmentVariables.GluetunProxyUrl, "http://lookout@gluetun:8888"),
+            (EnvironmentVariables.GluetunProxyPassword, "pa:ss/w@rd")));
 
         Assert.AreEqual("http://lookout:pa%3Ass%2Fw%40rd@gluetun:8888/", url?.AbsoluteUri);
     }
@@ -28,7 +28,7 @@ public sealed class SecretUrlTests
     public void AProxyUrlWithoutAPasswordSettingIsKeptAsItIs()
     {
         var url = EnvironmentVariables.GetVpnProxyUrl(Configuration(
-            (EnvironmentVariables.VpnProxyUrl, "http://lookout:secret@gluetun:8888")));
+            (EnvironmentVariables.GluetunProxyUrl, "http://lookout:secret@gluetun:8888")));
 
         Assert.AreEqual("http://lookout:secret@gluetun:8888/", url?.AbsoluteUri);
     }
@@ -40,16 +40,16 @@ public sealed class SecretUrlTests
     {
         // gluetun's proxy without a password lets anyone who reaches it out through the VPN
         var error = Assert.ThrowsExactly<InvalidOperationException>(() => EnvironmentVariables.GetVpnProxyUrl(
-            Configuration((EnvironmentVariables.VpnProxyUrl, proxyUrl))));
+            Configuration((EnvironmentVariables.GluetunProxyUrl, proxyUrl))));
 
-        Assert.Contains(EnvironmentVariables.VpnProxyPassword, error.Message);
+        Assert.Contains(EnvironmentVariables.GluetunProxyPassword, error.Message);
     }
 
     [TestMethod]
     public void WithoutAProxyUrlThereIsNoProxy()
     {
         var url = EnvironmentVariables.GetVpnProxyUrl(Configuration(
-            (EnvironmentVariables.VpnProxyPassword, "secret")));
+            (EnvironmentVariables.GluetunProxyPassword, "secret")));
 
         Assert.IsNull(url);
     }

@@ -5,7 +5,7 @@ using ChasePie.Lookout.Core;
 namespace ChasePie.Lookout.Backend.Auth;
 
 /// <summary>
-/// The Owner's username and password, from <c>LOOKOUT_BACKEND_OWNER_USERNAME</c> and <c>LOOKOUT_BACKEND_OWNER_PASSWORD</c>: the only
+/// The Owner's username and password, from <c>LOOKOUT_OWNER_USERNAME</c> and <c>LOOKOUT_OWNER_PASSWORD</c>: the only
 /// credentials Lookout accepts. See <c>docs/security.md</c>.
 /// </summary>
 public sealed class OwnerCredentials
@@ -53,13 +53,13 @@ public sealed class OwnerCredentials
     /// <exception cref="InvalidOperationException">A variable is missing, or the password is too short.</exception>
     public static OwnerCredentials FromConfiguration(IConfiguration configuration)
     {
-        var username = configuration[EnvironmentVariables.OwnerUsername];
-        var password = configuration[EnvironmentVariables.OwnerPassword];
+        var username = configuration[EnvironmentVariables.LookoutOwnerUsername];
+        var password = configuration[EnvironmentVariables.LookoutOwnerPassword];
         if (string.IsNullOrWhiteSpace(username) || string.IsNullOrEmpty(password))
         {
             throw new InvalidOperationException(
-                $"Environment variables {EnvironmentVariables.OwnerUsername} and "
-                + $"{EnvironmentVariables.OwnerPassword} must be set to the Owner's sign-in.");
+                $"Environment variables {EnvironmentVariables.LookoutOwnerUsername} and "
+                + $"{EnvironmentVariables.LookoutOwnerPassword} must be set to the Owner's sign-in.");
         }
 
         try
@@ -70,7 +70,7 @@ public sealed class OwnerCredentials
         {
             // The constructor holds the rules; this only names the variable to fix
             throw new InvalidOperationException(
-                $"Environment variable {EnvironmentVariables.OwnerPassword} must be at least "
+                $"Environment variable {EnvironmentVariables.LookoutOwnerPassword} must be at least "
                 + $"{MinPasswordLength} characters.", ex);
         }
     }

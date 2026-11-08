@@ -47,7 +47,7 @@ public static class OwnerAuthentication
         services.AddSingleton<OwnerSessions>();
 
         // Without persisted keys, every restart would sign out every session
-        var databaseDir = EnvironmentVariables.GetRequiredDirectory(configuration, EnvironmentVariables.DatabaseDir);
+        var databaseDir = EnvironmentVariables.GetRequiredDirectory(configuration, EnvironmentVariables.LookoutDatabaseDir);
         services.AddDataProtection()
             .SetApplicationName("Lookout")
             .PersistKeysToFileSystem(new DirectoryInfo(Path.Join(databaseDir, KeysDirectoryName)));

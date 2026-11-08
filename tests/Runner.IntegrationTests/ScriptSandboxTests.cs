@@ -14,8 +14,8 @@ namespace ChasePie.Lookout.Runner.IntegrationTests;
 [TestClass]
 public sealed class ScriptSandboxTests
 {
-    // What the Runner gives a script's process: FORCE_COLOR, and the watch CLI's name for browserless, not the Runner's
-    private static readonly string[] CliVariables = ["FORCE_COLOR", "LOOKOUT_BROWSERLESS_URL"];
+    // What the Runner gives a script's process: the watch CLI's browserless server and FORCE_COLOR, sorted
+    private static readonly string[] CliVariables = ["BROWSERLESS_URL", "FORCE_COLOR"];
 
     public TestContext TestContext { get; set; } = null!;
 
@@ -122,7 +122,7 @@ public sealed class ScriptSandboxTests
         await using var factory = new RunnerFactory();
         Directory.CreateDirectory(factory.ScriptsDirectory);
         await File.WriteAllTextAsync(Path.Join(factory.ScriptsDirectory, "leaky.ts"), """
-            console.error(`connecting to ${process.env.LOOKOUT_BROWSERLESS_URL}`);
+            console.error(`connecting to ${process.env.BROWSERLESS_URL}`);
             throw new Error('failed');
             """, Ct);
         using var client = factory.CreateClient(RunnerFactory.ApiKey);

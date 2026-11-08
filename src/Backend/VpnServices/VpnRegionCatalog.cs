@@ -4,7 +4,7 @@ namespace ChasePie.Lookout.Backend.VpnServices;
 
 /// <summary>
 /// The regions a VPN provider offers, read from the servers list gluetun keeps in its data directory
-/// (<c>LOOKOUT_BACKEND_GLUETUN_DIR</c>). gluetun validates region switches against the same list, so any region
+/// (<c>GLUETUN_DATA_DIR</c>). gluetun validates region switches against the same list, so any region
 /// returned here is one it accepts.
 /// </summary>
 /// <remarks>

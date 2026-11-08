@@ -11,16 +11,16 @@ The deployment needs only this directory's `docker-compose.yaml` and `.env.examp
 Copy `.env.example` to `.env` beside `docker-compose.yaml`, and fill it in. It says what each setting is for, and which are
 required. The secrets are there too:
 
-- `LOOKOUT_BACKEND_OWNER_USERNAME` and `LOOKOUT_BACKEND_OWNER_PASSWORD`: what you sign in with. Changing either, other than the username's
+- `LOOKOUT_OWNER_USERNAME` and `LOOKOUT_OWNER_PASSWORD`: what you sign in with. Changing either, other than the username's
   case, signs out every session once the Backend restarts.
 - `LOOKOUT_RUNNER_API_KEY`, `BROWSERLESS_TOKEN`, `GLUETUN_API_KEY` and `GLUETUN_PROXY_PASSWORD`: secrets the services share
   among themselves. Make each with `openssl rand -hex 32`.
 - `GLUETUN_OPENVPN_USER` and `GLUETUN_OPENVPN_PASSWORD`: your VPN provider's OpenVPN credentials.
 
 Compose expands `$NAME` in `.env` values, and `#` starts a comment, so put any value with `$`, `#` or spaces in single
-quotes: `LOOKOUT_BACKEND_OWNER_PASSWORD='pa$$word with #'`. The `openssl rand -hex` ones never need it.
+quotes: `LOOKOUT_OWNER_PASSWORD='pa$$word with #'`. The `openssl rand -hex` ones never need it.
 
-`LOOKOUT_BACKEND_HOST` is the hostname you reach Lookout on; requests for any other host are refused. `LOOKOUT_BACKEND_TRUSTED_PROXIES` isn't
+`LOOKOUT_BACKEND_HOST` is the hostname you reach Lookout on; requests for any other host are refused. `LOOKOUT_TRUSTED_PROXIES` isn't
 required, but signing in fails without it: see [step 2](#2-a-reverse-proxy).
 
 Since `.env` holds the secrets, keep it to yourself:
@@ -39,7 +39,7 @@ say otherwise, and expects a reverse proxy in front of it. It must:
   as one from Let's Encrypt with a DNS challenge for a name on a domain you own.
 - **Pass the `Host` header through** as `LOOKOUT_BACKEND_HOST`.
 - **Send `X-Forwarded-For` and `X-Forwarded-Proto`**, replacing any the client sent. The Backend only trusts them from
-  the addresses in `LOOKOUT_BACKEND_TRUSTED_PROXIES`: set it to the proxy's address as the Backend sees it. For a proxy on another
+  the addresses in `LOOKOUT_TRUSTED_PROXIES`: set it to the proxy's address as the Backend sees it. For a proxy on another
   machine, that's the proxy's LAN address. For a proxy on this machine, connecting to the published port, it's the
   gateway of the Backend's `edge` network: `172.30.240.1`, the first address of `LOOKOUT_BACKEND_EDGE_SUBNET`. The subnet is
   fixed so the gateway doesn't change when the network is re-created; change it if it overlaps another network. Trusting
