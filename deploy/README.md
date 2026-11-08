@@ -78,7 +78,7 @@ Everything Lookout keeps is in Docker volumes:
 | --- | --- |
 | `database` | The SQLite database, and the keys that encrypt session cookies. Losing the keys signs everyone out. |
 | `scripts` | The uploaded watch scripts |
-| `gluetun` | gluetun's servers list, which it downloads again if lost |
+| `gluetun` | gluetun's servers list. If it's lost, gluetun falls back to the list built into its image, which may be months out of date: refresh it as below. |
 
 Back up `database` and `scripts` together, with the stack stopped, for example:
 
@@ -88,3 +88,14 @@ docker run --rm -v lookout_database:/database:ro -v lookout_scripts:/scripts:ro 
   tar czf /backup/lookout-backup.tar.gz /database /scripts
 docker compose start
 ```
+
+gluetun refreshes its servers list only after `UPDATER_PERIOD` (15 days) without a restart. If the VPN can't connect,
+with `TLS key negotiation failed` in gluetun's log, the list is probably out of date. Refresh it, then restart gluetun:
+
+```sh
+docker compose stop gluetun
+docker run --rm -v lookout_gluetun:/gluetun qmcgaw/gluetun:<the tag in docker-compose.yaml> update -enduser -providers "private internet access"
+docker compose start gluetun
+```
+
+If you set `VPN_SERVICE_PROVIDER`, pass that provider to `-providers` instead.

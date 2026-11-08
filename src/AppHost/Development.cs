@@ -107,11 +107,12 @@ public partial class Program
             // Without credentials, anyone who can reach the proxy can send traffic through the VPN. A new password
             // every time the AppHost starts; only gluetun, the Runner and the Backend have it.
             var proxyPassword = AddGeneratedSecret(builder, "gluetun-proxy-password");
+            var vpnServiceProvider = DotEnvValue("VPN_SERVICE_PROVIDER") ?? "private internet access";
             var gluetun = builder.AddContainer("gluetun", GluetunImage, GluetunTag)
                 // Aspire has no API for capabilities or devices, so they're passed to `docker run` directly
                 .WithContainerRuntimeArgs("--cap-add=NET_ADMIN", "--device=/dev/net/tun:/dev/net/tun")
                 .WithBindMount(gluetunDir, "/gluetun")
-                .WithEnvironment("VPN_SERVICE_PROVIDER", DotEnvValue("VPN_SERVICE_PROVIDER") ?? "private internet access")
+                .WithEnvironment("VPN_SERVICE_PROVIDER", vpnServiceProvider)
                 .WithEnvironment("VPN_TYPE", "openvpn")
                 .WithEnvironment("OPENVPN_USER", openVpnUser)
                 .WithEnvironment("OPENVPN_PASSWORD", openVpnPassword)
@@ -134,6 +135,24 @@ public partial class Program
                 ])
                 .WithEndpoint(targetPort: 8888, scheme: "http", name: "proxy")
                 .WithHttpEndpoint(targetPort: 8000, name: "control");
+
+            // gluetun refreshes its servers list only after UPDATER_PERIOD without a restart, which in development never
+            // comes, so without a list it would use the one built into its image, which may be months out of date and
+            // fail to connect. `update` writes that list before fetching the new one, so a failed update deletes it,
+            // letting the next start try again; gluetun doesn't start until then.
+            if (!File.Exists(Path.Join(gluetunDir, GluetunServersFileName)))
+            {
+                var gluetunUpdater = builder.AddContainer("gluetun-updater", GluetunImage, GluetunTag)
+                    .WithBindMount(gluetunDir, "/gluetun")
+                    .WithEntrypoint("/bin/sh")
+                    // The provider is passed as $1 rather than spliced into the script, so it needs no quoting
+                    .WithArgs(
+                        "-c",
+                        $"/gluetun-entrypoint update -enduser -providers \"$1\" || {{ rm -f /gluetun/{GluetunServersFileName}; exit 1; }}",
+                        "gluetun-updater",
+                        vpnServiceProvider);
+                gluetun.WaitForCompletion(gluetunUpdater);
+            }
 
             // The browser in the browserless container connects to the proxy, so the Runner gets its address
             // on the container network rather than the host port. The Runner doesn't wait for gluetun: watches
@@ -163,7 +182,7 @@ public partial class Program
         // one origin is what lets the session cookie and the CSRF checks work.
         // Packages come from the root npm workspace, so run `npm install` at the repo root first.
         var frontend = builder.AddJavaScriptApp("frontend", "../frontend", "start")
-            .WithNpm(install: false)
+            .WithNpm(install: true)
             .WithHttpEndpoint(port: 4200, isProxied: false)
             .WaitFor(backend);
 

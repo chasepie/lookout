@@ -212,7 +212,7 @@ vite.config.ts.timestamp-*
 # Turbo Repo
 .turbo
 
-.shared-volumes/
+.docker-volumes/
 
 # The frontend's build output, which the Backend serves
 src/Backend/wwwroot/

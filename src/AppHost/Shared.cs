@@ -25,8 +25,12 @@ public partial class Program
     private const string GluetunImage = "qmcgaw/gluetun";
     private const string GluetunTag = "v3.41.3";
 
-    // How often gluetun refreshes its servers list; more often risks the VPN provider blocking it
+    // How often gluetun refreshes its servers list; more often risks the VPN provider blocking it. The first refresh comes
+    // a whole period after gluetun starts, so until then it uses the list in its data directory or, without one, its image's.
     private const string GluetunUpdaterPeriod = "360h";
+
+    // The servers list in gluetun's data directory
+    private const string GluetunServersFileName = "servers.json";
 
     // The username for gluetun's HTTP proxy; only the password needs to be secret
     private const string ProxyUsername = "lookout";
