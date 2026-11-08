@@ -2,7 +2,7 @@ using Aspire.Hosting.Testing;
 using ChasePie.Lookout.Core;
 using YamlDotNet.Serialization;
 
-namespace Chasepie.Lookout.AppHost.Tests;
+namespace ChasePie.Lookout.AppHost.Tests;
 
 /// <summary>
 /// The Docker Compose files `aspire publish` writes: what each service can reach, how it's locked down, and which secrets

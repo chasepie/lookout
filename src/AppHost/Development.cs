@@ -1,136 +1,139 @@
 using ChasePie.Lookout.Core;
-using dotenv.net;
 
-namespace Chasepie.Lookout.AppHost;
+namespace ChasePie.Lookout.AppHost;
 
-// `dotnet run`: the Backend and the frontend on this machine, the rest in containers
 public partial class Program
 {
-    private static void AddDevelopment(IDistributedApplicationBuilder builder)
+    // `dotnet run`: the Backend and the frontend on this machine, the rest in containers
+    private static class Development
     {
-        // Aspire starts each project from its own directory, where the services can't find the
-        // repo-root .env, so forward the values they need from it.
-        var repoRoot = RepoRoot.FindRequired(builder.AppHostDirectory);
-        var dotEnv = DotEnv.Read(new DotEnvOptions(envFilePaths: [Path.Combine(repoRoot, ".env")]));
-        string? DotEnvValue(string name) =>
-            dotEnv.TryGetValue(name, out var value) && !string.IsNullOrWhiteSpace(value) ? value : null;
+        // The length of every generated secret, unless the Runner API key's minimum, which the Backend and the Runner
+        // check, is longer
+        private const int GeneratedSecretLength = 32;
 
-        // A directory from .env, with a relative path resolved against the repo root, where .env lives
-        string? DotEnvDirectory(string name) => DotEnvValue(name) is { } dir ? Path.GetFullPath(dir, repoRoot) : null;
-
-        // A directory the AppHost needs, created if it doesn't exist yet
-        string RequiredDirectory(string name, string purpose)
+        public static void Add(IDistributedApplicationBuilder builder)
         {
-            var dir = DotEnvDirectory(name)
-                ?? throw new InvalidOperationException($"Set {name} in .env to the directory {purpose}.");
-            Directory.CreateDirectory(dir);
-            return dir;
+            var settings = DevelopmentSettings.Read(RepoRoot.FindRequired(builder.AppHostDirectory));
+
+            // Without a token browserless accepts anyone, who could then drive Chromium against the internal network.
+            // A new one every time the AppHost starts; only browserless and the Runner have it.
+            var browserlessToken = AddGeneratedSecret(builder, EnvVars.BrowserlessToken);
+            // A new key every time the AppHost starts; the Runner refuses requests without it, and only the Backend has it
+            var runnerApiKey = AddGeneratedSecret(builder, EnvVars.LookoutRunnerApiKey);
+            var watchScriptsDir = settings.RequireWatchScriptsDir();
+
+            var browserless = AddBrowserless(builder, settings, browserlessToken);
+            var runner = AddRunner(builder, settings, watchScriptsDir, browserless, browserlessToken, runnerApiKey);
+            var backend = AddBackend(builder, settings, watchScriptsDir, runner, runnerApiKey);
+            if (settings.OpenVpn is { } openVpn)
+            {
+                AddGluetun(builder, settings, openVpn, runner, backend);
+            }
+
+            AddFrontend(builder, backend);
         }
 
-        var timeZone = DotEnvValue("TZ") ?? "America/New_York";
-
-        // Without a token browserless accepts anyone, who could then drive Chromium against the internal network.
-        // A new one every time the AppHost starts; only browserless and the Runner have it.
-        var browserlessToken = AddGeneratedSecret(builder, "browserless-token");
-        var browserless = builder.AddContainer("browserless", BrowserlessImage, BrowserlessTag)
-            .WithEnvironment("TZ", timeZone)
-            .WithEnvironment("TIMEOUT", BrowserlessTimeout)
-            .WithEnvironment("TOKEN", browserlessToken)
-            .WithHttpEndpoint(targetPort: 3000, name: "http");
-
-        // A new key every time the AppHost starts; the Runner refuses requests without it, and only the Backend has it
-        var runnerApiKey = AddGeneratedSecret(builder, "runner-api-key");
-
-        // The Backend saves uploaded scripts there and the Runner runs them from there
-        var watchScriptsDir = RequiredDirectory(EnvVars.LookoutWatchScriptsDir, "watch scripts are kept in");
+        private static IResourceBuilder<ContainerResource> AddBrowserless(
+            IDistributedApplicationBuilder builder, DevelopmentSettings settings, IResourceBuilder<ParameterResource> token) =>
+            builder.AddContainer("browserless", BrowserlessImage, BrowserlessTag)
+                .WithEnvironmentVariables(BrowserlessEnvironment)
+                .WithEnvironment("TZ", settings.TimeZone)
+                .WithEnvironment("TOKEN", token)
+                .WithHttpEndpoint(targetPort: 3000, name: "http");
 
         // Watch scripts are code, so the Runner runs in a container that can't see the rest of this machine: as the
         // image's non-root user, with the scripts read-only, no .env or database, no Linux capabilities, and no way to
         // gain privileges. Its root filesystem stays writable (though not by its user, outside /tmp and its home), since
         // Aspire copies the development certificate in, which the Runner's telemetry needs. Its network isn't limited
         // either, since that needs the Backend in a container too; production does both. docs/security.md explains.
-        var runner = builder.AddDockerfile("runner", repoRoot, "src/Runner/Dockerfile")
-            .WithBindMount(watchScriptsDir, "/app/scripts", isReadOnly: true)
-            .WithContainerRuntimeArgs("--cap-drop=ALL", "--security-opt=no-new-privileges")
-            // Plain HTTP: this hop stays on this machine
-            .WithHttpEndpoint(targetPort: 8080, name: "http")
-            // Always Development, as the Runner's launch profile was: /health, which the AppHost polls, is only mapped there
-            .WithEnvironment("ASPNETCORE_ENVIRONMENT", "Development")
-            // Scripts' dates follow the configured time zone, not the container's UTC
-            .WithEnvironment("TZ", timeZone)
-            .WithEnvironment(EnvVars.LookoutRunnerApiKey, runnerApiKey)
-            // On the container network
-            .WithEnvironment(
-                EnvVars.BrowserlessUrl,
-                browserless.Resource.GetEndpoint("http", KnownNetworkIdentifiers.DefaultAspireContainerNetwork))
-            .WithEnvironment(EnvVars.BrowserlessToken, browserlessToken)
-            .WithOtlpExporter()
-            .WithHttpHealthCheck("/health")
-            .WaitFor(browserless);
+        private static IResourceBuilder<ContainerResource> AddRunner(
+            IDistributedApplicationBuilder builder,
+            DevelopmentSettings settings,
+            string watchScriptsDir,
+            IResourceBuilder<ContainerResource> browserless,
+            IResourceBuilder<ParameterResource> browserlessToken,
+            IResourceBuilder<ParameterResource> runnerApiKey) =>
+            builder.AddDockerfile("runner", settings.RepoRoot, "src/Runner/Dockerfile")
+                .WithBindMount(watchScriptsDir, "/app/scripts", isReadOnly: true)
+                .WithContainerRuntimeArgs("--cap-drop=ALL", "--security-opt=no-new-privileges")
+                // Plain HTTP: this hop stays on this machine
+                .WithHttpEndpoint(targetPort: 8080, name: "http")
+                // Always Development, as the Runner's launch profile was: /health, which the AppHost polls, is only mapped there
+                .WithEnvironment("ASPNETCORE_ENVIRONMENT", "Development")
+                // Scripts' dates follow the configured time zone, not the container's UTC
+                .WithEnvironment("TZ", settings.TimeZone)
+                .WithEnvironment(EnvVars.LookoutRunnerApiKey, runnerApiKey)
+                // On the container network
+                .WithEnvironment(
+                    EnvVars.BrowserlessUrl,
+                    browserless.Resource.GetEndpoint("http", KnownNetworkIdentifiers.DefaultAspireContainerNetwork))
+                .WithEnvironment(EnvVars.BrowserlessToken, browserlessToken)
+                .WithOtlpExporter()
+                .WithHttpHealthCheck("/health")
+                .WaitFor(browserless);
 
-        // The Owner's sign-in. The Backend checks them too; checking here stops startup before anything else starts.
-        if (DotEnvValue(EnvVars.LookoutOwnerUsername) is not { } ownerUsername
-            || DotEnvValue(EnvVars.LookoutOwnerPassword) is not { } ownerPasswordValue)
+        private static IResourceBuilder<ProjectResource> AddBackend(
+            IDistributedApplicationBuilder builder,
+            DevelopmentSettings settings,
+            string watchScriptsDir,
+            IResourceBuilder<ContainerResource> runner,
+            IResourceBuilder<ParameterResource> runnerApiKey)
         {
-            throw new InvalidOperationException(
-                $"Set {EnvVars.LookoutOwnerUsername} and {EnvVars.LookoutOwnerPassword} "
-                + "in .env to the username and password you sign in to Lookout with.");
+            var owner = settings.RequireOwner();
+            var ownerPassword = builder.AddParameter(EnvVars.LookoutOwnerPassword.ToKebabCase(), owner.Password, secret: true);
+
+            var backend = builder.AddProject<Projects.Backend>("backend")
+                .WithEnvironment(EnvVars.LookoutOwnerUsername, owner.Username)
+                .WithEnvironment(EnvVars.LookoutOwnerPassword, ownerPassword)
+                .WithEnvironment(EnvVars.LookoutRunnerUrl, runner.GetEndpoint("http"))
+                .WithEnvironment(EnvVars.LookoutWatchScriptsDir, watchScriptsDir)
+                .WithEnvironment(EnvVars.LookoutRunnerApiKey, runnerApiKey)
+                .WithHttpHealthCheck("/health")
+                .WaitFor(runner);
+
+            if (settings.DatabaseDir is { } databaseDir)
+            {
+                backend.WithEnvironment(EnvVars.LookoutDatabaseDir, databaseDir);
+            }
+
+            return backend;
         }
 
-        if (ownerPasswordValue.Length < EnvVars.OwnerPasswordMinLength)
+        /// <summary>
+        /// gluetun, with the updater before it when it has no servers list, and its proxy and control server given to the
+        /// Runner and the Backend.
+        /// </summary>
+        private static void AddGluetun(
+            IDistributedApplicationBuilder builder,
+            DevelopmentSettings settings,
+            OpenVpnCredentials openVpn,
+            IResourceBuilder<ContainerResource> runner,
+            IResourceBuilder<ProjectResource> backend)
         {
-            throw new InvalidOperationException(
-                $"{EnvVars.LookoutOwnerPassword} in .env must be at least "
-                + $"{EnvVars.OwnerPasswordMinLength} characters.");
-        }
+            var dataDir = settings.RequireGluetunDataDir();
 
-        var ownerPassword = builder.AddParameter("owner-password", ownerPasswordValue, secret: true);
-
-        var backend = builder.AddProject<Projects.Backend>("backend")
-            .WithEnvironment(EnvVars.LookoutOwnerUsername, ownerUsername)
-            .WithEnvironment(EnvVars.LookoutOwnerPassword, ownerPassword)
-            .WithEnvironment(EnvVars.LookoutRunnerUrl, runner.GetEndpoint("http"))
-            .WithEnvironment(EnvVars.LookoutWatchScriptsDir, watchScriptsDir)
-            .WithEnvironment(EnvVars.LookoutRunnerApiKey, runnerApiKey)
-            .WithHttpHealthCheck("/health")
-            .WaitFor(runner);
-
-        // Only started with OpenVPN credentials; without it, runs of watches that use the VPN fail.
-        if (DotEnvValue("GLUETUN_OPENVPN_USER") is { } openVpnUser && DotEnvValue("GLUETUN_OPENVPN_PASSWORD") is { } openVpnPasswordValue)
-        {
-            // gluetun keeps its servers list there, and the Backend reads the list to know which regions exist
-            var gluetunDir = RequiredDirectory(EnvVars.GluetunDataDir, "gluetun keeps its data in");
-
-            var openVpnPassword = builder.AddParameter("openvpn-password", openVpnPasswordValue, secret: true);
+            var openVpnPassword = builder.AddParameter(SettingNames.GluetunOpenVpnPassword.ToKebabCase(), openVpn.Password, secret: true);
             // A new key every time the AppHost starts; only gluetun and the Backend need it
-            var gluetunApiKey = AddGeneratedSecret(builder, "gluetun-api-key");
+            var apiKey = AddGeneratedSecret(builder, EnvVars.GluetunApiKey);
             // Without credentials, anyone who can reach the proxy can send traffic through the VPN. A new password
             // every time the AppHost starts; only gluetun, the Runner and the Backend have it.
-            var proxyPassword = AddGeneratedSecret(builder, "gluetun-proxy-password");
-            var vpnServiceProvider = DotEnvValue("GLUETUN_VPN_SERVICE_PROVIDER") ?? "private internet access";
+            var proxyPassword = AddGeneratedSecret(builder, EnvVars.GluetunProxyPassword);
             var gluetun = builder.AddContainer("gluetun", GluetunImage, GluetunTag)
                 // Aspire has no API for capabilities or devices, so they're passed to `docker run` directly
                 .WithContainerRuntimeArgs("--cap-add=NET_ADMIN", "--device=/dev/net/tun:/dev/net/tun")
-                .WithBindMount(gluetunDir, "/gluetun")
-                .WithEnvironment("VPN_SERVICE_PROVIDER", vpnServiceProvider)
-                .WithEnvironment("VPN_TYPE", "openvpn")
-                .WithEnvironment("OPENVPN_USER", openVpnUser)
+                .WithBindMount(dataDir, "/gluetun")
+                .WithEnvironmentVariables(GluetunEnvironment)
+                .WithEnvironment("TZ", settings.TimeZone)
+                .WithEnvironment("VPN_SERVICE_PROVIDER", settings.VpnServiceProvider)
+                .WithEnvironment("OPENVPN_USER", openVpn.User)
                 .WithEnvironment("OPENVPN_PASSWORD", openVpnPassword)
-                .WithEnvironment("HTTPPROXY", "on")
-                .WithEnvironment("HTTPPROXY_USER", ProxyUsername)
                 .WithEnvironment("HTTPPROXY_PASSWORD", proxyPassword)
-                // Otherwise the proxy adds headers to plain-HTTP requests that give away browserless's address
-                .WithEnvironment("HTTPPROXY_STEALTH", "on")
-                .WithEnvironment("TZ", timeZone)
-                .WithEnvironment("UPDATER_PERIOD", GluetunUpdaterPeriod)
-                // The Backend's key may only use the routes it needs
-                .WithEnvironment("HTTP_CONTROL_SERVER_AUTH_CONFIG_FILEPATH", GluetunAuthPath)
                 .WithContainerFiles(GluetunAuthDirectory, async (_, cancellationToken) =>
                 [
                     new ContainerFile
                     {
                         Name = GluetunAuthFileName,
-                        Contents = GluetunAuthConfig(await gluetunApiKey.Resource.GetValueAsync(cancellationToken) ?? ""),
+                        Contents = GluetunAuthConfig(await apiKey.Resource.GetValueAsync(cancellationToken) ?? ""),
                     },
                 ])
                 .WithEndpoint(targetPort: 8888, scheme: "http", name: "proxy")
@@ -140,18 +143,18 @@ public partial class Program
             // comes, so without a list it would use the one built into its image, which may be months out of date and
             // fail to connect. `update` writes that list before fetching the new one, so a failed update deletes it,
             // letting the next start try again; gluetun doesn't start until then.
-            if (!File.Exists(Path.Join(gluetunDir, GluetunServersFileName)))
+            if (!File.Exists(Path.Join(dataDir, GluetunServersFileName)))
             {
-                var gluetunUpdater = builder.AddContainer("gluetun-updater", GluetunImage, GluetunTag)
-                    .WithBindMount(gluetunDir, "/gluetun")
+                var updater = builder.AddContainer("gluetun-updater", GluetunImage, GluetunTag)
+                    .WithBindMount(dataDir, "/gluetun")
                     .WithEntrypoint("/bin/sh")
                     // The provider is passed as $1 rather than spliced into the script, so it needs no quoting
                     .WithArgs(
                         "-c",
                         $"/gluetun-entrypoint update -enduser -providers \"$1\" || {{ rm -f /gluetun/{GluetunServersFileName}; exit 1; }}",
                         "gluetun-updater",
-                        vpnServiceProvider);
-                gluetun.WaitForCompletion(gluetunUpdater);
+                        settings.VpnServiceProvider);
+                gluetun.WaitForCompletion(updater);
             }
 
             // The browser in the browserless container connects to the proxy, so the Runner gets its address
@@ -165,55 +168,49 @@ public partial class Program
             // The Backend doesn't wait for gluetun either: it retries, and shows gluetun as unreachable meanwhile
             backend
                 .WithEnvironment(EnvVars.GluetunUrl, gluetun.GetEndpoint("control"))
-                .WithEnvironment(EnvVars.GluetunApiKey, gluetunApiKey)
-                .WithEnvironment(EnvVars.GluetunDataDir, gluetunDir)
+                .WithEnvironment(EnvVars.GluetunApiKey, apiKey)
+                .WithEnvironment(EnvVars.GluetunDataDir, dataDir)
                 // Unlike the Runner's, on the host, since the Backend connects to it itself
                 .WithEnvironment(EnvVars.GluetunProxyUrl, ProxyUrl(gluetun.GetEndpoint("proxy")))
                 .WithEnvironment(EnvVars.GluetunProxyPassword, proxyPassword);
-        }
-
-        if (DotEnvDirectory(EnvVars.LookoutDatabaseDir) is { } databaseDir)
-        {
-            backend.WithEnvironment(EnvVars.LookoutDatabaseDir, databaseDir);
         }
 
         // Runs `npm run start` (ng serve) on its default port. The dev server forwards /api to the
         // Backend through proxy.conf.mjs, which targets the Backend's launch profile port (7070). Serving both from
         // one origin is what lets the session cookie and the CSRF checks work.
         // The AppHost runs `npm install` before starting it; the packages come from the root npm workspace.
-        var frontend = builder.AddJavaScriptApp("frontend", "../frontend", "start")
-            .WithNpm(install: true)
-            .WithHttpEndpoint(port: 4200, isProxied: false)
-            .WaitFor(backend);
+        private static void AddFrontend(IDistributedApplicationBuilder builder, IResourceBuilder<ProjectResource> backend)
+        {
+            var frontend = builder.AddJavaScriptApp("frontend", "../frontend", "start")
+                .WithNpm(install: true)
+                .WithHttpEndpoint(port: 4200, isProxied: false)
+                .WaitFor(backend);
 
-        // Opens Chrome with the debugger attached when the AppHost is launched from VS Code, so
-        // breakpoints in the Angular code are hit. The API is still marked experimental.
+            // Opens Chrome with the debugger attached when the AppHost is launched from VS Code, so
+            // breakpoints in the Angular code are hit. The API is still marked experimental.
 #pragma warning disable ASPIREEXTENSION001
-        frontend.WithBrowserDebugger("chrome");
+            frontend.WithBrowserDebugger("chrome");
 #pragma warning restore ASPIREEXTENSION001
+        }
+
+        /// <summary>
+        /// A secret generated every time the AppHost starts, named after the variable it's passed as. Letters and digits
+        /// only, so it can go in URLs and TOML strings without escaping.
+        /// </summary>
+        private static IResourceBuilder<ParameterResource> AddGeneratedSecret(IDistributedApplicationBuilder builder, string variableName) =>
+            builder.AddParameter(
+                variableName.ToKebabCase(),
+                new GenerateParameterDefault
+                {
+                    MinLength = Math.Max(GeneratedSecretLength, EnvVars.RunnerApiKeyMinLength),
+                    Special = false,
+                },
+                secret: true);
+
+        /// <summary>
+        /// The URL of gluetun's HTTP proxy at <paramref name="endpoint"/>, with its username; the password is set on its own.
+        /// </summary>
+        private static ReferenceExpression ProxyUrl(EndpointReference endpoint) =>
+            ReferenceExpression.Create($"http://{ProxyUsername}@{endpoint.Property(EndpointProperty.HostAndPort)}");
     }
-
-    // The length of every generated secret, unless the Runner API key's minimum, which the Backend and the Runner
-    // check, is longer
-    private const int GeneratedSecretLength = 32;
-
-    /// <summary>
-    /// A secret generated every time the AppHost starts. Letters and digits only, so it can go in URLs and TOML strings
-    /// without escaping.
-    /// </summary>
-    private static IResourceBuilder<ParameterResource> AddGeneratedSecret(IDistributedApplicationBuilder builder, string name) =>
-        builder.AddParameter(
-            name,
-            new GenerateParameterDefault
-            {
-                MinLength = Math.Max(GeneratedSecretLength, EnvVars.RunnerApiKeyMinLength),
-                Special = false,
-            },
-            secret: true);
-
-    /// <summary>
-    /// The URL of gluetun's HTTP proxy at <paramref name="endpoint"/>, with its username; the password is set on its own.
-    /// </summary>
-    private static ReferenceExpression ProxyUrl(EndpointReference endpoint) =>
-        ReferenceExpression.Create($"http://{ProxyUsername}@{endpoint.Property(EndpointProperty.HostAndPort)}");
 }

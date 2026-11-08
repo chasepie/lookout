@@ -195,6 +195,4 @@ public static class EnvVars
         Directory.CreateDirectory(fullPath);
         return fullPath;
     }
-
-    public static string ToKebabCase(this string envVar) => envVar.ToLowerInvariant().Replace('_', '-');
 }
