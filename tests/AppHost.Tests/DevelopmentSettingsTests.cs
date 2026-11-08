@@ -32,11 +32,11 @@ public sealed class DevelopmentSettingsTests
     [TestMethod]
     public void ResolvesARelativeDirectoryAgainstTheRepoRootAndCreatesIt()
     {
-        var settings = Settings(new() { [EnvVars.LookoutWatchScriptsDir] = ".docker-volumes/watch-scripts" });
+        var settings = Settings(new() { [EnvVars.LookoutWatchScriptsDir] = "scripts" });
 
-        var dir = settings.RequireWatchScriptsDir();
+        var dir = settings.WatchScriptsDir();
 
-        Assert.AreEqual(Path.GetFullPath(Path.Join(_repoRoot, ".docker-volumes", "watch-scripts")), dir);
+        Assert.AreEqual(Path.GetFullPath(Path.Join(_repoRoot, "scripts")), dir);
         Assert.IsTrue(Directory.Exists(dir));
     }
 
@@ -46,28 +46,28 @@ public sealed class DevelopmentSettingsTests
         var absolute = Path.Join(_repoRoot, "elsewhere", "database");
         var settings = Settings(new() { [EnvVars.LookoutDatabaseDir] = absolute });
 
-        Assert.AreEqual(absolute, settings.DatabaseDir);
+        Assert.AreEqual(absolute, settings.DatabaseDir());
     }
 
     [TestMethod]
-    [DataRow(null)]
-    [DataRow("")]
-    [DataRow("   ")]
-    public void RefusesToStartWithoutTheScriptsDirectory(string? value)
+    [DataRow(EnvVars.LookoutWatchScriptsDir, "watch-scripts", null)]
+    [DataRow(EnvVars.LookoutWatchScriptsDir, "watch-scripts", "")]
+    [DataRow(EnvVars.LookoutDatabaseDir, "database", null)]
+    [DataRow(EnvVars.LookoutDatabaseDir, "database", "   ")]
+    [DataRow(EnvVars.GluetunDataDir, "gluetun-data", null)]
+    public void PutsAnUnsetDirectoryInItsFolderInTheDataDirectoryAndCreatesIt(string name, string folder, string? value)
     {
-        var settings = Settings(new() { [EnvVars.LookoutWatchScriptsDir] = value });
+        var settings = Settings(new() { [name] = value });
 
-        var ex = Assert.Throws<InvalidOperationException>(settings.RequireWatchScriptsDir);
+        var dir = name switch
+        {
+            EnvVars.LookoutWatchScriptsDir => settings.WatchScriptsDir(),
+            EnvVars.LookoutDatabaseDir => settings.DatabaseDir(),
+            _ => settings.GluetunDataDir(),
+        };
 
-        Assert.Contains(EnvVars.LookoutWatchScriptsDir, ex.Message);
-    }
-
-    [TestMethod]
-    public void RefusesToStartWithoutTheGluetunDataDirectory()
-    {
-        var ex = Assert.Throws<InvalidOperationException>(Settings([]).RequireGluetunDataDir);
-
-        Assert.Contains(EnvVars.GluetunDataDir, ex.Message);
+        Assert.AreEqual(Path.GetFullPath(Path.Join(_repoRoot, DevelopmentSettings.DataDirectory, folder)), dir);
+        Assert.IsTrue(Directory.Exists(dir));
     }
 
     [TestMethod]
@@ -123,7 +123,6 @@ public sealed class DevelopmentSettingsTests
 
         Assert.AreEqual(SettingNames.DefaultTimeZone, settings.TimeZone);
         Assert.AreEqual(SettingNames.DefaultVpnServiceProvider, settings.VpnServiceProvider);
-        Assert.IsNull(settings.DatabaseDir);
     }
 
     private DevelopmentSettings Settings(Dictionary<string, string?> values) =>

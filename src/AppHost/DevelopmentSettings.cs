@@ -10,6 +10,12 @@ namespace ChasePie.Lookout.AppHost;
 /// </summary>
 internal sealed class DevelopmentSettings(IReadOnlyDictionary<string, string> values, string repoRoot)
 {
+    /// <summary>
+    /// Where the services keep their data unless <c>.env</c> says otherwise, under the repo root and ignored by git: a
+    /// folder each, which the containers bind-mount.
+    /// </summary>
+    public const string DataDirectory = ".docker-volumes";
+
     public static DevelopmentSettings Read(string repoRoot)
     {
         var options = new DotEnvOptions(envFilePaths: [Path.Combine(repoRoot, ".env")]);
@@ -23,11 +29,6 @@ internal sealed class DevelopmentSettings(IReadOnlyDictionary<string, string> va
     public string VpnServiceProvider => Value(SettingNames.GluetunVpnServiceProvider) ?? SettingNames.DefaultVpnServiceProvider;
 
     /// <summary>
-    /// Where the Backend keeps its database, or <see langword="null"/> for the Backend's own default.
-    /// </summary>
-    public string? DatabaseDir => Directory(EnvVars.LookoutDatabaseDir);
-
-    /// <summary>
     /// The VPN provider's OpenVPN credentials, or <see langword="null"/> unless both are set. Without them gluetun isn't
     /// started, and runs of watches that use the VPN fail.
     /// </summary>
@@ -37,17 +38,22 @@ internal sealed class DevelopmentSettings(IReadOnlyDictionary<string, string> va
             : null;
 
     /// <summary>
-    /// The directory the Backend saves uploaded scripts to and the Runner runs them from, created if it doesn't exist yet.
+    /// The directory the Backend saves uploaded scripts to and the Runner runs them from, created if it doesn't exist yet:
+    /// <c>.docker-volumes/watch-scripts</c> unless <c>.env</c> says otherwise.
     /// </summary>
-    /// <exception cref="InvalidOperationException">It isn't set.</exception>
-    public string RequireWatchScriptsDir() => RequireDirectory(EnvVars.LookoutWatchScriptsDir, "watch scripts are kept in");
+    public string WatchScriptsDir() => DirectoryOrDefault(EnvVars.LookoutWatchScriptsDir, "watch-scripts");
 
     /// <summary>
-    /// gluetun's data directory, created if it doesn't exist yet. gluetun keeps its servers list there, and the Backend
-    /// reads the list to know which regions exist.
+    /// The directory the Backend keeps its database and Data Protection keys in, created if it doesn't exist yet:
+    /// <c>.docker-volumes/database</c> unless <c>.env</c> says otherwise.
     /// </summary>
-    /// <exception cref="InvalidOperationException">It isn't set.</exception>
-    public string RequireGluetunDataDir() => RequireDirectory(EnvVars.GluetunDataDir, "gluetun keeps its data in");
+    public string DatabaseDir() => DirectoryOrDefault(EnvVars.LookoutDatabaseDir, "database");
+
+    /// <summary>
+    /// gluetun's data directory, created if it doesn't exist yet: <c>.docker-volumes/gluetun-data</c> unless <c>.env</c>
+    /// says otherwise. gluetun keeps its servers list there, and the Backend reads the list to know which regions exist.
+    /// </summary>
+    public string GluetunDataDir() => DirectoryOrDefault(EnvVars.GluetunDataDir, "gluetun-data");
 
     /// <summary>
     /// The Owner's sign-in. The Backend checks it too; checking here stops startup before anything else starts.
@@ -77,12 +83,10 @@ internal sealed class DevelopmentSettings(IReadOnlyDictionary<string, string> va
     private string? Value(string name) =>
         values.TryGetValue(name, out var value) && !string.IsNullOrWhiteSpace(value) ? value : null;
 
-    private string? Directory(string name) => Value(name) is { } dir ? Path.GetFullPath(dir, repoRoot) : null;
-
-    private string RequireDirectory(string name, string purpose)
+    private string DirectoryOrDefault(string name, string defaultFolder)
     {
-        var dir = Directory(name) ?? throw new InvalidOperationException($"Set {name} in .env to the directory {purpose}.");
-        System.IO.Directory.CreateDirectory(dir);
+        var dir = Path.GetFullPath(Value(name) ?? Path.Join(DataDirectory, defaultFolder), repoRoot);
+        Directory.CreateDirectory(dir);
         return dir;
     }
 }

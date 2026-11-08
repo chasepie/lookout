@@ -21,7 +21,7 @@ public partial class Program
 
             // A new key every time the AppHost starts; the Runner refuses requests without it, and only the Backend has it
             var runnerApiKey = AddGeneratedSecret(builder, EnvVars.LookoutRunnerApiKey);
-            var watchScriptsDir = settings.RequireWatchScriptsDir();
+            var watchScriptsDir = settings.WatchScriptsDir();
 
             var browserless = AddBrowserless(builder, settings, browserlessToken);
             var runner = AddRunner(builder, settings, watchScriptsDir, browserless, browserlessToken, runnerApiKey);
@@ -94,22 +94,16 @@ public partial class Program
                 value: owner.Password,
                 secret: true);
 
-            var backend = builder
+            return builder
                 .AddProject<Projects.Backend>("backend")
                 .WithEnvironment(EnvVars.LookoutOwnerUsername, owner.Username)
                 .WithEnvironment(EnvVars.LookoutOwnerPassword, ownerPassword)
                 .WithEnvironment(EnvVars.LookoutRunnerUrl, runner.GetEndpoint("http"))
                 .WithEnvironment(EnvVars.LookoutWatchScriptsDir, watchScriptsDir)
+                .WithEnvironment(EnvVars.LookoutDatabaseDir, settings.DatabaseDir())
                 .WithEnvironment(EnvVars.LookoutRunnerApiKey, runnerApiKey)
                 .WithHttpHealthCheck("/health")
                 .WaitFor(runner);
-
-            if (settings.DatabaseDir is { } databaseDir)
-            {
-                backend.WithEnvironment(EnvVars.LookoutDatabaseDir, databaseDir);
-            }
-
-            return backend;
         }
 
         /// <summary>
@@ -123,7 +117,7 @@ public partial class Program
             IResourceBuilder<ContainerResource> runner,
             IResourceBuilder<ProjectResource> backend)
         {
-            var dataDir = settings.RequireGluetunDataDir();
+            var dataDir = settings.GluetunDataDir();
 
             var openVpnPassword = builder.AddParameter(
                 name: SettingNames.GluetunOpenVpnPassword.ToKebabCase(),
