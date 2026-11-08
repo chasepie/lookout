@@ -55,7 +55,7 @@ public partial class Program
 
             TimeZone = Setting(
                 name: SettingNames.TimeZone.ToKebabCase(),
-                defaultValue: "Etc/UTC",
+                defaultValue: SettingNames.DefaultTimeZone,
                 description: "The time zone of schedules and scripts' dates, such as America/New_York.");
 
             EdgeSubnet = Setting(
@@ -144,11 +144,16 @@ public partial class Program
         /// <summary>
         /// <paramref name="setting"/> as a Compose variable in <paramref name="service"/>, with its default if it has one.
         /// </summary>
-        public string Placeholder(IResourceBuilder<ParameterResource> setting, DockerComposeServiceResource service) =>
-            setting.AsEnvironmentPlaceholder(service) is var placeholder
-                && _defaults.TryGetValue(setting.Resource.Name, out var defaultValue)
-                ? $"{placeholder[..^1]}:-{defaultValue}}}"
-                : placeholder;
+        public string Placeholder(IResourceBuilder<ParameterResource> setting, DockerComposeServiceResource service)
+        {
+            if (setting.AsEnvironmentPlaceholder(service) is var placeholder
+                && _defaults.TryGetValue(setting.Resource.Name, out var defaultValue))
+            {
+                return $"{placeholder[..^1]}:-{defaultValue}}}";
+            }
+
+            return placeholder;
+        }
 
         private IResourceBuilder<ParameterResource> Setting(string name, string? defaultValue, string description, bool secret = false)
         {
@@ -162,7 +167,9 @@ public partial class Program
                 description = "Required: " + description;
             }
 
-            return _builder.AddParameter(name, secret: secret).WithDescription(description);
+            return _builder
+                .AddParameter(name, secret: secret)
+                .WithDescription(description);
         }
 
         private IResourceBuilder<ParameterResource> Secret(string name, string description) =>

@@ -41,7 +41,8 @@ public partial class Program
 
         public static void Add(IDistributedApplicationBuilder builder)
         {
-            var compose = builder.AddDockerComposeEnvironment("lookout")
+            var compose = builder
+                .AddDockerComposeEnvironment("lookout")
                 // It shows every service's environment, and would need its own sign-in; use `docker compose logs`
                 .WithDashboard(false);
             var settings = new ProductionSettings(builder);
@@ -57,8 +58,11 @@ public partial class Program
         }
 
         private static IResourceBuilder<ContainerResource> AddBrowserless(
-            IDistributedApplicationBuilder builder, ProductionSettings settings) =>
-            builder.AddContainer(BrowserlessService, BrowserlessImage, BrowserlessTag)
+            IDistributedApplicationBuilder builder,
+            ProductionSettings settings)
+        {
+            return builder
+                .AddContainer(BrowserlessService, BrowserlessImage, BrowserlessTag)
                 .PublishAsDockerComposeService((resource, service) =>
                 {
                     AddEnvironment(service, BrowserlessEnvironment);
@@ -69,10 +73,15 @@ public partial class Program
                     // Chromium loads whatever pages scripts visit, so it shares no network with the Backend
                     service.Networks = [BrowsersNetwork, VpnProxyNetwork, EgressNetwork];
                 });
+        }
 
         private static IResourceBuilder<ContainerResource> AddRunner(
-            IDistributedApplicationBuilder builder, ProductionSettings settings, IResourceBuilder<ContainerResource> browserless) =>
-            builder.AddContainer(RunnerService, RunnerImage)
+            IDistributedApplicationBuilder builder,
+            ProductionSettings settings,
+            IResourceBuilder<ContainerResource> browserless)
+        {
+            return builder
+                .AddContainer(RunnerService, RunnerImage)
                 .WithVolume(ScriptsVolume, "/app/scripts", isReadOnly: true)
                 .WaitFor(browserless)
                 .PublishAsDockerComposeService((resource, service) =>
@@ -91,10 +100,15 @@ public partial class Program
                     // No route out: scripts reach the network only through browserless
                     service.Networks = [RunnerNetwork, BrowsersNetwork];
                 });
+        }
 
         private static void AddBackend(
-            IDistributedApplicationBuilder builder, ProductionSettings settings, IResourceBuilder<ContainerResource> runner) =>
-            builder.AddContainer(BackendService, BackendImage)
+            IDistributedApplicationBuilder builder,
+            ProductionSettings settings,
+            IResourceBuilder<ContainerResource> runner)
+        {
+            builder
+                .AddContainer(BackendService, BackendImage)
                 .WithVolume(ScriptsVolume, "/app/scripts")
                 .WithVolume(DatabaseVolume, "/app/database")
                 // For the servers list, which says which regions there are
@@ -125,9 +139,12 @@ public partial class Program
                         [$"{settings.Placeholder(settings.BindAddress, resource)}:{settings.Placeholder(settings.Port, resource)}:8080"];
                     service.Networks = [RunnerNetwork, VpnControlNetwork, EdgeNetwork];
                 });
+        }
 
-        private static void AddGluetun(IDistributedApplicationBuilder builder, ProductionSettings settings) =>
-            builder.AddContainer(GluetunService, GluetunImage, GluetunTag)
+        private static void AddGluetun(IDistributedApplicationBuilder builder, ProductionSettings settings)
+        {
+            builder
+                .AddContainer(GluetunService, GluetunImage, GluetunTag)
                 .WithVolume(GluetunVolume, "/gluetun")
                 .PublishAsDockerComposeService((resource, service) =>
                 {
@@ -149,13 +166,16 @@ public partial class Program
                     // Its proxy forwards to every network it's on, so the Backend reaches it only through the relays
                     service.Networks = [VpnProxyNetwork, GluetunRelayNetwork, EgressNetwork];
                 });
+        }
 
         /// <summary>
         /// A relay to one of gluetun's ports, for the Backend. A page loaded through gluetun's proxy can reach the relay, but
         /// it leads only back to gluetun.
         /// </summary>
-        private static void AddRelay(IDistributedApplicationBuilder builder, string name, int port) =>
-            builder.AddContainer(name, AlpineSocatImage, AlpineSocatTag)
+        private static void AddRelay(IDistributedApplicationBuilder builder, string name, int port)
+        {
+            builder
+                .AddContainer(name, AlpineSocatImage, AlpineSocatTag)
                 .WithArgs($"TCP-LISTEN:{port},fork,reuseaddr", $"TCP:{GluetunService}:{port}")
                 .PublishAsDockerComposeService((_, service) =>
                 {
@@ -164,6 +184,7 @@ public partial class Program
                     service.User = "65534:65534";
                     service.Networks = [VpnControlNetwork, GluetunRelayNetwork];
                 });
+        }
 
         /// <summary>
         /// The settings' descriptions in <c>deploy/.env</c>, and the compose file's name, networks and gluetun's auth config.
@@ -191,10 +212,19 @@ public partial class Program
                 file.Networks.Clear();
                 foreach (var name in InternalNetworks)
                 {
-                    file.Networks[name] = new Network { Name = name, Driver = "bridge", Internal = true };
+                    file.Networks[name] = new Network
+                    {
+                        Name = name,
+                        Driver = "bridge",
+                        Internal = true
+                    };
                 }
 
-                file.Networks[EgressNetwork] = new Network { Name = EgressNetwork, Driver = "bridge" };
+                file.Networks[EgressNetwork] = new Network
+                {
+                    Name = EgressNetwork,
+                    Driver = "bridge"
+                };
                 // A fixed subnet, so the gateway that a reverse proxy on this machine connects from, which the Backend is told
                 // to trust, stays the same when the network is re-created
                 file.Networks[EdgeNetwork] = new Network
@@ -245,7 +275,15 @@ public partial class Program
         /// <summary>
         /// A memory limit. Compose applies <c>deploy.resources</c> without Swarm too.
         /// </summary>
-        private static void LimitMemory(Service service, string memory) =>
-            service.Deploy = new Deploy { Resources = new Resources { Limits = new ResourceSpec { Memory = memory } } };
+        private static void LimitMemory(Service service, string memory)
+        {
+            service.Deploy = new Deploy
+            {
+                Resources = new Resources
+                {
+                    Limits = new ResourceSpec { Memory = memory }
+                }
+            };
+        }
     }
 }

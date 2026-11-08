@@ -75,7 +75,8 @@ public partial class Program
 internal static class SettingNames
 {
     /// <summary>
-    /// The time zone of schedules and scripts' dates, passed to every container as <c>TZ</c>.
+    /// The time zone of schedules and scripts' dates, passed to every container as <c>TZ</c>, <see cref="DefaultTimeZone"/>
+    /// when not set.
     /// </summary>
     public const string TimeZone = "TZ";
 
@@ -94,6 +95,8 @@ internal static class SettingNames
     /// </summary>
     public const string GluetunOpenVpnPassword = "GLUETUN_OPENVPN_PASSWORD";
 
+    public const string DefaultTimeZone = "Etc/UTC";
+
     public const string DefaultVpnServiceProvider = "private internet access";
 
     /// <summary>
@@ -110,13 +113,16 @@ internal static class ResourceBuilderExtensions
     /// Sets every variable in <paramref name="variables"/>, as for a container's fixed environment in Shared.cs.
     /// </summary>
     public static IResourceBuilder<T> WithEnvironmentVariables<T>(
-        this IResourceBuilder<T> builder, IReadOnlyDictionary<string, string> variables)
-        where T : IResourceWithEnvironment =>
-        builder.WithEnvironment(context =>
+        this IResourceBuilder<T> builder,
+        IReadOnlyDictionary<string, string> variables)
+        where T : IResourceWithEnvironment
+    {
+        return builder.WithEnvironment(context =>
         {
             foreach (var (name, value) in variables)
             {
                 context.EnvironmentVariables[name] = value;
             }
         });
+    }
 }

@@ -121,7 +121,7 @@ public sealed class DevelopmentSettingsTests
     {
         var settings = Settings([]);
 
-        Assert.AreEqual("America/New_York", settings.TimeZone);
+        Assert.AreEqual(SettingNames.DefaultTimeZone, settings.TimeZone);
         Assert.AreEqual(SettingNames.DefaultVpnServiceProvider, settings.VpnServiceProvider);
         Assert.IsNull(settings.DatabaseDir);
     }

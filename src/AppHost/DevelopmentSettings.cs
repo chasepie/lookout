@@ -10,12 +10,15 @@ namespace ChasePie.Lookout.AppHost;
 /// </summary>
 internal sealed class DevelopmentSettings(IReadOnlyDictionary<string, string> values, string repoRoot)
 {
-    public static DevelopmentSettings Read(string repoRoot) =>
-        new(DotEnv.Read(new DotEnvOptions(envFilePaths: [Path.Combine(repoRoot, ".env")])).AsReadOnly(), repoRoot);
+    public static DevelopmentSettings Read(string repoRoot)
+    {
+        var options = new DotEnvOptions(envFilePaths: [Path.Combine(repoRoot, ".env")]);
+        return new(DotEnv.Read(options).AsReadOnly(), repoRoot);
+    }
 
     public string RepoRoot => repoRoot;
 
-    public string TimeZone => Value(SettingNames.TimeZone) ?? "America/New_York";
+    public string TimeZone => Value(SettingNames.TimeZone) ?? SettingNames.DefaultTimeZone;
 
     public string VpnServiceProvider => Value(SettingNames.GluetunVpnServiceProvider) ?? SettingNames.DefaultVpnServiceProvider;
 
