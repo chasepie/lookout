@@ -185,6 +185,7 @@ public partial class Program
                 service.Environment[EnvVars.BrowserlessToken] = Placeholder(browserlessToken, resource);
                 service.Environment[EnvVars.BrowserlessUrl] = $"http://{BrowserlessService}:3000";
                 service.Environment[EnvVars.GluetunProxyPassword] = Placeholder(proxyPassword, resource);
+                // browserless connects to it, on the network they share
                 service.Environment[EnvVars.GluetunProxyUrl] = $"http://{ProxyUsername}@{GluetunService}:8888";
                 service.Environment[EnvVars.LookoutRunnerApiKey] = Placeholder(runnerApiKey, resource);
                 Harden(service, readOnly: true);
@@ -210,6 +211,7 @@ public partial class Program
                 service.Environment[EnvVars.GluetunApiKey] = Placeholder(gluetunApiKey, resource);
                 service.Environment[EnvVars.GluetunDataDir] = "/app/gluetun";
                 service.Environment[EnvVars.GluetunProxyPassword] = Placeholder(proxyPassword, resource);
+                // Through the relay, since the Backend shares no network with gluetun
                 service.Environment[EnvVars.GluetunProxyUrl] = $"http://{ProxyUsername}@{GluetunProxyRelay}:8888";
                 service.Environment[EnvVars.GluetunUrl] = $"http://{GluetunControlRelay}:8000";
                 service.Environment[EnvVars.LookoutOwnerPassword] = Placeholder(ownerPassword, resource);

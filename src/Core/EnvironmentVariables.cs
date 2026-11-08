@@ -23,7 +23,6 @@ public static class EnvVars
     /// </summary>
     public const string BrowserlessToken = "BROWSERLESS_TOKEN";
 
-
     /// <summary>
     /// The HTTP proxy that watches with <see cref="CreateWatchDto.UseVpn"/> send their browser traffic through.
     /// The Runner passes it to the browser, so its value must be reachable from wherever the browser runs.
@@ -56,9 +55,6 @@ public static class EnvVars
     /// its <c>servers.json</c> to know which regions it can switch to, and requires it along with <see cref="GluetunUrl"/>.
     /// </summary>
     public const string GluetunDataDir = "GLUETUN_DATA_DIR";
-
-
-
 
     /// <summary>
     /// The directory watch scripts are saved to and run from.

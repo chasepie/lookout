@@ -14,7 +14,7 @@ servers list in `GLUETUN_DATA_DIR`. The SQLite schema is managed with EF Core mi
 - `src/Runner/`: ASP.NET Core service that runs watch scripts, sandboxed with Node's permission model in a container built from `src/Runner/Dockerfile`
 (see `docs/security.md`). Without the AppHost it needs `BROWSERLESS_URL` and `BROWSERLESS_TOKEN`, and finds the watch CLI through the
 repo root.
-- `src/Core/`: types shared by Backend, Runner and AppHost: the C# records, the environment variable names (`EnvironmentVariables`), the watch
+- `src/Core/`: types shared by Backend, Runner and AppHost: the C# records, the environment variable names (`EnvVars`), the watch
 scripts directory (`WatchScriptsDirectory`), the key the Backend authenticates to the Runner with (`RunnerApiKey`) and the repo root lookup (`RepoRoot`).
 - `src/AppHost/`: Aspire AppHost, in two halves.
   - `dotnet run --project src/AppHost` (`Development.cs`, which needs Docker) starts Runner, Backend, the frontend and browserless (Chromium for watch
@@ -33,7 +33,7 @@ scripts directory (`WatchScriptsDirectory`), the key the Backend authenticates t
 (`npm run build -w src/watch-sdk`). `AppHost.Tests` publishes in-process and checks the Compose file.
 
 Environment variables are loaded from `.env`. `example.env` lists only the ones you set in development; leave out the ones the AppHost always sets
-itself, such as service URLs and generated keys. `EnvironmentVariables` names every variable the services read. Production's settings,
+itself, such as service URLs and generated keys. `EnvVars` names every variable the services read. Production's settings,
 secrets included, are listed in `deploy/.env.example`, which `Production.cs` generates; the ones only Compose reads, such as `LOOKOUT_IMAGE_TAG`, are
 named only there.
 
