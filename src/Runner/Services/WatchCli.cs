@@ -52,7 +52,7 @@ public sealed record WatchCli(
     /// </exception>
     public static WatchCli FromConfiguration(IConfiguration configuration, string currentDirectory)
     {
-        var root = configuration[EnvironmentVariables.WatchCliRoot] is { Length: > 0 } configuredRoot
+        var root = configuration[EnvVars.WatchCliRoot] is { Length: > 0 } configuredRoot
             ? Path.GetFullPath(configuredRoot)
             : RepoRoot.FindRequired(currentDirectory);
         var nodeModules = RealPath.Of(Path.Combine(root, "node_modules"));
@@ -68,15 +68,15 @@ public sealed record WatchCli(
         }
 
         // Scripts run sandboxed, and the sandbox can't start a local browser
-        var browserlessUrl = EnvironmentVariables.GetBrowserlessUrl(configuration);
+        var browserlessUrl = EnvVars.GetBrowserlessUrl(configuration);
         if (browserlessUrl is null)
         {
             throw new InvalidOperationException(
-                $"Environment variable {EnvironmentVariables.BrowserlessUrl} must be set: the Runner runs every "
+                $"Environment variable {EnvVars.BrowserlessUrl} must be set: the Runner runs every "
                 + "script's browser on browserless.");
         }
 
-        var vpnProxyUrl = EnvironmentVariables.GetVpnProxyUrl(configuration);
+        var vpnProxyUrl = EnvVars.GetVpnProxyUrl(configuration);
         var proxyPassword = vpnProxyUrl?.UserInfo.Split(':', 2) is [_, var escapedPassword]
             ? Uri.UnescapeDataString(escapedPassword)
             : null;
@@ -87,7 +87,7 @@ public sealed record WatchCli(
             VpnProxyUrl: vpnProxyUrl?.AbsoluteUri,
             // A link on macOS
             OutputDirectory: RealPath.Of(Path.GetTempPath()),
-            Secrets: SecretForms(configuration[EnvironmentVariables.BrowserlessToken], proxyPassword));
+            Secrets: SecretForms(configuration[EnvVars.BrowserlessToken], proxyPassword));
     }
 
     /// <summary>

@@ -167,26 +167,26 @@ public sealed record VpnConfiguration(Uri? GluetunUrl, string? ApiKey, string? D
     /// </exception>
     public static VpnConfiguration FromConfiguration(IConfiguration configuration)
     {
-        if (EnvironmentVariables.GetBaseUrl(configuration, EnvironmentVariables.GluetunUrl) is not { } gluetunUrl)
+        if (EnvVars.GetBaseUrl(configuration, EnvVars.GluetunUrl) is not { } gluetunUrl)
         {
             return Disabled;
         }
 
-        var proxyUrl = EnvironmentVariables.GetVpnProxyUrl(configuration)
+        var proxyUrl = EnvVars.GetVpnProxyUrl(configuration)
             ?? throw new InvalidOperationException(
-                $"Environment variable {EnvironmentVariables.GluetunProxyUrl} must be set when {EnvironmentVariables.GluetunUrl} is");
+                $"Environment variable {EnvVars.GluetunProxyUrl} must be set when {EnvVars.GluetunUrl} is");
         // gluetun's control server refuses every request without it, so the VPN would only look configured
-        var apiKey = configuration[EnvironmentVariables.GluetunApiKey];
+        var apiKey = configuration[EnvVars.GluetunApiKey];
         if (string.IsNullOrWhiteSpace(apiKey))
         {
             throw new InvalidOperationException(
-                $"Environment variable {EnvironmentVariables.GluetunApiKey} must be set when {EnvironmentVariables.GluetunUrl} is");
+                $"Environment variable {EnvVars.GluetunApiKey} must be set when {EnvVars.GluetunUrl} is");
         }
 
         return new VpnConfiguration(
             GluetunUrl: gluetunUrl,
             ApiKey: apiKey,
-            DataDirectory: EnvironmentVariables.GetRequiredDirectory(configuration, EnvironmentVariables.GluetunDataDir),
+            DataDirectory: EnvVars.GetRequiredDirectory(configuration, EnvVars.GluetunDataDir),
             ProxyUrl: proxyUrl);
     }
 }

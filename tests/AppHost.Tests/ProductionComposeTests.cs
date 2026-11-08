@@ -20,7 +20,7 @@ public sealed class ProductionComposeTests
 
     private static readonly string[] RunnerNetworks = ["browsers", "runner"];
     private static readonly string[] OutwardServices = ["backend", "browserless", "gluetun"];
-    private static readonly string[] BackendPorts = ["${LOOKOUT_BACKEND_BIND_ADDRESS:-127.0.0.1}:${LOOKOUT_BACKEND_PORT:-8080}:8080"];
+    private static readonly string[] BackendPorts = ["${LOOKOUT_BIND_ADDRESS:-127.0.0.1}:${LOOKOUT_PORT:-8080}:8080"];
     private static readonly string[] AllCapabilities = ["ALL"];
 
     [ClassInitialize]
@@ -83,7 +83,7 @@ public sealed class ProductionComposeTests
     {
         var config = (List<object>)Map(Map(Map(_compose, "networks"), "edge"), "ipam")["config"];
 
-        Assert.AreEqual("${LOOKOUT_BACKEND_EDGE_SUBNET:-172.30.240.0/24}", ((Dictionary<object, object>)config.Single())["subnet"]);
+        Assert.AreEqual("${LOOKOUT_EDGE_SUBNET:-172.30.240.0/24}", ((Dictionary<object, object>)config.Single())["subnet"]);
     }
 
     [TestMethod]

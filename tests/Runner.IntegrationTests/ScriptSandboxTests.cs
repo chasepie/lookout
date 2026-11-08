@@ -101,7 +101,7 @@ public sealed class ScriptSandboxTests
 
         var ex = Assert.Throws<InvalidOperationException>(() => factory.Server);
 
-        Assert.Contains(EnvironmentVariables.BrowserlessUrl, ex.Message);
+        Assert.Contains(EnvVars.BrowserlessUrl, ex.Message);
     }
 
     [TestMethod]
@@ -112,7 +112,7 @@ public sealed class ScriptSandboxTests
 
         var ex = Assert.Throws<InvalidOperationException>(() => factory.Server);
 
-        Assert.Contains(EnvironmentVariables.BrowserlessToken, ex.Message);
+        Assert.Contains(EnvVars.BrowserlessToken, ex.Message);
     }
 
     [TestMethod]

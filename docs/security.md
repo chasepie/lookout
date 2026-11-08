@@ -37,7 +37,7 @@ These aren't visible in any one file, and breaking them breaks signing in or wea
   sign-in limit or pass for HTTPS. With none listed, it ignores both headers. ASP.NET Core would otherwise trust every source when no proxy is listed,
   so `ReverseProxy` turns forwarding off instead. `Host` isn't taken from the proxy, so it must pass the browser's through. (The dev server's proxy
   rewrites `Host`; requests still pass because browsers send `Sec-Fetch-Site`.)
-- **One hostname.** `AllowedHosts` is the hostname Lookout is served on, `localhost` unless set (`LOOKOUT_BACKEND_HOST` in production), and requests for any
+- **One hostname.** `AllowedHosts` is the hostname Lookout is served on, `localhost` unless set (`LOOKOUT_HOST` in production), and requests for any
   other get `400`. The Backend refuses to start with it empty, which ASP.NET Core would take as "every host".
 
 ## Credentials
@@ -236,9 +236,9 @@ the VPN probe) through two `socat` relays, which a page loaded through the proxy
 Runner, which refuses requests without its key. A script in a VPN run gets the proxy's URL and password, so it can send traffic out through gluetun, just as
 it can through Chromium.
 
-The Backend's port is published on `127.0.0.1` unless `LOOKOUT_BACKEND_BIND_ADDRESS` says otherwise, for a reverse proxy that terminates TLS. Docker only
+The Backend's port is published on `127.0.0.1` unless `LOOKOUT_BIND_ADDRESS` says otherwise, for a reverse proxy that terminates TLS. Docker only
 publishes ports from containers on a network that leads out, so the Backend can reach the internet, though it has no reason to. The `edge` network has
-a fixed subnet (`LOOKOUT_BACKEND_EDGE_SUBNET`), so its gateway, which connections to the published port come from and which a reverse proxy on the same machine
+a fixed subnet (`LOOKOUT_EDGE_SUBNET`), so its gateway, which connections to the published port come from and which a reverse proxy on the same machine
 is trusted as, stays the same when the network is re-created. That trusts every process on the host that connects to the port, not just the proxy;
 a proxy on another machine is trusted by its own address instead. The Compose project is named `lookout`, so the volumes are `lookout_*` wherever the
 file is.

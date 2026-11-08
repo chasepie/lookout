@@ -24,7 +24,7 @@ public sealed class RunnerApiKeyDocumentTransformer : IOpenApiDocumentTransforme
             Type = SecuritySchemeType.ApiKey,
             In = ParameterLocation.Header,
             Name = RunnerApiKey.HeaderName,
-            Description = $"Required on every request: the value of {EnvironmentVariables.LookoutRunnerApiKey}. "
+            Description = $"Required on every request: the value of {EnvVars.LookoutRunnerApiKey}. "
                 + "The AppHost generates a new one on each start; the Aspire dashboard shows it under the "
                 + "runner-api-key parameter.",
         };

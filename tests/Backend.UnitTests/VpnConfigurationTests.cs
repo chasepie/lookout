@@ -11,11 +11,11 @@ public sealed class VpnConfigurationTests
         new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                [EnvironmentVariables.GluetunUrl] = "http://gluetun-control:8000",
-                [EnvironmentVariables.GluetunApiKey] = apiKey,
-                [EnvironmentVariables.GluetunProxyUrl] = "http://lookout@gluetun-proxy:8888",
-                [EnvironmentVariables.GluetunProxyPassword] = "secret",
-                [EnvironmentVariables.GluetunDataDir] = Path.Join(Path.GetTempPath(), "lookout-vpn-configuration-tests"),
+                [EnvVars.GluetunUrl] = "http://gluetun-control:8000",
+                [EnvVars.GluetunApiKey] = apiKey,
+                [EnvVars.GluetunProxyUrl] = "http://lookout@gluetun-proxy:8888",
+                [EnvVars.GluetunProxyPassword] = "secret",
+                [EnvVars.GluetunDataDir] = Path.Join(Path.GetTempPath(), "lookout-vpn-configuration-tests"),
             })
             .Build();
 
@@ -36,6 +36,6 @@ public sealed class VpnConfigurationTests
         // gluetun's control server refuses every request without one, so the VPN would only look configured
         var error = Assert.ThrowsExactly<InvalidOperationException>(() => VpnConfiguration.FromConfiguration(Configuration(apiKey)));
 
-        Assert.Contains(EnvironmentVariables.GluetunApiKey, error.Message);
+        Assert.Contains(EnvVars.GluetunApiKey, error.Message);
     }
 }

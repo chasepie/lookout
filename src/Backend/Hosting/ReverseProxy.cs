@@ -18,7 +18,7 @@ public static class ReverseProxy
     public static IServiceCollection AddReverseProxy(this IServiceCollection services, IConfiguration configuration)
     {
         // Parsed here, so a mistyped entry stops startup instead of leaving the proxy untrusted
-        var trustedProxies = ParseTrustedProxies(configuration[EnvironmentVariables.LookoutTrustedProxies]);
+        var trustedProxies = ParseTrustedProxies(configuration[EnvVars.LookoutTrustedProxies]);
         services.Configure<ForwardedHeadersOptions>(options =>
         {
             // With no known proxies or networks, the middleware trusts every source, so without a configured proxy the
@@ -76,6 +76,6 @@ public static class ReverseProxy
     }
 
     private static InvalidOperationException InvalidEntry(string entry) => new(
-        $"{EnvironmentVariables.LookoutTrustedProxies} must list IP addresses or CIDR networks, such as 172.30.0.1 or "
+        $"{EnvVars.LookoutTrustedProxies} must list IP addresses or CIDR networks, such as 172.30.0.1 or "
         + $"10.0.0.0/24; '{entry}' is neither.");
 }

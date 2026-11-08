@@ -85,13 +85,13 @@ public partial class Program
             description: "The host port the Backend is published on.");
 
         var trustedProxies = Setting(
-            name: EnvironmentVariables.LookoutTrustedProxies.ToKebabCase(),
+            name: EnvVars.LookoutTrustedProxies.ToKebabCase(),
             defaultValue: "",
             description: "The reverse proxy's address as the Backend sees it, as comma-separated IPs or CIDR networks. Without it, "
             + "X-Forwarded-For and X-Forwarded-Proto are ignored, and signing in through the proxy fails.");
 
         var ownerUsername = Setting(
-            name: EnvironmentVariables.LookoutOwnerUsername.ToKebabCase(),
+            name: EnvVars.LookoutOwnerUsername.ToKebabCase(),
             defaultValue: null,
             description: "the username the Owner signs in with.");
 
@@ -126,23 +126,23 @@ public partial class Program
         IResourceBuilder<ParameterResource> Secret(string name, string description) => Setting(name, null, description, true);
 
         var ownerPassword = Secret(
-            name: EnvironmentVariables.LookoutOwnerPassword.ToKebabCase(),
+            name: EnvVars.LookoutOwnerPassword.ToKebabCase(),
             description: $"the password the Owner signs in with, at least 16 characters. Changing it signs out every session. {QuoteIfNeeded}");
 
         var runnerApiKey = Secret(
-            name: EnvironmentVariables.LookoutRunnerApiKey.ToKebabCase(),
+            name: EnvVars.LookoutRunnerApiKey.ToKebabCase(),
             description: "the key the Backend sends the Runner, such as from `openssl rand -hex 32`.");
 
         var browserlessToken = Secret(
-            name: EnvironmentVariables.BrowserlessToken.ToKebabCase(),
+            name: EnvVars.BrowserlessToken.ToKebabCase(),
             description: "browserless's token, such as from `openssl rand -hex 32`.");
 
         var gluetunApiKey = Secret(
-            name: EnvironmentVariables.GluetunApiKey.ToKebabCase(),
+            name: EnvVars.GluetunApiKey.ToKebabCase(),
             description: "the Backend's key for gluetun's control server, letters and digits only, such as from `openssl rand -hex 32`.");
 
         var proxyPassword = Secret(
-            name: EnvironmentVariables.GluetunProxyPassword.ToKebabCase(),
+            name: EnvVars.GluetunProxyPassword.ToKebabCase(),
             description: "the password of gluetun's HTTP proxy, such as from `openssl rand -hex 32`.");
 
         var openVpnUser = Secret(
@@ -182,15 +182,14 @@ public partial class Program
             {
                 service.Image = $"{RunnerImage}:{Placeholder(imageTag, resource)}";
                 service.Environment["TZ"] = Placeholder(timeZone, resource);
-                service.Environment[EnvironmentVariables.BrowserlessUrl] = $"http://{BrowserlessService}:3000";
-                service.Environment[EnvironmentVariables.BrowserlessToken] = Placeholder(browserlessToken, resource);
-                // browserless connects to it, on the network they share
-                service.Environment[EnvironmentVariables.GluetunProxyUrl] = $"http://{ProxyUsername}@{GluetunService}:8888";
+                service.Environment[EnvVars.BrowserlessToken] = Placeholder(browserlessToken, resource);
+                service.Environment[EnvVars.BrowserlessUrl] = $"http://{BrowserlessService}:3000";
+                service.Environment[EnvVars.GluetunProxyPassword] = Placeholder(proxyPassword, resource);
+                service.Environment[EnvVars.GluetunProxyUrl] = $"http://{ProxyUsername}@{GluetunService}:8888";
+                service.Environment[EnvVars.LookoutRunnerApiKey] = Placeholder(runnerApiKey, resource);
                 Harden(service, readOnly: true);
                 // Outside V8's heap, nothing else stops a script taking the host's memory
                 LimitMemory(service, Placeholder(runnerMemory, resource));
-                service.Environment[EnvironmentVariables.LookoutRunnerApiKey] = Placeholder(runnerApiKey, resource);
-                service.Environment[EnvironmentVariables.GluetunProxyPassword] = Placeholder(proxyPassword, resource);
                 // No route out: scripts reach the network only through browserless
                 service.Networks = [RunnerNetwork, BrowsersNetwork];
             });
@@ -208,16 +207,16 @@ public partial class Program
 
                 service.Environment["AllowedHosts"] = Placeholder(host, resource);
                 service.Environment["TZ"] = Placeholder(timeZone, resource);
-                service.Environment[EnvironmentVariables.GluetunApiKey] = Placeholder(gluetunApiKey, resource);
-                service.Environment[EnvironmentVariables.GluetunDataDir] = "/app/gluetun";
-                service.Environment[EnvironmentVariables.GluetunProxyPassword] = Placeholder(proxyPassword, resource);
-                service.Environment[EnvironmentVariables.GluetunProxyUrl] = $"http://{ProxyUsername}@{GluetunProxyRelay}:8888";
-                service.Environment[EnvironmentVariables.GluetunUrl] = $"http://{GluetunControlRelay}:8000";
-                service.Environment[EnvironmentVariables.LookoutOwnerPassword] = Placeholder(ownerPassword, resource);
-                service.Environment[EnvironmentVariables.LookoutOwnerUsername] = Placeholder(ownerUsername, resource);
-                service.Environment[EnvironmentVariables.LookoutRunnerApiKey] = Placeholder(runnerApiKey, resource);
-                service.Environment[EnvironmentVariables.LookoutRunnerUrl] = $"http://{RunnerService}:8080";
-                service.Environment[EnvironmentVariables.LookoutTrustedProxies] = Placeholder(trustedProxies, resource);
+                service.Environment[EnvVars.GluetunApiKey] = Placeholder(gluetunApiKey, resource);
+                service.Environment[EnvVars.GluetunDataDir] = "/app/gluetun";
+                service.Environment[EnvVars.GluetunProxyPassword] = Placeholder(proxyPassword, resource);
+                service.Environment[EnvVars.GluetunProxyUrl] = $"http://{ProxyUsername}@{GluetunProxyRelay}:8888";
+                service.Environment[EnvVars.GluetunUrl] = $"http://{GluetunControlRelay}:8000";
+                service.Environment[EnvVars.LookoutOwnerPassword] = Placeholder(ownerPassword, resource);
+                service.Environment[EnvVars.LookoutOwnerUsername] = Placeholder(ownerUsername, resource);
+                service.Environment[EnvVars.LookoutRunnerApiKey] = Placeholder(runnerApiKey, resource);
+                service.Environment[EnvVars.LookoutRunnerUrl] = $"http://{RunnerService}:8080";
+                service.Environment[EnvVars.LookoutTrustedProxies] = Placeholder(trustedProxies, resource);
 
                 Harden(service, readOnly: true);
                 // Plain HTTP, for a reverse proxy that terminates TLS
@@ -232,6 +231,7 @@ public partial class Program
             .PublishAsDockerComposeService((resource, service) =>
             {
                 gluetunApiKeyPlaceholder = Placeholder(gluetunApiKey, resource);
+                service.Environment["TZ"] = Placeholder(timeZone, resource);
                 service.Environment["VPN_SERVICE_PROVIDER"] = Placeholder(vpnServiceProvider, resource);
                 service.Environment["VPN_TYPE"] = "openvpn";
                 service.Environment["OPENVPN_USER"] = Placeholder(openVpnUser, resource);
@@ -241,9 +241,8 @@ public partial class Program
                 service.Environment["HTTPPROXY_PASSWORD"] = Placeholder(proxyPassword, resource);
                 // Otherwise the proxy adds headers to plain-HTTP requests that give away browserless's address
                 service.Environment["HTTPPROXY_STEALTH"] = "on";
-                service.Environment["TZ"] = Placeholder(timeZone, resource);
-                service.Environment["UPDATER_PERIOD"] = GluetunUpdaterPeriod;
                 service.Environment["HTTP_CONTROL_SERVER_AUTH_CONFIG_FILEPATH"] = GluetunAuthPath;
+                service.Environment["UPDATER_PERIOD"] = GluetunUpdaterPeriod;
                 service.Restart = "unless-stopped";
                 service.CapAdd = ["NET_ADMIN"];
                 service.Devices = ["/dev/net/tun:/dev/net/tun"];

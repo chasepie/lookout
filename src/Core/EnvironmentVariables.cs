@@ -9,7 +9,7 @@ namespace ChasePie.Lookout.Core;
 /// The images set some of their own: the Runner's <see cref="WatchCliRoot"/>, and both <see cref="LookoutWatchScriptsDir"/> as
 /// <c>/app/scripts</c>, where the scripts are mounted, and the Backend's <see cref="LookoutDatabaseDir"/>.
 /// </summary>
-public static class EnvironmentVariables
+public static class EnvVars
 {
     /// <summary>
     /// The browserless container's base URL, used by the Runner. Its token is <see cref="BrowserlessToken"/>.

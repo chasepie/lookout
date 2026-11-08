@@ -136,13 +136,13 @@ internal sealed class LookoutFactory : WebApplicationFactory<Program>
     {
         builder.UseEnvironment(_environment);
         builder.UseSetting(WebHostDefaults.WebRootKey, WebRoot);
-        builder.UseSetting(EnvironmentVariables.LookoutOwnerUsername, _username);
-        builder.UseSetting(EnvironmentVariables.LookoutOwnerPassword, _password);
-        builder.UseSetting(EnvironmentVariables.LookoutDatabaseDir, Path.Join(DataDirectory, "database"));
-        builder.UseSetting(EnvironmentVariables.LookoutWatchScriptsDir, Path.Join(DataDirectory, "scripts"));
+        builder.UseSetting(EnvVars.LookoutOwnerUsername, _username);
+        builder.UseSetting(EnvVars.LookoutOwnerPassword, _password);
+        builder.UseSetting(EnvVars.LookoutDatabaseDir, Path.Join(DataDirectory, "database"));
+        builder.UseSetting(EnvVars.LookoutWatchScriptsDir, Path.Join(DataDirectory, "scripts"));
         // Nothing listens there; runs aren't exercised
-        builder.UseSetting(EnvironmentVariables.LookoutRunnerUrl, "http://127.0.0.1:9");
-        builder.UseSetting(EnvironmentVariables.LookoutRunnerApiKey, new string('k', RunnerApiKey.MinLength));
+        builder.UseSetting(EnvVars.LookoutRunnerUrl, "http://127.0.0.1:9");
+        builder.UseSetting(EnvVars.LookoutRunnerApiKey, new string('k', RunnerApiKey.MinLength));
         foreach (var (name, value) in _settings)
         {
             builder.UseSetting(name, value);

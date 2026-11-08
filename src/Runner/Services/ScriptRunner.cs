@@ -24,7 +24,7 @@ public partial class ScriptRunner(
 
     /// <summary>
     /// The variable the watch CLI reads the browserless server from. The same name as the Runner's
-    /// <see cref="EnvironmentVariables.BrowserlessUrl"/>, but part of the CLI's interface, since it's also run by hand.
+    /// <see cref="EnvVars.BrowserlessUrl"/>, but part of the CLI's interface, since it's also run by hand.
     /// </summary>
     internal const string CliBrowserlessUrlVariable = "BROWSERLESS_URL";
 
@@ -72,7 +72,7 @@ public partial class ScriptRunner(
     private string GetVpnProxyUrl() =>
         // Never run without the VPN when the watch asked for it
         watchCli.VpnProxyUrl ?? throw new InvalidOperationException(
-            $"The watch uses the VPN, but the Runner has no VPN proxy. Set {EnvironmentVariables.GluetunProxyUrl}.");
+            $"The watch uses the VPN, but the Runner has no VPN proxy. Set {EnvVars.GluetunProxyUrl}.");
 
     /// <param name="useVpn">Whether the browser's traffic goes through the VPN proxy.</param>
     /// <exception cref="InvalidOperationException">

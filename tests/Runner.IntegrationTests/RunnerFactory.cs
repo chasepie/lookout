@@ -74,10 +74,10 @@ internal sealed class RunnerFactory : WebApplicationFactory<Program>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment(_environment);
-        builder.UseSetting(EnvironmentVariables.LookoutWatchScriptsDir, ScriptsDirectory);
-        builder.UseSetting(EnvironmentVariables.BrowserlessUrl, _browserlessUrl);
-        builder.UseSetting(EnvironmentVariables.BrowserlessToken, _browserlessToken);
-        builder.UseSetting(EnvironmentVariables.LookoutRunnerApiKey, ApiKey);
+        builder.UseSetting(EnvVars.LookoutWatchScriptsDir, ScriptsDirectory);
+        builder.UseSetting(EnvVars.BrowserlessUrl, _browserlessUrl);
+        builder.UseSetting(EnvVars.BrowserlessToken, _browserlessToken);
+        builder.UseSetting(EnvVars.LookoutRunnerApiKey, ApiKey);
         builder.ConfigureServices(services => services.AddTransient<IStartupFilter, MatchedRouteStartupFilter>());
     }
 

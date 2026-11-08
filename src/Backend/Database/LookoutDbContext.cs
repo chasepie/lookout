@@ -40,8 +40,8 @@ public class LookoutDbContext(DbContextOptions<LookoutDbContext> options) : DbCo
     /// <exception cref="InvalidOperationException"><c>LOOKOUT_DATABASE_DIR</c> is not set.</exception>
     public static string GetConnectionString(IConfiguration configuration)
     {
-        var databaseDir = EnvironmentVariables.GetRequiredDirectory(
-            configuration, EnvironmentVariables.LookoutDatabaseDir);
+        var databaseDir = EnvVars.GetRequiredDirectory(
+            configuration, EnvVars.LookoutDatabaseDir);
         return new SqliteConnectionStringBuilder
         {
             DataSource = Path.Join(databaseDir, DatabaseFileName),
