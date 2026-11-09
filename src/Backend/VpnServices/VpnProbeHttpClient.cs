@@ -3,7 +3,7 @@ using System.Net;
 namespace ChasePie.Lookout.Backend.VpnServices;
 
 /// <summary>
-/// Checks that traffic flows through gluetun's HTTP proxy (<c>LOOKOUT_VPN_PROXY_URL</c>), the way watch runs
+/// Checks that traffic flows through gluetun's HTTP proxy (<c>GLUETUN_PROXY_URL</c>), the way watch runs
 /// send it. gluetun's firewall blocks the proxy while the tunnel is down, so a request that gets through means
 /// the tunnel is up. gluetun's own public IP lookup isn't a reliable signal: it gives up if its IP services fail.
 /// </summary>

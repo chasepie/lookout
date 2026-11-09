@@ -4,12 +4,12 @@ namespace ChasePie.Lookout.Backend.VpnServices;
 
 /// <summary>
 /// The regions a VPN provider offers, read from the servers list gluetun keeps in its data directory
-/// (<c>LOOKOUT_GLUETUN_DIR</c>). gluetun validates region switches against the same list, so any region
+/// (<c>GLUETUN_DATA_DIR</c>). gluetun validates region switches against the same list, so any region
 /// returned here is one it accepts.
 /// </summary>
 /// <remarks>
-/// gluetun writes one file per provider, <c>servers/&lt;provider name&gt;.json</c>, when it starts and whenever
-/// its updater refreshes the list. A file is re-read only after it changes.
+/// gluetun keeps every provider's servers in one file, <c>servers.json</c>, keyed by provider name. It writes the
+/// file when it starts and whenever its updater refreshes the list. The file is re-read only after it changes.
 /// Providers that group their servers by country or city rather than region have no regions here.
 /// </remarks>
 public partial class VpnRegionCatalog(VpnConfiguration configuration, ILogger<VpnRegionCatalog> logger)
@@ -17,7 +17,7 @@ public partial class VpnRegionCatalog(VpnConfiguration configuration, ILogger<Vp
     // Replaced whole, never changed, so readers need no lock
     private volatile CachedRegions? _cached;
 
-    private sealed record CachedRegions(string FilePath, string VpnType, DateTime LastWriteTime, IReadOnlyList<string> Regions);
+    private sealed record CachedRegions(string ProviderName, string VpnType, DateTime LastWriteTime, IReadOnlyList<string> Regions);
 
     /// <summary>
     /// The regions of the provider and VPN type gluetun is using, sorted, or an empty list if gluetun hasn't
@@ -41,17 +41,10 @@ public partial class VpnRegionCatalog(VpnConfiguration configuration, ILogger<Vp
         var dataDirectory = configuration.DataDirectory
             ?? throw new InvalidOperationException("The VPN isn't configured, so there's no gluetun data directory.");
 
-        // The name comes from gluetun, but it's still used in a path, so refuse anything that isn't a plain name
-        var fileName = providerName + ".json";
-        if (Path.GetFileName(fileName) != fileName)
-        {
-            return [];
-        }
-
-        var filePath = Path.Join(dataDirectory, "servers", fileName);
+        var filePath = Path.Join(dataDirectory, "servers.json");
         var lastWriteTime = File.GetLastWriteTimeUtc(filePath);
         if (_cached is { } cached
-            && cached.FilePath == filePath
+            && cached.ProviderName == providerName
             && cached.VpnType == vpnType
             && cached.LastWriteTime == lastWriteTime)
         {
@@ -61,7 +54,7 @@ public partial class VpnRegionCatalog(VpnConfiguration configuration, ILogger<Vp
         IReadOnlyList<string> regions;
         try
         {
-            regions = ReadRegions(filePath, vpnType);
+            regions = ReadRegions(filePath, providerName, vpnType);
         }
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
         {
@@ -70,15 +63,18 @@ public partial class VpnRegionCatalog(VpnConfiguration configuration, ILogger<Vp
             return [];
         }
 
-        _cached = new CachedRegions(filePath, vpnType, lastWriteTime, regions);
+        _cached = new CachedRegions(providerName, vpnType, lastWriteTime, regions);
         return regions;
     }
 
-    private static List<string> ReadRegions(string filePath, string vpnType)
+    private static List<string> ReadRegions(string filePath, string providerName, string vpnType)
     {
         using var stream = File.OpenRead(filePath);
         using var document = JsonDocument.Parse(stream);
-        if (!document.RootElement.TryGetProperty("servers", out var servers)
+        if (document.RootElement.ValueKind != JsonValueKind.Object
+            || !document.RootElement.TryGetProperty(providerName, out var provider)
+            || provider.ValueKind != JsonValueKind.Object
+            || !provider.TryGetProperty("servers", out var servers)
             || servers.ValueKind != JsonValueKind.Array)
         {
             return [];

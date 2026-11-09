@@ -2,7 +2,7 @@ using Aspire.Hosting.Testing;
 using ChasePie.Lookout.Core;
 using YamlDotNet.Serialization;
 
-namespace Chasepie.Lookout.AppHost.Tests;
+namespace ChasePie.Lookout.AppHost.Tests;
 
 /// <summary>
 /// The Docker Compose files `aspire publish` writes: what each service can reach, how it's locked down, and which secrets
@@ -133,8 +133,8 @@ public sealed class ProductionComposeTests
     [DataRow("BROWSERLESS_TOKEN", "browserless,runner")]
     // gluetun gets it in its auth config
     [DataRow("GLUETUN_API_KEY", "backend")]
-    [DataRow("OPENVPN_USER", "gluetun")]
-    [DataRow("OPENVPN_PASSWORD", "gluetun")]
+    [DataRow("GLUETUN_OPENVPN_USER", "gluetun")]
+    [DataRow("GLUETUN_OPENVPN_PASSWORD", "gluetun")]
     public void EachSecretReachesOnlyTheServicesThatNeedIt(string secret, string services)
     {
         var reached = ServiceNames().Where(service =>

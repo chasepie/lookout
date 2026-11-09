@@ -14,6 +14,9 @@ namespace ChasePie.Lookout.Runner.IntegrationTests;
 [TestClass]
 public sealed class ScriptSandboxTests
 {
+    // What the Runner gives a script's process: the watch CLI's browserless server and FORCE_COLOR, sorted
+    private static readonly string[] CliVariables = ["BROWSERLESS_URL", "FORCE_COLOR"];
+
     public TestContext TestContext { get; set; } = null!;
 
     private CancellationToken Ct => TestContext.CancellationToken;
@@ -88,7 +91,7 @@ public sealed class ScriptSandboxTests
 
         // macOS adds __CF_USER_TEXT_ENCODING to every process; TZ is passed through when the Runner has it
         var names = outcome.Split(',').Except(["__CF_USER_TEXT_ENCODING", "TZ"]);
-        Assert.AreSequenceEqual(new[] { "FORCE_COLOR", LookoutEnvironmentVariables.BrowserlessUrl }, names);
+        Assert.AreSequenceEqual(CliVariables, names);
     }
 
     [TestMethod]
@@ -98,7 +101,7 @@ public sealed class ScriptSandboxTests
 
         var ex = Assert.Throws<InvalidOperationException>(() => factory.Server);
 
-        Assert.Contains(LookoutEnvironmentVariables.BrowserlessUrl, ex.Message);
+        Assert.Contains(EnvVars.BrowserlessUrl, ex.Message);
     }
 
     [TestMethod]
@@ -109,7 +112,7 @@ public sealed class ScriptSandboxTests
 
         var ex = Assert.Throws<InvalidOperationException>(() => factory.Server);
 
-        Assert.Contains(LookoutEnvironmentVariables.BrowserlessToken, ex.Message);
+        Assert.Contains(EnvVars.BrowserlessToken, ex.Message);
     }
 
     [TestMethod]
@@ -119,7 +122,7 @@ public sealed class ScriptSandboxTests
         await using var factory = new RunnerFactory();
         Directory.CreateDirectory(factory.ScriptsDirectory);
         await File.WriteAllTextAsync(Path.Join(factory.ScriptsDirectory, "leaky.ts"), """
-            console.error(`connecting to ${process.env.LOOKOUT_BROWSERLESS_URL}`);
+            console.error(`connecting to ${process.env.BROWSERLESS_URL}`);
             throw new Error('failed');
             """, Ct);
         using var client = factory.CreateClient(RunnerFactory.ApiKey);

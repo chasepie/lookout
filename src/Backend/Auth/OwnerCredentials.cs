@@ -10,7 +10,7 @@ namespace ChasePie.Lookout.Backend.Auth;
 /// </summary>
 public sealed class OwnerCredentials
 {
-    public const int MinPasswordLength = LookoutEnvironmentVariables.OwnerPasswordMinLength;
+    public const int MinPasswordLength = EnvVars.OwnerPasswordMinLength;
 
     // Iterations for deriving the fingerprint. It's derived once per start, so it can afford to be slow.
     private const int FingerprintIterations = 100_000;
@@ -53,13 +53,13 @@ public sealed class OwnerCredentials
     /// <exception cref="InvalidOperationException">A variable is missing, or the password is too short.</exception>
     public static OwnerCredentials FromConfiguration(IConfiguration configuration)
     {
-        var username = configuration[LookoutEnvironmentVariables.OwnerUsername];
-        var password = configuration[LookoutEnvironmentVariables.OwnerPassword];
+        var username = configuration[EnvVars.LookoutOwnerUsername];
+        var password = configuration[EnvVars.LookoutOwnerPassword];
         if (string.IsNullOrWhiteSpace(username) || string.IsNullOrEmpty(password))
         {
             throw new InvalidOperationException(
-                $"Environment variables {LookoutEnvironmentVariables.OwnerUsername} and "
-                + $"{LookoutEnvironmentVariables.OwnerPassword} must be set to the Owner's sign-in.");
+                $"Environment variables {EnvVars.LookoutOwnerUsername} and "
+                + $"{EnvVars.LookoutOwnerPassword} must be set to the Owner's sign-in.");
         }
 
         try
@@ -70,7 +70,7 @@ public sealed class OwnerCredentials
         {
             // The constructor holds the rules; this only names the variable to fix
             throw new InvalidOperationException(
-                $"Environment variable {LookoutEnvironmentVariables.OwnerPassword} must be at least "
+                $"Environment variable {EnvVars.LookoutOwnerPassword} must be at least "
                 + $"{MinPasswordLength} characters.", ex);
         }
     }

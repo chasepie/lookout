@@ -32,8 +32,8 @@ internal sealed class RunnerFactory : WebApplicationFactory<Program>
     private readonly string? _browserlessUrl;
     private readonly string? _browserlessToken;
 
-    /// <param name="browserlessUrl">The Runner's <c>LOOKOUT_BROWSERLESS_URL</c>, or <see langword="null"/> for none.</param>
-    /// <param name="browserlessToken">The Runner's <c>LOOKOUT_BROWSERLESS_TOKEN</c>, or <see langword="null"/> for none.</param>
+    /// <param name="browserlessUrl">The Runner's <c>BROWSERLESS_URL</c>, or <see langword="null"/> for none.</param>
+    /// <param name="browserlessToken">The Runner's <c>BROWSERLESS_TOKEN</c>, or <see langword="null"/> for none.</param>
     public RunnerFactory(
         string environment = "Production",
         string? browserlessUrl = BrowserlessUrl,
@@ -74,10 +74,10 @@ internal sealed class RunnerFactory : WebApplicationFactory<Program>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment(_environment);
-        builder.UseSetting(LookoutEnvironmentVariables.WatchScriptsDir, ScriptsDirectory);
-        builder.UseSetting(LookoutEnvironmentVariables.BrowserlessUrl, _browserlessUrl);
-        builder.UseSetting(LookoutEnvironmentVariables.BrowserlessToken, _browserlessToken);
-        builder.UseSetting(LookoutEnvironmentVariables.RunnerApiKey, ApiKey);
+        builder.UseSetting(EnvVars.LookoutWatchScriptsDir, ScriptsDirectory);
+        builder.UseSetting(EnvVars.BrowserlessUrl, _browserlessUrl);
+        builder.UseSetting(EnvVars.BrowserlessToken, _browserlessToken);
+        builder.UseSetting(EnvVars.LookoutRunnerApiKey, ApiKey);
         builder.ConfigureServices(services => services.AddTransient<IStartupFilter, MatchedRouteStartupFilter>());
     }
 

@@ -19,8 +19,8 @@ public sealed class ScriptRunnerStartInfoTests
     // What the Runner's own environment holds when the AppHost starts it, plus a CLI proxy left over from a shell
     private static readonly Dictionary<string, string> RunnerEnvironment = new()
     {
-        [LookoutEnvironmentVariables.VpnProxyUrl] = ProxyUrl,
-        [LookoutEnvironmentVariables.RunnerApiKey] = new string('k', RunnerApiKey.MinLength),
+        [EnvVars.GluetunProxyUrl] = ProxyUrl,
+        [EnvVars.LookoutRunnerApiKey] = new string('k', RunnerApiKey.MinLength),
         [ScriptRunner.CliProxyUrlVariable] = ProxyUrl,
         ["HOME"] = "/home/app",
         ["TZ"] = "America/New_York",
@@ -59,7 +59,7 @@ public sealed class ScriptRunnerStartInfoTests
             new Dictionary<string, string?>
             {
                 ["FORCE_COLOR"] = "0",
-                [LookoutEnvironmentVariables.BrowserlessUrl] = BrowserlessUrl,
+                [ScriptRunner.CliBrowserlessUrlVariable] = BrowserlessUrl,
                 ["TZ"] = "America/New_York",
             },
             startInfo.Environment,
@@ -75,7 +75,7 @@ public sealed class ScriptRunnerStartInfoTests
             new Dictionary<string, string?>
             {
                 ["FORCE_COLOR"] = "0",
-                [LookoutEnvironmentVariables.BrowserlessUrl] = BrowserlessUrl,
+                [ScriptRunner.CliBrowserlessUrlVariable] = BrowserlessUrl,
                 [ScriptRunner.CliProxyUrlVariable] = ProxyUrl,
                 ["TZ"] = "America/New_York",
             },

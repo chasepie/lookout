@@ -1,4 +1,4 @@
-namespace Chasepie.Lookout.AppHost;
+namespace ChasePie.Lookout.AppHost;
 
 /// <summary>
 /// Runs Lookout for development (<c>dotnet run</c>), or describes its production deployment (<c>aspire publish</c>), which
@@ -13,11 +13,11 @@ public partial class Program
         var builder = DistributedApplication.CreateBuilder(args);
         if (builder.ExecutionContext.IsPublishMode)
         {
-            AddProduction(builder);
+            Production.Add(builder);
         }
         else
         {
-            AddDevelopment(builder);
+            Development.Add(builder);
         }
 
         builder.Build().Run();

@@ -15,7 +15,7 @@ public sealed record WatchScriptsDirectory(string FullPath)
     /// <exception cref="InvalidOperationException"><c>LOOKOUT_WATCH_SCRIPTS_DIR</c> is not set.</exception>
     public static WatchScriptsDirectory FromConfiguration(IConfiguration configuration) =>
         // Whichever service starts first creates it
-        new(LookoutEnvironmentVariables.GetRequiredDirectory(configuration, LookoutEnvironmentVariables.WatchScriptsDir));
+        new(EnvVars.GetRequiredDirectory(configuration, EnvVars.LookoutWatchScriptsDir));
 
     /// <summary>
     /// The name of the watch's script file in the directory, or <see langword="null"/> if it has no script.

@@ -25,7 +25,7 @@ public sealed class HostingTests
     [TestMethod]
     public async Task ATrustedProxyTerminatingTlsCanSignIn()
     {
-        await using var factory = Factory(LookoutEnvironmentVariables.TrustedProxies, ProxyIp);
+        await using var factory = Factory(EnvVars.LookoutTrustedProxies, ProxyIp);
         // The proxy talks to the Backend over plain HTTP
         using var client = factory.CreateBrowserClient(new Uri("http://localhost"));
 
@@ -39,7 +39,7 @@ public sealed class HostingTests
     [DataRow("10.0.0.0/24")]
     public async Task ForwardedHeadersFromAnUntrustedSourceAreIgnored(string? trustedProxies)
     {
-        await using var factory = Factory(LookoutEnvironmentVariables.TrustedProxies, trustedProxies);
+        await using var factory = Factory(EnvVars.LookoutTrustedProxies, trustedProxies);
         using var client = factory.CreateBrowserClient(new Uri("http://localhost"));
 
         // Claiming HTTPS, and even this machine, doesn't make plain HTTP from elsewhere acceptable
@@ -51,7 +51,7 @@ public sealed class HostingTests
     [TestMethod]
     public async Task EachClientBehindTheProxyHasItsOwnSignInLimit()
     {
-        await using var factory = Factory(LookoutEnvironmentVariables.TrustedProxies, "172.30.0.0/24");
+        await using var factory = Factory(EnvVars.LookoutTrustedProxies, "172.30.0.0/24");
         using var client = factory.CreateBrowserClient(new Uri("http://localhost"));
 
         for (var i = 0; i < OwnerAuthentication.SignInsPerClient; i++)
@@ -77,7 +77,7 @@ public sealed class HostingTests
     [DataRow("172.30.0.1/24")]
     public async Task AMistypedTrustedProxyStopsStartup(string mistyped)
     {
-        await using var factory = Factory(LookoutEnvironmentVariables.TrustedProxies, $"172.30.0.1, {mistyped}");
+        await using var factory = Factory(EnvVars.LookoutTrustedProxies, $"172.30.0.1, {mistyped}");
 
         var error = Assert.ThrowsExactly<InvalidOperationException>(() => factory.CreateClient());
 
@@ -91,7 +91,7 @@ public sealed class HostingTests
     [DataRow("fd00::/64")]
     public async Task TrustedProxiesTakeAddressesAndNetworks(string trustedProxy)
     {
-        await using var factory = Factory(LookoutEnvironmentVariables.TrustedProxies, trustedProxy);
+        await using var factory = Factory(EnvVars.LookoutTrustedProxies, trustedProxy);
 
         Assert.IsNotNull(factory.CreateClient());
     }

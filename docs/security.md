@@ -132,7 +132,7 @@ A watch script is code, so it runs inside two limits, for when the sign-in is by
 **Node's permission model.** `ScriptRunner` starts the watch CLI with `--permission`, so a script may only read itself (not the other watches' scripts),
 the `node_modules` the CLI imports from and the SDK's own directory; write only the file the CLI puts its result in; and start no child processes or worker
 threads. It
-starts with a clean environment: only `FORCE_COLOR`, `LOOKOUT_BROWSERLESS_URL`, `LOOKOUT_WATCH_PROXY_URL` for VPN runs, and `TZ` and `SystemRoot` when the
+starts with a clean environment: only `FORCE_COLOR`, `BROWSERLESS_URL`, `LOOKOUT_WATCH_PROXY_URL` for VPN runs, and `TZ` and `SystemRoot` when the
 Runner has them. So the Runner key, and anything else in the Runner's environment, never reach a script. `ScriptSandboxTests` runs scripts that try each
 of these and checks they're refused. Node calls its model a seat belt, not a sandbox, so it isn't the only limit:
 
@@ -141,7 +141,7 @@ of these and checks they're refused. Node calls its model a seat belt, not a san
 - Outside the container, as in the Runner's tests, `node_modules` is the repo's, and npm links every workspace into it. Node follows those links, so a
   script run there can read the `src/Runner`, `src/frontend` and `examples` workspaces. In the container, those links point nowhere.
 - The CLI needs the network to reach browserless, and Node can't limit it to one host, so scripts get `--allow-net`.
-- A local browser needs child processes, so the Runner refuses to start without `LOOKOUT_BROWSERLESS_URL`.
+- A local browser needs child processes, so the Runner refuses to start without `BROWSERLESS_URL`.
 
 **The Runner's container.** The Runner runs from `src/Runner/Dockerfile` as the image's non-root user, with no Linux capabilities, `no-new-privileges`,
 `tini` as PID 1 (see [Production deployment](#production-deployment)), and the scripts mounted read-only at `/app/scripts`. The container has no `.env`,
@@ -164,8 +164,8 @@ secret that the AppHost generates on each start:
 
 | Container | Secret | Who has it |
 | --- | --- | --- |
-| browserless | `browserless-token`, the Runner's `LOOKOUT_BROWSERLESS_TOKEN`, sent as the `token` query parameter | browserless and the Runner |
-| gluetun's HTTP proxy | `gluetun-proxy-password`, `LOOKOUT_VPN_PROXY_PASSWORD`, for the username `lookout` | gluetun, the Runner and the Backend; see below |
+| browserless | `browserless-token`, the Runner's `BROWSERLESS_TOKEN`, sent as the `token` query parameter | browserless and the Runner |
+| gluetun's HTTP proxy | `gluetun-proxy-password`, `GLUETUN_PROXY_PASSWORD`, for the username `lookout` | gluetun, the Runner and the Backend; see below |
 | gluetun's control server | `gluetun-api-key`, in `X-API-Key` | gluetun and the Backend |
 
 Production takes them from the deployment's `.env` instead: see [Production deployment](#production-deployment). The token and the password are settings

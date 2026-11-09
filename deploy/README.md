@@ -15,7 +15,7 @@ required. The secrets are there too:
   case, signs out every session once the Backend restarts.
 - `LOOKOUT_RUNNER_API_KEY`, `BROWSERLESS_TOKEN`, `GLUETUN_API_KEY` and `GLUETUN_PROXY_PASSWORD`: secrets the services share
   among themselves. Make each with `openssl rand -hex 32`.
-- `OPENVPN_USER` and `OPENVPN_PASSWORD`: your VPN provider's OpenVPN credentials.
+- `GLUETUN_OPENVPN_USER` and `GLUETUN_OPENVPN_PASSWORD`: your VPN provider's OpenVPN credentials.
 
 Compose expands `$NAME` in `.env` values, and `#` starts a comment, so put any value with `$`, `#` or spaces in single
 quotes: `LOOKOUT_OWNER_PASSWORD='pa$$word with #'`. The `openssl rand -hex` ones never need it.
@@ -78,7 +78,7 @@ Everything Lookout keeps is in Docker volumes:
 | --- | --- |
 | `database` | The SQLite database, and the keys that encrypt session cookies. Losing the keys signs everyone out. |
 | `scripts` | The uploaded watch scripts |
-| `gluetun` | gluetun's servers list, which it downloads again if lost |
+| `gluetun` | gluetun's servers list. If it's lost, gluetun falls back to the list built into its image, which may be months out of date: refresh it as below. |
 
 Back up `database` and `scripts` together, with the stack stopped, for example:
 
@@ -88,3 +88,14 @@ docker run --rm -v lookout_database:/database:ro -v lookout_scripts:/scripts:ro 
   tar czf /backup/lookout-backup.tar.gz /database /scripts
 docker compose start
 ```
+
+gluetun refreshes its servers list only after `UPDATER_PERIOD` (15 days) without a restart. If the VPN can't connect,
+with `TLS key negotiation failed` in gluetun's log, the list is probably out of date. Refresh it, then restart gluetun:
+
+```sh
+docker compose stop gluetun
+docker run --rm -v lookout_gluetun:/gluetun qmcgaw/gluetun:<the tag in docker-compose.yaml> update -enduser -providers "private internet access"
+docker compose start gluetun
+```
+
+If you set `GLUETUN_VPN_SERVICE_PROVIDER`, pass that provider to `-providers` instead.

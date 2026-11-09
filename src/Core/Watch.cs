@@ -25,7 +25,7 @@ public class CreateWatchDto : IValidatableObject
     public string? ScheduleInterval { get; set; }
 
     /// <summary>
-    /// Whether runs send the browser's traffic through the VPN proxy (<c>LOOKOUT_VPN_PROXY_URL</c>).
+    /// Whether runs send the browser's traffic through the VPN proxy (<c>GLUETUN_PROXY_URL</c>).
     /// </summary>
     public bool UseVpn { get; set; }
 

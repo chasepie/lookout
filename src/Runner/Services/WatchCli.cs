@@ -43,16 +43,16 @@ public sealed record WatchCli(
     private static readonly string[] PlaywrightLinuxChecks = ["/proc/sys/fs/binfmt_misc/WSLInterop", "/run/WSL"];
 
     /// <summary>
-    /// Finds the CLI under <c>LOOKOUT_WATCH_CLI_ROOT</c>, or the repo root above <paramref name="currentDirectory"/>, and
+    /// Finds the CLI under <c>LOOKOUT_RUNNER_WATCH_CLI_ROOT</c>, or the repo root above <paramref name="currentDirectory"/>, and
     /// reads the URLs it needs.
     /// </summary>
     /// <exception cref="InvalidOperationException">
-    /// The CLI isn't built, <c>LOOKOUT_BROWSERLESS_URL</c> or <c>LOOKOUT_BROWSERLESS_TOKEN</c> isn't set, or either URL
+    /// The CLI isn't built, <c>BROWSERLESS_URL</c> or <c>BROWSERLESS_TOKEN</c> isn't set, or either URL
     /// isn't absolute.
     /// </exception>
     public static WatchCli FromConfiguration(IConfiguration configuration, string currentDirectory)
     {
-        var root = configuration[LookoutEnvironmentVariables.WatchCliRoot] is { Length: > 0 } configuredRoot
+        var root = configuration[EnvVars.WatchCliRoot] is { Length: > 0 } configuredRoot
             ? Path.GetFullPath(configuredRoot)
             : RepoRoot.FindRequired(currentDirectory);
         var nodeModules = RealPath.Of(Path.Combine(root, "node_modules"));
@@ -68,15 +68,15 @@ public sealed record WatchCli(
         }
 
         // Scripts run sandboxed, and the sandbox can't start a local browser
-        var browserlessUrl = LookoutEnvironmentVariables.GetBrowserlessUrl(configuration);
+        var browserlessUrl = EnvVars.GetBrowserlessUrl(configuration);
         if (browserlessUrl is null)
         {
             throw new InvalidOperationException(
-                $"Environment variable {LookoutEnvironmentVariables.BrowserlessUrl} must be set: the Runner runs every "
+                $"Environment variable {EnvVars.BrowserlessUrl} must be set: the Runner runs every "
                 + "script's browser on browserless.");
         }
 
-        var vpnProxyUrl = LookoutEnvironmentVariables.GetVpnProxyUrl(configuration);
+        var vpnProxyUrl = EnvVars.GetVpnProxyUrl(configuration);
         var proxyPassword = vpnProxyUrl?.UserInfo.Split(':', 2) is [_, var escapedPassword]
             ? Uri.UnescapeDataString(escapedPassword)
             : null;
@@ -87,7 +87,7 @@ public sealed record WatchCli(
             VpnProxyUrl: vpnProxyUrl?.AbsoluteUri,
             // A link on macOS
             OutputDirectory: RealPath.Of(Path.GetTempPath()),
-            Secrets: SecretForms(configuration[LookoutEnvironmentVariables.BrowserlessToken], proxyPassword));
+            Secrets: SecretForms(configuration[EnvVars.BrowserlessToken], proxyPassword));
     }
 
     /// <summary>

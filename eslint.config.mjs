@@ -7,7 +7,7 @@ import tseslint from 'typescript-eslint';
 export default defineConfig(
   // Build output, caches and local data, which ESLint would otherwise lint because it doesn't read .gitignore
   globalIgnores([
-    '.shared-volumes/',
+    '.docker-volumes/',
     '**/dist/',
     '**/coverage/',
     'coverage-report/',
