@@ -1,0 +1,15 @@
+{
+  "config": {
+    "MD013": {
+      "line_length": 120,
+      "tables": false
+    }
+  },
+  // Skip everything .gitignore excludes, such as node_modules and build output
+  "gitignore": true,
+  "ignores": [
+    // Vendored agent skills (see skills-lock.json)
+    ".agents/skills/**",
+    ".claude/skills/**"
+  ]
+}
