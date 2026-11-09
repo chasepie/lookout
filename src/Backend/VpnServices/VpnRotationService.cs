@@ -277,7 +277,7 @@ public partial class VpnRotationService(
 
     [LoggerMessage(
         Level = LogLevel.Information,
-        Message = "The VPN is on {Region}, which isn't in " + EnvVars.GluetunServerRegions + "; switching to a region that is")]
+        Message = $"The VPN is on {{Region}}, which isn't in {EnvVars.GluetunServerRegions}; switching to a region that is")]
     private partial void LogRegionNotAllowed(string region);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to check the VPN rotation")]

@@ -175,7 +175,8 @@ public sealed record VpnConfiguration(
     /// no limit.
     /// </summary>
     public bool AllowsRegion(string region) =>
-        ServerRegions is not { Count: > 0 } regions || regions.Contains(region, StringComparer.OrdinalIgnoreCase);
+        ServerRegions is not { Count: > 0 } regions
+        || regions.Contains(region, StringComparer.OrdinalIgnoreCase);
 
     /// <exception cref="InvalidOperationException">
     /// <c>GLUETUN_URL</c> is set but isn't an absolute URL, or the settings it needs are missing.
