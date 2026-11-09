@@ -208,16 +208,16 @@ command line, which any user on the machine can list. Only runs that use the VPN
 two secrets aren't kept from scripts: the browserless URL and, for VPN runs, the proxy URL are in the script's
 environment, since the CLI needs them.
 
-**Websites in VPN runs can be sent the proxy password.** Before 1.65, Playwright gives Chromium the proxy's credentials
-as credentials for every site, so a page or subresource that answers `401` with a Basic challenge during a VPN run is
-sent `lookout` and the password ([microsoft/playwright#43326](https://github.com/microsoft/playwright/issues/43326)).
-The Playwright that answers these challenges is the one inside the browserless image, not the SDK's, so the fix only
-arrives with a browserless image that ships Playwright 1.65 or later. Proxy credentials also make Playwright intercept
-every request in VPN runs and turn off the HTTP cache, and that stays after the fix. We accept both: the password is
-only useful to something that can already reach the proxy, which stays off the LAN and the internet, and the watches,
-and so the sites VPN runs visit, are the Owner's. Once browserless ships Playwright 1.65 or later, upgrade the image and
-the SDK's Playwright together. If VPN runs become too slow, a small proxy in front of gluetun that adds the credentials
-itself would avoid the interception.
+**Websites in VPN runs aren't sent the proxy password.** Playwright answers only the proxy's own challenges with the
+proxy's credentials, and a site's `401` Basic challenge fails the request as it does outside VPN runs. Playwright before
+1.65 answers sites' challenges with them too
+([microsoft/playwright#43326](https://github.com/microsoft/playwright/issues/43326)), so the SDK's and the Runner's
+Playwright stay at 1.65 or later. The Playwright that answers these challenges is the one inside the browserless image,
+which serves each client the Playwright version the client has, so the image must support 1.65 too (browserless v2.60.0
+or later, in `src/AppHost/Images.cs`). The image also serves older clients, so an older SDK would send sites the
+password without anything failing. Proxy credentials make Playwright intercept every request in VPN runs and turn off
+the HTTP cache, which costs speed but not security. If VPN runs become too slow, a small proxy in front of gluetun that
+adds the credentials itself would avoid the interception.
 
 ## Response headers
 
