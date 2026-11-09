@@ -60,8 +60,9 @@ internal sealed class RunnerFactory : WebApplicationFactory<Program>
 
     /// <summary>
     /// A watch CLI that does what its script, a JSON file, says, as <c>lookout-watch run &lt;script&gt; --output
-    /// &lt;file&gt; [flags]</c> is run: writes <c>write</c> to the output file, or with <c>echoFlags</c> a success
-    /// whose content is the flags it was given as a JSON array; prints <c>stderr</c>; and exits with <c>exitCode</c>.
+    /// &lt;file&gt; [flags]</c> is run: writes <c>write</c> to the output file as JSON, or <c>writeRaw</c> as it is, or
+    /// with <c>echoFlags</c> a success whose content is the flags it was given as a JSON array; prints <c>stderr</c>; and
+    /// exits with <c>exitCode</c>.
     /// </summary>
     public const string StandInCli = """
         import { readFileSync, writeFileSync } from 'node:fs';
@@ -71,6 +72,8 @@ internal sealed class RunnerFactory : WebApplicationFactory<Program>
         const output = script.echoFlags ? { success: true, content: JSON.stringify(flags) } : script.write;
         if (output !== undefined) {
           writeFileSync(outputPath, JSON.stringify(output));
+        } else if (script.writeRaw !== undefined) {
+          writeFileSync(outputPath, script.writeRaw);
         }
         if (script.stderr !== undefined) {
           console.error(script.stderr);

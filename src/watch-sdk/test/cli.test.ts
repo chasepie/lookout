@@ -270,6 +270,30 @@ describe('a crash', () => {
     assert.equal(screenshotTypeOf(run.output), 'jpeg');
   });
 
+  test('is what a script that returns a screenshot that isn\'t bytes has', async () => {
+    const run = await runCli(`export default {
+      async run(page) {
+        ${tallPage}
+        return { success: true, content: 'Tall', screenshot: null };
+      },
+    };`, ['--screenshot-on-crash']);
+
+    assert.equal(run.exitCode, 1);
+    assert.match(String(run.output?.crash?.error), /screenshot must be bytes/);
+    assert.equal(screenshotTypeOf(run.output), 'jpeg');
+  });
+
+  test('says what the script threw when it isn\'t an error', async () => {
+    const run = await runCli(`export default {
+      async run() {
+        throw { code: 'NO_PRICE' };
+      },
+    };`);
+
+    assert.equal(run.exitCode, 1);
+    assert.match(String(run.output?.crash?.error), /code: 'NO_PRICE'/);
+  });
+
   test('is not written when the script never ran', async () => {
     const run = await runCli(`throw new Error('Broken at load');`, ['--screenshot-on-crash']);
 
@@ -303,5 +327,15 @@ describe('run by hand', () => {
 
     assert.equal(run.exitCode, 0, run.stderr);
     assert.equal(imageTypeOf(await readFile(screenshotPath)), 'png');
+  });
+
+  test('still prints the result when --screenshot can\'t be saved', async () => {
+    const screenshotPath = join(workDirectory, 'no-such-directory', 'screenshot.png');
+
+    const run = await runCli(screenshotScript, ['--screenshot', screenshotPath], { output: false });
+
+    assert.equal(run.exitCode, 0, run.stderr);
+    assert.equal((JSON.parse(run.stdout) as CliOutput).content, 'Hello');
+    assert.match(run.stderr, /Couldn't save the screenshot/);
   });
 });

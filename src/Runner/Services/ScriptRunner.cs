@@ -140,14 +140,28 @@ public partial class ScriptRunner(
             }
 
             // A crash is written like a result, so its screenshot gets out too. Without the file, the CLI failed before
-            // the script ran, and only its stderr says why.
-            var result = File.Exists(outputPath) ? await ReadResultAsync(outputPath, cancellationToken) : null;
+            // the script ran, and only its stderr says why; likewise if it died writing the file.
+            WatchRunResult? result = null;
+            if (File.Exists(outputPath))
+            {
+                try
+                {
+                    result = await ReadResultAsync(outputPath, cancellationToken);
+                }
+                catch (InvalidOperationException) when (process.ExitCode != 0)
+                {
+                    // Reported with stderr below
+                }
+            }
             if (result is not null && (process.ExitCode == 0 || result.Crash is not null))
             {
-                // The error can hold secrets, as stderr can: Playwright's errors name the browserless URL
-                return result.Crash is { } crash
-                    ? result with { Crash = crash with { Error = watchCli.Redact(crash.Error) } }
-                    : result;
+                // A crash's error and a known failure's reason can hold secrets, as stderr can: Playwright's errors
+                // name the browserless URL, and a script can make one its reason
+                return result with
+                {
+                    FailureReason = result.FailureReason is { } reason ? watchCli.Redact(reason) : null,
+                    Crash = result.Crash is { } crash ? crash with { Error = watchCli.Redact(crash.Error) } : null,
+                };
             }
 
             string stderr;

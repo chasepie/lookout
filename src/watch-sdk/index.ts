@@ -1,3 +1,4 @@
+import { inspect } from 'node:util';
 import { chromium, type Browser, type BrowserContextOptions, type LaunchOptions, type Page } from 'playwright';
 
 interface RunResultBase {
@@ -50,15 +51,23 @@ export class WatchScriptCrash extends Error {
   readonly screenshot: Uint8Array | undefined;
 
   constructor(cause: unknown, screenshot?: Uint8Array) {
-    super(cause instanceof Error ? cause.message : String(cause), { cause });
+    super(cause instanceof Error ? cause.message : describeThrown(cause), { cause });
     this.name = 'WatchScriptCrash';
     this.screenshot = screenshot;
   }
 
-  /** What the script threw: its stack, which starts with its message, if it's an error. */
+  /**
+   * What the script threw: for an error, its stack, which starts with its message, then any `cause` and other
+   * properties it has.
+   */
   get error(): string {
-    return this.cause instanceof Error ? this.cause.stack ?? String(this.cause) : String(this.cause);
+    return describeThrown(this.cause);
   }
+}
+
+/** A thrown value as a person reads it: a string as it is, anything else as Node prints it. */
+function describeThrown(value: unknown): string {
+  return typeof value === 'string' ? value : inspect(value, { depth: 4 });
 }
 
 export interface LookoutWatchScript {
@@ -223,13 +232,19 @@ export async function runWatch(runScript: LookoutWatchScript, options?: RunWatch
       if (!isRunResult(result)) {
         throw new Error(`Watch script returned an unexpected result: ${JSON.stringify(result)}`);
       }
+      if (result.screenshot !== undefined && !(result.screenshot instanceof Uint8Array)) {
+        throw new Error('The watch script\'s screenshot must be bytes, such as what page.screenshot() returns, '
+          + `not ${result.screenshot === null ? 'null' : typeof result.screenshot}.`);
+      }
     } catch (error) {
       // A run that was cancelled ends without a screenshot, so stopping isn't held up by one
       const screenshot = screenshotOn?.crash && !signal.aborted ? await takeScreenshot(page) : undefined;
       throw new WatchScriptCrash(error, screenshot);
     }
 
-    if (result.screenshot === undefined && (result.success ? screenshotOn?.success : screenshotOn?.knownFailure)) {
+    // As with a crash, a run that's being cancelled ends without one, so stopping isn't held up
+    const wanted = result.success ? screenshotOn?.success : screenshotOn?.knownFailure;
+    if (result.screenshot === undefined && wanted && !signal.aborted) {
       const screenshot = await takeScreenshot(page);
       return screenshot === undefined ? result : { ...result, screenshot };
     }

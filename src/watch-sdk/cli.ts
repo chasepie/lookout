@@ -92,10 +92,6 @@ async function runCommandAction(scriptPath: string, options: RunCommandOptions):
  */
 async function writeOutput(output: RunResult | CrashOutput, options: RunCommandOptions): Promise<void> {
   const { screenshot, ...rest } = output;
-  if (screenshot !== undefined && options.screenshot) {
-    await writeFile(resolve(process.cwd(), options.screenshot), screenshot);
-  }
-
   if (options.output) {
     // JSON has no bytes, so the screenshot goes as base64
     const json = JSON.stringify(
@@ -108,6 +104,15 @@ async function writeOutput(output: RunResult | CrashOutput, options: RunCommandO
       screenshot === undefined ? rest : { ...rest, screenshot: describeImage(screenshot) },
       null,
       2));
+  }
+
+  // After the result, so a path that can't be written doesn't lose it
+  if (screenshot !== undefined && options.screenshot) {
+    try {
+      await writeFile(resolve(process.cwd(), options.screenshot), screenshot);
+    } catch (error) {
+      console.warn(`Couldn't save the screenshot: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 }
 

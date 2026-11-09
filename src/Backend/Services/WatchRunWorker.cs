@@ -149,7 +149,8 @@ public partial class WatchRunWorker(
         var screenshotProblem = result.Screenshot is { } screenshot ? ScreenshotImage.ProblemWith(screenshot) : null;
         if (result.Crash is { } crash)
         {
-            watchRun.Error = crash.Error;
+            // Blank, as when the script threw '', it would read as a run with nothing to report
+            watchRun.Error = string.IsNullOrWhiteSpace(crash.Error) ? "The script crashed without saying why." : crash.Error;
         }
         else if (screenshotProblem is not null)
         {
@@ -161,7 +162,9 @@ public partial class WatchRunWorker(
         }
         else
         {
-            watchRun.FailureReason = result.FailureReason ?? "The script failed without giving a reason.";
+            watchRun.FailureReason = string.IsNullOrWhiteSpace(result.FailureReason)
+                ? "The script reported a known failure without giving a reason."
+                : result.FailureReason;
         }
 
         if (screenshotProblem is null && result.Screenshot is { } keptScreenshot)

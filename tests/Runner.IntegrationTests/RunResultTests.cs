@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using ChasePie.Lookout.Core;
+using Microsoft.AspNetCore.Mvc;
 
 namespace ChasePie.Lookout.Runner.IntegrationTests;
 
@@ -74,20 +75,59 @@ public sealed class RunResultTests
         Assert.AreEqual($"Error: Couldn't reach {RunnerFactory.BrowserlessUrl}?token=***", result.Crash?.Error);
     }
 
+    [TestMethod]
+    public async Task SecretsAreRedactedFromAKnownFailuresReason()
+    {
+        // A script can turn a caught Playwright error, which can name the browserless URL, into its reason
+        var result = await RunAsync(new
+        {
+            write = new { success = false, failureReason = $"Couldn't reach {RunnerFactory.BrowserlessUrl}?token={RunnerFactory.BrowserlessToken}" },
+        });
+
+        Assert.AreEqual($"Couldn't reach {RunnerFactory.BrowserlessUrl}?token=***", result.FailureReason);
+    }
+
+    [TestMethod]
+    public async Task ACliThatDiesWritingItsOutputIsReportedWithItsStderr()
+    {
+        await using var factory = new RunnerFactory(standInCli: true);
+        using var client = await CreateClientAsync(factory, new
+        {
+            writeRaw = "{\"crash\": {\"err",
+            stderr = "FATAL ERROR: JavaScript heap out of memory",
+            exitCode = 134,
+        });
+
+        using var response = await client.GetAsync("/WatchRun?scriptName=watch.ts", Ct);
+
+        Assert.AreEqual(HttpStatusCode.InternalServerError, response.StatusCode);
+        var problem = await response.Content.ReadFromJsonAsync<ProblemDetails>(JsonSerializerOptions.Web, Ct);
+        Assert.Contains("exited with code 134", problem!.Detail!);
+        Assert.Contains("JavaScript heap out of memory", problem.Detail!);
+    }
+
     /// <summary>
     /// Has the stand-in CLI follow <paramref name="instructions"/>, and returns the run's result.
     /// </summary>
     private async Task<WatchRunResult> RunAsync(object instructions, string query = "")
     {
         await using var factory = new RunnerFactory(standInCli: true);
-        Directory.CreateDirectory(factory.ScriptsDirectory);
-        await File.WriteAllTextAsync(
-            Path.Join(factory.ScriptsDirectory, "watch.ts"), JsonSerializer.Serialize(instructions), Ct);
-        using var client = factory.CreateClient(RunnerFactory.ApiKey);
+        using var client = await CreateClientAsync(factory, instructions);
 
         using var response = await client.GetAsync($"/WatchRun?scriptName=watch.ts&{query}", Ct);
 
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode, await response.Content.ReadAsStringAsync(Ct));
         return (await response.Content.ReadFromJsonAsync<WatchRunResult>(JsonSerializerOptions.Web, Ct))!;
+    }
+
+    /// <summary>
+    /// Saves <paramref name="instructions"/> as the script <c>watch.ts</c>, and returns a client for the Runner.
+    /// </summary>
+    private async Task<HttpClient> CreateClientAsync(RunnerFactory factory, object instructions)
+    {
+        Directory.CreateDirectory(factory.ScriptsDirectory);
+        await File.WriteAllTextAsync(
+            Path.Join(factory.ScriptsDirectory, "watch.ts"), JsonSerializer.Serialize(instructions), Ct);
+        return factory.CreateClient(RunnerFactory.ApiKey);
     }
 }

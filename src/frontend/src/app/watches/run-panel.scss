@@ -43,8 +43,10 @@
   font-size: var(--step-2);
 }
 
+// Dashed where a crash's rule is solid
 .seen-known-failure {
-  border-left-color: var(--ink-muted);
+  border-left-color: var(--magenta);
+  border-left-style: dashed;
   font-size: var(--step-2);
 }
 

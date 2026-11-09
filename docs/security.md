@@ -199,8 +199,8 @@ must not be reachable from outside, and each also requires a secret that the App
 Production takes them from the deployment's `.env` instead: see [Production deployment](#production-deployment). The
 token and the password are settings of their own rather than part of their URLs, so each is set once beside the
 container's own. A script's environment still holds them in URLs, and Playwright prints the browserless URL when it
-can't connect, so the Runner masks both secrets in a script's output, and in the error of a script that crashed, before
-logging it or keeping it as the run's error.
+can't connect, so the Runner masks both secrets in a script's output, in the error of a script that crashed and in the
+reason of a known failure, before logging them or keeping them on the run.
 The Runner refuses to start without a browserless token, since browserless without one accepts anyone, and the Runner
 having none means it was started without one. Likewise, the Backend and the Runner refuse a proxy URL without a
 password, and the Backend gluetun without its key.

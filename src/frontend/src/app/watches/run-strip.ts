@@ -70,8 +70,11 @@ interface Tick {
       fill: var(--magenta);
     }
 
+    // A known failure is drawn hollow, quieter than a crash, which is filled
     .knownFailure {
-      fill: var(--ink-muted);
+      fill: none;
+      stroke: var(--magenta);
+      stroke-width: 1;
     }
 
     .running {

@@ -92,6 +92,31 @@ public sealed class WatchRunOutcomeTests
     }
 
     [TestMethod]
+    public async Task AKnownFailureWithABlankReasonSaysSo()
+    {
+        var runner = new FakeRunner(new { success = false, failureReason = " " });
+        await using var factory = CreateFactory(runner);
+        using var client = await factory.CreateSignedInClientAsync(Ct);
+
+        var run = await RunAsync(client, await CreateWatchAsync(client));
+
+        Assert.AreEqual("The script reported a known failure without giving a reason.", run.FailureReason);
+    }
+
+    [TestMethod]
+    public async Task ACrashWithABlankErrorSaysSo()
+    {
+        // As when a script does `throw ''`
+        var runner = new FakeRunner(new { crash = new { error = "" } });
+        await using var factory = CreateFactory(runner);
+        using var client = await factory.CreateSignedInClientAsync(Ct);
+
+        var run = await RunAsync(client, await CreateWatchAsync(client));
+
+        Assert.AreEqual("The script crashed without saying why.", run.Error);
+    }
+
+    [TestMethod]
     public async Task AScreenshotThatIsntAPngOrJpegMakesTheRunACrash()
     {
         var runner = new FakeRunner(new { success = true, content = "Hello", screenshot = "GIF89a"u8.ToArray() });

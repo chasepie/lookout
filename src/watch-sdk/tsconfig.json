@@ -3,7 +3,7 @@
   // Type-checks the library and CLI; tsconfig.build.json emits the library.
   "include": [
     "*.ts",
-    "test/*.ts"
+    "test/**/*.ts"
   ],
   "compilerOptions": {
     "noEmit": true,

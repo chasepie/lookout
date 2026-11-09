@@ -62,13 +62,13 @@ import { RunOutcome as Outcome, Run, outcomeLabels, outcomeOf } from './runs';
       font-weight: 600;
     }
 
-    // Quieter than a crash: the script did its job, and said why there's nothing to show
+    // Quieter than a crash: the script did its job, and said why there's nothing to show, so only the label is magenta
     .known-failure {
       color: var(--ink-muted);
       white-space: pre-line;
 
       .failure-label {
-        color: var(--ink);
+        color: var(--magenta);
       }
     }
 
