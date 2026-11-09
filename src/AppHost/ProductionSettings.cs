@@ -70,6 +70,13 @@ public partial class Program
                 defaultValue: SettingNames.DefaultVpnServiceProvider,
                 description: "gluetun's VPN_SERVICE_PROVIDER.");
 
+            ServerRegions = Setting(
+                name: EnvVars.GluetunServerRegions.ToKebabCase(),
+                defaultValue: "",
+                description: "The VPN regions to use, as gluetun's SERVER_REGIONS: comma-separated with no spaces around the commas, "
+                    + "such as 'DE Berlin,US Texas'. gluetun connects to one of them, and the Backend switches and rotates only "
+                    + "among them. Without it, every region of the provider.");
+
             RunnerMemory = Setting(
                 name: "lookout-runner-memory",
                 defaultValue: "1g",
@@ -118,6 +125,7 @@ public partial class Program
         public IResourceBuilder<ParameterResource> TimeZone { get; }
         public IResourceBuilder<ParameterResource> EdgeSubnet { get; }
         public IResourceBuilder<ParameterResource> VpnServiceProvider { get; }
+        public IResourceBuilder<ParameterResource> ServerRegions { get; }
         public IResourceBuilder<ParameterResource> RunnerMemory { get; }
         public IResourceBuilder<ParameterResource> BrowserlessMemory { get; }
 

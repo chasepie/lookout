@@ -152,6 +152,13 @@ public partial class Program
                 .WithEndpoint(targetPort: 8888, scheme: "http", name: "proxy")
                 .WithHttpEndpoint(targetPort: 8000, name: "control");
 
+            if (settings.GluetunServerRegions is { } serverRegions)
+            {
+                gluetun.WithEnvironment("SERVER_REGIONS", serverRegions);
+                // Each switch replaces gluetun's filter, so the Backend keeps to the same regions
+                backend.WithEnvironment(EnvVars.GluetunServerRegions, serverRegions);
+            }
+
             // gluetun refreshes its servers list only after UPDATER_PERIOD without a restart, which in development never
             // comes, so without a list it would use the one built into its image, which may be months out of date and
             // fail to connect. `update` writes that list before fetching the new one, so a failed update deletes it,

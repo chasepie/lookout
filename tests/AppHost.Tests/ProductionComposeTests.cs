@@ -145,6 +145,14 @@ public sealed class ProductionComposeTests
     }
 
     [TestMethod]
+    public void GluetunAndTheBackendKeepToTheSameServerRegions()
+    {
+        // Each switch replaces gluetun's filter, so the Backend must know it too
+        Assert.AreEqual("${GLUETUN_SERVER_REGIONS:-}", Map(Service("gluetun"), "environment")["SERVER_REGIONS"]);
+        Assert.AreEqual("${GLUETUN_SERVER_REGIONS:-}", Map(Service("backend"), "environment")["GLUETUN_SERVER_REGIONS"]);
+    }
+
+    [TestMethod]
     public void GluetunsKeyMayOnlyUseTheBackendsRoutes()
     {
         var auth = (string)Map(Map(_compose, "configs"), "gluetun_auth")["content"];

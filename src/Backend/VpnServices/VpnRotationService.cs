@@ -9,12 +9,13 @@ namespace ChasePie.Lookout.Backend.VpnServices;
 
 /// <summary>
 /// Makes every VPN region switch: rotations when <see cref="VpnSettings.NextRotationTime"/> comes due,
-/// switches asked for with <see cref="RequestSwitch"/>, and reapplying <see cref="VpnSettings.CurrentRegion"/>
-/// when gluetun has lost it, which happens when gluetun restarts.
+/// switches asked for with <see cref="RequestSwitch"/>, reapplying <see cref="VpnSettings.CurrentRegion"/>
+/// when gluetun has lost it, which happens when gluetun restarts, and replacing it when
+/// <see cref="VpnConfiguration.ServerRegions"/> no longer allows it.
 /// </summary>
 /// <remarks>
 /// A switch holds <see cref="VpnServiceKeys.Gate"/> until the new tunnel is up, so it waits for a VPN run in progress and
-/// VPN runs wait for it. A manual switch restarts the rotation timer. A failed rotation is retried after
+/// VPN runs wait for it. Every switch to a new region restarts the rotation timer. A failed rotation is retried after
 /// <see cref="RetryDelay"/>. Does nothing unless <see cref="VpnConfiguration.IsEnabled"/>.
 /// </remarks>
 public partial class VpnRotationService(
@@ -34,7 +35,17 @@ public partial class VpnRotationService(
     {
         Rotation,
         Manual,
+
+        /// <summary>
+        /// Back to <see cref="VpnSettings.CurrentRegion"/>, which gluetun lost when it restarted.
+        /// </summary>
         Reapply,
+
+        /// <summary>
+        /// Away from <see cref="VpnSettings.CurrentRegion"/>, which <see cref="VpnConfiguration.ServerRegions"/>
+        /// no longer allows, to any region it does. Exclusions only apply to rotation, so they don't apply here.
+        /// </summary>
+        Replacement,
     }
 
     // Requested regions, null for a random one. Only the latest matters; one made while another waits replaces it
@@ -112,34 +123,47 @@ public partial class VpnRotationService(
 
     /// <summary>
     /// Switches back to <see cref="VpnSettings.CurrentRegion"/> if gluetun isn't restricted to it.
-    /// gluetun keeps settings changed through its API only until it restarts.
+    /// gluetun keeps settings changed through its API only until it restarts. If the region is no longer one of
+    /// <see cref="VpnConfiguration.ServerRegions"/>, switches to a random one that is instead.
     /// </summary>
     private async Task ReapplyIfLostAsync(CancellationToken cancellationToken)
     {
-        string? currentRegion;
-        using (var scope = scopeFactory.CreateScope())
+        // The checks each use a scope of their own, so none is held through a switch, which can wait minutes
+        if (await GetCurrentRegionAsync(cancellationToken) is not { } currentRegion)
         {
-            var dbContext = scope.ServiceProvider.GetRequiredService<LookoutDbContext>();
-            currentRegion = await dbContext.VpnSettings
-                .Where(s => s.Id == VpnSettings.SingletonId)
-                .Select(s => s.CurrentRegion)
-                .SingleAsync(cancellationToken);
-            if (currentRegion is null)
-            {
-                return;
-            }
-
-            var gluetun = scope.ServiceProvider.GetRequiredService<GluetunHttpClient>();
-            var gluetunSettings = await gluetun.GetVpnSettingsAsync(cancellationToken);
-            if (gluetunSettings.Provider.ServerSelection.Regions is [var region]
-                && string.Equals(region, currentRegion, StringComparison.OrdinalIgnoreCase))
-            {
-                return;
-            }
+            return;
         }
 
-        LogReapplying(currentRegion);
-        await SwitchAsync(SwitchKind.Reapply, currentRegion, cancellationToken);
+        if (!configuration.AllowsRegion(currentRegion))
+        {
+            // GLUETUN_SERVER_REGIONS changed since the switch to it, and reapplying it would undo the change
+            LogRegionNotAllowed(currentRegion);
+            await SwitchAsync(SwitchKind.Replacement, null, cancellationToken);
+        }
+        else if (!await IsGluetunRestrictedToAsync(currentRegion, cancellationToken))
+        {
+            LogReapplying(currentRegion);
+            await SwitchAsync(SwitchKind.Reapply, currentRegion, cancellationToken);
+        }
+    }
+
+    private async Task<string?> GetCurrentRegionAsync(CancellationToken cancellationToken)
+    {
+        using var scope = scopeFactory.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<LookoutDbContext>();
+        return await dbContext.VpnSettings
+            .Where(s => s.Id == VpnSettings.SingletonId)
+            .Select(s => s.CurrentRegion)
+            .SingleAsync(cancellationToken);
+    }
+
+    private async Task<bool> IsGluetunRestrictedToAsync(string region, CancellationToken cancellationToken)
+    {
+        using var scope = scopeFactory.CreateScope();
+        var gluetun = scope.ServiceProvider.GetRequiredService<GluetunHttpClient>();
+        var gluetunSettings = await gluetun.GetVpnSettingsAsync(cancellationToken);
+        return gluetunSettings.Provider.ServerSelection.Regions is [var restrictedTo]
+            && string.Equals(restrictedTo, region, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -159,7 +183,7 @@ public partial class VpnRotationService(
         string? error = null;
         try
         {
-            region = requestedRegion ?? await PickRotationRegionAsync(settings, gluetun, cancellationToken);
+            region = requestedRegion ?? await PickRegionAsync(kind, settings, gluetun, cancellationToken);
 
             _progress = new VpnSwitchProgress(region, WaitingForRun: true, DateTime.UtcNow);
             await notifier.VpnChangedAsync();
@@ -223,17 +247,46 @@ public partial class VpnRotationService(
     }
 
     /// <summary>
-    /// A random region rotation may switch to, from the regions of the provider gluetun is using.
+    /// A random region from the regions of the provider gluetun is using: for a
+    /// <see cref="SwitchKind.Replacement"/> any of them, otherwise one rotation may switch to.
     /// </summary>
     /// <exception cref="InvalidOperationException">No region is allowed.</exception>
-    private async Task<string> PickRotationRegionAsync(
-        VpnSettings settings, GluetunHttpClient gluetun, CancellationToken cancellationToken)
+    private async Task<string> PickRegionAsync(
+        SwitchKind kind, VpnSettings settings, GluetunHttpClient gluetun, CancellationToken cancellationToken)
     {
         var regions = (await catalog.GetRegionsAsync(gluetun, cancellationToken)).Regions;
+        if (regions.Count == 0)
+        {
+            throw new InvalidOperationException(configuration.LimitsRegions
+                ? $"There are no regions to switch to: none of the regions in {EnvVars.GluetunServerRegions} is in "
+                    + "gluetun's servers list for this VPN provider."
+                : "There are no regions to switch to: gluetun's servers list has none for this VPN provider.");
+        }
+
+        if (kind == SwitchKind.Replacement)
+        {
+            return regions[Random.Shared.Next(regions.Count)];
+        }
+
         return settings.PickRotationRegion(regions, Random.Shared)
-            ?? throw new InvalidOperationException(regions.Count == 0
-                ? "There are no regions to switch to: gluetun's servers list has none for this VPN provider."
-                : "There are no regions to rotate to: every region other than the current one is excluded.");
+            ?? throw new InvalidOperationException(DescribeNoRotationRegion(settings, regions));
+    }
+
+    /// <summary>
+    /// Why <see cref="VpnSettings.PickRotationRegion"/> found no region in <paramref name="regions"/>.
+    /// </summary>
+    private string DescribeNoRotationRegion(VpnSettings settings, IReadOnlyList<string> regions)
+    {
+        var onlyTheCurrentRegion = regions.All(
+            region => string.Equals(region, settings.CurrentRegion, StringComparison.OrdinalIgnoreCase));
+        if (!onlyTheCurrentRegion)
+        {
+            return "There are no regions to rotate to: every region other than the current one is excluded.";
+        }
+
+        return configuration.LimitsRegions
+            ? $"There are no regions to rotate to: {EnvVars.GluetunServerRegions} allows only {regions[0]}."
+            : $"There are no regions to rotate to: gluetun's servers list has only {regions[0]} for this VPN provider.";
     }
 
     /// <summary>
@@ -265,6 +318,11 @@ public partial class VpnRotationService(
 
     [LoggerMessage(Level = LogLevel.Information, Message = "gluetun isn't on {Region}, probably after a restart; switching back")]
     private partial void LogReapplying(string region);
+
+    [LoggerMessage(
+        Level = LogLevel.Information,
+        Message = $"The VPN is on {{Region}}, which isn't in {EnvVars.GluetunServerRegions}; switching to a region that is")]
+    private partial void LogRegionNotAllowed(string region);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to check the VPN rotation")]
     private partial void LogPollFailed(Exception exception);

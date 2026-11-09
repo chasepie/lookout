@@ -57,6 +57,13 @@ public static class EnvVars
     public const string GluetunDataDir = "GLUETUN_DATA_DIR";
 
     /// <summary>
+    /// The VPN regions Lookout may use, comma-separated as in <c>DE Berlin,US Texas</c>; without it, every region in
+    /// gluetun's servers list. gluetun gets it as its <c>SERVER_REGIONS</c>, so it connects to one of them when it starts.
+    /// The Backend switches and rotates only among them, since each switch replaces gluetun's filter with the one region.
+    /// </summary>
+    public const string GluetunServerRegions = "GLUETUN_SERVER_REGIONS";
+
+    /// <summary>
     /// The directory watch scripts are saved to and run from.
     /// </summary>
     public const string LookoutWatchScriptsDir = "LOOKOUT_WATCH_SCRIPTS_DIR";

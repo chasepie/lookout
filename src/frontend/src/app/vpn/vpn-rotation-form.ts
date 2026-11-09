@@ -98,7 +98,18 @@ const sameSettings = (a: VpnSettingsDto, b: VpnSettingsDto) => JSON.stringify(a)
             }
           </ul>
         }
-        @if (tooFewIncluded()) {
+        @if (tooFewRegions()) {
+          <div class="callout callout-failure" role="alert">
+            <p>
+              Rotation needs at least {{ minimumIncludedRegions }} regions, but
+              @if (limited()) {
+                <code>GLUETUN_SERVER_REGIONS</code> allows only {{ regions().length }}.
+              } @else {
+                the VPN provider has only {{ regions().length }}.
+              }
+            </p>
+          </div>
+        } @else if (tooFewIncluded()) {
           <div class="callout callout-failure" role="alert">
             <p>Leave at least {{ minimumIncludedRegions }} regions included, or rotation has nowhere to go.</p>
           </div>
@@ -130,6 +141,8 @@ export class VpnRotationForm {
 
   readonly settings = input.required<VpnSettings>();
   readonly regions = input.required<string[]>();
+  /** Whether `GLUETUN_SERVER_REGIONS` limits {@link regions}, so the provider may have more. */
+  readonly limited = input.required<boolean>();
 
   protected readonly minimumIncludedRegions = minimumIncludedRegions;
   protected readonly filter = signal('');
@@ -170,6 +183,9 @@ export class VpnRotationForm {
 
   /** Counts only regions that still exist, since an exclusion outlives a region the provider drops. */
   protected readonly excludedCount = computed(() => this.regions().filter((r) => this.excluded().has(r)).length);
+
+  /** Too few regions to rotate between even with none excluded, which only a setting outside Lookout can fix. */
+  protected readonly tooFewRegions = computed(() => this.regions().length < minimumIncludedRegions);
 
   protected readonly tooFewIncluded = computed(
     () => this.regions().length > 0 && this.regions().length - this.excludedCount() < minimumIncludedRegions,

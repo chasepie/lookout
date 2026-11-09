@@ -7,7 +7,7 @@ import { RouterTestingHarness } from '@angular/router/testing';
 import { liveUpdates, provideFakeLiveUpdates } from '../testing/fake-live-updates';
 import { answer, fail, nextRequest, request, respond, textOf } from '../testing/fixtures';
 import { VpnPage } from './vpn-page';
-import { VpnSettings, VpnStatus } from './vpn.model';
+import { VpnRegions, VpnSettings, VpnStatus } from './vpn.model';
 
 const regions = ['AU Sydney', 'CA Toronto', 'DE Berlin', 'Japan', 'US East'];
 
@@ -60,9 +60,9 @@ describe('VpnPage', () => {
   const button = (name: string) =>
     [...page.querySelectorAll<HTMLButtonElement>('button')].find((b) => textOf(b) === name)!;
 
-  async function open(vpn = status()) {
+  async function open(vpn = status(), available: VpnRegions = { provider: 'private internet access', regions, limited: false }) {
     await respond(request('GET', '/api/Vpn'), vpn);
-    await answer(request('GET', '/api/Vpn/regions'), { provider: 'private internet access', regions });
+    await answer(request('GET', '/api/Vpn/regions'), available);
   }
 
   it('says how to set the VPN up when it isn’t', async () => {
@@ -101,10 +101,17 @@ describe('VpnPage', () => {
   });
 
   it("says when the provider has no regions to switch to", async () => {
-    await respond(request('GET', '/api/Vpn'), status());
-    await answer(request('GET', '/api/Vpn/regions'), { provider: 'private internet access', regions: [] });
+    await open(status(), { provider: 'private internet access', regions: [], limited: false });
 
     expect(textOf(page.querySelector('[role=alert]'))).toContain('no regions for private internet access');
+  });
+
+  it('says when GLUETUN_SERVER_REGIONS matches none of the provider’s regions', async () => {
+    await open(status(), { provider: 'private internet access', regions: [], limited: true });
+
+    const alert = textOf(page.querySelector('[role=alert]'));
+    expect(alert).toContain('GLUETUN_SERVER_REGIONS');
+    expect(alert).not.toContain('no regions for private internet access');
   });
 
   it('keeps the status shown when a refresh fails', async () => {
@@ -222,6 +229,19 @@ describe('VpnPage', () => {
       expect(textOf(page.querySelector('app-vpn-rotation-form [role=alert]'))).toContain(
         'Leave at least 2 regions included',
       );
+    });
+
+    it('says rotation needs another region when GLUETUN_SERVER_REGIONS allows only one', async () => {
+      // Excluding fewer regions can't fix this, so asking the Owner to would be no help
+      await open(status({ settings: settings({ excludedRegions: [], currentRegion: 'DE Berlin' }) }), {
+        provider: 'private internet access',
+        regions: ['DE Berlin'],
+        limited: true,
+      });
+
+      const alert = textOf(page.querySelector('app-vpn-rotation-form [role=alert]'));
+      expect(alert).toContain('GLUETUN_SERVER_REGIONS');
+      expect(alert).not.toContain('Leave at least');
     });
 
     it('throws edits away on request', async () => {

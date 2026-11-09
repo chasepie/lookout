@@ -29,6 +29,12 @@ internal sealed class DevelopmentSettings(IReadOnlyDictionary<string, string> va
     public string VpnServiceProvider => Value(SettingNames.GluetunVpnServiceProvider) ?? SettingNames.DefaultVpnServiceProvider;
 
     /// <summary>
+    /// The VPN regions Lookout may use, comma-separated, or <see langword="null"/> for every region. See
+    /// <see cref="EnvVars.GluetunServerRegions"/>.
+    /// </summary>
+    public string? GluetunServerRegions => Value(EnvVars.GluetunServerRegions);
+
+    /// <summary>
     /// The VPN provider's OpenVPN credentials, or <see langword="null"/> unless both are set. Without them gluetun isn't
     /// started, and runs of watches that use the VPN fail.
     /// </summary>

@@ -59,7 +59,7 @@ public class VpnController(
     }
 
     /// <summary>
-    /// The regions the VPN provider offers, from gluetun's servers list.
+    /// The regions the VPN provider offers, from gluetun's servers list, limited to <c>GLUETUN_SERVER_REGIONS</c>.
     /// </summary>
     [HttpGet("regions")]
     public async Task<ActionResult<VpnRegions>> GetRegions(CancellationToken cancellationToken)
@@ -124,7 +124,8 @@ public class VpnController(
                 .FirstOrDefault(r => string.Equals(r, request.Region.Trim(), StringComparison.OrdinalIgnoreCase));
             if (region is null)
             {
-                return BadRequest($"{request.Region} isn't one of the VPN provider's regions.");
+                return BadRequest(
+                    $"{request.Region} isn't one of the VPN provider's regions, or isn't in {EnvVars.GluetunServerRegions}.");
             }
         }
 
