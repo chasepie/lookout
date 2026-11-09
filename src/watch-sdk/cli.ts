@@ -94,16 +94,16 @@ async function writeOutput(output: RunResult | CrashOutput, options: RunCommandO
   const { screenshot, ...rest } = output;
   if (options.output) {
     // JSON has no bytes, so the screenshot goes as base64
-    const json = JSON.stringify(
-      screenshot === undefined ? rest : { ...rest, screenshot: Buffer.from(screenshot).toString('base64') },
-      null,
-      2);
+    const content = screenshot === undefined
+      ? rest
+      : { ...rest, screenshot: Buffer.from(screenshot).toString('base64') };
+    const json = JSON.stringify(content, null, 2);
     await writeFile(resolve(process.cwd(), options.output), json);
   } else {
-    console.log(JSON.stringify(
-      screenshot === undefined ? rest : { ...rest, screenshot: describeImage(screenshot) },
-      null,
-      2));
+    const content = screenshot === undefined
+      ? rest
+      : { ...rest, screenshot: describeImage(screenshot) };
+    console.log(JSON.stringify(content, null, 2));
   }
 
   // After the result, so a path that can't be written doesn't lose it
@@ -118,9 +118,11 @@ async function writeOutput(output: RunResult | CrashOutput, options: RunCommandO
 
 /** An image's type and size, such as `<PNG, 12 KiB>`. */
 function describeImage(bytes: Uint8Array): string {
-  const type = bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47 ? 'PNG'
-    : bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff ? 'JPEG'
-    : 'image of unknown type';
+  const type = bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47
+    ? 'PNG'
+    : bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
+      ? 'JPEG'
+      : 'image of unknown type';
   return `<${type}, ${Math.ceil(bytes.length / 1024)} KiB>`;
 }
 

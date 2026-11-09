@@ -159,8 +159,12 @@ public partial class ScriptRunner(
                 // name the browserless URL, and a script can make one its reason
                 return result with
                 {
-                    FailureReason = result.FailureReason is { } reason ? watchCli.Redact(reason) : null,
-                    Crash = result.Crash is { } crash ? crash with { Error = watchCli.Redact(crash.Error) } : null,
+                    FailureReason = result.FailureReason is { } reason
+                        ? watchCli.Redact(reason)
+                        : null,
+                    Crash = result.Crash is { } crash
+                        ? crash with { Error = watchCli.Redact(crash.Error) }
+                        : null,
                 };
             }
 
@@ -205,7 +209,11 @@ public partial class ScriptRunner(
     /// </param>
     /// <param name="screenshots">When the CLI takes a screenshot of its own; none when <see langword="null"/>.</param>
     internal static ProcessStartInfo CreateStartInfo(
-        WatchCli cli, string scriptPath, string outputPath, string? proxyUrl, ScreenshotSettings? screenshots = null)
+        WatchCli cli,
+        string scriptPath,
+        string outputPath,
+        string? proxyUrl,
+        ScreenshotSettings? screenshots = null)
     {
         var processStartInfo = new ProcessStartInfo("node")
         {

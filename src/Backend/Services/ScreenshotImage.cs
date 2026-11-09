@@ -21,9 +21,11 @@ public static class ScreenshotImage
     /// if it's neither.
     /// </summary>
     public static string? MediaTypeOf(ReadOnlySpan<byte> bytes) =>
-        bytes.StartsWith(PngSignature) ? "image/png"
-        : bytes.StartsWith(JpegSignature) ? "image/jpeg"
-        : null;
+        bytes.StartsWith(PngSignature)
+            ? "image/png"
+            : bytes.StartsWith(JpegSignature)
+                ? "image/jpeg"
+                : null;
 
     /// <summary>
     /// Why the script's screenshot can't be kept, or <see langword="null"/> if it can.

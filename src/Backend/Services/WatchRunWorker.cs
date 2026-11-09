@@ -124,7 +124,10 @@ public partial class WatchRunWorker(
                 ?? throw new InvalidOperationException("The watch has no script.");
             var runner = scope.ServiceProvider.GetRequiredService<RunnerHttpClient>();
             var result = await runner.RunWatchScriptAsync(
-                scriptName, watchRun.Watch.UseVpn, watchRun.Watch.GetScreenshotSettings(), stoppingToken);
+                scriptName: scriptName,
+                useVpn: watchRun.Watch.UseVpn,
+                screenshots: watchRun.Watch.GetScreenshotSettings(),
+                cancellationToken: stoppingToken);
             KeepResult(watchRun, result);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
@@ -146,11 +149,15 @@ public partial class WatchRunWorker(
     /// </summary>
     private static void KeepResult(WatchRun watchRun, WatchRunResult result)
     {
-        var screenshotProblem = result.Screenshot is { } screenshot ? ScreenshotImage.ProblemWith(screenshot) : null;
+        var screenshotProblem = result.Screenshot is { } screenshot
+            ? ScreenshotImage.ProblemWith(screenshot)
+            : null;
         if (result.Crash is { } crash)
         {
             // Blank, as when the script threw '', it would read as a run with nothing to report
-            watchRun.Error = string.IsNullOrWhiteSpace(crash.Error) ? "The script crashed without saying why." : crash.Error;
+            watchRun.Error = string.IsNullOrWhiteSpace(crash.Error)
+                ? "The script crashed without saying why."
+                : crash.Error;
         }
         else if (screenshotProblem is not null)
         {
