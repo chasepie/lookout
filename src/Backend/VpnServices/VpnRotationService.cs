@@ -112,7 +112,8 @@ public partial class VpnRotationService(
 
     /// <summary>
     /// Switches back to <see cref="VpnSettings.CurrentRegion"/> if gluetun isn't restricted to it.
-    /// gluetun keeps settings changed through its API only until it restarts.
+    /// gluetun keeps settings changed through its API only until it restarts. If the region is no longer one of
+    /// <see cref="VpnConfiguration.ServerRegions"/>, switches to a random one that is instead.
     /// </summary>
     private async Task ReapplyIfLostAsync(CancellationToken cancellationToken)
     {
@@ -126,6 +127,14 @@ public partial class VpnRotationService(
                 .SingleAsync(cancellationToken);
             if (currentRegion is null)
             {
+                return;
+            }
+
+            // GLUETUN_SERVER_REGIONS changed since the switch to it, and reapplying it would undo the change
+            if (!configuration.AllowsRegion(currentRegion))
+            {
+                LogRegionNotAllowed(currentRegion);
+                await SwitchAsync(SwitchKind.Reapply, null, cancellationToken);
                 return;
             }
 
@@ -265,6 +274,11 @@ public partial class VpnRotationService(
 
     [LoggerMessage(Level = LogLevel.Information, Message = "gluetun isn't on {Region}, probably after a restart; switching back")]
     private partial void LogReapplying(string region);
+
+    [LoggerMessage(
+        Level = LogLevel.Information,
+        Message = "The VPN is on {Region}, which isn't in " + EnvVars.GluetunServerRegions + "; switching to a region that is")]
+    private partial void LogRegionNotAllowed(string region);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to check the VPN rotation")]
     private partial void LogPollFailed(Exception exception);

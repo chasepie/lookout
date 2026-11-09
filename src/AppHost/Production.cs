@@ -126,6 +126,8 @@ public partial class Program
                     service.Environment[EnvVars.GluetunProxyPassword] = settings.Placeholder(settings.ProxyPassword, resource);
                     // Through the relay, since the Backend shares no network with gluetun
                     service.Environment[EnvVars.GluetunProxyUrl] = $"http://{ProxyUsername}@{GluetunProxyRelay}:8888";
+                    // Each switch replaces gluetun's filter, so the Backend keeps to the same regions
+                    service.Environment[EnvVars.GluetunServerRegions] = settings.Placeholder(settings.ServerRegions, resource);
                     service.Environment[EnvVars.GluetunUrl] = $"http://{GluetunControlRelay}:8000";
                     service.Environment[EnvVars.LookoutOwnerPassword] = settings.Placeholder(settings.OwnerPassword, resource);
                     service.Environment[EnvVars.LookoutOwnerUsername] = settings.Placeholder(settings.OwnerUsername, resource);
@@ -152,6 +154,7 @@ public partial class Program
                     AddEnvironment(service, GluetunEnvironment);
                     service.Environment["TZ"] = settings.Placeholder(settings.TimeZone, resource);
                     service.Environment["VPN_SERVICE_PROVIDER"] = settings.Placeholder(settings.VpnServiceProvider, resource);
+                    service.Environment["SERVER_REGIONS"] = settings.Placeholder(settings.ServerRegions, resource);
                     service.Environment["OPENVPN_USER"] = settings.Placeholder(settings.OpenVpnUser, resource);
                     service.Environment["OPENVPN_PASSWORD"] = settings.Placeholder(settings.OpenVpnPassword, resource);
                     service.Environment["HTTPPROXY_PASSWORD"] = settings.Placeholder(settings.ProxyPassword, resource);

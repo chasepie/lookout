@@ -32,8 +32,8 @@ public partial class Program
     };
 
     /// <summary>
-    /// gluetun's environment, other than its time zone, <c>VPN_SERVICE_PROVIDER</c>, the OpenVPN credentials and
-    /// <c>HTTPPROXY_PASSWORD</c>.
+    /// gluetun's environment, other than its time zone, <c>VPN_SERVICE_PROVIDER</c>, <c>SERVER_REGIONS</c>, the OpenVPN
+    /// credentials and <c>HTTPPROXY_PASSWORD</c>.
     /// </summary>
     private static readonly IReadOnlyDictionary<string, string> GluetunEnvironment = new Dictionary<string, string>
     {

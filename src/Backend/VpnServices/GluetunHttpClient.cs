@@ -156,11 +156,26 @@ public sealed record GluetunPublicIp(
 /// <param name="GluetunUrl">The control server's base URL; <see langword="null"/> turns the VPN features off.</param>
 /// <param name="DataDirectory">The host directory mounted as gluetun's <c>/gluetun</c>.</param>
 /// <param name="ProxyUrl">gluetun's HTTP proxy, which <see cref="VpnProbeHttpClient"/> checks the tunnel through.</param>
-public sealed record VpnConfiguration(Uri? GluetunUrl, string? ApiKey, string? DataDirectory, Uri? ProxyUrl)
+/// <param name="ServerRegions">
+/// The regions Lookout may use (<c>GLUETUN_SERVER_REGIONS</c>); <see langword="null"/> or empty for every region.
+/// </param>
+public sealed record VpnConfiguration(
+    Uri? GluetunUrl,
+    string? ApiKey,
+    string? DataDirectory,
+    Uri? ProxyUrl,
+    IReadOnlyList<string>? ServerRegions = null)
 {
     private static readonly VpnConfiguration Disabled = new(null, null, null, null);
 
     public bool IsEnabled => GluetunUrl is not null;
+
+    /// <summary>
+    /// Whether <paramref name="region"/> is one of <see cref="ServerRegions"/>, ignoring case as gluetun does, or there's
+    /// no limit.
+    /// </summary>
+    public bool AllowsRegion(string region) =>
+        ServerRegions is not { Count: > 0 } regions || regions.Contains(region, StringComparer.OrdinalIgnoreCase);
 
     /// <exception cref="InvalidOperationException">
     /// <c>GLUETUN_URL</c> is set but isn't an absolute URL, or the settings it needs are missing.
@@ -187,6 +202,10 @@ public sealed record VpnConfiguration(Uri? GluetunUrl, string? ApiKey, string? D
             GluetunUrl: gluetunUrl,
             ApiKey: apiKey,
             DataDirectory: EnvVars.GetRequiredDirectory(configuration, EnvVars.GluetunDataDir),
-            ProxyUrl: proxyUrl);
+            ProxyUrl: proxyUrl,
+            ServerRegions: (configuration[EnvVars.GluetunServerRegions] ?? "")
+                .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList());
     }
 }

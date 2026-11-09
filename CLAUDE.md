@@ -8,7 +8,7 @@ A monorepo with a .NET solution (`Lookout.slnx`) and npm workspaces (root `packa
 (`src/Backend/Dockerfile`) builds in. Only the Owner can use it: they sign in with `LOOKOUT_OWNER_USERNAME` and `LOOKOUT_OWNER_PASSWORD` (`Auth/`), and
 outside `localhost` it must be served over HTTPS, behind a reverse proxy in production (`Hosting/`); see `docs/security.md`. It calls the Runner over HTTP
 (`LOOKOUT_RUNNER_URL`). It also rotates the VPN between regions through gluetun's control server (`VpnServices/`); the region list comes from gluetun's
-servers list in `GLUETUN_DATA_DIR`. The SQLite schema is managed with EF Core migrations in `Database/Migrations`: after changing the model, run
+servers list in `GLUETUN_DATA_DIR`, limited to `GLUETUN_SERVER_REGIONS`, which gluetun also gets as `SERVER_REGIONS`. The SQLite schema is managed with EF Core migrations in `Database/Migrations`: after changing the model, run
 `dotnet tool restore` once, then `dotnet ef migrations add <Name> --project src/Backend --output-dir Database/Migrations`. In Development,
 `DevelopmentDataSeeder` gives a database with no watches one watch per script in `examples/`.
 - `src/Runner/`: ASP.NET Core service that runs watch scripts, sandboxed with Node's permission model in a container built from `src/Runner/Dockerfile`

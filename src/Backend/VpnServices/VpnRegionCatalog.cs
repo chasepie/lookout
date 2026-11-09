@@ -4,8 +4,8 @@ namespace ChasePie.Lookout.Backend.VpnServices;
 
 /// <summary>
 /// The regions a VPN provider offers, read from the servers list gluetun keeps in its data directory
-/// (<c>GLUETUN_DATA_DIR</c>). gluetun validates region switches against the same list, so any region
-/// returned here is one it accepts.
+/// (<c>GLUETUN_DATA_DIR</c>), and limited to <see cref="VpnConfiguration.ServerRegions"/>. gluetun validates region
+/// switches against the same list, so any region returned here is one it accepts.
 /// </summary>
 /// <remarks>
 /// gluetun keeps every provider's servers in one file, <c>servers.json</c>, keyed by provider name. It writes the
@@ -20,8 +20,8 @@ public partial class VpnRegionCatalog(VpnConfiguration configuration, ILogger<Vp
     private sealed record CachedRegions(string ProviderName, string VpnType, DateTime LastWriteTime, IReadOnlyList<string> Regions);
 
     /// <summary>
-    /// The regions of the provider and VPN type gluetun is using, sorted, or an empty list if gluetun hasn't
-    /// written its servers list yet.
+    /// The regions of the provider and VPN type gluetun is using that Lookout may use, sorted, or an empty list if
+    /// gluetun hasn't written its servers list yet.
     /// </summary>
     /// <param name="gluetun">
     /// The caller's client. It's a typed HTTP client, so it's transient, and this singleton would otherwise keep
@@ -54,7 +54,7 @@ public partial class VpnRegionCatalog(VpnConfiguration configuration, ILogger<Vp
         IReadOnlyList<string> regions;
         try
         {
-            regions = ReadRegions(filePath, providerName, vpnType);
+            regions = [.. ReadRegions(filePath, providerName, vpnType).Where(configuration.AllowsRegion)];
         }
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
         {
