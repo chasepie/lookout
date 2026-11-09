@@ -192,27 +192,4 @@ public sealed class WatchRunOutcomeTests
             await Task.Delay(TimeSpan.FromMilliseconds(100), timeout.Token);
         }
     }
-
-    /// <summary>
-    /// Answers every run with <paramref name="response"/> as the Runner's JSON, and keeps the requests.
-    /// </summary>
-    private sealed class FakeRunner(object response) : HttpMessageHandler
-    {
-        public List<Uri> Requests { get; } = [];
-
-        protected override Task<HttpResponseMessage> SendAsync(
-            HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            lock (Requests)
-            {
-                Requests.Add(request.RequestUri!);
-            }
-
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent(
-                    JsonSerializer.Serialize(response, JsonSerializerOptions.Web), Encoding.UTF8, "application/json"),
-            });
-        }
-    }
 }

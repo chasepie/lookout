@@ -33,7 +33,9 @@ export class App {
     { initialValue: '/' },
   );
   /** Which part of the app the page belongs to, for the navigation. */
-  protected readonly section = computed(() => (this.url().startsWith('/vpn') ? 'vpn' : 'watches'));
+  protected readonly section = computed(() =>
+    this.url().startsWith('/vpn') ? 'vpn' : this.url().startsWith('/notifications') ? 'notifications' : 'watches',
+  );
 
   constructor() {
     // A new page moves focus to its content, as a full page load would, so screen readers start there

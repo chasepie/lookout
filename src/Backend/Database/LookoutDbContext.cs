@@ -14,12 +14,16 @@ public class LookoutDbContext(DbContextOptions<LookoutDbContext> options) : DbCo
     public DbSet<WatchRun> WatchRuns { get; set; } = null!;
     public DbSet<VpnSettings> VpnSettings { get; set; } = null!;
     public DbSet<OwnerSessionState> OwnerSessionStates { get; set; } = null!;
+    public DbSet<NotificationChannel> NotificationChannels { get; set; } = null!;
+    public DbSet<Subscription> Subscriptions { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         // The single settings row always exists, so nothing has to create it on first use
         modelBuilder.Entity<VpnSettings>().HasData(new VpnSettings { Id = Core.VpnSettings.SingletonId });
         modelBuilder.Entity<OwnerSessionState>().HasData(new OwnerSessionState { Id = OwnerSessionState.SingletonId });
+        modelBuilder.Entity<NotificationChannel>().OwnsOne(c => c.Pushover);
+        modelBuilder.Entity<Subscription>().OwnsOne(s => s.Pushover);
     }
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)

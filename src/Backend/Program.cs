@@ -2,6 +2,7 @@ using ChasePie.Lookout.Backend.Auth;
 using ChasePie.Lookout.Backend.Database;
 using ChasePie.Lookout.Backend.Hosting;
 using ChasePie.Lookout.Backend.Hubs;
+using ChasePie.Lookout.Backend.Notifications;
 using ChasePie.Lookout.Backend.Services;
 using System.Text.RegularExpressions;
 using System.Threading.RateLimiting;
@@ -50,6 +51,15 @@ public partial class Program
         services.AddHttpClient<RunnerHttpClient>(RunnerHttpClient.Configure);
         services.AddHostedService<WatchScheduler>();
         services.AddHostedService<WatchRunWorker>();
+
+        services.AddSingleton(TimeProvider.System);
+        services.AddHttpClient<PushoverHttpClient>(PushoverHttpClient.Configure);
+        // A singleton too, so the run worker can queue notifications on the instance that sends them
+        services.AddSingleton<NotificationSender>();
+        services.AddHostedService(provider => provider.GetRequiredService<NotificationSender>());
+        services.AddScoped<RunNotifications>();
+        // Resolved here, so a malformed URL stops startup instead of failing every notification
+        services.AddSingleton(RunLinks.FromConfiguration(configuration));
 
         var vpnConfiguration = VpnConfiguration.FromConfiguration(configuration);
         services.AddSingleton(vpnConfiguration);

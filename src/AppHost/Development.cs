@@ -213,6 +213,9 @@ public partial class Program
                 .WithHttpEndpoint(port: 4200, isProxied: false)
                 .WaitFor(backend);
 
+            // Where the Owner opens Lookout, so notifications link to their runs
+            backend.WithEnvironment(EnvVars.LookoutPublicUrl, frontend.GetEndpoint("http"));
+
             // Opens Chrome with the debugger attached when the AppHost is launched from VS Code, so
             // breakpoints in the Angular code are hit. The API is still marked experimental.
 #pragma warning disable ASPIREEXTENSION001

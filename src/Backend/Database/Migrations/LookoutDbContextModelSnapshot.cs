@@ -38,6 +38,49 @@ namespace ChasePie.Lookout.Backend.Database.Migrations
                         });
                 });
 
+            modelBuilder.Entity("ChasePie.Lookout.Core.NotificationChannel", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Service")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("NotificationChannels");
+                });
+
+            modelBuilder.Entity("ChasePie.Lookout.Core.Subscription", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.PrimitiveCollection<string>("Events")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("NotificationChannelId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("WatchId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NotificationChannelId");
+
+                    b.HasIndex("WatchId");
+
+                    b.ToTable("Subscriptions");
+                });
+
             modelBuilder.Entity("ChasePie.Lookout.Core.VpnSettings", b =>
                 {
                     b.Property<int>("Id")
@@ -88,6 +131,9 @@ namespace ChasePie.Lookout.Backend.Database.Migrations
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("KnownFailureThreshold")
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("Name")
@@ -147,6 +193,9 @@ namespace ChasePie.Lookout.Backend.Database.Migrations
                     b.Property<string>("FailureReason")
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("Interrupted")
+                        .HasColumnType("INTEGER");
+
                     b.Property<byte[]>("Screenshot")
                         .HasColumnType("BLOB");
 
@@ -169,6 +218,78 @@ namespace ChasePie.Lookout.Backend.Database.Migrations
                     b.ToTable("WatchRuns");
                 });
 
+            modelBuilder.Entity("ChasePie.Lookout.Core.NotificationChannel", b =>
+                {
+                    b.OwnsOne("ChasePie.Lookout.Core.PushoverChannelSettings", "Pushover", b1 =>
+                        {
+                            b1.Property<int>("NotificationChannelId")
+                                .HasColumnType("INTEGER");
+
+                            b1.Property<string>("ApplicationToken")
+                                .IsRequired()
+                                .HasColumnType("TEXT");
+
+                            b1.Property<int>("ExpireSeconds")
+                                .HasColumnType("INTEGER");
+
+                            b1.Property<int>("RetrySeconds")
+                                .HasColumnType("INTEGER");
+
+                            b1.Property<string>("UserKey")
+                                .IsRequired()
+                                .HasColumnType("TEXT");
+
+                            b1.HasKey("NotificationChannelId");
+
+                            b1.ToTable("NotificationChannels");
+
+                            b1.WithOwner()
+                                .HasForeignKey("NotificationChannelId");
+                        });
+
+                    b.Navigation("Pushover");
+                });
+
+            modelBuilder.Entity("ChasePie.Lookout.Core.Subscription", b =>
+                {
+                    b.HasOne("ChasePie.Lookout.Core.NotificationChannel", "NotificationChannel")
+                        .WithMany("Subscriptions")
+                        .HasForeignKey("NotificationChannelId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ChasePie.Lookout.Core.Watch", "Watch")
+                        .WithMany("Subscriptions")
+                        .HasForeignKey("WatchId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.OwnsOne("ChasePie.Lookout.Core.PushoverSubscriptionOptions", "Pushover", b1 =>
+                        {
+                            b1.Property<int>("SubscriptionId")
+                                .HasColumnType("INTEGER");
+
+                            b1.Property<int>("Priority")
+                                .HasColumnType("INTEGER");
+
+                            b1.Property<string>("Sound")
+                                .HasColumnType("TEXT");
+
+                            b1.HasKey("SubscriptionId");
+
+                            b1.ToTable("Subscriptions");
+
+                            b1.WithOwner()
+                                .HasForeignKey("SubscriptionId");
+                        });
+
+                    b.Navigation("NotificationChannel");
+
+                    b.Navigation("Pushover");
+
+                    b.Navigation("Watch");
+                });
+
             modelBuilder.Entity("ChasePie.Lookout.Core.WatchRun", b =>
                 {
                     b.HasOne("ChasePie.Lookout.Core.Watch", "Watch")
@@ -180,8 +301,15 @@ namespace ChasePie.Lookout.Backend.Database.Migrations
                     b.Navigation("Watch");
                 });
 
+            modelBuilder.Entity("ChasePie.Lookout.Core.NotificationChannel", b =>
+                {
+                    b.Navigation("Subscriptions");
+                });
+
             modelBuilder.Entity("ChasePie.Lookout.Core.Watch", b =>
                 {
+                    b.Navigation("Subscriptions");
+
                     b.Navigation("WatchRuns");
                 });
 #pragma warning restore 612, 618

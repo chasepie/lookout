@@ -1,0 +1,51 @@
+.form {
+  display: grid;
+  gap: var(--space-5);
+  padding: var(--space-5);
+  border-left: 3px solid var(--deep);
+  background: var(--paper-raised);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--step-1);
+}
+
+.secret {
+  font-family: var(--font-code);
+}
+
+.group {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  border: 0;
+
+  legend {
+    margin-bottom: var(--space-2);
+    font-family: var(--font-condensed);
+    font-size: var(--step-0);
+    font-weight: 600;
+  }
+}
+
+.timing {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-5);
+}
+
+.with-unit {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.preformatted-lines {
+  white-space: pre-line;
+}
+
+.field-error:empty {
+  display: none;
+}

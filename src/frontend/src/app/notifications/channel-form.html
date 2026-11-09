@@ -1,0 +1,123 @@
+<form class="form" novalidate [attr.aria-labelledby]="formId() + '-title'" (submit)="save($event)">
+  <h2 class="title" [id]="formId() + '-title'">{{ editing() ? 'Edit ' + channel()!.name : 'New Pushover channel' }}</h2>
+
+  <div class="field">
+    <label class="field-label" for="channel-name">Name</label>
+    <input
+      id="channel-name"
+      class="input"
+      autocomplete="off"
+      aria-describedby="channel-name-hint channel-name-error"
+      [formField]="channelForm.name"
+      [attr.aria-invalid]="channelForm.name().touched() && channelForm.name().invalid()"
+    />
+    <span id="channel-name-hint" class="field-hint">What watches call it, such as "Phone" or "Phone, quietly".</span>
+    <span id="channel-name-error" class="field-error">
+      @if (channelForm.name().touched() && channelForm.name().invalid()) {
+        {{ channelForm.name().errors()[0].message }}
+      }
+    </span>
+  </div>
+
+  <div class="field">
+    <label class="field-label" for="application-token">Application API token</label>
+    <input
+      id="application-token"
+      class="input secret"
+      autocomplete="off"
+      spellcheck="false"
+      aria-describedby="application-token-hint application-token-error"
+      [placeholder]="editing() ? 'Saved; enter a new one to replace it' : ''"
+      [formField]="channelForm.applicationToken"
+      [attr.aria-invalid]="channelForm.applicationToken().touched() && channelForm.applicationToken().invalid()"
+    />
+    <span id="application-token-hint" class="field-hint">
+      From the application you register for Lookout on pushover.net. Lookout never shows it again.
+    </span>
+    <span id="application-token-error" class="field-error">
+      @if (channelForm.applicationToken().touched() && channelForm.applicationToken().invalid()) {
+        {{ channelForm.applicationToken().errors()[0].message }}
+      }
+    </span>
+  </div>
+
+  <div class="field">
+    <label class="field-label" for="user-key">User or group key</label>
+    <input
+      id="user-key"
+      class="input secret"
+      autocomplete="off"
+      spellcheck="false"
+      aria-describedby="user-key-hint user-key-error"
+      [placeholder]="editing() ? 'Saved; enter a new one to replace it' : ''"
+      [formField]="channelForm.userKey"
+      [attr.aria-invalid]="channelForm.userKey().touched() && channelForm.userKey().invalid()"
+    />
+    <span id="user-key-hint" class="field-hint">Who gets the notifications. Lookout never shows it again.</span>
+    <span id="user-key-error" class="field-error">
+      @if (channelForm.userKey().touched() && channelForm.userKey().invalid()) {
+        {{ channelForm.userKey().errors()[0].message }}
+      }
+    </span>
+  </div>
+
+  <fieldset class="group" aria-describedby="emergency-hint">
+    <legend>Emergencies</legend>
+    <span id="emergency-hint" class="field-hint">
+      A watch can send at emergency priority, which repeats until you acknowledge it.
+    </span>
+    <div class="timing">
+      <div class="field">
+        <label class="field-label" for="retry">Repeat every</label>
+        <span class="with-unit">
+          <input
+            id="retry"
+            class="input input-narrow"
+            type="number"
+            aria-describedby="retry-error"
+            [formField]="channelForm.retrySeconds"
+            [attr.aria-invalid]="channelForm.retrySeconds().invalid()"
+          />
+          seconds
+        </span>
+        <span id="retry-error" class="field-error">
+          @if (channelForm.retrySeconds().invalid()) {
+            {{ channelForm.retrySeconds().errors()[0].message }}
+          }
+        </span>
+      </div>
+      <div class="field">
+        <label class="field-label" for="expire">For</label>
+        <span class="with-unit">
+          <input
+            id="expire"
+            class="input input-narrow"
+            type="number"
+            aria-describedby="expire-error"
+            [formField]="channelForm.expireSeconds"
+            [attr.aria-invalid]="channelForm.expireSeconds().invalid()"
+          />
+          seconds
+        </span>
+        <span id="expire-error" class="field-error">
+          @if (channelForm.expireSeconds().invalid()) {
+            {{ channelForm.expireSeconds().errors()[0].message }}
+          }
+        </span>
+      </div>
+    </div>
+  </fieldset>
+
+  @if (error(); as error) {
+    <div class="callout callout-failure" role="alert">
+      <p class="preformatted-lines">Couldn't save: {{ error }}</p>
+    </div>
+  }
+
+  <div class="actions">
+    <button type="submit" class="button button-primary" [disabled]="channelForm().submitting()">
+      {{ editing() ? 'Save changes' : 'Add channel' }}
+    </button>
+    <button type="button" class="button button-quiet" (click)="cancelled.emit()">Cancel</button>
+  </div>
+</form>

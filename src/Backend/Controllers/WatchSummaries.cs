@@ -57,6 +57,7 @@ public sealed record WatchSummary(
     bool ScreenshotOnSuccess,
     bool ScreenshotOnKnownFailure,
     bool ScreenshotOnCrash,
+    int KnownFailureThreshold,
     string? ScriptFileName,
     IReadOnlyList<WatchRunSummary> RecentRuns,
     DateTime? NextRunTime)
@@ -97,6 +98,7 @@ public sealed record WatchSummary(
             ScreenshotOnSuccess: row.State.Watch.ScreenshotOnSuccess,
             ScreenshotOnKnownFailure: row.State.Watch.ScreenshotOnKnownFailure,
             ScreenshotOnCrash: row.State.Watch.ScreenshotOnCrash,
+            KnownFailureThreshold: row.State.Watch.KnownFailureThreshold,
             ScriptFileName: row.State.Watch.ScriptFileName,
             RecentRuns: row.RecentRuns,
             NextRunTime: row.State.DueTime(now)));

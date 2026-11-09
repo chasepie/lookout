@@ -45,6 +45,12 @@ public class CreateWatchDto : IValidatableObject
     public bool ScreenshotOnCrash { get; set; }
 
     /// <summary>
+    /// How many known failures in a row make a known-failure streak worth a notification.
+    /// </summary>
+    [Range(1, 1000)]
+    public int KnownFailureThreshold { get; set; } = 3;
+
+    /// <summary>
     /// When the watch's runs get a screenshot the script didn't return.
     /// </summary>
     public ScreenshotSettings GetScreenshotSettings() =>
@@ -118,6 +124,9 @@ public class Watch : CreateWatchDto
     [JsonIgnore]
     public ICollection<WatchRun> WatchRuns { get; set; } = [];
 
+    [JsonIgnore]
+    public ICollection<Subscription> Subscriptions { get; set; } = [];
+
     public Watch() { }
 
     [SetsRequiredMembers]
@@ -137,6 +146,7 @@ public class Watch : CreateWatchDto
         ScreenshotOnSuccess = dto.ScreenshotOnSuccess;
         ScreenshotOnKnownFailure = dto.ScreenshotOnKnownFailure;
         ScreenshotOnCrash = dto.ScreenshotOnCrash;
+        KnownFailureThreshold = dto.KnownFailureThreshold;
     }
 
     /// <summary>

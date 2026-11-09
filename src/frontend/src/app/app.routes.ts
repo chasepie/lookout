@@ -41,6 +41,11 @@ export const routes: Routes = [
         ],
       },
       { path: 'vpn', title: 'VPN – Lookout', loadComponent: () => import('./vpn/vpn-page').then((m) => m.VpnPage) },
+      {
+        path: 'notifications',
+        title: 'Notifications – Lookout',
+        loadComponent: () => import('./notifications/notifications-page').then((m) => m.NotificationsPage),
+      },
     ],
   },
   { path: '**', redirectTo: '' },

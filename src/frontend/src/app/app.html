@@ -14,6 +14,7 @@
     @if (session.signedIn()) {
       <nav class="nav" aria-label="Main">
         <a routerLink="/" [attr.aria-current]="section() === 'watches' ? 'page' : null">Watches</a>
+        <a routerLink="/notifications" [attr.aria-current]="section() === 'notifications' ? 'page' : null">Notifications</a>
         <a routerLink="/vpn" [attr.aria-current]="section() === 'vpn' ? 'page' : null">VPN</a>
       </nav>
 

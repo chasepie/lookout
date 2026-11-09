@@ -39,6 +39,12 @@ public class WatchRun
     /// were kept apart have their reasons here too.
     /// </summary>
     public string? Error { get; set; }
+
+    /// <summary>
+    /// Whether the run crashed because the Backend stopped while it ran, rather than because of its script.
+    /// Such runs show no events, and are skipped when working out the events of later ones.
+    /// </summary>
+    public bool Interrupted { get; set; }
     public byte[]? Screenshot { get; set; }
 
     /// <summary>

@@ -3,7 +3,16 @@ import { Component, computed, effect, inject, input, linkedSignal, signal } from
 import { FormField, form, min, required, submit } from '@angular/forms/signals';
 import { Title } from '@angular/platform-browser';
 import { Router, RouterLink } from '@angular/router';
+import { NotificationsApi } from '../notifications/notifications-api';
+import {
+  SubscriptionModel,
+  subscriptionProblems,
+  toSubscriptionDtos,
+  toSubscriptionModels,
+} from '../notifications/subscriptions';
+import { SubscriptionsEditor } from '../notifications/subscriptions-editor';
 import { describeError } from '../shared/describe-error';
+import { lastValue } from '../shared/last-value';
 import { Notices } from '../shared/notices';
 import { ScriptPicker } from './script-picker';
 import { intervalUnits } from './schedule';
@@ -22,6 +31,7 @@ interface WatchFormModel {
   screenshotOnSuccess: boolean;
   screenshotOnKnownFailure: boolean;
   screenshotOnCrash: boolean;
+  knownFailureThreshold: number;
 }
 
 const units = Object.entries(intervalUnits).map(([value, [, many]]) => ({ value, label: many }));
@@ -37,6 +47,7 @@ const blank: WatchFormModel = {
   screenshotOnSuccess: false,
   screenshotOnKnownFailure: false,
   screenshotOnCrash: false,
+  knownFailureThreshold: 3,
 };
 
 /** The form's view of a saved watch. A schedule that's off keeps its settings, so turning it on again restores them. */
@@ -54,6 +65,7 @@ function toModel(watch: WatchSummary): WatchFormModel {
     screenshotOnSuccess: watch.screenshotOnSuccess,
     screenshotOnKnownFailure: watch.screenshotOnKnownFailure,
     screenshotOnCrash: watch.screenshotOnCrash,
+    knownFailureThreshold: watch.knownFailureThreshold,
   };
 }
 
@@ -77,13 +89,14 @@ function toDto(value: WatchFormModel): CreateWatchDto {
     screenshotOnSuccess: value.screenshotOnSuccess,
     screenshotOnKnownFailure: value.screenshotOnKnownFailure,
     screenshotOnCrash: value.screenshotOnCrash,
+    knownFailureThreshold: value.knownFailureThreshold,
   };
 }
 
 /** Creates a watch, or edits one when the route has an `id`. */
 @Component({
   selector: 'app-watch-form',
-  imports: [FormField, RouterLink, ScriptPicker],
+  imports: [FormField, RouterLink, ScriptPicker, SubscriptionsEditor],
   templateUrl: './watch-form.html',
   styleUrl: './watch-form.scss',
 })
@@ -91,6 +104,7 @@ export class WatchForm {
   private readonly api = inject(WatchesApi);
   private readonly router = inject(Router);
   private readonly notices = inject(Notices);
+  private readonly notifications = inject(NotificationsApi);
 
   /** Route param; absent when creating. */
   readonly id = input<string>();
@@ -120,10 +134,28 @@ export class WatchForm {
       message: 'Enter 1 or more.',
       when: ({ valueOf }) => valueOf(path.scheduleEnabled) && valueOf(path.scheduleType) === 'interval',
     });
+    required(path.knownFailureThreshold, { message: 'Enter how many known failures in a row to notify after.' });
+    min(path.knownFailureThreshold, 1, { message: 'Enter 1 or more.' });
     required(path.cron, {
       message: 'Enter a cron expression, such as 0 9 * * 1-5.',
       when: ({ valueOf }) => valueOf(path.scheduleEnabled) && valueOf(path.scheduleType) === 'cron',
     });
+  });
+
+  protected readonly channels = this.notifications.channelsResource();
+  /** The channels as last loaded, still offered if a refresh fails. */
+  protected readonly shownChannels = lastValue(this.channels);
+  protected readonly savedSubscriptions = this.notifications.subscriptionsResource(this.id);
+  /** The saved subscriptions once they load, or none for a new watch; then the Owner's edits. */
+  protected readonly subscriptions = linkedSignal<SubscriptionModel[]>(() =>
+    this.savedSubscriptions.hasValue() ? toSubscriptionModels(this.savedSubscriptions.value()) : [],
+  );
+  /** Whether to say what's wrong with the subscriptions, once the Owner has tried to save. */
+  protected readonly showSubscriptionProblems = signal(false);
+  /** Whether the subscriptions differ from the saved ones, so saving the watch saves them too. */
+  private readonly subscriptionsChanged = computed(() => {
+    const saved = this.savedSubscriptions.hasValue() ? this.savedSubscriptions.value() : [];
+    return JSON.stringify(toSubscriptionDtos(this.subscriptions())) !== JSON.stringify(saved);
   });
 
   /** Whether there's no such watch to edit. */
@@ -132,7 +164,11 @@ export class WatchForm {
     return error instanceof HttpErrorResponse && error.status === 404;
   });
   /** Whether the form can be shown: always when creating, and once the watch has loaded when editing. */
-  protected readonly ready = computed(() => !this.editing() || this.existing.hasValue());
+  protected readonly ready = computed(
+    () =>
+      !this.editing() ||
+      (this.existing.hasValue() && (this.savedSubscriptions.hasValue() || !!this.savedSubscriptions.error())),
+  );
   protected readonly cancelLink = computed(() => (this.editing() ? ['/watches', this.id()] : ['/']));
 
   constructor() {
@@ -150,8 +186,15 @@ export class WatchForm {
     if (!this.editing() && !script) {
       this.scriptMissing.set(true);
     }
+    this.showSubscriptionProblems.set(true);
+    const subscriptionsValid = subscriptionProblems(this.subscriptions(), this.shownChannels() ?? []).every(
+      (p) => p === null,
+    );
     // The action catches its own errors and shows them, so nothing is left to handle on the returned promise
     void submit(this.watchForm, async () => {
+      if (!subscriptionsValid) {
+        return undefined;
+      }
       this.error.set(null);
       const dto = toDto(this.model());
       try {
@@ -166,6 +209,16 @@ export class WatchForm {
           saved = await this.api.create(dto, script);
         } else {
           return undefined;
+        }
+        if (this.subscriptionsChanged() && !this.savedSubscriptions.error()) {
+          try {
+            await this.notifications.replaceSubscriptions(saved.id, toSubscriptionDtos(this.subscriptions()));
+          } catch (e) {
+            // The watch is saved, so it isn't saved again: a new one would be created twice
+            this.notices.fail(`Saved ${saved.name}, but couldn't save its notifications: ${describeSaveError(e)}`);
+            await this.router.navigate(['/watches', saved.id]);
+            return undefined;
+          }
         }
         this.notices.say(id ? `Saved ${saved.name}.` : `Created ${saved.name}.`);
         await this.router.navigate(['/watches', saved.id]);

@@ -1,6 +1,7 @@
 using System.Threading.RateLimiting;
 using ChasePie.Lookout.Backend.Database;
 using ChasePie.Lookout.Backend.Hubs;
+using ChasePie.Lookout.Backend.Notifications;
 using ChasePie.Lookout.Backend.VpnServices;
 using ChasePie.Lookout.Core;
 using Microsoft.EntityFrameworkCore;
@@ -70,7 +71,8 @@ public partial class WatchRunWorker(
                 setters => setters
                     .SetProperty(wr => wr.Status, WatchRunStatus.Done)
                     .SetProperty(wr => wr.EndTime, now)
-                    .SetProperty(wr => wr.Error, "Interrupted because the Backend restarted."),
+                    .SetProperty(wr => wr.Error, "Interrupted because the Backend restarted.")
+                    .SetProperty(wr => wr.Interrupted, true),
                 cancellationToken);
     }
 
@@ -140,6 +142,17 @@ public partial class WatchRunWorker(
         watchRun.EndTime = DateTime.UtcNow;
         await dbContext.SaveChangesAsync(CancellationToken.None);
         await notifier.RunUpdatedAsync(watchRun);
+
+        try
+        {
+            await scope.ServiceProvider.GetRequiredService<RunNotifications>().NotifyAsync(watchRun, stoppingToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
+        {
+            // The run is kept whatever happens to its notifications
+            LogNotifyFailed(ex, watchRun.Id);
+        }
+
         return true;
     }
 
@@ -183,6 +196,9 @@ public partial class WatchRunWorker(
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Starting watch run {WatchRunId} for watch {WatchId}")]
     private partial void LogRunStarted(int watchRunId, int watchId);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Failed to send the notifications of watch run {WatchRunId}")]
+    private partial void LogNotifyFailed(Exception exception, int watchRunId);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Failed to process pending watch runs")]
     private partial void LogPollFailed(Exception exception);

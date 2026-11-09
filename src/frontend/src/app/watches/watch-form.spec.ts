@@ -4,6 +4,7 @@ import { ApplicationRef, Component } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter, withComponentInputBinding } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
+import { NotificationChannelSummary, NotificationService, WatchEvent } from '../notifications/notification.model';
 import { answer, fail, nextRequest, request, respond, textOf, watchSummary } from '../testing/fixtures';
 import { WatchForm } from './watch-form';
 import { Watch, WatchScheduleKind } from './watch.model';
@@ -21,9 +22,22 @@ const savedWatch: Watch = {
   screenshotOnSuccess: false,
   screenshotOnKnownFailure: true,
   screenshotOnCrash: true,
+  knownFailureThreshold: 5,
   scriptFileName: 'prices.ts',
   scriptFileId: 'a1b2',
 };
+
+const channelsUrl = '/api/NotificationChannels';
+const subscriptionsUrl = '/api/Watches/7/subscriptions';
+
+const phone: NotificationChannelSummary = {
+  id: 1,
+  name: 'Phone',
+  service: NotificationService.Pushover,
+  pushover: { retrySeconds: 60, expireSeconds: 3600 },
+  watches: [],
+};
+const tablet: NotificationChannelSummary = { ...phone, id: 2, name: 'Tablet' };
 
 describe('WatchForm', () => {
   let page: HTMLElement;
@@ -53,6 +67,29 @@ describe('WatchForm', () => {
     page = harness.routeNativeElement!;
   }
 
+  /** Opens the form for a new watch, with the channels it can send notifications to. */
+  async function openNew(channels: NotificationChannelSummary[] = [phone]) {
+    await open('/watches/new');
+    await answer(request('GET', channelsUrl), channels);
+  }
+
+  /** Opens the form to edit the saved watch, with its subscriptions and the channels. */
+  async function openExisting(subscriptions: unknown[] = [], channels: NotificationChannelSummary[] = [phone, tablet]) {
+    await open('/watches/7/edit');
+    await respond(request('GET', channelsUrl), channels);
+    await respond(request('GET', subscriptionsUrl), subscriptions);
+    await answer(request('GET', '/api/Watches/7'), watchSummary({ ...savedWatch, recentRuns: [] }));
+  }
+
+  const button = (name: string) =>
+    [...page.querySelectorAll<HTMLButtonElement>('button')].find((b) => textOf(b) === name)!;
+
+  /** The checkbox for sending `label`'s event in the `index`th subscription. */
+  const eventBox = (index: number, label: string) =>
+    [...page.querySelectorAll('.subscription')[index].querySelectorAll('label')]
+      .find((l) => textOf(l) === label)!
+      .querySelector('input')!;
+
   const stable = () => TestBed.inject(ApplicationRef).whenStable();
 
   /** Sets a field as the browser does when the Owner types or picks, which fires both events. */
@@ -75,7 +112,7 @@ describe('WatchForm', () => {
   }
 
   describe('a new watch', () => {
-    beforeEach(() => open('/watches/new'));
+    beforeEach(() => openNew());
 
     it('is created on an interval, as a kind and a count, with its script', async () => {
       type('#name', ' Stock ');
@@ -100,6 +137,7 @@ describe('WatchForm', () => {
         screenshotOnSuccess: 'false',
         screenshotOnKnownFailure: 'false',
         screenshotOnCrash: 'false',
+        knownFailureThreshold: '3',
         script,
       });
       create.flush({ ...savedWatch, id: 8, name: 'Stock' });
@@ -186,6 +224,8 @@ describe('WatchForm', () => {
   describe('a watch that has not loaded', () => {
     it("shows no form to save over it, and says why it couldn't load", async () => {
       await open('/watches/7/edit');
+      await respond(request('GET', channelsUrl), []);
+      await respond(request('GET', subscriptionsUrl), []);
       await fail(request('GET', '/api/Watches/7'), 500, 'Database is locked');
 
       expect(page.querySelector('form')).toBeNull();
@@ -198,6 +238,9 @@ describe('WatchForm', () => {
 
     it("says when there's no such watch", async () => {
       await open('/watches/7/edit');
+      await respond(request('GET', channelsUrl), []);
+      // Not the last request out, so answered without waiting for the page to settle
+      (await nextRequest(request('GET', subscriptionsUrl))).flush('', { status: 404, statusText: 'Not Found' });
       await fail(request('GET', '/api/Watches/7'), 404);
 
       expect(page.querySelector('form')).toBeNull();
@@ -206,7 +249,7 @@ describe('WatchForm', () => {
   });
 
   it("doesn't save an interval the schedule was never checked for, while it's off", async () => {
-    await open('/watches/new');
+    await openNew();
     type('#name', 'Stock');
     page.querySelector<HTMLInputElement>('input[type=checkbox]')!.click();
     await stable();
@@ -225,10 +268,7 @@ describe('WatchForm', () => {
   });
 
   describe('an existing watch', () => {
-    beforeEach(async () => {
-      await open('/watches/7/edit');
-      await answer(request('GET', '/api/Watches/7'), watchSummary({ ...savedWatch, recentRuns: [] }));
-    });
+    beforeEach(() => openExisting());
 
     it('shows its saved cron schedule, and saves it unchanged', async () => {
       expect(textOf(page.querySelector('h1'))).toBe('Edit Prices');
@@ -249,6 +289,7 @@ describe('WatchForm', () => {
         screenshotOnSuccess: false,
         screenshotOnKnownFailure: true,
         screenshotOnCrash: true,
+        knownFailureThreshold: 5,
       });
       update.flush(savedWatch);
 
@@ -266,6 +307,104 @@ describe('WatchForm', () => {
       upload.flush('');
 
       await vi.waitFor(() => expect(TestBed.inject(Router).url).toBe('/watches/7'));
+    });
+  });
+
+  describe('notifications', () => {
+    it('sends the events the Owner chooses to a channel, once the watch is created', async () => {
+      await openNew([phone, tablet]);
+      type('#name', 'Shoe stock');
+      chooseScript(new File([''], 'shoes.ts'));
+      type('#known-failure-threshold', '2');
+
+      button('Add a notification').click();
+      await stable();
+      type('.subscription select[name=channel]', '2');
+      eventBox(0, 'Crashes').click();
+      eventBox(0, 'Recoveries').click();
+      type('.subscription select[name=priority]', '1');
+      type('.subscription input[name=sound]', ' siren ');
+      await stable();
+
+      await submitForm();
+      const create = await nextRequest(request('POST', '/api/Watches'));
+      expect((create.request.body as FormData).get('knownFailureThreshold')).toBe('2');
+      create.flush({ ...savedWatch, id: 8 });
+      const subscribe = await nextRequest(request('PUT', '/api/Watches/8/subscriptions'));
+      expect(subscribe.request.body).toEqual([
+        { notificationChannelId: 2, events: [WatchEvent.Crash, WatchEvent.Recovery], pushover: { priority: 1, sound: 'siren' } },
+      ]);
+      subscribe.flush([]);
+
+      await vi.waitFor(() => expect(TestBed.inject(Router).url).toBe('/watches/8'));
+    });
+
+    it("shows a watch's subscriptions, and saves them when one is removed", async () => {
+      await openExisting([
+        { notificationChannelId: 1, events: [WatchEvent.ContentChange], pushover: { priority: 1, sound: 'cashregister' } },
+        { notificationChannelId: 1, events: [WatchEvent.Crash], pushover: { priority: -1, sound: null } },
+      ]);
+
+      expect(page.querySelector<HTMLInputElement>('#known-failure-threshold')!.value).toBe('5');
+      const rows = page.querySelectorAll('.subscription');
+      expect(rows).toHaveLength(2);
+      expect(eventBox(0, 'Content changes').checked).toBe(true);
+      expect(eventBox(0, 'Crashes').checked).toBe(false);
+      expect(rows[0].querySelector<HTMLSelectElement>('select[name=priority]')!.value).toBe('1');
+      expect(rows[0].querySelector<HTMLInputElement>('input[name=sound]')!.value).toBe('cashregister');
+
+      rows[0].querySelector<HTMLButtonElement>('.remove')!.click();
+      await stable();
+      await submitForm();
+      await respond(request('PUT', '/api/Watches/7'), savedWatch);
+      const subscribe = await nextRequest(request('PUT', subscriptionsUrl));
+      expect(subscribe.request.body).toEqual([
+        { notificationChannelId: 1, events: [WatchEvent.Crash], pushover: { priority: -1, sound: null } },
+      ]);
+      subscribe.flush([]);
+
+      await vi.waitFor(() => expect(TestBed.inject(Router).url).toBe('/watches/7'));
+    });
+
+    it('needs each subscription to send at least one event', async () => {
+      await openNew();
+      type('#name', 'Shoe stock');
+      chooseScript(new File([''], 'shoes.ts'));
+      button('Add a notification').click();
+      await stable();
+
+      await submitForm();
+
+      expect(textOf(page.querySelector('.subscription .field-error'))).toBe('Choose at least one event to send.');
+      TestBed.inject(HttpTestingController).expectNone(request('POST', '/api/Watches'));
+    });
+
+    it("won't send an event to the same channel twice", async () => {
+      await openNew();
+      type('#name', 'Shoe stock');
+      chooseScript(new File([''], 'shoes.ts'));
+      button('Add a notification').click();
+      await stable();
+      eventBox(0, 'Crashes').click();
+      button('Add a notification').click();
+      await stable();
+      eventBox(1, 'Crashes').click();
+      await stable();
+
+      await submitForm();
+
+      expect(textOf(page.querySelectorAll('.subscription')[1].querySelector('.field-error'))).toBe(
+        'Phone already gets crashes from this watch.',
+      );
+      TestBed.inject(HttpTestingController).expectNone(request('POST', '/api/Watches'));
+    });
+
+    it('says where to set up a channel when there are none', async () => {
+      await openNew([]);
+
+      expect(textOf(page.querySelector('.notifications'))).toContain('No notification channels yet.');
+      expect(page.querySelector('.notifications a')!.getAttribute('href')).toBe('/notifications');
+      expect(button('Add a notification')).toBeUndefined();
     });
   });
 });

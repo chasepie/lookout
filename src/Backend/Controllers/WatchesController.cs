@@ -54,7 +54,10 @@ public class WatchesController(
             .ToList();
     }
 
-    private static readonly StringComparer NameOrder =
+    /// <summary>
+    /// How watches are listed: by name, ignoring case and accents.
+    /// </summary>
+    internal static readonly StringComparer NameOrder =
         StringComparer.Create(CultureInfo.InvariantCulture, CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace);
 
     /// <summary>
