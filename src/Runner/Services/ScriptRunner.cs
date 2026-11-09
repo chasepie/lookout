@@ -75,19 +75,21 @@ public partial class ScriptRunner(
             $"The watch uses the VPN, but the Runner has no VPN proxy. Set {EnvVars.GluetunProxyUrl}.");
 
     /// <param name="useVpn">Whether the browser's traffic goes through the VPN proxy.</param>
+    /// <param name="screenshots">When the CLI takes a screenshot of its own.</param>
     /// <exception cref="InvalidOperationException">
     /// <paramref name="useVpn"/> is set but there is no VPN proxy, or the CLI failed.
     /// </exception>
     public async Task<WatchRunResult> RunWatchScriptAsync(
         string scriptName,
         bool useVpn,
+        ScreenshotSettings screenshots,
         CancellationToken cancellationToken = default)
     {
         var proxyUrl = useVpn ? GetVpnProxyUrl() : null;
         // Both directories are real paths already, and the script isn't a link, as Node's permission model needs
         var scriptPath = GetScriptPath(scriptsDirectory.FullPath, scriptName);
         var outputPath = Path.Combine(watchCli.OutputDirectory, $"lookout-watch-{Guid.NewGuid():N}.json");
-        var processStartInfo = CreateStartInfo(watchCli, scriptPath, outputPath, proxyUrl);
+        var processStartInfo = CreateStartInfo(watchCli, scriptPath, outputPath, proxyUrl, screenshots);
 
         using var process = new Process { StartInfo = processStartInfo };
 
@@ -137,32 +139,44 @@ public partial class ScriptRunner(
                 throw;
             }
 
-            if (process.ExitCode != 0)
+            // A crash is written like a result, so its screenshot gets out too. Without the file, the CLI failed before
+            // the script ran, and only its stderr says why.
+            var result = File.Exists(outputPath) ? await ReadResultAsync(outputPath, cancellationToken) : null;
+            if (result is not null && (process.ExitCode == 0 || result.Crash is not null))
             {
-                string stderr;
-                lock (stderrTail)
-                {
-                    stderr = string.Join(Environment.NewLine, stderrTail);
-                }
-
-                throw new InvalidOperationException($"lookout-watch exited with code {process.ExitCode}: {stderr}");
+                // The error can hold secrets, as stderr can: Playwright's errors name the browserless URL
+                return result.Crash is { } crash
+                    ? result with { Crash = crash with { Error = watchCli.Redact(crash.Error) } }
+                    : result;
             }
 
-            var json = await File.ReadAllTextAsync(outputPath, cancellationToken);
-            try
+            string stderr;
+            lock (stderrTail)
             {
-                return JsonSerializer.Deserialize<WatchRunResult>(json, JsonOptions)
-                    ?? throw new JsonException("The output was 'null'.");
+                stderr = string.Join(Environment.NewLine, stderrTail);
             }
-            catch (JsonException ex)
-            {
-                throw new InvalidOperationException(
-                    $"lookout-watch wrote output that isn't a run result: {watchCli.Redact(json)}", ex);
-            }
+
+            throw new InvalidOperationException($"lookout-watch exited with code {process.ExitCode}: {stderr}");
         }
         finally
         {
             File.Delete(outputPath);
+        }
+    }
+
+    /// <exception cref="InvalidOperationException">The file isn't a run result.</exception>
+    private async Task<WatchRunResult> ReadResultAsync(string outputPath, CancellationToken cancellationToken)
+    {
+        var json = await File.ReadAllTextAsync(outputPath, cancellationToken);
+        try
+        {
+            return JsonSerializer.Deserialize<WatchRunResult>(json, JsonOptions)
+                ?? throw new JsonException("The output was 'null'.");
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidOperationException(
+                $"lookout-watch wrote output that isn't a run result: {watchCli.Redact(json)}", ex);
         }
     }
 
@@ -175,7 +189,9 @@ public partial class ScriptRunner(
     /// <param name="proxyUrl">
     /// The VPN proxy for a run that uses the VPN, credentials included, or <see langword="null"/> for one that doesn't.
     /// </param>
-    internal static ProcessStartInfo CreateStartInfo(WatchCli cli, string scriptPath, string outputPath, string? proxyUrl)
+    /// <param name="screenshots">When the CLI takes a screenshot of its own; none when <see langword="null"/>.</param>
+    internal static ProcessStartInfo CreateStartInfo(
+        WatchCli cli, string scriptPath, string outputPath, string? proxyUrl, ScreenshotSettings? screenshots = null)
     {
         var processStartInfo = new ProcessStartInfo("node")
         {
@@ -235,6 +251,20 @@ public partial class ScriptRunner(
         arguments.Add(scriptPath);
         arguments.Add("--output");
         arguments.Add(outputPath);
+        if (screenshots?.OnSuccess == true)
+        {
+            arguments.Add("--screenshot-on-success");
+        }
+
+        if (screenshots?.OnKnownFailure == true)
+        {
+            arguments.Add("--screenshot-on-known-failure");
+        }
+
+        if (screenshots?.OnCrash == true)
+        {
+            arguments.Add("--screenshot-on-crash");
+        }
 
         return processStartInfo;
     }

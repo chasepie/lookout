@@ -103,6 +103,15 @@ namespace ChasePie.Lookout.Backend.Database.Migrations
                     b.Property<int?>("ScheduleKind")
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("ScreenshotOnCrash")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("ScreenshotOnKnownFailure")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("ScreenshotOnSuccess")
+                        .HasColumnType("INTEGER");
+
                     b.Property<Guid?>("ScriptFileId")
                         .HasColumnType("TEXT");
 
@@ -135,8 +144,14 @@ namespace ChasePie.Lookout.Backend.Database.Migrations
                     b.Property<string>("Error")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("FailureReason")
+                        .HasColumnType("TEXT");
+
                     b.Property<byte[]>("Screenshot")
                         .HasColumnType("BLOB");
+
+                    b.Property<string>("ScreenshotMediaType")
+                        .HasColumnType("TEXT");
 
                     b.Property<DateTime?>("StartTime")
                         .HasColumnType("TEXT");

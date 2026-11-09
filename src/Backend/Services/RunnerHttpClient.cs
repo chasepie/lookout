@@ -16,12 +16,17 @@ public class RunnerHttpClient(HttpClient httpClient)
     /// Asks the Runner to execute the named watch script and returns its result.
     /// </summary>
     /// <param name="useVpn">Whether the browser's traffic goes through the Runner's VPN proxy.</param>
+    /// <param name="screenshots">When the run gets a screenshot the script didn't return.</param>
     public async Task<WatchRunResult> RunWatchScriptAsync(
-        string scriptName, bool useVpn, CancellationToken cancellationToken = default)
+        string scriptName, bool useVpn, ScreenshotSettings screenshots, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(scriptName);
+        ArgumentNullException.ThrowIfNull(screenshots);
 
-        var requestUri = $"WatchRun?scriptName={Uri.EscapeDataString(scriptName)}&useVpn={(useVpn ? "true" : "false")}";
+        var requestUri = $"WatchRun?scriptName={Uri.EscapeDataString(scriptName)}&useVpn={Flag(useVpn)}"
+            + $"&screenshotOnSuccess={Flag(screenshots.OnSuccess)}"
+            + $"&screenshotOnKnownFailure={Flag(screenshots.OnKnownFailure)}"
+            + $"&screenshotOnCrash={Flag(screenshots.OnCrash)}";
         using var response = await httpClient.GetAsync(requestUri, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
@@ -36,6 +41,8 @@ public class RunnerHttpClient(HttpClient httpClient)
         return await response.Content.ReadFromJsonAsync<WatchRunResult>(cancellationToken)
             ?? throw new InvalidOperationException("Runner returned an empty response.");
     }
+
+    private static string Flag(bool value) => value ? "true" : "false";
 
     /// <summary>
     /// Returns the problem details' message from an error response, or the raw body if it has none.

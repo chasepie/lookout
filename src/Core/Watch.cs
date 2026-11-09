@@ -29,6 +29,27 @@ public class CreateWatchDto : IValidatableObject
     /// </summary>
     public bool UseVpn { get; set; }
 
+    /// <summary>
+    /// Whether a run that ends in a success gets a full-page screenshot, when the script returned none of its own.
+    /// </summary>
+    public bool ScreenshotOnSuccess { get; set; }
+
+    /// <summary>
+    /// Whether a run that ends in a known failure gets a full-page screenshot, when the script returned none of its own.
+    /// </summary>
+    public bool ScreenshotOnKnownFailure { get; set; }
+
+    /// <summary>
+    /// Whether a run whose script throws gets a full-page screenshot.
+    /// </summary>
+    public bool ScreenshotOnCrash { get; set; }
+
+    /// <summary>
+    /// When the watch's runs get a screenshot the script didn't return.
+    /// </summary>
+    public ScreenshotSettings GetScreenshotSettings() =>
+        new(ScreenshotOnSuccess, ScreenshotOnKnownFailure, ScreenshotOnCrash);
+
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
         if (!ScheduleEnabled)
@@ -113,6 +134,9 @@ public class Watch : CreateWatchDto
         ScheduleKind = dto.ScheduleKind;
         ScheduleInterval = dto.ScheduleInterval;
         UseVpn = dto.UseVpn;
+        ScreenshotOnSuccess = dto.ScreenshotOnSuccess;
+        ScreenshotOnKnownFailure = dto.ScreenshotOnKnownFailure;
+        ScreenshotOnCrash = dto.ScreenshotOnCrash;
     }
 
     /// <summary>

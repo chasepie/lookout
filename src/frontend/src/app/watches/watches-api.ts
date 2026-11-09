@@ -70,6 +70,9 @@ export class WatchesApi {
       body.append('scheduleInterval', watch.scheduleInterval);
     }
     body.append('useVpn', String(watch.useVpn));
+    body.append('screenshotOnSuccess', String(watch.screenshotOnSuccess));
+    body.append('screenshotOnKnownFailure', String(watch.screenshotOnKnownFailure));
+    body.append('screenshotOnCrash', String(watch.screenshotOnCrash));
     body.append('script', script);
     return firstValueFrom(this.http.post<Watch>(baseUrl, body));
   }

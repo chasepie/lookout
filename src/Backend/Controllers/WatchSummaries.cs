@@ -17,6 +17,7 @@ public sealed record WatchRunSummary(
     DateTime? EndTime,
     WatchRunStatus Status,
     string? Content,
+    string? FailureReason,
     string? Error,
     bool HasScreenshot)
 {
@@ -31,6 +32,7 @@ public sealed record WatchRunSummary(
         EndTime: run.EndTime,
         Status: run.Status,
         Content: run.Content,
+        FailureReason: run.FailureReason,
         Error: run.Error,
         HasScreenshot: run.Screenshot != null);
 }
@@ -52,6 +54,9 @@ public sealed record WatchSummary(
     WatchScheduleKind? ScheduleKind,
     string? ScheduleInterval,
     bool UseVpn,
+    bool ScreenshotOnSuccess,
+    bool ScreenshotOnKnownFailure,
+    bool ScreenshotOnCrash,
     string? ScriptFileName,
     IReadOnlyList<WatchRunSummary> RecentRuns,
     DateTime? NextRunTime)
@@ -89,6 +94,9 @@ public sealed record WatchSummary(
             ScheduleKind: row.State.Watch.ScheduleKind,
             ScheduleInterval: row.State.Watch.ScheduleInterval,
             UseVpn: row.State.Watch.UseVpn,
+            ScreenshotOnSuccess: row.State.Watch.ScreenshotOnSuccess,
+            ScreenshotOnKnownFailure: row.State.Watch.ScreenshotOnKnownFailure,
+            ScreenshotOnCrash: row.State.Watch.ScreenshotOnCrash,
             ScriptFileName: row.State.Watch.ScriptFileName,
             RecentRuns: row.RecentRuns,
             NextRunTime: row.State.DueTime(now)));

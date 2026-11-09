@@ -87,6 +87,13 @@ jobs:
         if: ${{ !cancelled() && steps.build-frontend.outcome == 'success' }}
         run: npm run test:ci -w src/frontend
 
+      # The CLI's tests run scripts in a local headless Chromium, which only they need
+      - name: Test watch SDK
+        if: ${{ !cancelled() }}
+        run: |
+          npx playwright install --with-deps chromium-headless-shell
+          npm test -w src/watch-sdk
+
       - name: Coverage report
         if: ${{ !cancelled() && (steps.test-dotnet.outcome != 'skipped' || steps.test-frontend.outcome != 'skipped') }}
         run: |

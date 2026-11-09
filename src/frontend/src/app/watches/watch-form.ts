@@ -19,6 +19,9 @@ interface WatchFormModel {
   unit: string;
   cron: string;
   useVpn: boolean;
+  screenshotOnSuccess: boolean;
+  screenshotOnKnownFailure: boolean;
+  screenshotOnCrash: boolean;
 }
 
 const units = Object.entries(intervalUnits).map(([value, [, many]]) => ({ value, label: many }));
@@ -31,6 +34,9 @@ const blank: WatchFormModel = {
   unit: String(WatchScheduleKind.Minutely),
   cron: '',
   useVpn: false,
+  screenshotOnSuccess: false,
+  screenshotOnKnownFailure: false,
+  screenshotOnCrash: false,
 };
 
 /** The form's view of a saved watch. A schedule that's off keeps its settings, so turning it on again restores them. */
@@ -45,6 +51,9 @@ function toModel(watch: WatchSummary): WatchFormModel {
     unit: interval ? String(watch.scheduleKind) : blank.unit,
     cron: cron ? (watch.scheduleInterval ?? '') : '',
     useVpn: watch.useVpn,
+    screenshotOnSuccess: watch.screenshotOnSuccess,
+    screenshotOnKnownFailure: watch.screenshotOnKnownFailure,
+    screenshotOnCrash: watch.screenshotOnCrash,
   };
 }
 
@@ -65,6 +74,9 @@ function toDto(value: WatchFormModel): CreateWatchDto {
     scheduleKind: interval === null ? null : cron ? WatchScheduleKind.Cron : Number(value.unit),
     scheduleInterval: interval,
     useVpn: value.useVpn,
+    screenshotOnSuccess: value.screenshotOnSuccess,
+    screenshotOnKnownFailure: value.screenshotOnKnownFailure,
+    screenshotOnCrash: value.screenshotOnCrash,
   };
 }
 

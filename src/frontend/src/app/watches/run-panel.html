@@ -26,7 +26,7 @@
     <time [attr.datetime]="shownRun.createdTime">{{ created() }}</time>
   </p>
 
-  <div class="seen" [class.seen-failed]="outcome() === 'failed'">
+  <div class="seen" [class.seen-crashed]="outcome() === 'crashed'" [class.seen-known-failure]="outcome() === 'knownFailure'">
     <app-run-outcome [run]="shownRun" [clamp]="false" />
   </div>
 
@@ -59,7 +59,7 @@
         </button>
       </div>
       <div class="screenshot" [class.screenshot-actual]="actualSize()" tabindex="0" aria-label="Screenshot, scrollable">
-        <img [src]="src" alt="The page as the run left it" />
+        <img [src]="src" alt="The run's screenshot" />
       </div>
     </section>
   }

@@ -38,8 +38,13 @@
   white-space: pre-line;
 }
 
-.seen-failed {
+.seen-crashed {
   border-left-color: var(--magenta);
+  font-size: var(--step-2);
+}
+
+.seen-known-failure {
+  border-left-color: var(--ink-muted);
   font-size: var(--step-2);
 }
 

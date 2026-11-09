@@ -6,6 +6,7 @@ const at = '2026-11-07T12:00:00Z';
 const observed = (content: string) => ({
   status: WatchRunStatus.Done,
   content,
+  failureReason: null,
   error: null,
   createdTime: at,
   startTime: null,
@@ -18,7 +19,8 @@ describe('outcomeOf', () => {
   it('tells the outcomes apart', () => {
     expect(outcomeOf({ ...observed(''), content: null, status: WatchRunStatus.Created })).toBe('queued');
     expect(outcomeOf(running)).toBe('running');
-    expect(outcomeOf(failed)).toBe('failed');
+    expect(outcomeOf(failed)).toBe('crashed');
+    expect(outcomeOf({ ...observed(''), content: null, failureReason: 'Blocked' })).toBe('knownFailure');
     expect(outcomeOf(observed('Normal'))).toBe('observed');
     expect(outcomeOf({ ...observed(''), content: null })).toBe('empty');
   });

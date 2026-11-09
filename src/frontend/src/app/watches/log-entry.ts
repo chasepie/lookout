@@ -15,7 +15,8 @@ export interface LogEntry {
   ran: string | null;
   /** Whether it saw the same as the run above it, which shows a ditto mark. */
   ditto: boolean;
-  failed: boolean;
+  /** Whether it crashed, which the log rules in the margin. */
+  crashed: boolean;
 }
 
 /** One run in the log: when, what it saw, and how long it took. Opens the run. */
@@ -26,7 +27,7 @@ export interface LogEntry {
     <a
       class="entry"
       [class.entry-arrived]="arrived()"
-      [class.entry-failed]="entry().failed"
+      [class.entry-crashed]="entry().crashed"
       [routerLink]="['/watches', watchId(), 'runs', entry().run.id]"
       [attr.aria-current]="selected() ? 'true' : null"
     >

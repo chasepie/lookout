@@ -123,15 +123,9 @@ public partial class WatchRunWorker(
             var scriptName = WatchScriptsDirectory.GetStoredFileName(watchRun.Watch)
                 ?? throw new InvalidOperationException("The watch has no script.");
             var runner = scope.ServiceProvider.GetRequiredService<RunnerHttpClient>();
-            var result = await runner.RunWatchScriptAsync(scriptName, watchRun.Watch.UseVpn, stoppingToken);
-            if (result.Success)
-            {
-                watchRun.Content = result.Content;
-            }
-            else
-            {
-                watchRun.Error = result.FailureReason ?? "The script failed without giving a reason.";
-            }
+            var result = await runner.RunWatchScriptAsync(
+                scriptName, watchRun.Watch.UseVpn, watchRun.Watch.GetScreenshotSettings(), stoppingToken);
+            KeepResult(watchRun, result);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
         {
@@ -144,6 +138,37 @@ public partial class WatchRunWorker(
         await dbContext.SaveChangesAsync(CancellationToken.None);
         await notifier.RunUpdatedAsync(watchRun);
         return true;
+    }
+
+    /// <summary>
+    /// Keeps how the script ended on the run, with its screenshot. A screenshot that can't be kept makes the run a crash,
+    /// unless it crashed already, since the script, which can send anything, returned it.
+    /// </summary>
+    private static void KeepResult(WatchRun watchRun, WatchRunResult result)
+    {
+        var screenshotProblem = result.Screenshot is { } screenshot ? ScreenshotImage.ProblemWith(screenshot) : null;
+        if (result.Crash is { } crash)
+        {
+            watchRun.Error = crash.Error;
+        }
+        else if (screenshotProblem is not null)
+        {
+            watchRun.Error = screenshotProblem;
+        }
+        else if (result.Success)
+        {
+            watchRun.Content = result.Content;
+        }
+        else
+        {
+            watchRun.FailureReason = result.FailureReason ?? "The script failed without giving a reason.";
+        }
+
+        if (screenshotProblem is null && result.Screenshot is { } keptScreenshot)
+        {
+            watchRun.Screenshot = keptScreenshot;
+            watchRun.ScreenshotMediaType = ScreenshotImage.MediaTypeOf(keptScreenshot);
+        }
     }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Starting watch run {WatchRunId} for watch {WatchId}")]

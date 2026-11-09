@@ -60,8 +60,8 @@ export class RunPanel {
     return { waited: waited === null ? null : duration(waited), ran: ran === null ? null : duration(ran) };
   });
   protected readonly screenshotUrl = computed(() => {
-    const screenshot = this.shown()?.screenshot;
-    return screenshot ? `data:image/png;base64,${screenshot}` : null;
+    const run = this.shown();
+    return run?.screenshot ? `data:${run.screenshotMediaType ?? 'image/png'};base64,${run.screenshot}` : null;
   });
   /** Whether the screenshot is shown at its own size, scrolling, rather than fitted to the panel. */
   protected readonly actualSize = signal(false);

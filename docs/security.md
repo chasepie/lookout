@@ -179,6 +179,11 @@ still send out what it can read, which is its own source, and reach services on 
 only way out: the Runner's networks lead only to the Backend and browserless, so a script's own Node code reaches
 nothing else. In development, Node's network is open too, since limiting it needs the Backend in a container.
 
+**What they send back.** The CLI runs a script in its own process, so the script can shape everything the CLI writes,
+the screenshot included, and nothing the Runner passes on is to be trusted. The Backend keeps a screenshot only if its
+first bytes are a PNG's or a JPEG's and it's at most 8 MiB; otherwise the run is a crash. It stores the type it found,
+and the frontend shows the image as a `data:` URL of that type in an `<img>`, which runs no script whatever the bytes.
+
 ## The containers
 
 browserless and gluetun's HTTP proxy would each let anyone who reaches them use Lookout's resources: browserless drives
@@ -194,7 +199,8 @@ must not be reachable from outside, and each also requires a secret that the App
 Production takes them from the deployment's `.env` instead: see [Production deployment](#production-deployment). The
 token and the password are settings of their own rather than part of their URLs, so each is set once beside the
 container's own. A script's environment still holds them in URLs, and Playwright prints the browserless URL when it
-can't connect, so the Runner masks both secrets in a script's output before logging it or keeping it as the run's error.
+can't connect, so the Runner masks both secrets in a script's output, and in the error of a script that crashed, before
+logging it or keeping it as the run's error.
 The Runner refuses to start without a browserless token, since browserless without one accepts anyone, and the Runner
 having none means it was started without one. Likewise, the Backend and the Runner refuse a proxy URL without a
 password, and the Backend gluetun without its key.
