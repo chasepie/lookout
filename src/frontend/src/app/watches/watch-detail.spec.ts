@@ -308,11 +308,32 @@ describe('WatchDetail', () => {
       expect(panel().querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,iVBORw0KGgo=');
       expect(entries()[0].getAttribute('aria-current')).toBe('true');
       expect(document.activeElement).toBe(panel().querySelector('h2'));
+    });
 
-      const actualSize = [...panel().querySelectorAll('button')].find((b) => textOf(b) === 'Actual size')!;
+    it('opens its screenshot in a viewer the size of the window, and gives focus back when it closes', async () => {
+      await open('/watches/1/runs/3');
+      await answer(
+        request('GET', `${runsUrl}/3`),
+        fullRun(3, { screenshot: '/9j/4AAQ', screenshotMediaType: 'image/jpeg' }),
+      );
+      const preview = panel().querySelector<HTMLButtonElement>('button[aria-label="View the screenshot full size"]')!;
+
+      preview.click();
+      await stable();
+      const viewer = document.querySelector('[role=dialog]')!;
+      expect(textOf(viewer.querySelector('h2'))).toBe('Run #3 screenshot');
+      expect(viewer.querySelector('img')?.getAttribute('src')).toBe('data:image/jpeg;base64,/9j/4AAQ');
+
+      const actualSize = [...viewer.querySelectorAll<HTMLButtonElement>('button')].find((b) => textOf(b) === 'Actual size')!;
+      expect(actualSize.getAttribute('aria-pressed')).toBe('false');
       actualSize.click();
       await stable();
       expect(actualSize.getAttribute('aria-pressed')).toBe('true');
+
+      [...viewer.querySelectorAll<HTMLButtonElement>('button')].find((b) => textOf(b) === 'Close')!.click();
+      await stable();
+      expect(document.querySelector('[role=dialog]')).toBeNull();
+      expect(document.activeElement).toBe(preview);
     });
 
     it("shows a crash's first line as the outcome and all of it under Error", async () => {
@@ -342,9 +363,8 @@ describe('WatchDetail', () => {
         fullRun(3, { screenshot: '/9j/4AAQ', screenshotMediaType: 'image/jpeg' }),
       );
 
-      const image = panel().querySelector('img');
-      expect(image?.getAttribute('src')).toBe('data:image/jpeg;base64,/9j/4AAQ');
-      expect(image?.getAttribute('alt')).toBe("The run's screenshot");
+      const preview = panel().querySelector('button[aria-label="View the screenshot full size"]');
+      expect(preview?.querySelector('img')?.getAttribute('src')).toBe('data:image/jpeg;base64,/9j/4AAQ');
     });
 
     it("can't be deleted while it's running", async () => {

@@ -54,13 +54,23 @@
     <section class="section" aria-labelledby="screenshot-title">
       <div class="section-head">
         <h3 id="screenshot-title">Screenshot</h3>
-        <button type="button" class="button button-quiet" [attr.aria-pressed]="actualSize()" (click)="actualSize.set(!actualSize())">
-          Actual size
-        </button>
+        @if (cropped() && screenshotSize(); as size) {
+          <span class="screenshot-caption">Full page, {{ size.height.toLocaleString() }} px tall</span>
+        }
       </div>
-      <div class="screenshot" [class.screenshot-actual]="actualSize()" tabindex="0" aria-label="Screenshot, scrollable">
-        <img [src]="src" alt="The run's screenshot" />
-      </div>
+      <button
+        type="button"
+        class="screenshot"
+        [class.screenshot-cropped]="cropped()"
+        aria-label="View the screenshot full size"
+        (click)="viewScreenshot(src, shownRun.id, $event)"
+      >
+        <img [src]="src" alt="" (load)="measureScreenshot($event)" />
+        <span class="screenshot-open" aria-hidden="true">
+          <svg lucideMaximize2 />
+          {{ cropped() ? 'View the whole page' : 'View full size' }}
+        </span>
+      </button>
     </section>
   }
 
