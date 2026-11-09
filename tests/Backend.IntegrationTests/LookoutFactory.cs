@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace ChasePie.Lookout.Backend.IntegrationTests;
@@ -34,22 +35,26 @@ internal sealed class LookoutFactory : WebApplicationFactory<Program>
     private readonly string _password;
     private readonly bool _ownsDataDirectory;
     private readonly IReadOnlyDictionary<string, string?> _settings;
+    private readonly Action<IServiceCollection>? _configureServices;
 
     /// <param name="dataDirectory">
     /// A directory to keep the database and keys in, to share them with another factory as if the Backend restarted.
     /// </param>
     /// <param name="settings">More settings, as if from the environment; these win over the defaults above.</param>
+    /// <param name="configureServices">Replaces services after the Backend registers its own, such as HTTP handlers.</param>
     public LookoutFactory(
         string environment = "Production",
         string username = Username,
         string password = Password,
         string? dataDirectory = null,
-        IReadOnlyDictionary<string, string?>? settings = null)
+        IReadOnlyDictionary<string, string?>? settings = null,
+        Action<IServiceCollection>? configureServices = null)
     {
         _environment = environment;
         _username = username;
         _password = password;
         _settings = settings ?? new Dictionary<string, string?>();
+        _configureServices = configureServices;
         _ownsDataDirectory = dataDirectory is null;
         DataDirectory = dataDirectory ?? Directory.CreateTempSubdirectory("lookout-tests-").FullName;
         WebRoot = CreateWebRoot(DataDirectory);
@@ -151,6 +156,10 @@ internal sealed class LookoutFactory : WebApplicationFactory<Program>
         builder.ConfigureServices(services => services
             .AddTransient<IStartupFilter, ClientIpStartupFilter>()
             .AddTransient<IStartupFilter, MatchedRouteStartupFilter>());
+        if (_configureServices is { } configureServices)
+        {
+            builder.ConfigureTestServices(configureServices);
+        }
     }
 
     protected override void Dispose(bool disposing)

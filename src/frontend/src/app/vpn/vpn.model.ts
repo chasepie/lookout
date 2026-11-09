@@ -50,8 +50,10 @@ export interface VpnStatus {
   gluetunError: string | null;
 }
 
-/** Mirrors `VpnRegions` in src/Backend/Controllers/VpnController.cs. */
+/** Mirrors `VpnRegions` in src/Backend/VpnServices/VpnRegionCatalog.cs. */
 export interface VpnRegions {
   provider: string;
   regions: string[];
+  /** Whether `GLUETUN_SERVER_REGIONS` limits the regions, so the provider may have more. */
+  limited: boolean;
 }

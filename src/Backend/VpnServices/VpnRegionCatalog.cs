@@ -31,7 +31,10 @@ public partial class VpnRegionCatalog(VpnConfiguration configuration, ILogger<Vp
     public async Task<VpnRegions> GetRegionsAsync(GluetunHttpClient gluetun, CancellationToken cancellationToken)
     {
         var settings = await gluetun.GetVpnSettingsAsync(cancellationToken);
-        return new VpnRegions(settings.Provider.Name, GetRegions(settings.Provider.Name, settings.Type));
+        return new VpnRegions(
+            Provider: settings.Provider.Name,
+            Regions: GetRegions(settings.Provider.Name, settings.Type),
+            Limited: configuration.LimitsRegions);
     }
 
     /// <param name="providerName">gluetun's provider name, such as <c>private internet access</c>.</param>
@@ -99,4 +102,5 @@ public partial class VpnRegionCatalog(VpnConfiguration configuration, ILogger<Vp
 }
 
 /// <param name="Provider">gluetun's name for the VPN provider, such as <c>private internet access</c>.</param>
-public sealed record VpnRegions(string Provider, IReadOnlyList<string> Regions);
+/// <param name="Limited">Whether <c>GLUETUN_SERVER_REGIONS</c> limits the regions, so the provider may have more.</param>
+public sealed record VpnRegions(string Provider, IReadOnlyList<string> Regions, bool Limited);

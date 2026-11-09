@@ -47,7 +47,7 @@ public sealed class VpnProbeHttpClientTests
     private static ServiceProvider CreateServices(Uri proxyUrl)
     {
         var services = new ServiceCollection()
-            .AddSingleton(new VpnConfiguration(new Uri("http://gluetun.test/"), null, null, proxyUrl));
+            .AddSingleton(new VpnConfiguration(new Uri("http://gluetun.test/"), null, null, proxyUrl, []));
         services.AddHttpClient<VpnProbeHttpClient>().ConfigureVpnProbeHttpClient();
         return services.BuildServiceProvider();
     }

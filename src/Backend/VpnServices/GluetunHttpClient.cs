@@ -157,26 +157,30 @@ public sealed record GluetunPublicIp(
 /// <param name="DataDirectory">The host directory mounted as gluetun's <c>/gluetun</c>.</param>
 /// <param name="ProxyUrl">gluetun's HTTP proxy, which <see cref="VpnProbeHttpClient"/> checks the tunnel through.</param>
 /// <param name="ServerRegions">
-/// The regions Lookout may use (<c>GLUETUN_SERVER_REGIONS</c>); <see langword="null"/> or empty for every region.
+/// The regions Lookout may use (<c>GLUETUN_SERVER_REGIONS</c>); empty for every region.
 /// </param>
 public sealed record VpnConfiguration(
     Uri? GluetunUrl,
     string? ApiKey,
     string? DataDirectory,
     Uri? ProxyUrl,
-    IReadOnlyList<string>? ServerRegions = null)
+    IReadOnlyList<string> ServerRegions)
 {
-    private static readonly VpnConfiguration Disabled = new(null, null, null, null);
+    private static readonly VpnConfiguration Disabled = new(null, null, null, null, []);
 
     public bool IsEnabled => GluetunUrl is not null;
+
+    /// <summary>
+    /// Whether <see cref="ServerRegions"/> limits the regions Lookout may use.
+    /// </summary>
+    public bool LimitsRegions => ServerRegions.Count > 0;
 
     /// <summary>
     /// Whether <paramref name="region"/> is one of <see cref="ServerRegions"/>, ignoring case as gluetun does, or there's
     /// no limit.
     /// </summary>
     public bool AllowsRegion(string region) =>
-        ServerRegions is not { Count: > 0 } regions
-        || regions.Contains(region, StringComparer.OrdinalIgnoreCase);
+        !LimitsRegions || ServerRegions.Contains(region, StringComparer.OrdinalIgnoreCase);
 
     /// <exception cref="InvalidOperationException">
     /// <c>GLUETUN_URL</c> is set but isn't an absolute URL, or the settings it needs are missing.
@@ -204,9 +208,34 @@ public sealed record VpnConfiguration(
             ApiKey: apiKey,
             DataDirectory: EnvVars.GetRequiredDirectory(configuration, EnvVars.GluetunDataDir),
             ProxyUrl: proxyUrl,
-            ServerRegions: (configuration[EnvVars.GluetunServerRegions] ?? "")
-                .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList());
+            ServerRegions: ReadServerRegions(configuration));
+    }
+
+    /// <summary>
+    /// The regions in <c>GLUETUN_SERVER_REGIONS</c>, read as gluetun reads its <c>SERVER_REGIONS</c>: trimmed as a whole,
+    /// then split on the commas alone.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// A region is empty or has spaces around it. gluetun would look for it as written, match no server, and only warn,
+    /// or not start if no region matched, so the Backend and gluetun would disagree about the regions.
+    /// </exception>
+    private static List<string> ReadServerRegions(IConfiguration configuration)
+    {
+        var value = configuration[EnvVars.GluetunServerRegions]?.Trim();
+        if (string.IsNullOrEmpty(value))
+        {
+            return [];
+        }
+
+        var regions = value.Split(',');
+        if (regions.Any(region => region.Length == 0 || region != region.Trim()))
+        {
+            throw new InvalidOperationException(
+                $"Environment variable {EnvVars.GluetunServerRegions} must separate its regions with commas alone, with "
+                + $"no spaces around them and no empty regions, as in 'DE Berlin,US Texas', since gluetun reads it that "
+                + $"way. It is '{value}'.");
+        }
+
+        return [.. regions.Distinct(StringComparer.OrdinalIgnoreCase)];
     }
 }

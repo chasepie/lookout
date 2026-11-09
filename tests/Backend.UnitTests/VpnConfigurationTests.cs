@@ -25,9 +25,25 @@ public sealed class VpnConfigurationTests
     [TestMethod]
     public void ReadsTheServerRegionsAsACommaSeparatedList()
     {
-        var configuration = VpnConfiguration.FromConfiguration(Configuration("key", " DE Berlin, US Texas,,de berlin, "));
+        // gluetun trims the whole value, but not the regions in it
+        var configuration = VpnConfiguration.FromConfiguration(Configuration("key", " DE Berlin,US Texas,de berlin "));
 
-        Assert.AreSequenceEqual(BerlinAndTexas, configuration.ServerRegions!);
+        Assert.AreSequenceEqual(BerlinAndTexas, configuration.ServerRegions);
+    }
+
+    [TestMethod]
+    [DataRow("DE Berlin, US Texas")]
+    [DataRow("DE Berlin ,US Texas")]
+    [DataRow("DE Berlin,,US Texas")]
+    [DataRow("DE Berlin,")]
+    public void RejectsServerRegionsGluetunReadsDifferently(string serverRegions)
+    {
+        // gluetun splits on the commas alone, so it would look for " US Texas", match no server, and keep quiet about it
+        // unless no region matched at all, when it wouldn't start
+        var error = Assert.ThrowsExactly<InvalidOperationException>(
+            () => VpnConfiguration.FromConfiguration(Configuration("key", serverRegions)));
+
+        Assert.Contains(EnvVars.GluetunServerRegions, error.Message);
     }
 
     [TestMethod]
@@ -42,7 +58,7 @@ public sealed class VpnConfigurationTests
     [TestMethod]
     [DataRow(null)]
     [DataRow("")]
-    [DataRow(" , ")]
+    [DataRow(" ")]
     public void AllowsEveryRegionWithoutServerRegions(string? serverRegions)
     {
         var configuration = VpnConfiguration.FromConfiguration(Configuration("key", serverRegions));

@@ -35,13 +35,18 @@ import { VpnSwitchForm } from './vpn-switch-form';
           @if (available.regions.length === 0) {
             <div class="callout callout-failure" role="alert">
               <p>
-                gluetun's servers list has no regions for {{ available.provider }}, so the VPN can't switch region.
+                @if (available.limited) {
+                  None of the regions in <code>GLUETUN_SERVER_REGIONS</code> is in gluetun's servers list for
+                  {{ available.provider }}, so the VPN can't switch region.
+                } @else {
+                  gluetun's servers list has no regions for {{ available.provider }}, so the VPN can't switch region.
+                }
               </p>
             </div>
           } @else {
             <div class="controls">
               <app-vpn-switch-form [regions]="available.regions" [switching]="!!vpn.switch" />
-              <app-vpn-rotation-form [settings]="settings" [regions]="available.regions" />
+              <app-vpn-rotation-form [settings]="settings" [regions]="available.regions" [limited]="available.limited" />
             </div>
           }
         } @else if (regions.error(); as error) {

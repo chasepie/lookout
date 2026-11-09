@@ -179,7 +179,7 @@ public sealed class VpnRegionCatalogTests
 
     private VpnRegionCatalog CreateCatalog(string[]? serverRegions = null) =>
         new(new VpnConfiguration(
-                new Uri("http://gluetun.test/"), "key", _dataDirectory, new Uri("http://lookout@gluetun.test:8888/"), serverRegions),
+                new Uri("http://gluetun.test/"), "key", _dataDirectory, new Uri("http://lookout@gluetun.test:8888/"), serverRegions ?? []),
             NullLogger<VpnRegionCatalog>.Instance);
 
     private Task<VpnRegions> GetRegionsAsync(string provider, string vpnType) =>
