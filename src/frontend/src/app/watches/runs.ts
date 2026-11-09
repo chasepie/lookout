@@ -1,12 +1,15 @@
 import { WatchRunStatus, WatchRunSummary } from './watch.model';
 
-type Run = Pick<WatchRunSummary, 'status' | 'content' | 'error' | 'createdTime' | 'startTime' | 'endTime'>;
+export type Run = Pick<
+  WatchRunSummary,
+  'status' | 'content' | 'failureReason' | 'error' | 'createdTime' | 'startTime' | 'endTime'
+>;
 
 /**
- * What became of a run: still `queued` or `running`, or finished having `failed`, `observed` some content, or
- * finished `empty`, with nothing to report.
+ * What became of a run: still `queued` or `running`, or finished having `crashed`, returned a `knownFailure`,
+ * `observed` some content, or finished `empty`, with nothing to report.
  */
-export type RunOutcome = 'queued' | 'running' | 'failed' | 'observed' | 'empty';
+export type RunOutcome = 'queued' | 'running' | 'crashed' | 'knownFailure' | 'observed' | 'empty';
 
 export function outcomeOf(run: Run): RunOutcome {
   switch (run.status) {
@@ -15,15 +18,21 @@ export function outcomeOf(run: Run): RunOutcome {
     case WatchRunStatus.Running:
       return 'running';
     default:
-      return run.error ? 'failed' : run.content ? 'observed' : 'empty';
+      return run.error ? 'crashed' : run.failureReason ? 'knownFailure' : run.content ? 'observed' : 'empty';
   }
 }
 
-/** What a run that has nothing to observe yet says instead. */
+/** Whether a run ended without a success: it crashed, or the script returned a known failure. */
+export function isFailure(outcome: RunOutcome): boolean {
+  return outcome === 'crashed' || outcome === 'knownFailure';
+}
+
+/** What a run that has nothing to observe yet says instead, or the label before why it failed. */
 export const outcomeLabels: Record<Exclude<RunOutcome, 'observed'>, string> = {
   queued: 'Waiting to start',
   running: 'Running',
-  failed: 'Failed',
+  crashed: 'Crashed',
+  knownFailure: 'Known failure',
   empty: 'Finished with nothing to report',
 };
 

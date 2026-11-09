@@ -13,7 +13,7 @@ interface Tick {
   x: number;
   y: number;
   height: number;
-  kind: 'changed' | 'same' | 'failed' | 'running' | 'queued';
+  kind: 'changed' | 'same' | 'crashed' | 'knownFailure' | 'running' | 'queued';
   title: string;
 }
 
@@ -66,8 +66,15 @@ interface Tick {
       fill: var(--ink-muted);
     }
 
-    .failed {
+    .crashed {
       fill: var(--magenta);
+    }
+
+    // A known failure is drawn hollow, quieter than a crash, which is filled
+    .knownFailure {
+      fill: none;
+      stroke: var(--magenta);
+      stroke-width: 1;
     }
 
     .running {
@@ -104,8 +111,8 @@ export class RunStrip {
       .map((run, i) => {
         const outcome = outcomeOf(run);
         const kind: Tick['kind'] =
-          outcome === 'failed'
-            ? 'failed'
+          outcome === 'crashed' || outcome === 'knownFailure'
+            ? outcome
             : outcome === 'running'
               ? 'running'
               : outcome === 'queued'
@@ -119,14 +126,16 @@ export class RunStrip {
         const shape = {
           changed: { y: 2, height: baseline - 2 },
           same: { y: baseline - 6, height: 6 },
-          failed: { y: baseline + 2, height: height - baseline - 2 },
+          crashed: { y: baseline + 2, height: height - baseline - 2 },
+          knownFailure: { y: baseline + 2, height: height - baseline - 2 },
           running: { y: 2, height: baseline - 2 },
           queued: { y: baseline - 6.5, height: 6 },
         }[kind];
         const what = {
           changed: run.content ?? 'Finished',
           same: `Same as before: ${run.content ?? ''}`,
-          failed: `Failed: ${(run.error ?? '').split('\n')[0]}`,
+          crashed: `Crashed: ${(run.error ?? '').split('\n')[0]}`,
+          knownFailure: `Known failure: ${(run.failureReason ?? '').split('\n')[0]}`,
           running: 'Running',
           queued: 'Waiting to start',
         }[kind];
@@ -140,7 +149,7 @@ export class RunStrip {
     if (ticks.length === 0) {
       return 'No runs yet';
     }
-    const failed = ticks.filter((t) => t.kind === 'failed').length;
+    const failed = ticks.filter((t) => t.kind === 'crashed' || t.kind === 'knownFailure').length;
     const changed = ticks.filter((t) => t.kind === 'changed').length;
     const parts = [`Last ${ticks.length} ${ticks.length === 1 ? 'run' : 'runs'}`];
     parts.push(failed === 0 ? 'none failed' : `${failed} failed`);

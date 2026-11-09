@@ -81,7 +81,7 @@ public sealed class RunnerApiKeyTests
         await using var provider = CreateServices(configuration, handler);
 
         await provider.GetRequiredService<RunnerHttpClient>()
-            .RunWatchScriptAsync("script.ts", useVpn: false, TestContext.CancellationToken);
+            .RunWatchScriptAsync("script.ts", useVpn: false, ScreenshotSettings.None, TestContext.CancellationToken);
 
         Assert.IsNotNull(handler.Request);
         Assert.AreEqual(Key, handler.Request.Headers.GetValues(RunnerApiKey.HeaderName).Single());
@@ -93,7 +93,7 @@ public sealed class RunnerApiKeyTests
         await using var provider = CreateServices(Configuration(Key), new RecordingHandler(HttpStatusCode.Unauthorized));
 
         var ex = await Assert.ThrowsExactlyAsync<HttpRequestException>(() => provider.GetRequiredService<RunnerHttpClient>()
-            .RunWatchScriptAsync("script.ts", useVpn: false, TestContext.CancellationToken));
+            .RunWatchScriptAsync("script.ts", useVpn: false, ScreenshotSettings.None, TestContext.CancellationToken));
 
         Assert.AreEqual(HttpStatusCode.Unauthorized, ex.StatusCode);
         Assert.Contains(EnvVars.LookoutRunnerApiKey, ex.Message);

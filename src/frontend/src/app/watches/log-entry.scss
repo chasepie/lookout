@@ -40,8 +40,8 @@
   }
 }
 
-// A failure is ruled in the margin, like a correction in a logbook
-.entry-failed {
+// A crash is ruled in the margin, like a correction in a logbook
+.entry-crashed {
   box-shadow: inset 3px 0 0 var(--magenta);
 }
 

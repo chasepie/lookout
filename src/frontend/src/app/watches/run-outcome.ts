@@ -1,6 +1,5 @@
 import { Component, computed, input } from '@angular/core';
-import { RunOutcome as Outcome, outcomeLabels, outcomeOf } from './runs';
-import { WatchRunSummary } from './watch.model';
+import { RunOutcome as Outcome, Run, outcomeLabels, outcomeOf } from './runs';
 
 /**
  * What a run saw, in the serif reserved for what watched pages said, or why it has nothing to show.
@@ -18,9 +17,14 @@ import { WatchRunSummary } from './watch.model';
           <span class="observation" [class.clamped]="clamp()">{{ run().content }}</span>
         }
       }
-      @case ('failed') {
+      @case ('crashed') {
         <span class="failure" [class.clamped]="clamp()">
-          <span class="failure-label">Failed</span> {{ firstLine() }}
+          <span class="failure-label">{{ labels.crashed }}</span> {{ firstLine() }}
+        </span>
+      }
+      @case ('knownFailure') {
+        <span class="known-failure" [class.clamped]="clamp()">
+          <span class="failure-label">{{ labels.knownFailure }}</span> {{ run().failureReason }}
         </span>
       }
       @case ('running') {
@@ -58,6 +62,16 @@ import { WatchRunSummary } from './watch.model';
       font-weight: 600;
     }
 
+    // Quieter than a crash: the script did its job, and said why there's nothing to show, so only the label is magenta
+    .known-failure {
+      color: var(--ink-muted);
+      white-space: pre-line;
+
+      .failure-label {
+        color: var(--magenta);
+      }
+    }
+
     .running {
       display: inline-flex;
       align-items: center;
@@ -78,7 +92,7 @@ import { WatchRunSummary } from './watch.model';
   `,
 })
 export class RunOutcome {
-  readonly run = input.required<Pick<WatchRunSummary, 'status' | 'content' | 'error' | 'createdTime' | 'startTime' | 'endTime'>>();
+  readonly run = input.required<Run>();
   /** Whether the run saw the same as the run listed above it, which shows a ditto mark. */
   readonly repeat = input(false);
   /** Whether to cut long content or a failure to a few lines; `--clamp-lines` sets how many. */
@@ -90,6 +104,6 @@ export class RunOutcome {
     const outcome = this.outcome();
     return outcome === 'observed' ? '' : outcomeLabels[outcome];
   });
-  /** A stack trace's first line says what went wrong; the run's panel shows the rest. */
+  /** A crash's first line says what went wrong, as a stack trace's does; the run's panel shows the rest. */
   protected readonly firstLine = computed(() => (this.run().error ?? '').split('\n')[0]);
 }

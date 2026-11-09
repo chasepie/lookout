@@ -123,15 +123,12 @@ public partial class WatchRunWorker(
             var scriptName = WatchScriptsDirectory.GetStoredFileName(watchRun.Watch)
                 ?? throw new InvalidOperationException("The watch has no script.");
             var runner = scope.ServiceProvider.GetRequiredService<RunnerHttpClient>();
-            var result = await runner.RunWatchScriptAsync(scriptName, watchRun.Watch.UseVpn, stoppingToken);
-            if (result.Success)
-            {
-                watchRun.Content = result.Content;
-            }
-            else
-            {
-                watchRun.Error = result.FailureReason ?? "The script failed without giving a reason.";
-            }
+            var result = await runner.RunWatchScriptAsync(
+                scriptName: scriptName,
+                useVpn: watchRun.Watch.UseVpn,
+                screenshots: watchRun.Watch.GetScreenshotSettings(),
+                cancellationToken: stoppingToken);
+            KeepResult(watchRun, result);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
         {
@@ -144,6 +141,44 @@ public partial class WatchRunWorker(
         await dbContext.SaveChangesAsync(CancellationToken.None);
         await notifier.RunUpdatedAsync(watchRun);
         return true;
+    }
+
+    /// <summary>
+    /// Keeps how the script ended on the run, with its screenshot. A screenshot that can't be kept makes the run a crash,
+    /// unless it crashed already, since the script, which can send anything, returned it.
+    /// </summary>
+    private static void KeepResult(WatchRun watchRun, WatchRunResult result)
+    {
+        var screenshotProblem = result.Screenshot is { } screenshot
+            ? ScreenshotImage.ProblemWith(screenshot)
+            : null;
+        if (result.Crash is { } crash)
+        {
+            // Blank, as when the script threw '', it would read as a run with nothing to report
+            watchRun.Error = string.IsNullOrWhiteSpace(crash.Error)
+                ? "The script crashed without saying why."
+                : crash.Error;
+        }
+        else if (screenshotProblem is not null)
+        {
+            watchRun.Error = screenshotProblem;
+        }
+        else if (result.Success)
+        {
+            watchRun.Content = result.Content;
+        }
+        else
+        {
+            watchRun.FailureReason = string.IsNullOrWhiteSpace(result.FailureReason)
+                ? "The script reported a known failure without giving a reason."
+                : result.FailureReason;
+        }
+
+        if (screenshotProblem is null && result.Screenshot is { } keptScreenshot)
+        {
+            watchRun.Screenshot = keptScreenshot;
+            watchRun.ScreenshotMediaType = ScreenshotImage.MediaTypeOf(keptScreenshot);
+        }
     }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Starting watch run {WatchRunId} for watch {WatchId}")]

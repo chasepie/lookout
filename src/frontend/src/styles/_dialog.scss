@@ -78,3 +78,9 @@
 .dialog-sheet {
   width: 100vw;
 }
+
+// A screenshot viewer fills the window: the overlay's size, which leaves out the page's scrollbar, unlike 100vw
+.dialog-viewer {
+  width: 100%;
+  height: 100%;
+}

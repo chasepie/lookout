@@ -18,6 +18,9 @@ const savedWatch: Watch = {
   scheduleKind: WatchScheduleKind.Cron,
   scheduleInterval: '0 9 * * 1-5',
   useVpn: true,
+  screenshotOnSuccess: false,
+  screenshotOnKnownFailure: true,
+  screenshotOnCrash: true,
   scriptFileName: 'prices.ts',
   scriptFileId: 'a1b2',
 };
@@ -94,11 +97,32 @@ describe('WatchForm', () => {
         scheduleKind: String(WatchScheduleKind.Hourly),
         scheduleInterval: '2',
         useVpn: 'false',
+        screenshotOnSuccess: 'false',
+        screenshotOnKnownFailure: 'false',
+        screenshotOnCrash: 'false',
         script,
       });
       create.flush({ ...savedWatch, id: 8, name: 'Stock' });
 
       await vi.waitFor(() => expect(TestBed.inject(Router).url).toBe('/watches/8'));
+    });
+
+    it('is created with a screenshot for each outcome the Owner ticks', async () => {
+      type('#name', 'Prices');
+      chooseScript(new File([''], 'prices.ts'));
+      page.querySelector<HTMLInputElement>('#screenshot-on-success')!.click();
+      page.querySelector<HTMLInputElement>('#screenshot-on-crash')!.click();
+      await stable();
+
+      await submitForm();
+      const create = await nextRequest(request('POST', '/api/Watches'));
+      const body = create.request.body as FormData;
+      expect(body.get('screenshotOnSuccess')).toBe('true');
+      expect(body.get('screenshotOnKnownFailure')).toBe('false');
+      expect(body.get('screenshotOnCrash')).toBe('true');
+      create.flush({ ...savedWatch, id: 10 });
+
+      await vi.waitFor(() => expect(TestBed.inject(Router).url).toBe('/watches/10'));
     });
 
     it('is created on a cron schedule', async () => {
@@ -210,6 +234,9 @@ describe('WatchForm', () => {
       expect(textOf(page.querySelector('h1'))).toBe('Edit Prices');
       expect(page.querySelector<HTMLInputElement>('#cron')?.value).toBe('0 9 * * 1-5');
       expect(textOf(page.querySelector('#script-hint'))).toContain('prices.ts');
+      expect(page.querySelector<HTMLInputElement>('#screenshot-on-success')!.checked).toBe(false);
+      expect(page.querySelector<HTMLInputElement>('#screenshot-on-known-failure')!.checked).toBe(true);
+      expect(page.querySelector<HTMLInputElement>('#screenshot-on-crash')!.checked).toBe(true);
 
       await submitForm();
       const update = await nextRequest(request('PUT', '/api/Watches/7'));
@@ -219,6 +246,9 @@ describe('WatchForm', () => {
         scheduleKind: WatchScheduleKind.Cron,
         scheduleInterval: '0 9 * * 1-5',
         useVpn: true,
+        screenshotOnSuccess: false,
+        screenshotOnKnownFailure: true,
+        screenshotOnCrash: true,
       });
       update.flush(savedWatch);
 

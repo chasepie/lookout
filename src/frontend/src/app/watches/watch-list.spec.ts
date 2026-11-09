@@ -53,7 +53,7 @@ describe('WatchList', () => {
     expect(rows()[0].querySelector('a')?.getAttribute('href')).toBe('/watches/1');
     expect(textOf(rows()[1])).toContain('Not scheduled');
     // A failure shows its first line only
-    expect(textOf(rows()[1].querySelector('.failure'))).toBe('Failed Timeout');
+    expect(textOf(rows()[1].querySelector('.failure'))).toBe('Crashed Timeout');
   });
 
   it('says when a run is under way, while showing what the one before saw', async () => {

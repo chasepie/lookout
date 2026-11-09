@@ -21,6 +21,12 @@ export interface CreateWatchDto {
   scheduleInterval: string | null;
   /** Whether runs send the browser's traffic through the VPN. */
   useVpn: boolean;
+  /** Whether a run that ends in a success gets a full-page screenshot, when the script returned none of its own. */
+  screenshotOnSuccess: boolean;
+  /** Whether a run that ends in a known failure gets a full-page screenshot, when the script returned none of its own. */
+  screenshotOnKnownFailure: boolean;
+  /** Whether a run whose script throws gets a full-page screenshot. */
+  screenshotOnCrash: boolean;
 }
 
 /** A watch as creating or editing one returns it. Mirrors `Watch` in src/Core/Watch.cs. */
@@ -38,15 +44,20 @@ export interface WatchRunSummary {
   startTime: string | null;
   endTime: string | null;
   status: WatchRunStatus;
+  /** What the script found, when it returned a success. */
   content: string | null;
+  /** The script's reason, when it returned a known failure. */
+  failureReason: string | null;
+  /** Why the run crashed. */
   error: string | null;
   hasScreenshot: boolean;
 }
 
 /** A single run, with its screenshot. Mirrors `WatchRun` in src/Core/WatchRun.cs. */
 export interface WatchRun extends Omit<WatchRunSummary, 'hasScreenshot'> {
-  /** Base64-encoded PNG bytes. */
+  /** Base64-encoded image bytes, of the type in `screenshotMediaType`. */
   screenshot: string | null;
+  screenshotMediaType: 'image/png' | 'image/jpeg' | null;
 }
 
 /** A watch with its latest runs. Mirrors `WatchSummary` in src/Backend/Controllers/WatchSummaries.cs. */

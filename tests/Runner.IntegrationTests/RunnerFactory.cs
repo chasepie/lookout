@@ -31,20 +31,55 @@ internal sealed class RunnerFactory : WebApplicationFactory<Program>
     private readonly string _environment;
     private readonly string? _browserlessUrl;
     private readonly string? _browserlessToken;
+    private readonly string? _cliRoot;
 
     /// <param name="browserlessUrl">The Runner's <c>BROWSERLESS_URL</c>, or <see langword="null"/> for none.</param>
     /// <param name="browserlessToken">The Runner's <c>BROWSERLESS_TOKEN</c>, or <see langword="null"/> for none.</param>
+    /// <param name="standInCli">
+    /// Whether the Runner runs <see cref="StandInCli"/> instead of the real watch CLI, so scripts are instructions for it.
+    /// </param>
     public RunnerFactory(
         string environment = "Production",
         string? browserlessUrl = BrowserlessUrl,
-        string? browserlessToken = BrowserlessToken)
+        string? browserlessToken = BrowserlessToken,
+        bool standInCli = false)
     {
         _environment = environment;
         _browserlessUrl = browserlessUrl;
         _browserlessToken = browserlessToken;
         DataDirectory = Directory.CreateTempSubdirectory("lookout-runner-tests-").FullName;
         ScriptsDirectory = Path.Join(DataDirectory, "scripts");
+        if (standInCli)
+        {
+            _cliRoot = Path.Join(DataDirectory, "cli-root");
+            var sdkDirectory = Path.Join(_cliRoot, "node_modules", "@chasepie", "lookout-watch-sdk", "dist");
+            Directory.CreateDirectory(sdkDirectory);
+            File.WriteAllText(Path.Join(sdkDirectory, "cli.js"), StandInCli);
+        }
     }
+
+    /// <summary>
+    /// A watch CLI that does what its script, a JSON file, says, as <c>lookout-watch run &lt;script&gt; --output
+    /// &lt;file&gt; [flags]</c> is run: writes <c>write</c> to the output file as JSON, or <c>writeRaw</c> as it is, or
+    /// with <c>echoFlags</c> a success whose content is the flags it was given as a JSON array; prints <c>stderr</c>; and
+    /// exits with <c>exitCode</c>.
+    /// </summary>
+    public const string StandInCli = """
+        import { readFileSync, writeFileSync } from 'node:fs';
+
+        const [, , , scriptPath, , outputPath, ...flags] = process.argv;
+        const script = JSON.parse(readFileSync(scriptPath, 'utf8'));
+        const output = script.echoFlags ? { success: true, content: JSON.stringify(flags) } : script.write;
+        if (output !== undefined) {
+          writeFileSync(outputPath, JSON.stringify(output));
+        } else if (script.writeRaw !== undefined) {
+          writeFileSync(outputPath, script.writeRaw);
+        }
+        if (script.stderr !== undefined) {
+          console.error(script.stderr);
+        }
+        process.exitCode = script.exitCode ?? 0;
+        """;
 
     /// <summary>
     /// A directory that holds <see cref="ScriptsDirectory"/>, for files scripts must not be able to read.
@@ -78,6 +113,11 @@ internal sealed class RunnerFactory : WebApplicationFactory<Program>
         builder.UseSetting(EnvVars.BrowserlessUrl, _browserlessUrl);
         builder.UseSetting(EnvVars.BrowserlessToken, _browserlessToken);
         builder.UseSetting(EnvVars.LookoutRunnerApiKey, ApiKey);
+        if (_cliRoot is not null)
+        {
+            builder.UseSetting(EnvVars.WatchCliRoot, _cliRoot);
+        }
+
         builder.ConfigureServices(services => services.AddTransient<IStartupFilter, MatchedRouteStartupFilter>());
     }
 

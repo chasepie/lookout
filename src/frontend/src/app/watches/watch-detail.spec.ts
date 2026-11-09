@@ -63,14 +63,14 @@ describe('WatchDetail', () => {
   ];
 
   /** Opens a page of the watch, answering its requests for the watch and its log. A run's is left to the test. */
-  async function open(url = '/watches/1') {
+  async function open(url = '/watches/1', runs = log) {
     await harness.navigateByUrl(url);
     const nextRunTime = new Date(Date.now() + 12 * 60_000).toISOString();
     await respond(request('GET', watchUrl), watchSummary({ nextRunTime }));
     if (url.includes('/runs/')) {
-      await respond(request('GET', runsUrl), log);
+      await respond(request('GET', runsUrl), runs);
     } else {
-      await answer(request('GET', runsUrl), log);
+      await answer(request('GET', runsUrl), runs);
     }
   }
 
@@ -104,6 +104,18 @@ describe('WatchDetail', () => {
     expect(textOf(entries()[2])).toContain('Robot');
     expect(textOf(entries()[0])).toContain('Has a screenshot');
     expect(entries()[0].getAttribute('href')).toBe('/watches/1/runs/3');
+  });
+
+  it('tells a known failure from a crash in the log', async () => {
+    await open('/watches/1', [
+      runSummary(3, { createdTime: minutesAgo(1), content: null, error: 'Error: No price\n  at run' }),
+      runSummary(2, { createdTime: minutesAgo(2), content: null, failureReason: 'Blocked in this region' }),
+    ]);
+
+    expect(textOf(entries()[0])).toContain('Crashed Error: No price');
+    expect(entries()[0].classList).toContain('entry-crashed');
+    expect(textOf(entries()[1])).toContain('Known failure Blocked in this region');
+    expect(entries()[1].classList).not.toContain('entry-crashed');
   });
 
   it("says so when there's no such watch", async () => {
@@ -288,7 +300,7 @@ describe('WatchDetail', () => {
 
     it('shows what it saw, how long it took and its screenshot, beside the log', async () => {
       await open('/watches/1/runs/3');
-      await answer(request('GET', `${runsUrl}/3`), fullRun(3, { content: 'Normal', screenshot: 'iVBORw0KGgo=' }));
+      await answer(request('GET', `${runsUrl}/3`), fullRun(3, { content: 'Normal', screenshot: 'iVBORw0KGgo=', screenshotMediaType: 'image/png' }));
 
       expect(textOf(panel().querySelector('h2'))).toBe('Run #3');
       expect(textOf(panel().querySelector('.seen'))).toBe('Normal');
@@ -296,19 +308,63 @@ describe('WatchDetail', () => {
       expect(panel().querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,iVBORw0KGgo=');
       expect(entries()[0].getAttribute('aria-current')).toBe('true');
       expect(document.activeElement).toBe(panel().querySelector('h2'));
+    });
 
-      const actualSize = [...panel().querySelectorAll('button')].find((b) => textOf(b) === 'Actual size')!;
+    it('opens its screenshot in a viewer the size of the window, and gives focus back when it closes', async () => {
+      await open('/watches/1/runs/3');
+      await answer(
+        request('GET', `${runsUrl}/3`),
+        fullRun(3, { screenshot: '/9j/4AAQ', screenshotMediaType: 'image/jpeg' }),
+      );
+      const preview = panel().querySelector<HTMLButtonElement>('button[aria-label="View the screenshot full size"]')!;
+
+      preview.click();
+      await stable();
+      const viewer = document.querySelector('[role=dialog]')!;
+      expect(textOf(viewer.querySelector('h2'))).toBe('Run #3 screenshot');
+      expect(viewer.querySelector('img')?.getAttribute('src')).toBe('data:image/jpeg;base64,/9j/4AAQ');
+
+      const actualSize = [...viewer.querySelectorAll<HTMLButtonElement>('button')].find((b) => textOf(b) === 'Actual size')!;
+      expect(actualSize.getAttribute('aria-pressed')).toBe('false');
       actualSize.click();
       await stable();
       expect(actualSize.getAttribute('aria-pressed')).toBe('true');
+
+      [...viewer.querySelectorAll<HTMLButtonElement>('button')].find((b) => textOf(b) === 'Close')!.click();
+      await stable();
+      expect(document.querySelector('[role=dialog]')).toBeNull();
+      expect(document.activeElement).toBe(preview);
     });
 
-    it("shows a failure's first line as the outcome and all of it under Error", async () => {
+    it("shows a crash's first line as the outcome and all of it under Error", async () => {
       await open('/watches/1/runs/3');
       await answer(request('GET', `${runsUrl}/3`), fullRun(3, { content: null, error: 'Timeout\n  at page.goto' }));
 
-      expect(textOf(panel().querySelector('.seen'))).toBe('Failed Timeout');
+      expect(textOf(panel().querySelector('.seen'))).toBe('Crashed Timeout');
+      expect(textOf(panel().querySelector('#error-title'))).toBe('Error');
       expect(panel().querySelector('pre')?.textContent).toBe('Timeout\n  at page.goto');
+    });
+
+    it("shows a known failure with the script's reason, and no error", async () => {
+      await open('/watches/1/runs/3');
+      await answer(
+        request('GET', `${runsUrl}/3`),
+        fullRun(3, { content: null, failureReason: 'Blocked in this region\nTry another' }),
+      );
+
+      expect(textOf(panel().querySelector('.seen'))).toBe('Known failure Blocked in this region Try another');
+      expect(panel().querySelector('#error-title')).toBeNull();
+    });
+
+    it('shows a JPEG screenshot as one', async () => {
+      await open('/watches/1/runs/3');
+      await answer(
+        request('GET', `${runsUrl}/3`),
+        fullRun(3, { screenshot: '/9j/4AAQ', screenshotMediaType: 'image/jpeg' }),
+      );
+
+      const preview = panel().querySelector('button[aria-label="View the screenshot full size"]');
+      expect(preview?.querySelector('img')?.getAttribute('src')).toBe('data:image/jpeg;base64,/9j/4AAQ');
     });
 
     it("can't be deleted while it's running", async () => {

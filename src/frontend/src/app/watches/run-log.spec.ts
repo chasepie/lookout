@@ -18,6 +18,7 @@ function run(id: number, content = `run ${id}`): WatchRunSummary {
     endTime: null,
     status: WatchRunStatus.Done,
     content,
+    failureReason: null,
     error: null,
     hasScreenshot: false,
   };

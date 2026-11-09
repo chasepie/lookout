@@ -6,7 +6,7 @@ import { clockTime, dayHeading, dayKey, duration, fullTime } from '../shared/tim
 import { LogEntry, LogEntryLink } from './log-entry';
 import { WatchRunSummary } from './watch.model';
 import { RunLog } from './run-log';
-import { outcomeOf, sameAsAbove, timingsOf } from './runs';
+import { isFailure, outcomeOf, sameAsAbove, timingsOf } from './runs';
 
 /** A streak of runs that each saw the same as the one above, folded into one line until opened. */
 interface Fold {
@@ -120,14 +120,14 @@ export class WatchLog {
           exactTime: fullTime(created),
           ran: ran === null ? null : duration(ran),
           ditto: ditto[i],
-          failed: outcomeOf(run) === 'failed',
+          crashed: outcomeOf(run) === 'crashed',
         };
       });
       return {
         key,
         items: fold(entries, isOpen),
         runs: entries.length,
-        failures: entries.filter((entry) => entry.failed).length,
+        failures: entries.filter((entry) => isFailure(outcomeOf(entry.run))).length,
       };
     });
   });

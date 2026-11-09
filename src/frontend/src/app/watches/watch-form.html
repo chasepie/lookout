@@ -142,6 +142,45 @@
       </label>
     </fieldset>
 
+    <fieldset class="group">
+      <legend>Screenshots</legend>
+      <span class="field-hint" id="screenshots-hint">
+        A full-page screenshot of what the script left on the page, when the script doesn't return one of its own.
+      </span>
+      <label class="check">
+        <input
+          id="screenshot-on-success"
+          type="checkbox"
+          aria-describedby="screenshots-hint screenshot-on-success-hint"
+          [formField]="watchForm.screenshotOnSuccess"
+        />
+        <span>
+          On a success
+          <span id="screenshot-on-success-hint" class="field-hint hint-block">
+            Every run keeps one, so a watch that runs often fills the disk quickly.
+          </span>
+        </span>
+      </label>
+      <label class="check">
+        <input
+          id="screenshot-on-known-failure"
+          type="checkbox"
+          aria-describedby="screenshots-hint"
+          [formField]="watchForm.screenshotOnKnownFailure"
+        />
+        <span>On a known failure, when the script reports a problem it recognised</span>
+      </label>
+      <label class="check">
+        <input
+          id="screenshot-on-crash"
+          type="checkbox"
+          aria-describedby="screenshots-hint"
+          [formField]="watchForm.screenshotOnCrash"
+        />
+        <span>On a crash, when the script throws</span>
+      </label>
+    </fieldset>
+
     @if (error(); as error) {
       <div class="callout callout-failure" role="alert">
         <p class="preformatted-lines">Couldn't save: {{ error }}</p>

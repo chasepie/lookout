@@ -13,14 +13,23 @@ public class WatchRunController(ScriptRunner scriptRunner) : ControllerBase
     /// </summary>
     /// <param name="scriptName">The script's file name in the watch scripts directory.</param>
     /// <param name="useVpn">Whether the browser's traffic goes through the VPN proxy.</param>
+    /// <param name="screenshotOnSuccess">See <see cref="ScreenshotSettings.OnSuccess"/>.</param>
+    /// <param name="screenshotOnKnownFailure">See <see cref="ScreenshotSettings.OnKnownFailure"/>.</param>
+    /// <param name="screenshotOnCrash">See <see cref="ScreenshotSettings.OnCrash"/>.</param>
     /// <param name="cancellationToken">Cancelled when the request is aborted.</param>
     [HttpGet(Name = "GetWatchRunResult")]
     public async Task<ActionResult<WatchRunResult>> GetAsync(
-        [FromQuery] string scriptName, CancellationToken cancellationToken, [FromQuery] bool useVpn = false)
+        [FromQuery] string scriptName,
+        CancellationToken cancellationToken,
+        [FromQuery] bool useVpn = false,
+        [FromQuery] bool screenshotOnSuccess = false,
+        [FromQuery] bool screenshotOnKnownFailure = false,
+        [FromQuery] bool screenshotOnCrash = false)
     {
         try
         {
-            return await scriptRunner.RunWatchScriptAsync(scriptName, useVpn, cancellationToken);
+            var screenshots = new ScreenshotSettings(screenshotOnSuccess, screenshotOnKnownFailure, screenshotOnCrash);
+            return await scriptRunner.RunWatchScriptAsync(scriptName, useVpn, screenshots, cancellationToken);
         }
         catch (ArgumentException ex)
         {

@@ -1,7 +1,18 @@
+import { Dialog } from '@angular/cdk/dialog';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, ElementRef, afterRenderEffect, computed, inject, input, signal, viewChild } from '@angular/core';
+import {
+  Component,
+  ElementRef,
+  afterRenderEffect,
+  computed,
+  inject,
+  input,
+  linkedSignal,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
-import { LucideTrash2, LucideX } from '@lucide/angular';
+import { LucideMaximize2, LucideTrash2, LucideX } from '@lucide/angular';
 import { filter } from 'rxjs';
 import { LiveUpdates } from '../live/live-updates';
 import { reloadOn } from '../live/reload-on';
@@ -12,13 +23,17 @@ import { Notices } from '../shared/notices';
 import { duration, fullTime } from '../shared/time';
 import { RunOutcome } from './run-outcome';
 import { outcomeOf, timingsOf } from './runs';
+import { ScreenshotViewer, ScreenshotViewerData } from './screenshot-viewer';
 import { WatchRunStatus, WatchRunUpdate } from './watch.model';
 import { WatchesApi } from './watches-api';
+
+/** Height over width beyond which the preview is cropped: a little taller than a 16:10 window. */
+const tallestUncropped = 0.75;
 
 /** One run in full: what it saw, how long it took, its screenshot and any error. Opens beside the watch's log. */
 @Component({
   selector: 'app-run-panel',
-  imports: [RouterLink, RunOutcome, LucideX, LucideTrash2],
+  imports: [RouterLink, RunOutcome, LucideX, LucideTrash2, LucideMaximize2],
   templateUrl: './run-panel.html',
   styleUrl: './run-panel.scss',
 })
@@ -32,6 +47,7 @@ export class RunPanel {
   private readonly confirm = inject(Confirm);
   private readonly notices = inject(Notices);
   private readonly updates = inject(LiveUpdates);
+  private readonly dialog = inject(Dialog);
 
   protected readonly run = this.api.runResource(this.id, this.runId);
   /** The run as last loaded, still shown if a refresh fails. */
@@ -60,11 +76,22 @@ export class RunPanel {
     return { waited: waited === null ? null : duration(waited), ran: ran === null ? null : duration(ran) };
   });
   protected readonly screenshotUrl = computed(() => {
-    const screenshot = this.shown()?.screenshot;
-    return screenshot ? `data:image/png;base64,${screenshot}` : null;
+    const run = this.shown();
+    return run?.screenshot ? `data:${run.screenshotMediaType ?? 'image/png'};base64,${run.screenshot}` : null;
   });
-  /** Whether the screenshot is shown at its own size, scrolling, rather than fitted to the panel. */
-  protected readonly actualSize = signal(false);
+  /** The screenshot's own size, once it has loaded; a new screenshot starts unmeasured. */
+  protected readonly screenshotSize = linkedSignal<string | null, { width: number; height: number } | null>({
+    source: this.screenshotUrl,
+    computation: () => null,
+  });
+  /**
+   * Whether the preview shows only the top of the screenshot, as for a full page: it's much taller than the window
+   * the page was in. The viewer shows the rest.
+   */
+  protected readonly cropped = computed(() => {
+    const size = this.screenshotSize();
+    return size !== null && size.width > 0 && size.height / size.width > tallestUncropped;
+  });
   protected readonly deleting = signal(false);
 
   protected readonly statuses = WatchRunStatus;
@@ -88,6 +115,29 @@ export class RunPanel {
         this.runId();
         this.heading()?.nativeElement.focus();
       },
+    });
+  }
+
+  protected measureScreenshot(event: Event) {
+    const image = event.target as HTMLImageElement;
+    this.screenshotSize.set({ width: image.naturalWidth, height: image.naturalHeight });
+  }
+
+  protected viewScreenshot(src: string, runId: number, event: Event) {
+    const size = this.screenshotSize();
+    this.dialog.open<void, ScreenshotViewerData>(ScreenshotViewer, {
+      data: {
+        title: `Run #${runId} screenshot`,
+        src,
+        size: size ? `${size.width.toLocaleString()} × ${size.height.toLocaleString()} px` : null,
+      },
+      ariaLabelledBy: 'screenshot-viewer-title',
+      panelClass: 'dialog-viewer',
+      backdropClass: 'dialog-backdrop',
+      // On the screenshot, so the arrow keys scroll it straight away
+      autoFocus: '.scroll',
+      // The preview, which Safari doesn't focus when it's clicked
+      restoreFocus: event.currentTarget as HTMLElement,
     });
   }
 

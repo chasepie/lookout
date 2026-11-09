@@ -14,6 +14,7 @@ export function runSummary(id: number, overrides: Partial<WatchRunSummary> = {})
     endTime: '2026-11-07T14:00:06.600Z',
     status: WatchRunStatus.Done,
     content: `seen by run ${id}`,
+    failureReason: null,
     error: null,
     hasScreenshot: false,
     ...overrides,
@@ -23,7 +24,12 @@ export function runSummary(id: number, overrides: Partial<WatchRunSummary> = {})
 /** A single run, as `GET .../runs/{id}` returns it. */
 export function fullRun(id: number, overrides: Partial<WatchRun> = {}): WatchRun {
   const { hasScreenshot, ...summary } = runSummary(id);
-  return { ...summary, screenshot: hasScreenshot ? 'iVBORw0KGgo=' : null, ...overrides };
+  return {
+    ...summary,
+    screenshot: hasScreenshot ? 'iVBORw0KGgo=' : null,
+    screenshotMediaType: hasScreenshot ? 'image/png' : null,
+    ...overrides,
+  };
 }
 
 export function watchSummary(overrides: Partial<WatchSummary> = {}): WatchSummary {
@@ -34,6 +40,9 @@ export function watchSummary(overrides: Partial<WatchSummary> = {}): WatchSummar
     scheduleKind: WatchScheduleKind.Minutely,
     scheduleInterval: '15',
     useVpn: true,
+    screenshotOnSuccess: false,
+    screenshotOnKnownFailure: false,
+    screenshotOnCrash: false,
     scriptFileName: 'bot-detection.ts',
     recentRuns: [runSummary(2, { content: 'Normal' }), runSummary(1, { content: 'Normal' })],
     nextRunTime: null,

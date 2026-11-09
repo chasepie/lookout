@@ -38,8 +38,15 @@
   white-space: pre-line;
 }
 
-.seen-failed {
+.seen-crashed {
   border-left-color: var(--magenta);
+  font-size: var(--step-2);
+}
+
+// Dashed where a crash's rule is solid
+.seen-known-failure {
+  border-left-color: var(--magenta);
+  border-left-style: dashed;
   font-size: var(--step-2);
 }
 
@@ -70,11 +77,23 @@
   justify-content: space-between;
 }
 
+.screenshot-caption {
+  color: var(--ink-muted);
+  font-size: var(--step--1);
+}
+
+// The preview opens the viewer. A full page is cropped to its first screen, fading out where it's cut.
 .screenshot {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding: 0;
   overflow: hidden;
   border: 1px solid var(--rule);
   border-radius: var(--radius-control);
   background: var(--paper-sunk);
+  font: inherit;
+  cursor: zoom-in;
 
   img {
     display: block;
@@ -82,13 +101,44 @@
   }
 }
 
-.screenshot-actual {
-  max-height: 70vh;
-  overflow: auto;
+.screenshot-cropped {
+  aspect-ratio: 16 / 10;
 
   img {
-    width: auto;
-    max-width: none;
+    height: 100%;
+    object-fit: cover;
+    object-position: top;
+  }
+
+  &::after {
+    content: '';
+    position: absolute;
+    inset: auto 0 0;
+    height: 30%;
+    background: linear-gradient(to bottom, transparent, var(--paper-sunk));
+    pointer-events: none;
+  }
+}
+
+.screenshot-open {
+  position: absolute;
+  z-index: 1;
+  right: var(--space-2);
+  bottom: var(--space-2);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  background: var(--paper-raised);
+  color: var(--deep);
+  font-size: var(--step--1);
+  font-weight: 500;
+
+  svg {
+    width: 1rem;
+    height: 1rem;
   }
 }
 
