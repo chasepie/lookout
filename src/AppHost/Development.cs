@@ -28,7 +28,7 @@ public partial class Program
             var backend = AddBackend(builder, settings, watchScriptsDir, runner, runnerApiKey);
             if (settings.OpenVpn is { } openVpn)
             {
-                AddGluetun(builder, settings, openVpn, runner, backend);
+                AddGluetun(builder, settings, openVpn, browserless, runner, backend);
             }
 
             AddFrontend(builder, backend);
@@ -108,12 +108,13 @@ public partial class Program
 
         /// <summary>
         /// gluetun, with the updater before it when it has no servers list, and its proxy and control server given to the
-        /// Runner and the Backend.
+        /// Runner and the Backend. browserless and the Backend wait for it.
         /// </summary>
         private static void AddGluetun(
             IDistributedApplicationBuilder builder,
             DevelopmentSettings settings,
             OpenVpnCredentials openVpn,
+            IResourceBuilder<ContainerResource> browserless,
             IResourceBuilder<ContainerResource> runner,
             IResourceBuilder<ProjectResource> backend)
         {
@@ -170,15 +171,20 @@ public partial class Program
                 gluetun.WaitForCompletion(updater);
             }
 
+            // Started after gluetun, which waits for the updater, so neither talks to a gluetun that isn't there yet. gluetun
+            // has no health check, so they wait for its container to run, not for its tunnel: a VPN run fails while the
+            // tunnel is down instead of leaking, and the Backend retries, showing the VPN as unreachable meanwhile. The
+            // Runner waits for browserless, so for gluetun too.
+            browserless.WaitFor(gluetun);
+            backend.WaitFor(gluetun);
+
             // The browser in the browserless container connects to the proxy, so the Runner gets its address
-            // on the container network rather than the host port. The Runner doesn't wait for gluetun: watches
-            // without the VPN don't need it, and a VPN run fails while the proxy is down instead of leaking.
+            // on the container network rather than the host port
             var proxyOnContainerNetwork = gluetun.Resource.GetEndpoint("proxy", KnownNetworkIdentifiers.DefaultAspireContainerNetwork);
             runner
                 .WithEnvironment(EnvVars.GluetunProxyUrl, ProxyUrl(proxyOnContainerNetwork))
                 .WithEnvironment(EnvVars.GluetunProxyPassword, proxyPassword);
 
-            // The Backend doesn't wait for gluetun either: it retries, and shows gluetun as unreachable meanwhile
             backend
                 .WithEnvironment(EnvVars.GluetunUrl, gluetun.GetEndpoint("control"))
                 .WithEnvironment(EnvVars.GluetunApiKey, apiKey)
