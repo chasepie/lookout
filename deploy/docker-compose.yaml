@@ -1,7 +1,7 @@
 name: "lookout"
 services:
   browserless:
-    image: "ghcr.io/browserless/chromium:v2.58.3"
+    image: "ghcr.io/browserless/chromium:v2.60.0"
     environment:
       TIMEOUT: "180000"
       TZ: "${TZ:-Etc/UTC}"

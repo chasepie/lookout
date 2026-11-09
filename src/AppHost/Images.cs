@@ -13,9 +13,10 @@ public partial class Program
     private const string AlpineSocatTag = "1.8.0.3";
 
     // Chromium that watch scripts run on instead of a locally launched browser. The SDK connects with Playwright, so the
-    // image must support its Playwright version: v2.58.3 supports 1.60 to 1.64.
+    // image must support its Playwright version: v2.60.0 supports 1.61 to 1.65. Keep the SDK on 1.65 or later, the first
+    // that doesn't send websites the VPN proxy's password (docs/security.md), and so the image on v2.60.0 or later.
     private const string BrowserlessImage = "ghcr.io/browserless/chromium";
-    private const string BrowserlessTag = "v2.58.3";
+    private const string BrowserlessTag = "v2.60.0";
 
     // The VPN client, with an HTTP proxy that watches with UseVpn send their browser traffic through, and a control
     // server the Backend switches regions with. It must require a key on the control server, which v3.40 started to.
