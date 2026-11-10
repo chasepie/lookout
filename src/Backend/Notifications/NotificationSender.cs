@@ -23,12 +23,32 @@ public sealed partial class NotificationSender(
 
     private readonly Channel<NotificationDelivery> _deliveries = Channel.CreateUnbounded<NotificationDelivery>();
 
-    // Pushover asks for requests one at a time
+    // Pushover asks for requests one at a time. Never disposed, since it needs no disposing without a wait handle, and a
+    // delivery still running after a shutdown timed out may yet release it.
     private readonly SemaphoreSlim _sending = new(1, 1);
 
     public void Enqueue(NotificationDelivery delivery)
     {
         _deliveries.Writer.TryWrite(delivery);
+    }
+
+    /// <summary>
+    /// Sends a notification right away, without retrying, in turn with the ones being sent in the background.
+    /// </summary>
+    /// <exception cref="NotificationDeliveryException">The channel's service didn't take it.</exception>
+    public async Task SendNowAsync(
+        PushoverDestination destination, Notification notification, CancellationToken cancellationToken)
+    {
+        await _sending.WaitAsync(cancellationToken);
+        try
+        {
+            var pushover = services.GetRequiredService<PushoverHttpClient>();
+            await pushover.SendAsync(destination, notification, cancellationToken);
+        }
+        finally
+        {
+            _sending.Release();
+        }
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -55,7 +75,7 @@ public sealed partial class NotificationSender(
         {
             try
             {
-                await SendAsync(delivery, stoppingToken);
+                await SendNowAsync(delivery.Destination, delivery.Notification, stoppingToken);
                 return;
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -84,26 +104,6 @@ public sealed partial class NotificationSender(
                 return;
             }
         }
-    }
-
-    private async Task SendAsync(NotificationDelivery delivery, CancellationToken stoppingToken)
-    {
-        await _sending.WaitAsync(stoppingToken);
-        try
-        {
-            var pushover = services.GetRequiredService<PushoverHttpClient>();
-            await pushover.SendAsync(delivery.Destination, delivery.Notification, stoppingToken);
-        }
-        finally
-        {
-            _sending.Release();
-        }
-    }
-
-    public override void Dispose()
-    {
-        _sending.Dispose();
-        base.Dispose();
     }
 
     [LoggerMessage(Level = LogLevel.Warning,

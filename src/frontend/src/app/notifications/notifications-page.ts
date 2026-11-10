@@ -1,4 +1,5 @@
 import { Component, inject, signal } from '@angular/core';
+import { reloader } from '../live/reload-on';
 import { describeError } from '../shared/describe-error';
 import { lastValue } from '../shared/last-value';
 import { Notices } from '../shared/notices';
@@ -43,7 +44,7 @@ import { NotificationsApi } from './notifications-api';
               <app-channel-card
                 [channel]="channel"
                 (edit)="editingId.set(channel.id)"
-                (deleted)="channels.reload()"
+                (deleted)="reloadChannels()"
               />
             }
           </li>
@@ -80,6 +81,8 @@ export class NotificationsPage {
   protected readonly channels = this.api.channelsResource();
   /** The channels as last loaded, still shown if a refresh fails. */
   protected readonly shownChannels = lastValue(this.channels);
+  /** Reloads the channels after a change, again once a load already under way ends, which may have missed it. */
+  protected readonly reloadChannels = reloader(this.channels);
 
   protected readonly describeError = describeError;
   private readonly notices = inject(Notices);
@@ -90,12 +93,12 @@ export class NotificationsPage {
   protected added(channel: NotificationChannelSummary) {
     this.adding.set(false);
     this.notices.say(`Added ${channel.name}.`);
-    this.channels.reload();
+    this.reloadChannels();
   }
 
   protected edited(channel: NotificationChannelSummary) {
     this.editingId.set(null);
     this.notices.say(`Saved ${channel.name}.`);
-    this.channels.reload();
+    this.reloadChannels();
   }
 }

@@ -1,9 +1,10 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ApplicationRef } from '@angular/core';
-import { TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
+import { NoticeStrip } from '../shared/notice-strip';
 import { answer, fail, nextRequest, request, textOf } from '../testing/fixtures';
 import { NotificationChannelSummary, NotificationService } from './notification.model';
 import { NotificationsPage } from './notifications-page';
@@ -135,32 +136,42 @@ describe('NotificationsPage', () => {
     expect(textOf(page.querySelector('.channel h2'))).toBe('Phone, quietly');
   });
 
-  it('sends a test notification and says it went', async () => {
-    await answer(request('GET', channelsUrl), [channel()]);
+  describe('a test notification', () => {
+    let strip: ComponentFixture<NoticeStrip>;
 
-    button('Send a test', page.querySelector('.channel')!).click();
-    await answer(request('POST', `${channelsUrl}/1/test`), '');
-    // The page shows the outcome once the request's promise settles, after the response
-    await stable();
-
-    expect(textOf(page.querySelector('.channel [role=status]'))).toBe('Sent a test notification. Check that it arrived.');
-  });
-
-  it("says why a test notification didn't go", async () => {
-    await answer(request('GET', channelsUrl), [channel()]);
-
-    button('Send a test', page.querySelector('.channel')!).click();
-    await fail(request('POST', `${channelsUrl}/1/test`), 502, {
-      title: 'Bad Gateway',
-      status: 502,
-      detail: 'Pushover refused the notification (400): application token is invalid',
+    beforeEach(async () => {
+      // Notices appear in the shell, so render its strip alongside the page
+      strip = TestBed.createComponent(NoticeStrip);
+      await answer(request('GET', channelsUrl), [channel()]);
     });
-    // The page shows the outcome once the request's promise settles, after the response
-    await stable();
 
-    expect(textOf(page.querySelector('.channel [role=alert]'))).toBe(
-      "Couldn't send a test: Pushover refused the notification (400): application token is invalid",
-    );
+    it('is sent, saying it went', async () => {
+      button('Send a test', page.querySelector('.channel')!).click();
+      await answer(request('POST', `${channelsUrl}/1/test`), '');
+      // The outcome shows once the request's promise settles, after the response
+      await stable();
+      await strip.whenStable();
+
+      expect(textOf(strip.nativeElement as HTMLElement)).toContain(
+        'Sent a test notification to Phone. Check that it arrived.',
+      );
+    });
+
+    it("says why it didn't go", async () => {
+      button('Send a test', page.querySelector('.channel')!).click();
+      await fail(request('POST', `${channelsUrl}/1/test`), 502, {
+        title: 'Bad Gateway',
+        status: 502,
+        detail: 'Pushover refused the notification (400): application token is invalid',
+      });
+      // The outcome shows once the request's promise settles, after the response
+      await stable();
+      await strip.whenStable();
+
+      expect(textOf((strip.nativeElement as HTMLElement).querySelector('[role=alert]'))).toContain(
+        "Couldn't send a test to Phone: Pushover refused the notification (400): application token is invalid",
+      );
+    });
   });
 
   it('deletes a channel once the Owner confirms, naming the watches that stop using it', async () => {

@@ -153,16 +153,69 @@ public sealed class WatchEventsTests
         Assert.IsNull(watchEvent);
     }
 
+    [TestMethod]
+    public void LoweringTheThresholdBelowAStreakNotifiesOnItsNextKnownFailure()
+    {
+        var watchEvent = DetectInTurn(
+            (Success("In Stock"), 5), (KnownFailure("Blocked"), 5), (KnownFailure("Blocked"), 5),
+            (KnownFailure("Blocked"), 5), (KnownFailure("Blocked"), 3));
+
+        Assert.AreEqual(WatchEvent.KnownFailureStreak, watchEvent);
+    }
+
+    [TestMethod]
+    public void AStreakNotifiesOnlyOnceAfterItsThresholdIsLowered()
+    {
+        var watchEvent = DetectInTurn(
+            (KnownFailure("Blocked"), 5), (KnownFailure("Blocked"), 5), (KnownFailure("Blocked"), 5),
+            (KnownFailure("Blocked"), 3), (KnownFailure("Blocked"), 3));
+
+        Assert.IsNull(watchEvent);
+    }
+
+    [TestMethod]
+    public void AStreakThatNeverNotifiedIsNotRecoveredFrom()
+    {
+        // Lowered while the streak was already past it, but the streak ended before notifying
+        var watchEvent = DetectInTurn(
+            (Success("In Stock"), 5), (KnownFailure("Blocked"), 5), (KnownFailure("Blocked"), 5),
+            (KnownFailure("Blocked"), 5), (Success("In Stock"), 2));
+
+        Assert.IsNull(watchEvent);
+    }
+
+    [TestMethod]
+    public void RaisingTheThresholdAfterAStreakNotifiedStillRecovers()
+    {
+        var watchEvent = DetectInTurn(
+            (Success("In Stock"), 2), (KnownFailure("Blocked"), 2), (KnownFailure("Blocked"), 2),
+            (Success("In Stock"), 5));
+
+        Assert.AreEqual(WatchEvent.Recovery, watchEvent);
+    }
+
     /// <summary>
     /// The event the last of <paramref name="runsOldestFirst"/> shows.
     /// </summary>
     private static WatchEvent? Detect(params WatchRun[] runsOldestFirst) => DetectWithThreshold(Threshold, runsOldestFirst);
 
-    private static WatchEvent? DetectWithThreshold(int knownFailureThreshold, params WatchRun[] runsOldestFirst)
+    private static WatchEvent? DetectWithThreshold(int knownFailureThreshold, params WatchRun[] runsOldestFirst) =>
+        DetectInTurn([.. runsOldestFirst.Select(run => (run, knownFailureThreshold))]);
+
+    /// <summary>
+    /// Works out each run's event in turn, with the threshold the watch had then, recording it on the run as the Backend
+    /// does, and returns the last run's.
+    /// </summary>
+    private static WatchEvent? DetectInTurn(params (WatchRun Run, int Threshold)[] runsOldestFirst)
     {
-        var run = runsOldestFirst[^1];
-        var earlierRunsNewestFirst = runsOldestFirst[..^1].Reverse().ToList();
-        return WatchEvents.Detect(run, earlierRunsNewestFirst, knownFailureThreshold);
+        for (var i = 0; i < runsOldestFirst.Length; i++)
+        {
+            var (run, threshold) = runsOldestFirst[i];
+            var earlierRunsNewestFirst = runsOldestFirst[..i].Select(r => r.Run).Reverse().ToList();
+            run.Event = WatchEvents.Detect(run, earlierRunsNewestFirst, threshold);
+        }
+
+        return runsOldestFirst[^1].Run.Event;
     }
 
     private static WatchRun Success(string content) => Done(run => run.Content = content);

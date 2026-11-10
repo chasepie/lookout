@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Net.Http.Headers;
-using System.Text.Json;
 using ChasePie.Lookout.Core;
 
 namespace ChasePie.Lookout.Backend.Notifications;
@@ -32,6 +31,14 @@ public sealed record PushoverDestination(
         Sound: sound,
         RetrySeconds: channel.RetrySeconds,
         ExpireSeconds: channel.ExpireSeconds);
+
+    /// <summary>
+    /// Leaves out the token and user key, so a destination that ends up in a log doesn't leak them.
+    /// </summary>
+    public override string ToString() =>
+        $"{nameof(PushoverDestination)} {{ {nameof(Priority)} = {Number(Priority)}, {nameof(Sound)} = {Sound} }}";
+
+    private static string Number(int value) => value.ToString(CultureInfo.InvariantCulture);
 }
 
 /// <summary>
@@ -51,7 +58,10 @@ public class PushoverHttpClient(HttpClient httpClient)
 
     private const int MaxTitleLength = 250;
 
-    private const int MaxMessageLength = 1024;
+    /// <summary>
+    /// The longest message Pushover takes, in characters.
+    /// </summary>
+    public const int MaxMessageLength = 1024;
 
     private const string ScreenshotLeftOutNote = "\n\n(The screenshot was left out: it's over Pushover's 5 MB limit.)";
 
@@ -153,8 +163,9 @@ public class PushoverHttpClient(HttpClient httpClient)
             var body = await response.Content.ReadFromJsonAsync<PushoverResponse>(cancellationToken);
             return body?.Errors is { Count: > 0 } errors ? string.Join("; ", errors) : null;
         }
-        catch (JsonException)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            // Not Pushover's JSON, such as a proxy's page or a body in a charset .NET doesn't know; the status still says it
             return null;
         }
     }
@@ -165,7 +176,7 @@ public class PushoverHttpClient(HttpClient httpClient)
     /// Cuts <paramref name="text"/> to at most <paramref name="maxLength"/> UTF-16 code units, ending in "…" if it was
     /// cut, without splitting a character. Pushover counts characters, which are never more than code units.
     /// </summary>
-    private static string Cut(string text, int maxLength)
+    internal static string Cut(string text, int maxLength)
     {
         if (text.Length <= maxLength)
         {

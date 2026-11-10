@@ -49,17 +49,19 @@ public partial class Program
         // Resolved here, so a missing or short key stops startup instead of failing every run
         services.AddSingleton(RunnerApiKey.FromConfiguration(configuration));
         services.AddHttpClient<RunnerHttpClient>(RunnerHttpClient.Configure);
-        services.AddHostedService<WatchScheduler>();
-        services.AddHostedService<WatchRunWorker>();
 
         services.AddSingleton(TimeProvider.System);
         services.AddHttpClient<PushoverHttpClient>(PushoverHttpClient.Configure);
-        // A singleton too, so the run worker can queue notifications on the instance that sends them
+        // A singleton too, so the run worker can queue notifications on the instance that sends them. Added before the
+        // worker, since hosted services stop in reverse: the worker stops first, so it queues none that go unread.
         services.AddSingleton<NotificationSender>();
         services.AddHostedService(provider => provider.GetRequiredService<NotificationSender>());
         services.AddScoped<RunNotifications>();
         // Resolved here, so a malformed URL stops startup instead of failing every notification
         services.AddSingleton(RunLinks.FromConfiguration(configuration));
+
+        services.AddHostedService<WatchScheduler>();
+        services.AddHostedService<WatchRunWorker>();
 
         var vpnConfiguration = VpnConfiguration.FromConfiguration(configuration);
         services.AddSingleton(vpnConfiguration);

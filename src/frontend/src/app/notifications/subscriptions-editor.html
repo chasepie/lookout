@@ -14,6 +14,9 @@
           [id]="'subscription-' + subscription.key + '-channel'"
           (change)="setChannel(subscription.key, $event)"
         >
+          @if (problems()[i] === deletedChannelProblem) {
+            <option value="" disabled selected>Deleted channel</option>
+          }
           @for (channel of channels(); track channel.id) {
             <option [value]="channel.id" [selected]="channel.id === subscription.channelId">{{ channel.name }}</option>
           }
@@ -69,7 +72,8 @@
       </div>
 
       <span class="field-error" [id]="'subscription-' + subscription.key + '-error'">
-        @if (showProblems() && problems()[i]; as problem) {
+        <!-- A deleted channel is said at once, since it isn't something the Owner did here -->
+        @if ((showProblems() || problems()[i] === deletedChannelProblem) && problems()[i]; as problem) {
           {{ problem }}
         }
       </span>

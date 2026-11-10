@@ -1,7 +1,6 @@
-import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, inject, input, linkedSignal, output, signal } from '@angular/core';
+import { Component, computed, inject, input, linkedSignal, output, signal, untracked } from '@angular/core';
 import { FormField, form, max, min, required, submit } from '@angular/forms/signals';
-import { describeError } from '../shared/describe-error';
+import { describeSaveError } from '../shared/describe-error';
 import { NotificationChannelDto, NotificationChannelSummary, NotificationService } from './notification.model';
 import { NotificationsApi } from './notifications-api';
 
@@ -61,7 +60,14 @@ export class ChannelForm {
   protected readonly formId = computed(() => `channel-form-${this.channel()?.id ?? 'new'}`);
   protected readonly error = signal<string | null>(null);
 
-  private readonly model = linkedSignal(() => toModel(this.channel()));
+  /**
+   * Starts over only for another channel, not when the list reloads around a channel being edited, which would throw
+   * away what the Owner has typed.
+   */
+  private readonly model = linkedSignal({
+    source: () => this.channel()?.id,
+    computation: () => toModel(untracked(this.channel)),
+  });
   protected readonly channelForm = form(this.model, (path) => {
     required(path.name, { message: 'Give the channel a name.' });
     required(path.applicationToken, {
@@ -93,13 +99,4 @@ export class ChannelForm {
       return undefined;
     });
   }
-}
-
-/** ASP.NET's validation problems come back as a map of field to messages; this flattens them into sentences. */
-function describeSaveError(error: unknown): string {
-  if (error instanceof HttpErrorResponse && error.error && typeof error.error === 'object' && 'errors' in error.error) {
-    const errors = (error.error as { errors: Record<string, string[]> }).errors;
-    return Object.values(errors).flat().join('\n');
-  }
-  return describeError(error);
 }

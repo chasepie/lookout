@@ -1,6 +1,6 @@
 import { Component, computed, inject, input, output, signal } from '@angular/core';
 import { Confirm } from '../shared/confirm';
-import { describeError } from '../shared/describe-error';
+import { describeError, describeProblem } from '../shared/describe-error';
 import { Notices } from '../shared/notices';
 import { describeSeconds } from './durations';
 import { NotificationChannelSummary, NotificationService } from './notification.model';
@@ -39,16 +39,6 @@ const listFormat = new Intl.ListFormat('en', { type: 'conjunction' });
         <button type="button" class="button" (click)="edit.emit()">Edit</button>
         <button type="button" class="button button-quiet" (click)="remove()">Delete</button>
       </div>
-      <div role="status">
-        @if (testSent()) {
-          <p class="muted">Sent a test notification. Check that it arrived.</p>
-        }
-      </div>
-      @if (testError(); as error) {
-        <div class="callout callout-failure" role="alert">
-          <p>Couldn't send a test: {{ error }}</p>
-        </div>
-      }
     </article>
   `,
   styles: `
@@ -93,8 +83,6 @@ export class ChannelCard {
   private readonly confirm = inject(Confirm);
   private readonly notices = inject(Notices);
   protected readonly testing = signal(false);
-  protected readonly testSent = signal(false);
-  protected readonly testError = signal<string | null>(null);
 
   protected readonly serviceName = computed(() => serviceNames[this.channel().service]);
   protected readonly watchNames = computed(() => listFormat.format(this.channel().watches.map((w) => w.name)));
@@ -124,27 +112,16 @@ export class ChannelCard {
   }
 
   protected async sendTest() {
+    const { id, name } = this.channel();
     this.testing.set(true);
-    this.testSent.set(false);
-    this.testError.set(null);
     try {
-      await this.api.sendTest(this.channel().id);
-      this.testSent.set(true);
+      await this.api.sendTest(id);
+      this.notices.say(`Sent a test notification to ${name}. Check that it arrived.`);
     } catch (e) {
-      this.testError.set(describeProblem(e));
+      // The problem's detail says why the service refused it
+      this.notices.fail(`Couldn't send a test to ${name}: ${describeProblem(e)}`);
     } finally {
       this.testing.set(false);
     }
   }
-}
-
-/** A problem's detail, which says why the service refused, or else the error as `describeError` reads it. */
-function describeProblem(error: unknown): string {
-  if (error && typeof error === 'object' && 'error' in error) {
-    const body = error.error;
-    if (body && typeof body === 'object' && 'detail' in body && typeof body.detail === 'string') {
-      return body.detail;
-    }
-  }
-  return describeError(error);
 }

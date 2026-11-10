@@ -399,6 +399,31 @@ describe('WatchForm', () => {
       TestBed.inject(HttpTestingController).expectNone(request('POST', '/api/Watches'));
     });
 
+    it('says when a subscription\'s channel has been deleted, and saves nothing until it\'s fixed', async () => {
+      await openExisting([{ notificationChannelId: 9, events: [WatchEvent.Crash], pushover: { priority: 0, sound: null } }]);
+
+      const row = page.querySelector('.subscription')!;
+      const select = row.querySelector<HTMLSelectElement>('select[name=channel]')!;
+      expect(textOf(select.selectedOptions[0])).toBe('Deleted channel');
+      expect(textOf(row.querySelector('.field-error'))).toBe(
+        'This channel has been deleted. Choose another, or remove this notification.',
+      );
+
+      await submitForm();
+      TestBed.inject(HttpTestingController).expectNone(request('PUT', '/api/Watches/7'));
+
+      type('.subscription select[name=channel]', '2');
+      await stable();
+      await submitForm();
+      await respond(request('PUT', '/api/Watches/7'), savedWatch);
+      const subscribe = await nextRequest(request('PUT', subscriptionsUrl));
+      expect(subscribe.request.body).toEqual([
+        { notificationChannelId: 2, events: [WatchEvent.Crash], pushover: { priority: 0, sound: null } },
+      ]);
+      subscribe.flush([]);
+      await vi.waitFor(() => expect(TestBed.inject(Router).url).toBe('/watches/7'));
+    });
+
     it('says where to set up a channel when there are none', async () => {
       await openNew([]);
 

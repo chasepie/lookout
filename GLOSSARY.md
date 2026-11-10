@@ -51,8 +51,8 @@ A watch's known failures in a row, with no success between them. Crashes neither
 A watch's crashes in a row. Any run that isn't a crash ends it.
 
 **Recovery**:
-A watch's first success after a known-failure streak that reached the watch's threshold, or after any crash streak,
-when it is not also a content change.
+A watch's first success after a known-failure streak that reached the watch's threshold while it ran, or after any crash
+streak, when it is not also a content change.
 _Avoid_: Stable again, back to normal, resolved
 
 ### Notifying

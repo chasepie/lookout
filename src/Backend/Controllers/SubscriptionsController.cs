@@ -50,6 +50,8 @@ public class SubscriptionsController(LookoutDbContext dbContext) : ControllerBas
             return BadRequest(problem);
         }
 
+        // One transaction, so a failed save, such as for a channel deleted meanwhile, keeps the subscriptions there were
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
         await dbContext.Subscriptions.Where(s => s.WatchId == watchId).ExecuteDeleteAsync(cancellationToken);
         dbContext.Subscriptions.AddRange(subscriptions.Select(dto => new Subscription
         {
@@ -65,6 +67,7 @@ public class SubscriptionsController(LookoutDbContext dbContext) : ControllerBas
                 : null,
         }));
         await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return await GetAll(watchId, cancellationToken);
     }
 
@@ -93,6 +96,12 @@ public class SubscriptionsController(LookoutDbContext dbContext) : ControllerBas
 
             foreach (var watchEvent in subscription.Events.Distinct())
             {
+                // Enums come in as numbers, which may name no event
+                if (!Enum.IsDefined(watchEvent))
+                {
+                    return $"There's no event {watchEvent}.";
+                }
+
                 if (!sent.Add((channel.Id, watchEvent)))
                 {
                     return $"{watchEvent} is sent to {channel.Name} more than once.";

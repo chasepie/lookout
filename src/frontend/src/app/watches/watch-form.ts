@@ -1,6 +1,6 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, effect, inject, input, linkedSignal, signal } from '@angular/core';
-import { FormField, form, min, required, submit } from '@angular/forms/signals';
+import { FormField, form, max, min, required, submit } from '@angular/forms/signals';
 import { Title } from '@angular/platform-browser';
 import { Router, RouterLink } from '@angular/router';
 import { NotificationsApi } from '../notifications/notifications-api';
@@ -11,7 +11,7 @@ import {
   toSubscriptionModels,
 } from '../notifications/subscriptions';
 import { SubscriptionsEditor } from '../notifications/subscriptions-editor';
-import { describeError } from '../shared/describe-error';
+import { describeError, describeSaveError } from '../shared/describe-error';
 import { lastValue } from '../shared/last-value';
 import { Notices } from '../shared/notices';
 import { ScriptPicker } from './script-picker';
@@ -33,6 +33,9 @@ interface WatchFormModel {
   screenshotOnCrash: boolean;
   knownFailureThreshold: number;
 }
+
+/** The most known failures in a row a watch can wait for, as the Backend allows. */
+const maxKnownFailureThreshold = 1000;
 
 const units = Object.entries(intervalUnits).map(([value, [, many]]) => ({ value, label: many }));
 
@@ -136,6 +139,9 @@ export class WatchForm {
     });
     required(path.knownFailureThreshold, { message: 'Enter how many known failures in a row to notify after.' });
     min(path.knownFailureThreshold, 1, { message: 'Enter 1 or more.' });
+    max(path.knownFailureThreshold, maxKnownFailureThreshold, {
+      message: `Enter ${maxKnownFailureThreshold} or fewer.`,
+    });
     required(path.cron, {
       message: 'Enter a cron expression, such as 0 9 * * 1-5.',
       when: ({ valueOf }) => valueOf(path.scheduleEnabled) && valueOf(path.scheduleType) === 'cron',
@@ -228,13 +234,4 @@ export class WatchForm {
       return undefined;
     });
   }
-}
-
-/** ASP.NET's validation problems come back as a map of field to messages; this flattens them into sentences. */
-function describeSaveError(error: unknown): string {
-  if (error instanceof HttpErrorResponse && error.error && typeof error.error === 'object' && 'errors' in error.error) {
-    const errors = (error.error as { errors: Record<string, string[]> }).errors;
-    return Object.values(errors).flat().join('\n');
-  }
-  return describeError(error);
 }

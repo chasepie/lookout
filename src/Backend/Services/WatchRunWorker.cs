@@ -138,19 +138,36 @@ public partial class WatchRunWorker(
             watchRun.Error = ex.Message;
         }
 
+        // Worked out before the run is saved as done, so the event is kept with it for later runs to go by
+        var notifications = scope.ServiceProvider.GetRequiredService<RunNotifications>();
+        RunEvent? runEvent = null;
+        try
+        {
+            runEvent = await notifications.DetectAsync(watchRun, stoppingToken);
+            watchRun.Event = runEvent?.Event;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
+        {
+            // The run is kept whatever happens to its event
+            LogNotifyFailed(ex, watchRun.Id);
+        }
+
         watchRun.Status = WatchRunStatus.Done;
         watchRun.EndTime = DateTime.UtcNow;
         await dbContext.SaveChangesAsync(CancellationToken.None);
         await notifier.RunUpdatedAsync(watchRun);
 
-        try
+        if (runEvent is not null)
         {
-            await scope.ServiceProvider.GetRequiredService<RunNotifications>().NotifyAsync(watchRun, stoppingToken);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
-        {
-            // The run is kept whatever happens to its notifications
-            LogNotifyFailed(ex, watchRun.Id);
+            try
+            {
+                await notifications.NotifyAsync(watchRun, runEvent, stoppingToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
+            {
+                // The run is kept whatever happens to its notifications
+                LogNotifyFailed(ex, watchRun.Id);
+            }
         }
 
         return true;
@@ -197,7 +214,7 @@ public partial class WatchRunWorker(
     [LoggerMessage(Level = LogLevel.Information, Message = "Starting watch run {WatchRunId} for watch {WatchId}")]
     private partial void LogRunStarted(int watchRunId, int watchId);
 
-    [LoggerMessage(Level = LogLevel.Error, Message = "Failed to send the notifications of watch run {WatchRunId}")]
+    [LoggerMessage(Level = LogLevel.Error, Message = "Failed to work out or send the notifications of watch run {WatchRunId}")]
     private partial void LogNotifyFailed(Exception exception, int watchRunId);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Failed to process pending watch runs")]

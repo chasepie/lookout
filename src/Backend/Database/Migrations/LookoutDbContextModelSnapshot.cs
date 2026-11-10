@@ -190,6 +190,9 @@ namespace ChasePie.Lookout.Backend.Database.Migrations
                     b.Property<string>("Error")
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("Event")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("FailureReason")
                         .HasColumnType("TEXT");
 

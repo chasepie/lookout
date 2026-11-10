@@ -12,7 +12,7 @@ export interface SubscriptionModel {
 }
 
 /** Each event, in the order the form lists them, with how it reads as a checkbox and in a sentence. */
-export const watchEvents: { event: WatchEvent; label: string; plural: string }[] = [
+export const watchEvents = [
   { event: WatchEvent.ContentChange, label: 'Content changes', plural: 'content changes' },
   { event: WatchEvent.KnownFailureStreak, label: 'Known-failure streaks', plural: 'known-failure streaks' },
   { event: WatchEvent.Crash, label: 'Crashes', plural: 'crashes' },
@@ -20,7 +20,7 @@ export const watchEvents: { event: WatchEvent; label: string; plural: string }[]
 ];
 
 /** Pushover's priorities, quietest first. */
-export const priorities: { value: number; label: string }[] = [
+export const priorities = [
   { value: -2, label: 'Lowest: no alert' },
   { value: -1, label: 'Low: no sound or vibration' },
   { value: 0, label: 'Normal' },
@@ -53,15 +53,21 @@ export function toSubscriptionDtos(subscriptions: SubscriptionModel[]): Subscrip
 }
 
 /**
- * What's wrong with each subscription, or `null` where nothing is: one that sends nothing, or sends an event a
- * subscription above it already sends to the same channel.
+ * What's wrong with each subscription, or `null` where nothing is: one whose channel is gone, one that sends nothing, or
+ * one that sends an event a subscription above it already sends to the same channel.
  */
+/** Said of a subscription whose channel isn't among the channels, which happens when it's deleted meanwhile. */
+export const deletedChannelProblem = 'This channel has been deleted. Choose another, or remove this notification.';
+
 export function subscriptionProblems(
   subscriptions: SubscriptionModel[],
   channels: NotificationChannelSummary[],
 ): (string | null)[] {
   const sent = new Set<string>();
   return subscriptions.map((subscription) => {
+    if (!channels.some((c) => c.id === subscription.channelId)) {
+      return deletedChannelProblem;
+    }
     if (subscription.events.length === 0) {
       return 'Choose at least one event to send.';
     }

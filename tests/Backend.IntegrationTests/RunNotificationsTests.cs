@@ -152,8 +152,46 @@ public sealed class RunNotificationsTests
 
         await pushover.WaitForRequestsAsync(2, Ct);
         Assert.AreSequenceEqual(
-            ["Known failure 2 times in a row: Blocked in this region", "Back to normal: In Stock"],
+            ["Known failure 2 times in a row: Blocked in this region", "Recovered: In Stock"],
             pushover.Requests.Select(r => r.Fields["message"]).ToArray());
+    }
+
+    [TestMethod]
+    public async Task ARunKeepsTheEventItShowedWhetherOrNotAnythingIsSubscribed()
+    {
+        var runner = new FakeRunner(Success("In Stock"));
+        var pushover = new FakePushover();
+        await using var factory = CreateFactory(runner, pushover);
+        using var client = await factory.CreateSignedInClientAsync(Ct);
+        var watchId = await client.CreateWatchAsync("Shoe stock", Ct, ("KnownFailureThreshold", "1"));
+
+        var success = await client.RunAsync(watchId, Ct);
+        runner.Response = KnownFailure("Blocked in this region");
+        var knownFailure = await client.RunAsync(watchId, Ct);
+
+        Assert.IsNull(success.Event);
+        Assert.AreEqual(WatchEvent.KnownFailureStreak, knownFailure.Event);
+    }
+
+    [TestMethod]
+    public async Task AStreakNotifiedAfterItsThresholdIsLoweredSaysHowLongItIs()
+    {
+        var runner = new FakeRunner(KnownFailure("Blocked in this region"));
+        var pushover = new FakePushover();
+        await using var factory = CreateFactory(runner, pushover);
+        using var client = await factory.CreateSignedInClientAsync(Ct);
+        var watchId = await SubscribedWatchAsync(client, WatchEvent.KnownFailureStreak, ("KnownFailureThreshold", "5"));
+        await client.RunAsync(watchId, Ct);
+        await client.RunAsync(watchId, Ct);
+        await client.RunAsync(watchId, Ct);
+
+        using var lower = await client.PutAsJsonAsync(
+            $"/api/Watches/{watchId}", new { Name = "Shoe stock", KnownFailureThreshold = 2 }, Ct);
+        Assert.AreEqual(HttpStatusCode.OK, lower.StatusCode, await lower.Content.ReadAsStringAsync(Ct));
+        await client.RunAsync(watchId, Ct);
+
+        await pushover.WaitForRequestsAsync(1, Ct);
+        Assert.AreEqual("Known failure 4 times in a row: Blocked in this region", pushover.Requests.Single().Fields["message"]);
     }
 
     [TestMethod]
@@ -177,13 +215,12 @@ public sealed class RunNotificationsTests
     [TestMethod]
     public async Task ARunCutOffByARestartIsMarkedInterrupted()
     {
+        // Disposed last, after the next Backend, so it deletes the data they share only once both are done with it
+        await using var before = new LookoutFactory(configureServices: services =>
+            services.AddHttpClient<RunnerHttpClient>().ConfigurePrimaryHttpMessageHandler(() => new HangingRunner()));
         int watchId;
         int runId;
-        string dataDirectory;
         {
-            var before = new LookoutFactory(configureServices: services =>
-                services.AddHttpClient<RunnerHttpClient>().ConfigurePrimaryHttpMessageHandler(() => new HangingRunner()));
-            dataDirectory = before.DataDirectory;
             using var client = await before.CreateSignedInClientAsync(Ct);
             watchId = await client.CreateWatchAsync("Shoe stock", Ct);
             using var response = await client.PostAsync($"/api/Watches/{watchId}/runs", null, Ct);
@@ -194,7 +231,7 @@ public sealed class RunNotificationsTests
             await ((IAsyncDisposable)before.Services).DisposeAsync();
         }
 
-        await using var after = new LookoutFactory(dataDirectory: dataDirectory);
+        await using var after = new LookoutFactory(dataDirectory: before.DataDirectory);
         using var afterClient = await after.CreateSignedInClientAsync(Ct);
         var run = await WaitForStatusAsync(afterClient, watchId, runId, WatchRunStatus.Done);
 

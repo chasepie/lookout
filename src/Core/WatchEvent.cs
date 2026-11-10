@@ -11,7 +11,8 @@ public enum WatchEvent
     ContentChange,
 
     /// <summary>
-    /// A known failure that brings the watch's known-failure streak up to the watch's threshold.
+    /// The first known failure in a known-failure streak to find the streak at or past the watch's threshold. A threshold
+    /// lowered below a streak's length is reached by the streak's next known failure.
     /// </summary>
     KnownFailureStreak,
 
@@ -21,8 +22,8 @@ public enum WatchEvent
     Crash,
 
     /// <summary>
-    /// The first success after a known-failure streak that reached the watch's threshold, or after any crash streak,
-    /// when it isn't also a <see cref="ContentChange"/>.
+    /// The first success after a known-failure streak that showed a <see cref="KnownFailureStreak"/>, or after any
+    /// crash streak, when it isn't also a <see cref="ContentChange"/>.
     /// </summary>
     Recovery,
 }

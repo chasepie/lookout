@@ -19,6 +19,8 @@ public class NotificationChannelDto : IValidatableObject
     [Required]
     public required string Name { get; set; }
 
+    // Enums come in as numbers, which may name no service
+    [EnumDataType(typeof(NotificationService))]
     public NotificationService Service { get; set; }
 
     /// <summary>

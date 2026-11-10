@@ -11,7 +11,7 @@ namespace ChasePie.Lookout.Backend.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
-public class NotificationChannelsController(LookoutDbContext dbContext, PushoverHttpClient pushover) : ControllerBase
+public class NotificationChannelsController(LookoutDbContext dbContext, NotificationSender sender) : ControllerBase
 {
     private static readonly Notification TestNotification = new(
         Title: "Lookout", Message: "This is a test notification from Lookout.");
@@ -116,7 +116,7 @@ public class NotificationChannelsController(LookoutDbContext dbContext, Pushover
 
         try
         {
-            await pushover.SendAsync(
+            await sender.SendNowAsync(
                 PushoverDestination.For(settings, priority: 0, sound: null), TestNotification, cancellationToken);
         }
         catch (NotificationDeliveryException ex)

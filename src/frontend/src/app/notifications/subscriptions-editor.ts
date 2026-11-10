@@ -3,6 +3,7 @@ import { RouterLink } from '@angular/router';
 import { NotificationChannelSummary, WatchEvent } from './notification.model';
 import {
   SubscriptionModel,
+  deletedChannelProblem,
   newSubscription,
   priorities,
   subscriptionProblems,
@@ -24,6 +25,7 @@ export class SubscriptionsEditor {
 
   protected readonly watchEvents = watchEvents;
   protected readonly priorities = priorities;
+  protected readonly deletedChannelProblem = deletedChannelProblem;
   protected readonly problems = computed(() => subscriptionProblems(this.subscriptions(), this.channels()));
 
   protected add() {
