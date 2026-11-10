@@ -66,7 +66,9 @@ public class NotificationChannelsController(LookoutDbContext dbContext, Notifica
             return NotFound();
         }
 
-        if (dto.Service != channel.Service || channel.Pushover is not { } settings || dto.Pushover is not { } pushoverDto)
+        if (dto.Service != channel.Service
+            || channel.Pushover is not { } settings
+            || dto.Pushover is not { } pushoverDto)
         {
             return BadRequest("A channel's service can't be changed.");
         }
@@ -95,7 +97,9 @@ public class NotificationChannelsController(LookoutDbContext dbContext, Notifica
     public async Task<IActionResult> Delete(int id, CancellationToken cancellationToken)
     {
         // The database deletes the channel's subscriptions with it
-        var deleted = await dbContext.NotificationChannels.Where(c => c.Id == id).ExecuteDeleteAsync(cancellationToken);
+        var deleted = await dbContext.NotificationChannels
+            .Where(c => c.Id == id)
+            .ExecuteDeleteAsync(cancellationToken);
         return deleted == 0 ? NotFound() : NoContent();
     }
 
@@ -117,7 +121,9 @@ public class NotificationChannelsController(LookoutDbContext dbContext, Notifica
         try
         {
             await sender.SendNowAsync(
-                PushoverDestination.For(settings, priority: 0, sound: null), TestNotification, cancellationToken);
+                destination: PushoverDestination.For(settings, priority: 0, sound: null),
+                notification: TestNotification,
+                cancellationToken);
         }
         catch (NotificationDeliveryException ex)
         {

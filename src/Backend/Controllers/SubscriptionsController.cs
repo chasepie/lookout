@@ -40,7 +40,10 @@ public class SubscriptionsController(LookoutDbContext dbContext) : ControllerBas
             return NotFound();
         }
 
-        var channelIds = subscriptions.Select(s => s.NotificationChannelId).Distinct().ToList();
+        var channelIds = subscriptions
+            .Select(s => s.NotificationChannelId)
+            .Distinct()
+            .ToList();
         var channels = await dbContext.NotificationChannels
             .AsNoTracking()
             .Where(c => channelIds.Contains(c.Id))
@@ -52,7 +55,10 @@ public class SubscriptionsController(LookoutDbContext dbContext) : ControllerBas
 
         // One transaction, so a failed save, such as for a channel deleted meanwhile, keeps the subscriptions there were
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
-        await dbContext.Subscriptions.Where(s => s.WatchId == watchId).ExecuteDeleteAsync(cancellationToken);
+        await dbContext.Subscriptions
+            .Where(s => s.WatchId == watchId)
+            .ExecuteDeleteAsync(cancellationToken);
+
         dbContext.Subscriptions.AddRange(subscriptions.Select(dto => new Subscription
         {
             WatchId = watchId,
@@ -62,7 +68,9 @@ public class SubscriptionsController(LookoutDbContext dbContext) : ControllerBas
                 ? new PushoverSubscriptionOptions
                 {
                     Priority = pushover.Priority,
-                    Sound = string.IsNullOrWhiteSpace(pushover.Sound) ? null : pushover.Sound.Trim(),
+                    Sound = string.IsNullOrWhiteSpace(pushover.Sound)
+                        ? null
+                        : pushover.Sound.Trim(),
                 }
                 : null,
         }));

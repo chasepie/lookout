@@ -6,14 +6,19 @@ namespace ChasePie.Lookout.Backend.Notifications;
 /// A notification on its way to one notification channel.
 /// </summary>
 /// <param name="ChannelName">The notification channel's name, for the logs.</param>
-public sealed record NotificationDelivery(string ChannelName, PushoverDestination Destination, Notification Notification);
+public sealed record NotificationDelivery(
+    string ChannelName,
+    PushoverDestination Destination,
+    Notification Notification);
 
 /// <summary>
 /// Sends notifications in the background, so a run doesn't wait on a notification channel's service, and tries again
 /// when the service might take one later. Notifications still waiting are lost if the Backend stops.
 /// </summary>
 public sealed partial class NotificationSender(
-    IServiceProvider services, TimeProvider timeProvider, ILogger<NotificationSender> logger) : BackgroundService
+    IServiceProvider services,
+    TimeProvider timeProvider,
+    ILogger<NotificationSender> logger) : BackgroundService
 {
     /// <summary>
     /// How long to wait before each attempt after the first, so a notification gets three over about five minutes.
@@ -37,7 +42,9 @@ public sealed partial class NotificationSender(
     /// </summary>
     /// <exception cref="NotificationDeliveryException">The channel's service didn't take it.</exception>
     public async Task SendNowAsync(
-        PushoverDestination destination, Notification notification, CancellationToken cancellationToken)
+        PushoverDestination destination,
+        Notification notification,
+        CancellationToken cancellationToken)
     {
         await _sending.WaitAsync(cancellationToken);
         try

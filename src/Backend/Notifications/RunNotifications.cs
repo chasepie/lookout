@@ -24,7 +24,9 @@ public sealed class RunNotifications(LookoutDbContext dbContext, NotificationSen
     {
         var earlierRunsQuery = dbContext.WatchRuns
             .AsNoTracking()
-            .Where(r => r.WatchId == run.WatchId && r.Id < run.Id && r.Status == WatchRunStatus.Done);
+            .Where(r => r.WatchId == run.WatchId
+                && r.Id < run.Id
+                && r.Status == WatchRunStatus.Done);
 
         // Only the runs since the watch's previous success, and that success, bear on the run's event, so the rest of its
         // history isn't read on every run
@@ -83,12 +85,13 @@ public sealed class RunNotifications(LookoutDbContext dbContext, NotificationSen
             Screenshot: screenshot);
         foreach (var subscription in subscriptions)
         {
-            if (subscription.NotificationChannel.Pushover is { } channel && subscription.Pushover is { } options)
+            if (subscription.NotificationChannel.Pushover is { } channel
+                && subscription.Pushover is { } options)
             {
                 sender.Enqueue(new NotificationDelivery(
-                    subscription.NotificationChannel.Name,
-                    PushoverDestination.For(channel, options.Priority, options.Sound),
-                    notification));
+                    ChannelName: subscription.NotificationChannel.Name,
+                    Destination: PushoverDestination.For(channel, options.Priority, options.Sound),
+                    Notification: notification));
             }
         }
     }

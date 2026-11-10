@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 
 namespace ChasePie.Lookout.Core;
 
@@ -79,7 +80,7 @@ public class NotificationChannel
 
     public PushoverChannelSettings? Pushover { get; set; }
 
-    [System.Text.Json.Serialization.JsonIgnore]
+    [JsonIgnore]
     public ICollection<Subscription> Subscriptions { get; set; } = [];
 }
 
