@@ -119,6 +119,12 @@ public static class EnvVars
     public const string LookoutTrustedProxies = "LOOKOUT_TRUSTED_PROXIES";
 
     /// <summary>
+    /// Where the Owner opens Lookout, such as <c>https://lookout.example.com</c>, which the Backend links notifications to
+    /// their runs with. Without it, notifications have no link.
+    /// </summary>
+    public const string LookoutPublicUrl = "LOOKOUT_PUBLIC_URL";
+
+    /// <summary>
     /// Reads a base URL from configuration, adding a trailing slash so relative request URIs append to its path.
     /// </summary>
     /// <returns>The URL, or <see langword="null"/> if the variable is not set.</returns>

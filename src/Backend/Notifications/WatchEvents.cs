@@ -1,0 +1,89 @@
+using System.Linq.Expressions;
+using ChasePie.Lookout.Core;
+
+namespace ChasePie.Lookout.Backend.Notifications;
+
+/// <summary>
+/// Works out which <see cref="WatchEvent"/> a finished run shows, from the watch's earlier runs as they stand.
+/// </summary>
+public static class WatchEvents
+{
+    /// <summary>
+    /// Whether a run is a success, in a form a database query can ask too.
+    /// </summary>
+    public static readonly Expression<Func<WatchRun, bool>> IsSuccessQuery = r => r.Error == null && r.Content != null;
+
+    private static readonly Func<WatchRun, bool> IsSuccessCompiled = IsSuccessQuery.Compile();
+
+    /// <param name="run">The run that just finished.</param>
+    /// <param name="earlierRunsNewestFirst">
+    /// The watch's runs before <paramref name="run"/>, newest first, with the events they showed; those before its previous
+    /// success may be left out.
+    /// </param>
+    /// <param name="knownFailureThreshold">How many known failures in a row make a known-failure streak worth notifying.</param>
+    /// <returns>The event, or <see langword="null"/> if the run shows none.</returns>
+    public static WatchEvent? Detect(
+        WatchRun run, IReadOnlyList<WatchRun> earlierRunsNewestFirst, int knownFailureThreshold)
+    {
+        if (run.Interrupted)
+        {
+            return null;
+        }
+
+        // Interrupted runs show nothing about the watch, so they neither start nor end a streak
+        earlierRunsNewestFirst = [.. earlierRunsNewestFirst.Where(r => !r.Interrupted)];
+
+        if (IsKnownFailure(run))
+        {
+            // At or past the threshold rather than at it, so a threshold lowered below a streak still notifies, once
+            var notified = EarlierInStreak(earlierRunsNewestFirst).Any(r => r.Event == WatchEvent.KnownFailureStreak);
+            return KnownFailureStreakLength(earlierRunsNewestFirst) >= knownFailureThreshold && !notified
+                ? WatchEvent.KnownFailureStreak
+                : null;
+        }
+
+        if (IsCrash(run))
+        {
+            return earlierRunsNewestFirst is [var previous, ..] && IsCrash(previous) ? null : WatchEvent.Crash;
+        }
+
+        if (!IsSuccess(run))
+        {
+            return null;
+        }
+
+        var previousSuccess = earlierRunsNewestFirst.FirstOrDefault(IsSuccess);
+        if (previousSuccess is not null && previousSuccess.Content != run.Content)
+        {
+            return WatchEvent.ContentChange;
+        }
+
+        // From a crash streak, or a known-failure streak that was notified, whatever the threshold is now
+        var sincePreviousSuccess = earlierRunsNewestFirst.TakeWhile(r => !IsSuccess(r)).ToList();
+        var recovered = sincePreviousSuccess.Any(IsCrash)
+            || sincePreviousSuccess.Any(r => r.Event == WatchEvent.KnownFailureStreak);
+        return recovered ? WatchEvent.Recovery : null;
+    }
+
+    /// <summary>
+    /// How many known failures in a row a known failure ends, counting itself.
+    /// </summary>
+    /// <param name="earlierRunsNewestFirst">The watch's runs before the known failure, newest first.</param>
+    public static int KnownFailureStreakLength(IReadOnlyList<WatchRun> earlierRunsNewestFirst) =>
+        1 + EarlierInStreak(earlierRunsNewestFirst).Count();
+
+    /// <summary>
+    /// The known failures in a row before a known failure. Crashes neither add to the streak nor end it, and interrupted
+    /// runs say nothing about it.
+    /// </summary>
+    private static IEnumerable<WatchRun> EarlierInStreak(IReadOnlyList<WatchRun> earlierRunsNewestFirst) =>
+        earlierRunsNewestFirst
+            .Where(r => !r.Interrupted && !IsCrash(r))
+            .TakeWhile(IsKnownFailure);
+
+    private static bool IsCrash(WatchRun run) => run.Error is not null;
+
+    private static bool IsKnownFailure(WatchRun run) => !IsCrash(run) && run.FailureReason is not null;
+
+    public static bool IsSuccess(WatchRun run) => IsSuccessCompiled(run);
+}

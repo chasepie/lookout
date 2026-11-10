@@ -131,6 +131,8 @@ public partial class Program
                     service.Environment[EnvVars.GluetunUrl] = $"http://{GluetunControlRelay}:8000";
                     service.Environment[EnvVars.LookoutOwnerPassword] = settings.Placeholder(settings.OwnerPassword, resource);
                     service.Environment[EnvVars.LookoutOwnerUsername] = settings.Placeholder(settings.OwnerUsername, resource);
+                    // Served over HTTPS on the host it's allowed, so notifications link to their runs there
+                    service.Environment[EnvVars.LookoutPublicUrl] = $"https://{settings.Placeholder(settings.Host, resource)}";
                     service.Environment[EnvVars.LookoutRunnerApiKey] = settings.Placeholder(settings.RunnerApiKey, resource);
                     service.Environment[EnvVars.LookoutRunnerUrl] = $"http://{RunnerService}:8080";
                     service.Environment[EnvVars.LookoutTrustedProxies] = settings.Placeholder(settings.TrustedProxies, resource);

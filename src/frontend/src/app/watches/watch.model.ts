@@ -27,6 +27,8 @@ export interface CreateWatchDto {
   screenshotOnKnownFailure: boolean;
   /** Whether a run whose script throws gets a full-page screenshot. */
   screenshotOnCrash: boolean;
+  /** How many known failures in a row make a known-failure streak worth a notification. */
+  knownFailureThreshold: number;
 }
 
 /** A watch as creating or editing one returns it. Mirrors `Watch` in src/Core/Watch.cs. */

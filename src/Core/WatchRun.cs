@@ -39,6 +39,18 @@ public class WatchRun
     /// were kept apart have their reasons here too.
     /// </summary>
     public string? Error { get; set; }
+
+    /// <summary>
+    /// Whether the run crashed because the Backend stopped while it ran, rather than because of its script.
+    /// Such runs show no events, and are skipped when working out the events of later ones.
+    /// </summary>
+    public bool Interrupted { get; set; }
+
+    /// <summary>
+    /// The event the run showed, worked out when it finished from the watch's earlier runs and the threshold it had
+    /// then. Kept so a later run can tell whether a known-failure streak has already been notified.
+    /// </summary>
+    public WatchEvent? Event { get; set; }
     public byte[]? Screenshot { get; set; }
 
     /// <summary>

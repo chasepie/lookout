@@ -181,6 +181,50 @@
       </label>
     </fieldset>
 
+    <fieldset class="group notifications">
+      <legend>Notifications</legend>
+      <div class="field">
+        <span class="threshold">
+          <label for="known-failure-threshold">A known-failure streak is</label>
+          <input
+            id="known-failure-threshold"
+            class="input input-narrow"
+            type="number"
+            step="1"
+            aria-describedby="known-failure-threshold-error"
+            [formField]="watchForm.knownFailureThreshold"
+            [attr.aria-invalid]="watchForm.knownFailureThreshold().invalid()"
+          />
+          <span>known failures in a row</span>
+        </span>
+        <span id="known-failure-threshold-error" class="field-error">
+          @if (watchForm.knownFailureThreshold().invalid()) {
+            {{ watchForm.knownFailureThreshold().errors()[0].message }}
+          }
+        </span>
+      </div>
+
+      @if (savedSubscriptions.error(); as error) {
+        <div class="callout callout-failure callout-retry" role="alert">
+          <p>Couldn't load the watch's notifications, so they can't be changed: {{ describeError(error) }}</p>
+          <button type="button" class="button" (click)="savedSubscriptions.reload()">Try again</button>
+        </div>
+      } @else if (shownChannels(); as channels) {
+        <app-subscriptions-editor
+          [channels]="channels"
+          [showProblems]="showSubscriptionProblems()"
+          [(subscriptions)]="subscriptions"
+        />
+      } @else if (channels.error(); as error) {
+        <div class="callout callout-failure callout-retry" role="alert">
+          <p>Couldn't load the notification channels: {{ describeError(error) }}</p>
+          <button type="button" class="button" (click)="channels.reload()">Try again</button>
+        </div>
+      } @else {
+        <p class="muted" role="status">Loading the notification channels…</p>
+      }
+    </fieldset>
+
     @if (error(); as error) {
       <div class="callout callout-failure" role="alert">
         <p class="preformatted-lines">Couldn't save: {{ error }}</p>

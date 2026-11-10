@@ -1,6 +1,7 @@
 using System.Threading.RateLimiting;
 using ChasePie.Lookout.Backend.Database;
 using ChasePie.Lookout.Backend.Hubs;
+using ChasePie.Lookout.Backend.Notifications;
 using ChasePie.Lookout.Backend.VpnServices;
 using ChasePie.Lookout.Core;
 using Microsoft.EntityFrameworkCore;
@@ -70,7 +71,8 @@ public partial class WatchRunWorker(
                 setters => setters
                     .SetProperty(wr => wr.Status, WatchRunStatus.Done)
                     .SetProperty(wr => wr.EndTime, now)
-                    .SetProperty(wr => wr.Error, "Interrupted because the Backend restarted."),
+                    .SetProperty(wr => wr.Error, "Interrupted because the Backend restarted.")
+                    .SetProperty(wr => wr.Interrupted, true),
                 cancellationToken);
     }
 
@@ -136,10 +138,38 @@ public partial class WatchRunWorker(
             watchRun.Error = ex.Message;
         }
 
+        // Worked out before the run is saved as done, so the event is kept with it for later runs to go by
+        var notifications = scope.ServiceProvider.GetRequiredService<RunNotifications>();
+        RunEvent? runEvent = null;
+        try
+        {
+            runEvent = await notifications.DetectAsync(watchRun, stoppingToken);
+            watchRun.Event = runEvent?.Event;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
+        {
+            // The run is kept whatever happens to its event
+            LogNotifyFailed(ex, watchRun.Id);
+        }
+
         watchRun.Status = WatchRunStatus.Done;
         watchRun.EndTime = DateTime.UtcNow;
         await dbContext.SaveChangesAsync(CancellationToken.None);
         await notifier.RunUpdatedAsync(watchRun);
+
+        if (runEvent is not null)
+        {
+            try
+            {
+                await notifications.NotifyAsync(watchRun, runEvent, stoppingToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
+            {
+                // The run is kept whatever happens to its notifications
+                LogNotifyFailed(ex, watchRun.Id);
+            }
+        }
+
         return true;
     }
 
@@ -183,6 +213,9 @@ public partial class WatchRunWorker(
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Starting watch run {WatchRunId} for watch {WatchId}")]
     private partial void LogRunStarted(int watchRunId, int watchId);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Failed to work out or send the notifications of watch run {WatchRunId}")]
+    private partial void LogNotifyFailed(Exception exception, int watchRunId);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Failed to process pending watch runs")]
     private partial void LogPollFailed(Exception exception);

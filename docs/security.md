@@ -63,6 +63,11 @@ in the UI are added later, ASP.NET Core Identity and its tables become worth ado
   `SignInRequest` and its fields are nullable instead of required.
 - Sign-ins are logged with the client IP. The attempted username isn't logged, in case a password was typed into it.
 
+**Notification channels' credentials**, such as a Pushover application token and user key, are the one kind of secret
+kept in the database rather than in `.env`, since the Owner sets channels up in the UI
+([ADR 0005](adr/0005-notification-channel-credentials-in-database.md)). The API takes them but never returns them: an
+edit that leaves them blank keeps the saved ones. Backups of the database need the same care as `.env`.
+
 ## Session
 
 Signing in sets a cookie session. A cookie, rather than a bearer token held by the frontend, keeps the credential out of
@@ -277,7 +282,7 @@ out through gluetun, just as it can through Chromium.
 
 The Backend's port is published on `127.0.0.1` unless `LOOKOUT_BIND_ADDRESS` says otherwise, for a reverse proxy that
 terminates TLS. Docker only publishes ports from containers on a network that leads out, so the Backend can reach the
-internet, though it has no reason to. The `edge` network has a fixed subnet (`LOOKOUT_EDGE_SUBNET`), so its gateway,
+internet, which it needs to send notifications to services such as Pushover. The `edge` network has a fixed subnet (`LOOKOUT_EDGE_SUBNET`), so its gateway,
 which connections to the published port come from and which a reverse proxy on the same machine is trusted as, stays the
 same when the network is re-created. That trusts every process on the host that connects to the port, not just the
 proxy; a proxy on another machine is trusted by its own address instead. The Compose project is named `lookout`, so the

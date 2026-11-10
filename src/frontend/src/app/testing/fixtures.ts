@@ -43,6 +43,7 @@ export function watchSummary(overrides: Partial<WatchSummary> = {}): WatchSummar
     screenshotOnSuccess: false,
     screenshotOnKnownFailure: false,
     screenshotOnCrash: false,
+    knownFailureThreshold: 3,
     scriptFileName: 'bot-detection.ts',
     recentRuns: [runSummary(2, { content: 'Normal' }), runSummary(1, { content: 'Normal' })],
     nextRunTime: null,

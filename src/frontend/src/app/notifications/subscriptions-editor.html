@@ -1,0 +1,90 @@
+@if (channels().length === 0) {
+  <p class="muted">
+    No notification channels yet. <a routerLink="/notifications">Set one up</a> to send this watch's events there.
+  </p>
+} @else {
+  @for (subscription of subscriptions(); track subscription.key; let i = $index) {
+    <fieldset class="subscription" [attr.aria-describedby]="'subscription-' + subscription.key + '-error'">
+      <legend class="visually-hidden">Notification {{ i + 1 }}</legend>
+      <div class="field">
+        <label class="field-label" [for]="'subscription-' + subscription.key + '-channel'">Send to</label>
+        <select
+          class="select"
+          name="channel"
+          [id]="'subscription-' + subscription.key + '-channel'"
+          (change)="setChannel(subscription.key, $event)"
+        >
+          @if (problems()[i] === deletedChannelProblem) {
+            <option value="" disabled selected>Deleted channel</option>
+          }
+          @for (channel of channels(); track channel.id) {
+            <option [value]="channel.id" [selected]="channel.id === subscription.channelId">{{ channel.name }}</option>
+          }
+        </select>
+      </div>
+
+      <fieldset class="events">
+        <legend class="field-label">When there are</legend>
+        @for (option of watchEvents; track option.event) {
+          <label class="check">
+            <input
+              type="checkbox"
+              [checked]="subscription.events.includes(option.event)"
+              (change)="toggle(subscription.key, option.event, $event)"
+            />
+            <span>{{ option.label }}</span>
+          </label>
+        }
+      </fieldset>
+
+      <div class="how">
+        <div class="field">
+          <label class="field-label" [for]="'subscription-' + subscription.key + '-priority'">Priority</label>
+          <select
+            class="select"
+            name="priority"
+            [id]="'subscription-' + subscription.key + '-priority'"
+            (change)="setPriority(subscription.key, $event)"
+          >
+            @for (priority of priorities; track priority.value) {
+              <option [value]="priority.value" [selected]="priority.value === subscription.priority">
+                {{ priority.label }}
+              </option>
+            }
+          </select>
+        </div>
+        <div class="field">
+          <label class="field-label" [for]="'subscription-' + subscription.key + '-sound'">Sound</label>
+          <input
+            class="input"
+            name="sound"
+            autocomplete="off"
+            spellcheck="false"
+            [id]="'subscription-' + subscription.key + '-sound'"
+            [attr.aria-describedby]="'subscription-' + subscription.key + '-sound-hint'"
+            [value]="subscription.sound"
+            (input)="setSound(subscription.key, $event)"
+          />
+          <span class="field-hint" [id]="'subscription-' + subscription.key + '-sound-hint'">
+            A Pushover sound's name, such as <code>cashregister</code>. Blank for your default.
+          </span>
+        </div>
+      </div>
+
+      <span class="field-error" [id]="'subscription-' + subscription.key + '-error'">
+        <!-- A deleted channel is said at once, since it isn't something the Owner did here -->
+        @if ((showProblems() || problems()[i] === deletedChannelProblem) && problems()[i]; as problem) {
+          {{ problem }}
+        }
+      </span>
+      <div>
+        <button type="button" class="button button-quiet remove" (click)="remove(subscription.key)">
+          Remove<span class="visually-hidden"> notification {{ i + 1 }}</span>
+        </button>
+      </div>
+    </fieldset>
+  }
+  <div>
+    <button type="button" class="button" (click)="add()">Add a notification</button>
+  </div>
+}

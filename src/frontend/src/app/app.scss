@@ -161,3 +161,17 @@ main {
     @include a11y.visually-hidden;
   }
 }
+
+// On small phones the nav takes a row of its own under the wordmark, since the sections don't fit beside it
+@include bp.small-phone {
+  .bar-inner {
+    flex-wrap: wrap;
+    row-gap: 0;
+  }
+
+  .nav {
+    order: 1;
+    flex-basis: 100%;
+    min-height: 2.75rem;
+  }
+}
