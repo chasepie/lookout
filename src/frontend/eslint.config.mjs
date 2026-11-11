@@ -1,11 +1,13 @@
 // @ts-check
 
 import eslint from '@eslint/js';
-import { defineConfig } from 'eslint/config';
+import { defineConfig, globalIgnores } from 'eslint/config';
 import tseslint from 'typescript-eslint';
 import angular from 'angular-eslint';
 
 export default defineConfig([
+  // This config replaces the root one for everything in src/frontend, so it needs its own ignores
+  globalIgnores(['.angular/', 'coverage/']),
   {
     files: ["**/*.ts"],
     extends: [

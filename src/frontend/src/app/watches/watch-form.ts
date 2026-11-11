@@ -148,10 +148,10 @@ export class WatchForm {
     });
   });
 
-  /** The cron expression in plain words as the Owner types it, or null until there's one to read. */
+  /** The cron expression in plain words as the Owner types it: empty while it's blank, null if it can't be read. */
   protected readonly cronDescription = computed(() => {
     const cron = this.watchForm.cron().value();
-    return cron.trim() ? describeCron(cron) : null;
+    return cron.trim() ? describeCron(cron) : '';
   });
 
   protected readonly channels = this.notifications.channelsResource();

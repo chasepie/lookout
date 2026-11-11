@@ -117,11 +117,12 @@
                 [attr.aria-invalid]="watchForm.cron().touched() && watchForm.cron().invalid()"
                 aria-describedby="cron-description cron-hint cron-error"
               />
-              <span id="cron-description" class="cron-description">
-                @if (cronDescription(); as description) {
-                  {{ description }}
-                } @else if (watchForm.cron().value().trim()) {
+              <span id="cron-description" class="cron-description" role="status">
+                @let description = cronDescription();
+                @if (description === null) {
                   <span class="muted">Can't read this as a cron expression yet.</span>
+                } @else if (description) {
+                  {{ description }}
                 }
               </span>
               <span id="cron-hint" class="field-hint">

@@ -83,6 +83,7 @@ describe('describeCron', () => {
     ['0 9 * * 1-5', false, 'At 09:00 AM, Monday through Friday'],
     ['0 9 * * 1-5', true, 'At 09:00, Monday through Friday'],
     ['  */15 9-16 * * *  ', true, 'Every 15 minutes, between 09:00 and 16:59'],
+    ['0\t9\t*\t*\t1-5', true, 'At 09:00, Monday through Friday'],
   ])('describes %s (24-hour: %s) as %s', (expression, use24Hour, expected) => {
     expect(describeCron(expression, use24Hour)).toBe(expected);
   });

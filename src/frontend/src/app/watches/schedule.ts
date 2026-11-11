@@ -21,12 +21,13 @@ const uses24HourTime = ['h23', 'h24'].includes(
  * five-field expressions count, as the Backend accepts no others.
  */
 export function describeCron(expression: string, use24HourTimeFormat = uses24HourTime): string | null {
-  const trimmed = expression.trim();
-  if (trimmed.split(/\s+/).length !== 5) {
+  const fields = expression.trim().split(/\s+/);
+  if (fields.length !== 5) {
     return null;
   }
   try {
-    return cronstrue.toString(trimmed, { use24HourTimeFormat });
+    // cronstrue splits fields only on spaces, but the Backend also accepts tabs between them
+    return cronstrue.toString(fields.join(' '), { use24HourTimeFormat });
   } catch {
     return null;
   }
