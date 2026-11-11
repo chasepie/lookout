@@ -24,9 +24,6 @@
           "builder": "@angular/build:application",
           "options": {
             "browser": "src/main.ts",
-            "allowedCommonJsDependencies": [
-              "cronstrue"
-            ],
             "outputPath": {
               "base": "../Backend/wwwroot",
               "browser": ""

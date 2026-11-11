@@ -1,4 +1,4 @@
-import { describeCron, describeSchedule } from './schedule';
+import { describeSchedule } from './schedule';
 import { outcomeOf, repeats, sameAsAbove, timingsOf } from './runs';
 import { WatchRunStatus, WatchScheduleKind } from './watch.model';
 
@@ -70,25 +70,9 @@ describe('describeSchedule', () => {
     [schedule(WatchScheduleKind.Minutely, '15'), 'Every 15 minutes'],
     [schedule(WatchScheduleKind.Hourly, '1'), 'Every hour'],
     [schedule(WatchScheduleKind.Weekly, '2'), 'Every 2 weeks'],
-    [schedule(WatchScheduleKind.Cron, '*/5 * * * *'), 'Every 5 minutes'],
-    [schedule(WatchScheduleKind.Cron, '60 * * * *'), 'Cron 60 * * * *'],
+    [schedule(WatchScheduleKind.Cron, '0 9 * * 1-5'), 'Cron 0 9 * * 1-5'],
     [{ ...schedule(WatchScheduleKind.Daily, '1'), scheduleEnabled: false }, 'Not scheduled'],
   ])('describes %o as %s', (watch, expected) => {
     expect(describeSchedule(watch)).toBe(expected);
-  });
-});
-
-describe('describeCron', () => {
-  it.each([
-    ['0 9 * * 1-5', false, 'At 09:00 AM, Monday through Friday'],
-    ['0 9 * * 1-5', true, 'At 09:00, Monday through Friday'],
-    ['  */15 9-16 * * *  ', true, 'Every 15 minutes, between 09:00 and 16:59'],
-    ['0\t9\t*\t*\t1-5', true, 'At 09:00, Monday through Friday'],
-  ])('describes %s (24-hour: %s) as %s', (expression, use24Hour, expected) => {
-    expect(describeCron(expression, use24Hour)).toBe(expected);
-  });
-
-  it.each(['', '0 9 * *', '0 0 9 * * 1-5', '60 * * * *', 'not a cron expression'])("can't read %o", (expression) => {
-    expect(describeCron(expression)).toBeNull();
   });
 });

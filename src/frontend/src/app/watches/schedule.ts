@@ -1,4 +1,3 @@
-import cronstrue from 'cronstrue';
 import { CreateWatchDto, WatchScheduleKind } from './watch.model';
 
 type Schedule = Pick<CreateWatchDto, 'scheduleEnabled' | 'scheduleKind' | 'scheduleInterval'>;
@@ -11,38 +10,16 @@ export const intervalUnits: Record<Exclude<WatchScheduleKind, WatchScheduleKind.
   [WatchScheduleKind.Weekly]: ['week', 'weeks'],
 };
 
-/** Whether the Owner's locale writes times on a 24-hour clock. */
-const uses24HourTime = ['h23', 'h24'].includes(
-  new Intl.DateTimeFormat(undefined, { hour: 'numeric' }).resolvedOptions().hourCycle ?? '',
-);
-
 /**
- * A cron expression in plain words, such as "At 09:00 AM, Monday through Friday", or null if it can't be read. Only
- * five-field expressions count, as the Backend accepts no others.
- */
-export function describeCron(expression: string, use24HourTimeFormat = uses24HourTime): string | null {
-  const fields = expression.trim().split(/\s+/);
-  if (fields.length !== 5) {
-    return null;
-  }
-  try {
-    // cronstrue splits fields only on spaces, but the Backend also accepts tabs between them
-    return cronstrue.toString(fields.join(' '), { use24HourTimeFormat });
-  } catch {
-    return null;
-  }
-}
-
-/**
- * A watch's schedule in plain words: "Every 15 minutes", "Every day", "At 09:00 AM, Monday through Friday", "Not
- * scheduled". A cron expression that can't be put into words is shown as it is: "Cron 0 9 * * 1-5".
+ * A watch's schedule in plain words: "Every 15 minutes", "Every day", "Cron 0 9 * * 1-5", "Not scheduled". A cron
+ * expression is shown as it is, not put into words: only the Backend reads it the way the scheduler does (see ADR 0006).
  */
 export function describeSchedule(watch: Schedule): string {
   if (!watch.scheduleEnabled || watch.scheduleKind === null || !watch.scheduleInterval) {
     return 'Not scheduled';
   }
   if (watch.scheduleKind === WatchScheduleKind.Cron) {
-    return describeCron(watch.scheduleInterval) ?? `Cron ${watch.scheduleInterval}`;
+    return `Cron ${watch.scheduleInterval}`;
   }
   const count = Number(watch.scheduleInterval);
   const [one, many] = intervalUnits[watch.scheduleKind];

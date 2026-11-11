@@ -72,6 +72,16 @@ export interface WatchSummary extends CreateWatchDto {
   nextRunTime: string | null;
 }
 
+/** When a cron expression would run a watch. Mirrors `CronPreview` in src/Backend/Controllers/CronController.cs. */
+export interface CronPreview {
+  /** Whether a watch can be saved with the expression. */
+  isValid: boolean;
+  /** The next few runs, in UTC; none if the expression is invalid or never runs again. */
+  nextRuns: string[];
+  /** The time zone the expression's times are in: the server's, such as "Etc/UTC". */
+  timeZone: string;
+}
+
 /** The result of deleting all of a watch's runs. Mirrors `DeleteRunsResult` in src/Backend/Controllers/WatchRunsController.cs. */
 export interface DeleteRunsResult {
   deleted: number;

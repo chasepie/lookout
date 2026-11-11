@@ -2,7 +2,6 @@ using System.ComponentModel.DataAnnotations;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text.Json.Serialization;
-using Cronos;
 
 namespace ChasePie.Lookout.Core;
 
@@ -93,7 +92,7 @@ public class CreateWatchDto : IValidatableObject
                 }
                 break;
             case WatchScheduleKind.Cron:
-                if (!CronExpression.TryParse(ScheduleInterval, CronFormat.Standard, out _))
+                if (!CronSchedules.TryParse(ScheduleInterval, out _))
                 {
                     yield return new ValidationResult(
                         $"{nameof(ScheduleInterval)} must be a valid cron expression for {ScheduleKind} schedule.",
@@ -192,7 +191,7 @@ public class Watch : CreateWatchDto
         var lastRunUtc = DateTime.SpecifyKind(lastRunTime, DateTimeKind.Utc);
         if (ScheduleKind == WatchScheduleKind.Cron)
         {
-            return CronExpression.TryParse(ScheduleInterval, CronFormat.Standard, out var cron)
+            return CronSchedules.TryParse(ScheduleInterval, out var cron)
                 ? cron.GetNextOccurrence(lastRunUtc, timeZone)
                 : null;
         }

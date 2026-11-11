@@ -115,18 +115,32 @@
                 placeholder="0 9 * * 1-5"
                 [formField]="watchForm.cron"
                 [attr.aria-invalid]="watchForm.cron().touched() && watchForm.cron().invalid()"
-                aria-describedby="cron-description cron-hint cron-error"
+                aria-describedby="cron-preview cron-hint cron-error"
               />
-              <span id="cron-description" class="cron-description" role="status">
-                @let description = cronDescription();
-                @if (description === null) {
-                  <span class="muted">Can't read this as a cron expression yet.</span>
-                } @else if (description) {
-                  {{ description }}
+              <div id="cron-preview" class="cron-preview" role="status">
+                @if (cronPreview(); as preview) {
+                  @if (!preview.isValid) {
+                    <span class="muted">Can't read this as a cron expression yet.</span>
+                  } @else if (preview.nextRuns.length === 0) {
+                    <span>This expression never runs.</span>
+                  } @else {
+                    <span>Next runs, in your time:</span>
+                    <ul class="next-runs">
+                      @for (run of preview.nextRuns; track run) {
+                        <li>
+                          <time [attr.datetime]="run" [title]="fullTime(run)">{{ briefTime(run) }}</time>
+                        </li>
+                      }
+                    </ul>
+                  }
+                } @else if (cronCheckError(); as error) {
+                  <span class="muted">Couldn't check the expression: {{ describeError(error) }}</span>
                 }
-              </span>
+              </div>
               <span id="cron-hint" class="field-hint">
-                Five fields: minute, hour, day of month, month, day of week. Times are in the server's time zone.
+                Five fields: minute, hour, day of month, month, day of week. Times are in the server's time zone{{
+                  cronPreview()?.timeZone ? ' (' + cronPreview()?.timeZone + ')' : ''
+                }}.
               </span>
               <span id="cron-error" class="field-error">
                 @if (watchForm.cron().touched() && watchForm.cron().invalid()) {

@@ -1,7 +1,7 @@
 import { HttpClient, httpResource } from '@angular/common/http';
 import { Service, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
-import { CreateWatchDto, DeleteRunsResult, Watch, WatchRun, WatchRunSummary, WatchSummary } from './watch.model';
+import { CreateWatchDto, CronPreview, DeleteRunsResult, Watch, WatchRun, WatchRunSummary, WatchSummary } from './watch.model';
 
 const baseUrl = '/api/Watches';
 
@@ -36,6 +36,14 @@ export class WatchesApi {
     return firstValueFrom(
       this.http.get<WatchSummary>(`${baseUrl}/${id}`, { params: { recentRuns: recentRunCount } }),
     );
+  }
+
+  /** When a cron expression would run a watch, as the Backend's scheduler reads it. No request while it's `undefined`. */
+  cronPreviewResource(expression: () => string | undefined) {
+    return httpResource<CronPreview>(() => {
+      const cron = expression();
+      return cron === undefined ? undefined : { url: '/api/Cron/preview', params: { expression: cron } };
+    });
   }
 
   /** The newest page of a watch's runs, newest first. */

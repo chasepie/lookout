@@ -7,7 +7,8 @@ import { RouterTestingHarness } from '@angular/router/testing';
 import { NotificationChannelSummary, NotificationService, WatchEvent } from '../notifications/notification.model';
 import { answer, fail, nextRequest, request, respond, textOf, watchSummary } from '../testing/fixtures';
 import { WatchForm } from './watch-form';
-import { Watch, WatchScheduleKind } from './watch.model';
+import { briefTimeInYear } from '../shared/time';
+import { CronPreview, Watch, WatchScheduleKind } from './watch.model';
 
 @Component({ template: '' })
 class WatchPage {}
@@ -28,6 +29,14 @@ const savedWatch: Watch = {
 };
 
 const channelsUrl = '/api/NotificationChannels';
+const cronPreviewUrl = '/api/Cron/preview';
+
+const weekdayMornings: CronPreview = {
+  isValid: true,
+  nextRuns: ['2026-11-11T09:00:00Z', '2026-11-12T09:00:00Z'],
+  timeZone: 'Etc/UTC',
+};
+const unreadable: CronPreview = { isValid: false, nextRuns: [], timeZone: 'Etc/UTC' };
 const subscriptionsUrl = '/api/Watches/7/subscriptions';
 
 const phone: NotificationChannelSummary = {
@@ -78,7 +87,8 @@ describe('WatchForm', () => {
     await open('/watches/7/edit');
     await respond(request('GET', channelsUrl), channels);
     await respond(request('GET', subscriptionsUrl), subscriptions);
-    await answer(request('GET', '/api/Watches/7'), watchSummary({ ...savedWatch, recentRuns: [] }));
+    await respond(request('GET', '/api/Watches/7'), watchSummary({ ...savedWatch, recentRuns: [] }));
+    await answer(request('GET', cronPreviewUrl), weekdayMornings);
   }
 
   const button = (name: string) =>
@@ -170,6 +180,7 @@ describe('WatchForm', () => {
       page.querySelector<HTMLInputElement>('input[value=cron]')!.click();
       await stable();
       type('#cron', '0 9 * * 1-5');
+      await answer(request('GET', cronPreviewUrl), weekdayMornings);
       chooseScript(new File([''], 'morning.ts'));
 
       await submitForm();
@@ -190,20 +201,53 @@ describe('WatchForm', () => {
       TestBed.inject(HttpTestingController).expectNone(request('POST', '/api/Watches'));
     });
 
-    it('puts the cron expression into words as it is typed', async () => {
+    it('has the Backend check the cron expression as it is typed, and lists its next runs', async () => {
       page.querySelector<HTMLInputElement>('input[type=checkbox]')!.click();
       await stable();
       page.querySelector<HTMLInputElement>('input[value=cron]')!.click();
       await stable();
-      expect(textOf(page.querySelector('#cron-description'))).toBe('');
+      expect(textOf(page.querySelector('#cron-preview'))).toBe('');
+      TestBed.inject(HttpTestingController).expectNone(request('GET', cronPreviewUrl));
 
-      type('#cron', '0 9 * *');
+      type('#cron', ' 0 9 * * ');
+      const check = await nextRequest(request('GET', cronPreviewUrl));
+      expect(check.request.params.get('expression')).toBe('0 9 * *');
+      check.flush(unreadable);
       await stable();
-      expect(textOf(page.querySelector('#cron-description'))).toBe("Can't read this as a cron expression yet.");
+      expect(textOf(page.querySelector('#cron-preview'))).toBe("Can't read this as a cron expression yet.");
 
       type('#cron', '0 9 * * 1-5');
+      const recheck = await nextRequest(request('GET', cronPreviewUrl));
+      // The last answer stays while the next loads
+      expect(textOf(page.querySelector('#cron-preview'))).toBe("Can't read this as a cron expression yet.");
+      recheck.flush(weekdayMornings);
       await stable();
-      expect(textOf(page.querySelector('#cron-description'))).toMatch(/^At 09:00( AM)?, Monday through Friday$/);
+      const runs = [...page.querySelectorAll('#cron-preview li')].map((li) => textOf(li));
+      expect(textOf(page.querySelector('#cron-preview > span'))).toBe('Next runs, in your time:');
+      expect(runs).toEqual(weekdayMornings.nextRuns.map((run) => briefTimeInYear(Date.parse(run), Date.now())));
+      expect(textOf(page.querySelector('#cron-hint'))).toContain("Times are in the server's time zone (Etc/UTC).");
+
+      type('#cron', '0 0 30 2 *');
+      await answer(request('GET', cronPreviewUrl), { ...weekdayMornings, nextRuns: [] });
+      expect(textOf(page.querySelector('#cron-preview'))).toBe('This expression never runs.');
+
+      type('#cron', '');
+      await stable();
+      expect(textOf(page.querySelector('#cron-preview'))).toBe('');
+    });
+
+    it("says when the cron expression couldn't be checked", async () => {
+      page.querySelector<HTMLInputElement>('input[type=checkbox]')!.click();
+      await stable();
+      page.querySelector<HTMLInputElement>('input[value=cron]')!.click();
+      await stable();
+
+      type('#cron', '0 9 * * 1-5');
+      await fail(request('GET', cronPreviewUrl), 503, 'The Backend is restarting.');
+
+      expect(textOf(page.querySelector('#cron-preview'))).toBe(
+        "Couldn't check the expression: The Backend is restarting.",
+      );
     });
 
     it('needs a cron expression to run on one', async () => {
@@ -248,7 +292,8 @@ describe('WatchForm', () => {
       expect(textOf(page.querySelector('[role=alert] p'))).toBe("Couldn't load the watch to edit: Database is locked");
 
       page.querySelector<HTMLButtonElement>('[role=alert] button')!.click();
-      await answer(request('GET', '/api/Watches/7'), watchSummary({ ...savedWatch, recentRuns: [] }));
+      await respond(request('GET', '/api/Watches/7'), watchSummary({ ...savedWatch, recentRuns: [] }));
+      await answer(request('GET', cronPreviewUrl), weekdayMornings);
       expect(page.querySelector<HTMLInputElement>('#name')?.value).toBe('Prices');
     });
 
