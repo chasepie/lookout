@@ -2,10 +2,10 @@ name: PR title
 
 # Squash merges make a PR's title its commit on main, which release-please reads to pick the next version, so titles
 # must be Conventional Commits: `fix: …` releases a patch, `feat: …` a minor and `feat!: …` a major (before 1.0, a patch
-# and a minor). pull_request_target, so it also checks PRs from forks; it only reads the title and never checks out
-# their code.
+# and a minor). main's ruleset requires it. pull_request, not pull_request_target: reading the title needs only a
+# read-only token, and it runs this file from the PR's branch, so a PR that changes it checks itself.
 on:
-  pull_request_target:
+  pull_request:
     types: [opened, edited, reopened, synchronize]
 
 permissions:
