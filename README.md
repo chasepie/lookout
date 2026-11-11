@@ -77,10 +77,18 @@ Lookout is versioned with [release-please](https://github.com/googleapis/release
   at that version.
 - **Going to 1.0**: merge a PR whose commit message has a `Release-As: 1.0.0` footer.
 
-release-please needs a token to open its Release PRs with, since GitHub runs no CI on PRs opened with `GITHUB_TOKEN` and
-main's ruleset needs CI to pass. Create a
-[fine-grained personal access token](https://github.com/settings/personal-access-tokens/new) for this repository with
-read and write access to Contents, Issues and Pull requests, and save it as the Actions secret `RELEASE_PLEASE_TOKEN`.
+release-please opens its Release PRs as a GitHub App, since GitHub runs no CI on PRs opened with `GITHUB_TOKEN` and
+main's ruleset needs CI to pass. To set it up once:
+
+1. [Create a GitHub App](https://github.com/settings/apps/new) with any unique name, such as `lookout-release-<you>`,
+   and the repository's URL as its homepage. Untick "Active" under Webhook. Give it read and write access to the
+   repository permissions Contents, Issues and Pull requests, and let it be installed only on your account.
+2. On its page, note its Client ID, and generate a private key, which downloads a `.pem` file.
+3. Install it on this repository only.
+4. In this repository's Actions settings, add the Client ID as the variable `RELEASE_APP_CLIENT_ID`, and the `.pem`
+   file's contents as the secret `RELEASE_APP_PRIVATE_KEY`. Then delete the `.pem` file.
+
+If the key is ever exposed, generate a new one, replace the secret, and delete the old key on the App's page.
 
 ## Developing
 
