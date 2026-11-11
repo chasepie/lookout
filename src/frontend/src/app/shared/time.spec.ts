@@ -1,4 +1,4 @@
-import { dayHeading, dayKey, duration, relativeTime } from './time';
+import { briefTime, briefTimeInYear, dayHeading, dayKey, duration, relativeTime } from './time';
 
 const now = new Date(2026, 10, 7, 15, 0, 0).getTime();
 const minutes = (n: number) => n * 60_000;
@@ -33,6 +33,17 @@ describe('dayHeading', () => {
   it('leaves the year out for this year only', () => {
     expect(dayHeading(new Date(2026, 10, 3).getTime(), now)).not.toContain('2026');
     expect(dayHeading(new Date(2025, 10, 3).getTime(), now)).toContain('2025');
+  });
+});
+
+describe('briefTimeInYear', () => {
+  it('leaves the year out for this year only', () => {
+    const thisYear = new Date(2026, 11, 1, 9, 0).getTime();
+    const nextYear = new Date(2027, 1, 1, 9, 0).getTime();
+
+    expect(briefTimeInYear(thisYear, now)).toBe(briefTime(thisYear));
+    expect(briefTimeInYear(nextYear, now)).toContain('2027');
+    expect(briefTime(nextYear)).not.toContain('2027');
   });
 });
 

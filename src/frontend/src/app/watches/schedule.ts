@@ -10,7 +10,10 @@ export const intervalUnits: Record<Exclude<WatchScheduleKind, WatchScheduleKind.
   [WatchScheduleKind.Weekly]: ['week', 'weeks'],
 };
 
-/** A watch's schedule in plain words: "Every 15 minutes", "Every day", "Cron 0 9 * * 1-5", "Not scheduled". */
+/**
+ * A watch's schedule in plain words: "Every 15 minutes", "Every day", "Cron 0 9 * * 1-5", "Not scheduled". A cron
+ * expression is shown as it is, not put into words: only the Backend reads it the way the scheduler does (see ADR 0006).
+ */
 export function describeSchedule(watch: Schedule): string {
   if (!watch.scheduleEnabled || watch.scheduleKind === null || !watch.scheduleInterval) {
     return 'Not scheduled';

@@ -56,6 +56,16 @@
   font-family: var(--font-code);
 }
 
+.cron-preview:empty {
+  display: none;
+}
+
+.next-runs {
+  margin: var(--space-1) 0 0;
+  padding-left: var(--space-4);
+  font-variant-numeric: tabular-nums;
+}
+
 .hint-block {
   display: block;
 }

@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, effect, inject, input, linkedSignal, signal } from '@angular/core';
+import { Component, computed, debounced, effect, inject, input, linkedSignal, signal } from '@angular/core';
 import { FormField, form, max, min, required, submit } from '@angular/forms/signals';
 import { Title } from '@angular/platform-browser';
 import { Router, RouterLink } from '@angular/router';
@@ -15,8 +15,9 @@ import { describeError, describeSaveError } from '../shared/describe-error';
 import { lastValue } from '../shared/last-value';
 import { Notices } from '../shared/notices';
 import { ScriptPicker } from './script-picker';
+import { briefTimeInYear, fullTime } from '../shared/time';
 import { intervalUnits } from './schedule';
-import { CreateWatchDto, Watch, WatchScheduleKind, WatchSummary } from './watch.model';
+import { CreateWatchDto, CronPreview, Watch, WatchScheduleKind, WatchSummary } from './watch.model';
 import { WatchesApi } from './watches-api';
 
 interface WatchFormModel {
@@ -33,6 +34,9 @@ interface WatchFormModel {
   screenshotOnCrash: boolean;
   knownFailureThreshold: number;
 }
+
+/** How long the Owner stops typing a cron expression for before the Backend is asked about it, in milliseconds. */
+const cronCheckDelay = 300;
 
 /** The most known failures in a row a watch can wait for, as the Backend allows. */
 const maxKnownFailureThreshold = 1000;
@@ -147,6 +151,47 @@ export class WatchForm {
       when: ({ valueOf }) => valueOf(path.scheduleEnabled) && valueOf(path.scheduleType) === 'cron',
     });
   });
+
+  /** The cron expression being typed, as the Backend will save it; `undefined` while there's none to check. */
+  private readonly cronToCheck = computed(() => {
+    const value = this.watchForm().value();
+    const cron = value.cron.trim();
+    return value.scheduleEnabled && value.scheduleType === 'cron' && cron ? cron : undefined;
+  });
+
+  /** The cron expression to check once the Owner stops typing; a cleared one stops checking at once. */
+  private readonly settledCron = debounced(this.cronToCheck, (cron) =>
+    cron === undefined ? undefined : new Promise<void>((resolve) => setTimeout(resolve, cronCheckDelay)),
+  );
+
+  private readonly cronCheck = this.api.cronPreviewResource(() =>
+    this.settledCron.hasValue() ? this.settledCron.value() : undefined,
+  );
+
+  /**
+   * When the cron expression would run the watch, checked by the Backend as the Owner types. The last answer stays
+   * while the next loads, so the runs don't blink out on every keystroke; there's none while the field is blank.
+   */
+  protected readonly cronPreview = linkedSignal<
+    { cron: string | undefined; preview: CronPreview | undefined; loading: boolean },
+    CronPreview | undefined
+  >({
+    source: () => ({
+      cron: this.cronToCheck(),
+      preview: this.cronCheck.hasValue() ? this.cronCheck.value() : undefined,
+      loading: this.cronCheck.isLoading(),
+    }),
+    computation: ({ cron, preview, loading }, previous) =>
+      cron === undefined ? undefined : (preview ?? (loading ? previous?.value : undefined)),
+  });
+
+  /** Why the cron expression couldn't be checked, if it couldn't. */
+  protected readonly cronCheckError = computed(() =>
+    this.cronToCheck() === undefined ? undefined : this.cronCheck.error(),
+  );
+
+  protected readonly briefTime = (time: string) => briefTimeInYear(Date.parse(time), Date.now());
+  protected readonly fullTime = (time: string) => fullTime(Date.parse(time));
 
   protected readonly channels = this.notifications.channelsResource();
   /** The channels as last loaded, still offered if a refresh fails. */

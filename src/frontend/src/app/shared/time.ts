@@ -25,6 +25,14 @@ const brief = new Intl.DateTimeFormat(undefined, {
   hour: '2-digit',
   minute: '2-digit',
 });
+const briefWithYear = new Intl.DateTimeFormat(undefined, {
+  weekday: 'short',
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+});
 
 /** The start of the local day `time` falls in. */
 function startOfDay(time: number) {
@@ -91,6 +99,12 @@ export function clockTime(time: number, withSeconds = false): string {
 /** The day and time in few words, such as "Tue 3 Nov, 09:00", for runs that may be days apart. */
 export function briefTime(time: number): string {
   return brief.format(time);
+}
+
+/** As {@link briefTime}, with the year when it isn't `now`'s, for times that may be years off, such as cron runs. */
+export function briefTimeInYear(time: number, now: number): string {
+  const sameYear = new Date(time).getFullYear() === new Date(now).getFullYear();
+  return (sameYear ? brief : briefWithYear).format(time);
 }
 
 /** The full date and time, for tooltips and wherever the exact moment matters. */
