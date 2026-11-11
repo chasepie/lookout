@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, effect, inject, input, linkedSignal, signal } from '@angular/core';
+import { Component, computed, debounced, effect, inject, input, linkedSignal, signal } from '@angular/core';
 import { FormField, form, max, min, required, submit } from '@angular/forms/signals';
 import { Title } from '@angular/platform-browser';
 import { Router, RouterLink } from '@angular/router';
@@ -34,6 +34,9 @@ interface WatchFormModel {
   screenshotOnCrash: boolean;
   knownFailureThreshold: number;
 }
+
+/** How long the Owner stops typing a cron expression for before the Backend is asked about it, in milliseconds. */
+const cronCheckDelay = 300;
 
 /** The most known failures in a row a watch can wait for, as the Backend allows. */
 const maxKnownFailureThreshold = 1000;
@@ -156,7 +159,14 @@ export class WatchForm {
     return value.scheduleEnabled && value.scheduleType === 'cron' && cron ? cron : undefined;
   });
 
-  private readonly cronCheck = this.api.cronPreviewResource(this.cronToCheck);
+  /** The cron expression to check once the Owner stops typing; a cleared one stops checking at once. */
+  private readonly settledCron = debounced(this.cronToCheck, (cron) =>
+    cron === undefined ? undefined : new Promise<void>((resolve) => setTimeout(resolve, cronCheckDelay)),
+  );
+
+  private readonly cronCheck = this.api.cronPreviewResource(() =>
+    this.settledCron.hasValue() ? this.settledCron.value() : undefined,
+  );
 
   /**
    * When the cron expression would run the watch, checked by the Backend as the Owner types. The last answer stays

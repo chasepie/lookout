@@ -209,7 +209,11 @@ describe('WatchForm', () => {
       expect(textOf(page.querySelector('#cron-preview'))).toBe('');
       TestBed.inject(HttpTestingController).expectNone(request('GET', cronPreviewUrl));
 
+      type('#cron', ' 0');
       type('#cron', ' 0 9 * * ');
+      TestBed.tick();
+      // Not until the Owner stops typing, and then only for what they stopped at
+      TestBed.inject(HttpTestingController).expectNone(request('GET', cronPreviewUrl));
       const check = await nextRequest(request('GET', cronPreviewUrl));
       expect(check.request.params.get('expression')).toBe('0 9 * *');
       check.flush(unreadable);
