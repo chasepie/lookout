@@ -190,6 +190,22 @@ describe('WatchForm', () => {
       TestBed.inject(HttpTestingController).expectNone(request('POST', '/api/Watches'));
     });
 
+    it('puts the cron expression into words as it is typed', async () => {
+      page.querySelector<HTMLInputElement>('input[type=checkbox]')!.click();
+      await stable();
+      page.querySelector<HTMLInputElement>('input[value=cron]')!.click();
+      await stable();
+      expect(textOf(page.querySelector('#cron-description'))).toBe('');
+
+      type('#cron', '0 9 * *');
+      await stable();
+      expect(textOf(page.querySelector('#cron-description'))).toBe("Can't read this as a cron expression yet.");
+
+      type('#cron', '0 9 * * 1-5');
+      await stable();
+      expect(textOf(page.querySelector('#cron-description'))).toMatch(/^At 09:00( AM)?, Monday through Friday$/);
+    });
+
     it('needs a cron expression to run on one', async () => {
       type('#name', 'Weekday mornings');
       page.querySelector<HTMLInputElement>('input[type=checkbox]')!.click();

@@ -15,7 +15,7 @@ import { describeError, describeSaveError } from '../shared/describe-error';
 import { lastValue } from '../shared/last-value';
 import { Notices } from '../shared/notices';
 import { ScriptPicker } from './script-picker';
-import { intervalUnits } from './schedule';
+import { describeCron, intervalUnits } from './schedule';
 import { CreateWatchDto, Watch, WatchScheduleKind, WatchSummary } from './watch.model';
 import { WatchesApi } from './watches-api';
 
@@ -146,6 +146,12 @@ export class WatchForm {
       message: 'Enter a cron expression, such as 0 9 * * 1-5.',
       when: ({ valueOf }) => valueOf(path.scheduleEnabled) && valueOf(path.scheduleType) === 'cron',
     });
+  });
+
+  /** The cron expression in plain words as the Owner types it, or null until there's one to read. */
+  protected readonly cronDescription = computed(() => {
+    const cron = this.watchForm.cron().value();
+    return cron.trim() ? describeCron(cron) : null;
   });
 
   protected readonly channels = this.notifications.channelsResource();

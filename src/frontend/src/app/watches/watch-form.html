@@ -115,8 +115,15 @@
                 placeholder="0 9 * * 1-5"
                 [formField]="watchForm.cron"
                 [attr.aria-invalid]="watchForm.cron().touched() && watchForm.cron().invalid()"
-                aria-describedby="cron-hint cron-error"
+                aria-describedby="cron-description cron-hint cron-error"
               />
+              <span id="cron-description" class="cron-description">
+                @if (cronDescription(); as description) {
+                  {{ description }}
+                } @else if (watchForm.cron().value().trim()) {
+                  <span class="muted">Can't read this as a cron expression yet.</span>
+                }
+              </span>
               <span id="cron-hint" class="field-hint">
                 Five fields: minute, hour, day of month, month, day of week. Times are in the server's time zone.
               </span>
