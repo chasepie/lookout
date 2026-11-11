@@ -35,7 +35,7 @@ and each Lookout release publishes the SDK at its own version. So install the SD
 | A minor version before 1.0, such as `0.4` | `@0.4`, which npm saves as `^0.4.3`: like the image tag, it follows `0.4` |
 | A major version from 1.0, such as `1` | `@1`, saved as `^1.2.0` |
 | A release, such as `0.4.3` | `--save-exact @0.4.3` |
-| `latest` | `@latest` |
+| `latest` | `@latest`, saved as `^0.4.3`, which stays within `0.4`: after a breaking release, install `@latest` again |
 
 A Lookout release that would break your scripts is a new minor version before 1.0 (`0.5.0`), and a new major version
 after, so neither your image tag nor the SDK's range moves to it on its own.

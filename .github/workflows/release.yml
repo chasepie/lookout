@@ -77,10 +77,12 @@ jobs:
             runner: ubuntu-26.04-arm
 
     steps:
-      # The release's commit, which a later push's run can be the one to release
+      # The release's commit, which a later push's run can be the one to release. Without leaving GITHUB_TOKEN in the git
+      # config, where anything the build runs could read it.
       - uses: actions/checkout@v7
         with:
           ref: ${{ needs.release-please.outputs.sha }}
+          persist-credentials: false
 
       - uses: docker/setup-buildx-action@v4
 
@@ -191,6 +193,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ needs.release-please.outputs.sha }}
+          # Not left in the git config, so the build's dev dependencies can't read GITHUB_TOKEN
+          persist-credentials: false
 
       # Writes an .npmrc that sends @chasepie's packages to GitHub Packages, with NODE_AUTH_TOKEN
       - uses: actions/setup-node@v7

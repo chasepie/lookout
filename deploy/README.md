@@ -12,9 +12,9 @@ from the release you run: each is tagged, such as `v0.4.3`, so they're at
 ## 1. Settings
 
 Copy `.env.example` to `.env` beside `docker-compose.yaml`, and fill it in. It says what each setting is for, and which
-are required. The secrets are there too:
+are required. `LOOKOUT_IMAGE_TAG` is the release to run, such as `0.4`: see [Upgrading](#upgrading). The secrets are
+there too:
 
-- `LOOKOUT_IMAGE_TAG`: the release to run, such as `0.4`. See [Upgrading](#upgrading).
 - `LOOKOUT_OWNER_USERNAME` and `LOOKOUT_OWNER_PASSWORD`: what you sign in with. Changing either, other than the
   username's case, signs out every session once the Backend restarts.
 - `LOOKOUT_RUNNER_API_KEY`, `BROWSERLESS_TOKEN`, `GLUETUN_API_KEY` and `GLUETUN_PROXY_PASSWORD`: secrets the services
@@ -83,6 +83,10 @@ change `LOOKOUT_IMAGE_TAG`, and then:
 ```sh
 docker compose pull && docker compose up -d
 ```
+
+Before release-please, images were also published for each commit to main, tagged `main` and `sha-<commit>`. Those
+tags still pull, but nothing moves them any more, so a deployment on one stays where it is: switch it to a release, with
+that release's `docker-compose.yaml` and `.env.example`.
 
 Any release can migrate the database when the Backend starts, including the ones a tag you follow moves to, and going
 back to an earlier release's images doesn't undo that, so keep [backups](#backups).

@@ -8,7 +8,8 @@ public partial class Program
     /// <summary>
     /// The deployment's settings, which <c>aspire publish</c> lists in <c>deploy/.env</c>. Ones with a default fall back to
     /// it when left empty, as <c>${NAME:-default}</c>. Required ones have none, and the service that needs one refuses to
-    /// start without it.
+    /// start without it; one Compose reads itself, such as an image's tag, has Compose stop with a message instead, as
+    /// <c>${NAME:?message}</c>.
     /// </summary>
     private sealed class ProductionSettings
     {
@@ -17,6 +18,7 @@ public partial class Program
 
         private readonly IDistributedApplicationBuilder _builder;
         private readonly Dictionary<string, string> _defaults = [];
+        private readonly Dictionary<string, string> _composeRequiredMessages = [];
 
         public ProductionSettings(IDistributedApplicationBuilder builder)
         {
@@ -25,6 +27,7 @@ public partial class Program
             ImageTag = Setting(
                 name: "lookout-image-tag",
                 defaultValue: null,
+                composeRequiredMessage: "set it in .env to the release to run, such as 0.1",
                 description: "the tag of the Backend's and the Runner's images: a release's major version, such as 1, or before 1.0 its "
                     + "minor version, such as 0.4, to follow its updates; or a version, such as 0.4.3, to stay on it.");
 
@@ -151,9 +154,8 @@ public partial class Program
         public string? GluetunApiKeyPlaceholder { get; set; }
 
         /// <summary>
-        /// <paramref name="setting"/> as a Compose variable in <paramref name="service"/>, with its default if it has one.
-        /// The image tag is the one required setting Compose reads itself, rather than a service, so without it Compose
-        /// stops with a message, where it would otherwise fail on an image reference ending in a colon.
+        /// <paramref name="setting"/> as a Compose variable in <paramref name="service"/>, with its default if it has one, or
+        /// the message Compose stops with if it requires it.
         /// </summary>
         public string Placeholder(IResourceBuilder<ParameterResource> setting, DockerComposeServiceResource service)
         {
@@ -163,16 +165,27 @@ public partial class Program
                 return $"{placeholder[..^1]}:-{defaultValue}}}";
             }
 
-            if (setting == ImageTag)
+            if (_composeRequiredMessages.TryGetValue(setting.Resource.Name, out var message))
             {
-                return $"{placeholder[..^1]}:?set it in .env to the release to run, such as 0.1}}";
+                return $"{placeholder[..^1]}:?{message}}}";
             }
 
             return placeholder;
         }
 
-        private IResourceBuilder<ParameterResource> Setting(string name, string? defaultValue, string description, bool secret = false)
+        /// <param name="composeRequiredMessage">
+        /// For a required setting Compose reads itself rather than a service, such as an image's tag: what Compose says
+        /// when it's empty, where it would otherwise go on with an empty value, such as an image reference ending in a
+        /// colon. No <c>}</c> or <c>$</c>.
+        /// </param>
+        private IResourceBuilder<ParameterResource> Setting(
+            string name, string? defaultValue, string description, bool secret = false, string? composeRequiredMessage = null)
         {
+            if (composeRequiredMessage is not null)
+            {
+                _composeRequiredMessages[name] = composeRequiredMessage;
+            }
+
             if (defaultValue is not null)
             {
                 _defaults[name] = defaultValue;

@@ -11,7 +11,8 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  # Only superseded PR runs are cancelled, so every push to main gets a result
+  # Only superseded PR runs are cancelled. On main, release.yml calls this, and its own concurrency group decides which
+  # runs go ahead.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -143,5 +144,6 @@ jobs:
           platforms: linux/${{ matrix.arch }}
           push: false
           cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.arch }}
-          # Only from pushes: a pull request's cache can't be read from main, and would evict the one CD builds from
+          # Only from main, through release.yml: a pull request's cache can't be read from main, and would evict the one
+          # release.yml's image builds read
           cache-to: ${{ github.event_name == 'push' && format('type=gha,mode=max,scope={0}-{1}', matrix.image, matrix.arch) || '' }}
