@@ -5,8 +5,8 @@ you when something changes.
 
 A **watch** is something you want checked: a **watch script** that drives a real Chromium through Playwright, plus when
 and how to run it. Each **run** ends as a **success**, carrying what the script found on the page, a **known failure**,
-a problem the script recognised, such as a page that's blocked from the current VPN region, or a **crash**. Lookout keeps
-a screenshot of the page with a run when you ask it to. Runs can go through a VPN that rotates between regions, and
+a problem the script recognised, such as a page that's blocked from the current VPN region, or a **crash**. Lookout
+keeps a screenshot of the page with a run when you ask it to. Runs can go through a VPN that rotates between regions, and
 Lookout sends a **notification** (through Pushover, so far) when a run shows a content change, a known-failure streak
 reaching its threshold, the start of a crash streak, or a recovery. [`GLOSSARY.md`](GLOSSARY.md) defines each of these.
 
@@ -21,8 +21,8 @@ flowchart LR
     Backend -->|run this watch| Runner
     Backend -->|rotate regions| gluetun
     Runner -->|Playwright| browserless["browserless (Chromium)"]
-    browserless -->|direct, or through the VPN| gluetun["gluetun (VPN)"]
-    browserless --> Web([Web pages])
+    browserless -->|watches without the VPN| Web([Web pages])
+    browserless -->|watches with the VPN| gluetun["gluetun (VPN)"]
     gluetun --> Web
 ```
 

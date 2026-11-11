@@ -15,12 +15,14 @@ The package is on GitHub Packages, whose npm registry needs a token to install f
 //npm.pkg.github.com/:_authToken=${GITHUB_PACKAGES_TOKEN}
 ```
 
-With `GITHUB_PACKAGES_TOKEN` set in your environment (or in CI's), install the SDK next to the Playwright version it
-needs, and Node's types, which Playwright's need:
+With `GITHUB_PACKAGES_TOKEN` set in your environment (or in CI's), install the SDK, at exactly the version that matches
+your Lookout (see below), and Node's types, which Playwright's need:
 
 ```sh
-npm install --save-dev @chasepie/lookout-watch-sdk@main playwright@~1.65.0 @types/node typescript
+npm install --save-dev --save-exact @chasepie/lookout-watch-sdk@main @types/node typescript
 ```
+
+npm installs the Playwright version the SDK needs with it, as a peer dependency.
 
 ### Which version
 
@@ -34,8 +36,9 @@ so install the SDK that matches the Lookout you run, its `LOOKOUT_IMAGE_TAG`:
 | A release, such as `1.4.0` | The same version, `@1.4.0` |
 | `sha-<commit>` | The main build of that commit, `0.0.0-main.<time>.sha-<commit>` |
 
-Pre-releases, such as `1.3.0-rc.1`, are under `@next`, and releases older than the latest under
-`@release-<major>.<minor>`, such as `@release-1.2`.
+The latest pre-release, such as `1.5.0-rc.1`, is under `@next`. Until Lookout's first release, `@latest` may be an old
+build of main, so use `@main`. Versions under `@superseded` are ones that didn't become the latest of their kind, such
+as a backport; install those by their version.
 
 ## Writing a script
 
@@ -67,8 +70,8 @@ or JPEG of at most 8 MiB as its `screenshot`, such as `await page.screenshot()`.
 Lookout runs only the file you upload, so a script must:
 
 - **Be one file** of at most 64 KiB. It can't import other files of your project.
-- **Import only the SDK and Playwright**, which the Runner has. Other packages aren't there, and the Runner's sandbox
-  stops a script reading anything but itself and them.
+- **Import only the SDK, Playwright and Node's built-in modules**, such as `node:crypto`. Other packages aren't in the
+  Runner, and its sandbox stops a script reading files other than itself and them, or starting processes.
 - **Use only TypeScript that Node can strip**, since Node runs `.ts` files without compiling them: `import type` for
   types, and no enums, namespaces or parameter properties. TypeScript's `erasableSyntaxOnly` and `verbatimModuleSyntax`
   options check this.

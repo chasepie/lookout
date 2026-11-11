@@ -1,8 +1,9 @@
 name: CD
 
-# Publishes the images the deployment (deploy/) runs to GHCR, and the watch SDK to GitHub Packages, once CI has passed for
-# a push to main or a release tag. Images: main gets main and sha-<commit>, and a v* tag also its version and latest. Each
-# platform is built natively and pushed by digest, and then the two are joined under the tags. The SDK: see its job.
+# Publishes the images the deployment (deploy/) runs to GHCR, and then the watch SDK to GitHub Packages, once CI has
+# passed for a push to main or a release tag. Images: main gets main and sha-<commit>, and a v* tag also its version and
+# latest. Each platform is built natively and pushed by digest, and then the two are joined under the tags. The SDK: see
+# its job.
 on:
   workflow_run:
     workflows: [CI]
@@ -12,7 +13,7 @@ permissions:
   contents: read
 
 # One publish per branch or tag at a time. Runs are queued in the order CI finishes, not the order of their commits, so
-# the publish job also checks that main and latest only move forward.
+# the publish jobs also check, right before moving them, that main and latest only move forward.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.workflow_run.head_branch }}
   cancel-in-progress: false
@@ -21,50 +22,13 @@ env:
   REGISTRY: ghcr.io/${{ github.repository_owner }}
 
 jobs:
-  # Every other job needs this one, so its condition is theirs too
-  tags:
-    name: Check which tags may move
+  build:
+    name: Build ${{ matrix.image }} (${{ matrix.arch }})
     # Only pushes: CI also runs for pull requests, whose images aren't published. For a tag push, head_branch is the tag.
     if: >-
       github.event.workflow_run.conclusion == 'success'
       && github.event.workflow_run.event == 'push'
       && (github.event.workflow_run.head_branch == 'main' || startsWith(github.event.workflow_run.head_branch, 'v'))
-    runs-on: ubuntu-26.04
-    timeout-minutes: 5
-    permissions:
-      contents: read
-    outputs:
-      main: ${{ steps.moving.outputs.main }}
-      latest: ${{ steps.moving.outputs.latest }}
-
-    steps:
-      # A re-run of an older commit's CI mustn't move main or latest back: main only moves to main's current head, and
-      # latest only to the highest stable version, so never to a pre-release such as v1.3.0-rc.1
-      - name: Check which tags may move
-        id: moving
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REF: ${{ github.event.workflow_run.head_branch }}
-          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
-        run: |
-          main=false
-          latest=false
-          if [ "$REF" = main ] && [ "$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)" = "$HEAD_SHA" ]; then
-            main=true
-          fi
-          if [[ "$REF" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            highest=$(gh api --paginate "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/v" --jq '.[].ref | ltrimstr("refs/tags/")' \
-              | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
-            if [ "$REF" = "$highest" ]; then
-              latest=true
-            fi
-          fi
-          echo "main=$main" >> "$GITHUB_OUTPUT"
-          echo "latest=$latest" >> "$GITHUB_OUTPUT"
-
-  build:
-    name: Build ${{ matrix.image }} (${{ matrix.arch }})
-    needs: tags
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     permissions:
@@ -129,7 +93,7 @@ jobs:
 
   publish:
     name: Publish ${{ matrix.image }}
-    needs: [tags, build]
+    needs: build
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
@@ -161,6 +125,35 @@ jobs:
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: echo "short=${HEAD_SHA::7}" >> "$GITHUB_OUTPUT"
 
+      # A re-run of an older commit's CI mustn't move main or latest back: main only moves to main's current head, and
+      # latest only to the highest stable version, so never to a pre-release such as v1.3.0-rc.1. Checked here, just
+      # before the move, so a re-run of this job checks again.
+      - name: Check which tags may move
+        id: moving
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ github.event.workflow_run.head_branch }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          main=false
+          latest=false
+          if [ "$REF" = main ]; then
+            head=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+            if [ "$head" = "$HEAD_SHA" ]; then
+              main=true
+            fi
+          fi
+          if [[ "$REF" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            tags=$(gh api --paginate "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/v" --jq '.[].ref | ltrimstr("refs/tags/")')
+            highest=$(grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' <<< "$tags" | sort -V | tail -1)
+            if [ "$REF" = "$highest" ]; then
+              latest=true
+            fi
+          fi
+          echo "main=$main" >> "$GITHUB_OUTPUT"
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+
       # head_branch is main, or the release's tag
       - id: meta
         uses: docker/metadata-action@v6
@@ -168,10 +161,10 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ matrix.image }}
           flavor: latest=false
           tags: |
-            type=raw,value=main,enable=${{ needs.tags.outputs.main == 'true' }}
+            type=raw,value=main,enable=${{ steps.moving.outputs.main == 'true' }}
             type=raw,value=sha-${{ steps.commit.outputs.short }}
             type=semver,pattern={{version}},value=${{ github.event.workflow_run.head_branch }},enable=${{ startsWith(github.event.workflow_run.head_branch, 'v') }}
-            type=raw,value=latest,enable=${{ needs.tags.outputs.latest == 'true' }}
+            type=raw,value=latest,enable=${{ steps.moving.outputs.latest == 'true' }}
 
       - name: Tag both platforms' images
         working-directory: ${{ runner.temp }}/digests
@@ -189,14 +182,13 @@ jobs:
           IMAGE: ${{ env.REGISTRY }}/${{ matrix.image }}:sha-${{ steps.commit.outputs.short }}
         run: docker buildx imagetools inspect "$IMAGE"
 
-  # The watch SDK, for writing watch scripts outside this repo, in step with the images: main publishes
-  # 0.0.0-main.<commit time>.sha-<commit> under the dist-tag main, and a v* tag publishes its version under latest. npm
-  # versions can't be replaced and every publish sets a dist-tag, so a version that's already published is skipped, a
-  # re-run of an older main commit publishes nothing, a pre-release goes under next, and a release older than latest
-  # under release-<major>.<minor>.
+  # The watch SDK, for writing watch scripts outside this repo, once the images it matches are published: main as
+  # 0.0.0-main.<commit time>.sha-<commit>, and a v* tag as its version. The dist-tag (main, latest or next) only moves
+  # forward, judged against the registry: npm publishes every version under some dist-tag, so one that would move its
+  # tag back goes under superseded instead (src/watch-sdk/scripts/publish-plan.ts).
   publish-watch-sdk:
     name: Publish watch SDK
-    needs: tags
+    needs: publish
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
@@ -209,68 +201,59 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
 
-      - name: Version and dist-tag
-        id: version
-        env:
-          REF: ${{ github.event.workflow_run.head_branch }}
-          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
-          MAIN: ${{ needs.tags.outputs.main }}
-          LATEST: ${{ needs.tags.outputs.latest }}
-        run: |
-          if [ "$REF" = main ]; then
-            if [ "$MAIN" != true ]; then
-              echo "::notice::Not publishing the watch SDK: $HEAD_SHA is no longer main's head."
-              exit 0
-            fi
-            # The committer date, when the commit landed on main, so later commits get higher versions
-            time=$(TZ=UTC git show -s --format=%cd --date=format-local:%Y%m%d%H%M%S "$HEAD_SHA")
-            version="0.0.0-main.$time.sha-${HEAD_SHA::7}"
-            tag=main
-          elif [[ "$REF" =~ ^v([0-9]+)\.([0-9]+)\.[0-9]+$ ]]; then
-            version=${REF#v}
-            if [ "$LATEST" = true ]; then
-              tag=latest
-            else
-              tag="release-${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
-            fi
-          elif [[ "$REF" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-[0-9A-Za-z.-]+$ ]]; then
-            version=${REF#v}
-            tag=next
-          else
-            echo "::error::$REF isn't a version tag such as v1.2.3 or v1.3.0-rc.1, so it has no watch SDK version."
-            exit 1
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-
       # Writes an .npmrc that sends @chasepie's packages to GitHub Packages, with NODE_AUTH_TOKEN
-      - if: steps.version.outputs.version != ''
-        uses: actions/setup-node@v7
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
+          cache: npm
           registry-url: https://npm.pkg.github.com
           scope: '@chasepie'
 
-      - name: Check it isn't published yet
-        id: published
-        if: steps.version.outputs.version != ''
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          if npm view "@chasepie/lookout-watch-sdk@$VERSION" version > /dev/null 2>&1; then
-            echo "::notice::Not publishing the watch SDK: $VERSION is already published."
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      # Its dev dependencies build it, which npm publish does (prepack)
-      - name: Publish
-        if: steps.version.outputs.version != '' && steps.published.outputs.skip != 'true'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ steps.version.outputs.version }}
-          TAG: ${{ steps.version.outputs.tag }}
+      # Without the token, which only npm itself gets: the build runs the SDK's dev dependencies
+      - name: Build
         run: |
           npm ci --workspace src/watch-sdk --ignore-scripts
+          npm run build --workspace src/watch-sdk
+
+      # What the registry has, to judge the dist-tag against: its packument, or no file before the first publish
+      - name: Read the registry
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          status=$(curl --silent --show-error --output "$RUNNER_TEMP/packument.json" --write-out '%{http_code}' \
+            --header "Authorization: Bearer $NODE_AUTH_TOKEN" https://npm.pkg.github.com/@chasepie%2flookout-watch-sdk)
+          case "$status" in
+            200) ;;
+            404) rm -f "$RUNNER_TEMP/packument.json" ;;
+            *)
+              echo "::error::Reading the watch SDK's packument failed with HTTP status $status."
+              cat "$RUNNER_TEMP/packument.json" 2> /dev/null
+              exit 1
+              ;;
+          esac
+
+      - name: Version and dist-tag
+        id: plan
+        env:
+          REF: ${{ github.event.workflow_run.head_branch }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          PACKUMENT_FILE: ${{ runner.temp }}/packument.json
+        run: |
+          set -euo pipefail
+          # The committer date, so a later commit on main normally gets a higher version; the dist-tag only moves to a
+          # higher one either way
+          COMMIT_TIME=$(TZ=UTC git show -s --format=%cd --date=format-local:%Y%m%d%H%M%S "$HEAD_SHA")
+          export COMMIT_TIME
+          node src/watch-sdk/scripts/publish-plan.ts
+
+      # Already built, so --ignore-scripts keeps the build (prepack) from running again with the token
+      - name: Publish
+        if: steps.plan.outputs.publish == 'true'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.plan.outputs.version }}
+          TAG: ${{ steps.plan.outputs.tag }}
+        run: |
           npm pkg set version="$VERSION" --workspace src/watch-sdk
-          npm publish --workspace src/watch-sdk --tag "$TAG"
+          npm publish --workspace src/watch-sdk --tag "$TAG" --ignore-scripts

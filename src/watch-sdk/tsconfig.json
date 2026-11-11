@@ -3,6 +3,7 @@
   // Type-checks the library and CLI; tsconfig.build.json emits the library.
   "include": [
     "*.ts",
+    "scripts/**/*.ts",
     "test/**/*.ts"
   ],
   "compilerOptions": {
@@ -40,6 +41,8 @@
     "isolatedModules": true,
     "noUncheckedSideEffectImports": true,
     "moduleDetection": "force",
+    // Tests import the scripts' .ts files, as Node runs them
+    "rewriteRelativeImportExtensions": true,
     "skipLibCheck": true,
   }
 }
