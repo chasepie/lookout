@@ -6,8 +6,8 @@
  * PACKUMENT_FILE, if it exists, and writes `publish`, `version` and `tag` to GITHUB_OUTPUT.
  */
 import { appendFile, readFile } from 'node:fs/promises';
+import semver from 'semver';
 
-/** What the registry has of the package. */
 /** The dist-tags this publishes under, and any others the package has. */
 export interface DistTags {
   main?: string;
@@ -16,6 +16,7 @@ export interface DistTags {
   [tag: string]: string | undefined;
 }
 
+/** What the registry has of the package. */
 export interface RegistryState {
   distTags: DistTags;
   versions: readonly string[];
@@ -40,9 +41,6 @@ export type PublishPlan =
  */
 export const supersededTag = 'superseded';
 
-// semver.org's grammar without build metadata, which npm ignores when comparing versions
-const versionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?$/;
-
 /**
  * The version, and the dist-tag it should go under: `main` for main, `latest` for a release, `next` for a pre-release.
  * A version takes its tag only if it's newer than the version there, and a pre-release only if it's also newer than
@@ -55,9 +53,9 @@ export function planPublish({ ref, headSha, commitTime, registry }: PublishInput
     return { publish: false, version, reason: `${version} is already published.` };
   }
 
-  const tag = ref === 'main' ? 'main' : parseVersion(version).prerelease.length > 0 ? 'next' : 'latest';
+  const tag = ref === 'main' ? 'main' : semver.prerelease(version) === null ? 'latest' : 'next';
   const mustBeAhead = tag === 'next' ? [registry.distTags.next, registry.distTags.latest] : [registry.distTags[tag]];
-  const ahead = mustBeAhead.every(current => current === undefined || compareVersions(version, current) > 0);
+  const ahead = mustBeAhead.every(current => current === undefined || semver.gt(version, current));
   return { publish: true, version, tag: ahead ? tag : supersededTag };
 }
 
@@ -77,72 +75,13 @@ export function sdkVersion(ref: string, headSha: string, commitTime: string): st
     return `0.0.0-main.${commitTime}.sha-${headSha.slice(0, 7)}`;
   }
 
+  // valid() drops build metadata, which npm ignores when comparing versions, so a tag with it isn't one
   const version = ref.startsWith('v') ? ref.slice(1) : '';
-  if (!versionPattern.test(version)) {
+  if (semver.valid(version) !== version) {
     throw new Error(`${ref} isn't a version tag such as v1.2.3 or v1.3.0-rc.1, so it has no watch SDK version.`);
   }
 
   return version;
-}
-
-interface ParsedVersion {
-  release: [string, string, string];
-  prerelease: string[];
-}
-
-function parseVersion(version: string): ParsedVersion {
-  const match = versionPattern.exec(version);
-  if (match === null) {
-    throw new Error(`${version} isn't a semver version.`);
-  }
-
-  const [, major = '', minor = '', patch = '', prerelease] = match;
-  return { release: [major, minor, patch], prerelease: prerelease === undefined ? [] : prerelease.split('.') };
-}
-
-/** Compares numeric identifiers of any length; the grammar rules out leading zeros. */
-function compareNumbers(a: string, b: string): number {
-  return a.length - b.length || (a < b ? -1 : a > b ? 1 : 0);
-}
-
-/** Below 0 when `a` comes before `b` in semver's precedence, above 0 after, 0 when equal. */
-export function compareVersions(a: string, b: string): number {
-  const left = parseVersion(a);
-  const right = parseVersion(b);
-  for (let i = 0; i < 3; i++) {
-    const result = compareNumbers(left.release[i] ?? '', right.release[i] ?? '');
-    if (result !== 0) {
-      return result;
-    }
-  }
-
-  // A pre-release comes before its release
-  if (left.prerelease.length === 0 || right.prerelease.length === 0) {
-    return right.prerelease.length - left.prerelease.length;
-  }
-
-  for (let i = 0; i < Math.min(left.prerelease.length, right.prerelease.length); i++) {
-    const result = compareIdentifiers(left.prerelease[i] ?? '', right.prerelease[i] ?? '');
-    if (result !== 0) {
-      return result;
-    }
-  }
-
-  return left.prerelease.length - right.prerelease.length;
-}
-
-/** Numeric identifiers compare as numbers and come before alphanumeric ones, which compare in ASCII order. */
-function compareIdentifiers(a: string, b: string): number {
-  const aNumeric = /^\d+$/.test(a);
-  const bNumeric = /^\d+$/.test(b);
-  if (aNumeric && bNumeric) {
-    return compareNumbers(a, b);
-  }
-  if (aNumeric !== bNumeric) {
-    return aNumeric ? -1 : 1;
-  }
-
-  return a < b ? -1 : a > b ? 1 : 0;
 }
 
 /**
@@ -163,7 +102,7 @@ export function parsePackument(json: string): RegistryState {
   const distTags = 'dist-tags' in value ? value['dist-tags'] : {};
   const versions = 'versions' in value ? value.versions : {};
   const tagEntries = typeof distTags === 'object' && distTags !== null ? Object.entries(distTags) : undefined;
-  if (!tagEntries?.every((entry): entry is [string, string] => typeof entry[1] === 'string')) {
+  if (!tagEntries?.every((entry): entry is [string, string] => typeof entry[1] === 'string' && semver.valid(entry[1]) !== null)) {
     throw new Error(`The packument's dist-tags aren't versions: ${JSON.stringify(distTags)}`);
   }
   if (typeof versions !== 'object' || versions === null) {

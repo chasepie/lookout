@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { compareVersions, parsePackument, planPublish, sdkVersion, supersededTag, type RegistryState } from '../scripts/publish-plan.ts';
+import { parsePackument, planPublish, sdkVersion, supersededTag, type RegistryState } from '../scripts/publish-plan.ts';
 
 const sha = '280d26a6e1734fdbca96040b94ab16f152b3905c';
 const empty: RegistryState = { distTags: {}, versions: [] };
@@ -27,37 +27,6 @@ describe('sdkVersion', () => {
 
   test('refuses a main build without a commit time', () => {
     assert.throws(() => sdkVersion('main', sha, ''), /isn't a commit time/);
-  });
-});
-
-describe('compareVersions', () => {
-  const ascending = [
-    '0.0.0-main.20261110143000.sha-280d26a',
-    '0.0.0-main.20261110153000.sha-0123456',
-    '0.0.0-main.20261111000000.sha-abcdef0',
-    '1.0.0-alpha',
-    '1.0.0-alpha.1',
-    '1.0.0-alpha.beta',
-    '1.0.0-beta',
-    '1.0.0-beta.2',
-    '1.0.0-beta.11',
-    '1.0.0-rc.1',
-    '1.0.0',
-    '1.2.0',
-    '1.10.0',
-    '2.0.0',
-  ];
-
-  for (let i = 1; i < ascending.length; i++) {
-    const [lower = '', higher = ''] = [ascending[i - 1], ascending[i]];
-    test(`${lower} < ${higher}`, () => {
-      assert.ok(compareVersions(lower, higher) < 0);
-      assert.ok(compareVersions(higher, lower) > 0);
-    });
-  }
-
-  test('equal versions', () => {
-    assert.equal(compareVersions('1.2.3-rc.1', '1.2.3-rc.1'), 0);
   });
 });
 
