@@ -24,8 +24,9 @@ public partial class Program
 
             ImageTag = Setting(
                 name: "lookout-image-tag",
-                defaultValue: "main",
-                description: "The tag of the Backend's and the Runner's images: main, a version such as 1.2.0, or sha-<commit>.");
+                defaultValue: null,
+                description: "the tag of the Backend's and the Runner's images: a release's major version, such as 1, or before 1.0 its "
+                    + "minor version, such as 0.4, to follow its updates; or a version, such as 0.4.3, to stay on it.");
 
             Host = Setting(
                 name: "lookout-host",
@@ -151,13 +152,20 @@ public partial class Program
 
         /// <summary>
         /// <paramref name="setting"/> as a Compose variable in <paramref name="service"/>, with its default if it has one.
+        /// The image tag is the one required setting Compose reads itself, rather than a service, so without it Compose
+        /// stops with a message, where it would otherwise fail on an image reference ending in a colon.
         /// </summary>
         public string Placeholder(IResourceBuilder<ParameterResource> setting, DockerComposeServiceResource service)
         {
-            if (setting.AsEnvironmentPlaceholder(service) is var placeholder
-                && _defaults.TryGetValue(setting.Resource.Name, out var defaultValue))
+            var placeholder = setting.AsEnvironmentPlaceholder(service);
+            if (_defaults.TryGetValue(setting.Resource.Name, out var defaultValue))
             {
                 return $"{placeholder[..^1]}:-{defaultValue}}}";
+            }
+
+            if (setting == ImageTag)
+            {
+                return $"{placeholder[..^1]}:?set it in .env to the release to run, such as 0.1}}";
             }
 
             return placeholder;

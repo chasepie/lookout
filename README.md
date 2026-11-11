@@ -6,9 +6,10 @@ you when something changes.
 A **watch** is something you want checked: a **watch script** that drives a real Chromium through Playwright, plus when
 and how to run it. Each **run** ends as a **success**, carrying what the script found on the page, a **known failure**,
 a problem the script recognised, such as a page that's blocked from the current VPN region, or a **crash**. Lookout
-keeps a screenshot of the page with a run when you ask it to. Runs can go through a VPN that rotates between regions, and
-Lookout sends a **notification** (through Pushover, so far) when a run shows a content change, a known-failure streak
-reaching its threshold, the start of a crash streak, or a recovery. [`GLOSSARY.md`](GLOSSARY.md) defines each of these.
+keeps a screenshot of the page with a run when you ask it to. Runs can go through a VPN that rotates between regions,
+and Lookout sends a **notification** (through Pushover, so far) when a run shows a content change, a known-failure
+streak reaching its threshold, the start of a crash streak, or a recovery. [`GLOSSARY.md`](GLOSSARY.md) defines each of
+these.
 
 Lookout is for one person: the **Owner**, who signs in with a username and password set in its settings.
 
@@ -57,10 +58,29 @@ Packages, and trying them locally with `lookout-watch run`.
 
 ## Deploying
 
-CD publishes the Backend's and Runner's images to GHCR: `main` follows the main branch, each `v*` release gets its
-version, and `latest` is the highest release. [`deploy/`](deploy) has the Docker Compose file that runs them, and its
-[README](deploy/README.md) walks through the settings, the reverse proxy Lookout needs in front of it for HTTPS, and
-upgrading.
+Each release publishes the Backend's and Runner's images to GHCR. [`deploy/`](deploy) has the Docker Compose file that
+runs them, and its [README](deploy/README.md) walks through the settings, the reverse proxy Lookout needs in front of it
+for HTTPS, and which image tag to follow for updates.
+
+## Releasing
+
+Lookout is versioned with [release-please](https://github.com/googleapis/release-please), from PR titles:
+
+- **PR titles are [Conventional Commits](https://www.conventionalcommits.org/)**, since a squash merge makes the title
+  the commit on main. `fix: …` releases a patch and `feat: …` a minor version; `feat!: …` is a breaking change, a major
+  version. Until 1.0, everything shifts down one: a breaking change is a minor version and a feature a patch. Other
+  types, such as `docs:`, `refactor:`, `test:` and `chore:`, release nothing. A check on each PR enforces this.
+- **A breaking change** is one a deployment can't take without the Owner: a new `docker-compose.yaml` or setting, or a
+  change that breaks existing watch scripts.
+- **Merging a PR** updates release-please's Release PR, which holds the next version and its changelog. **Merging the
+  Release PR** releases it: it tags `v<version>`, creates a GitHub Release, and publishes the images and the watch SDK
+  at that version.
+- **Going to 1.0**: merge a PR whose commit message has a `Release-As: 1.0.0` footer.
+
+release-please needs a token to open its Release PRs with, since GitHub runs no CI on PRs opened with `GITHUB_TOKEN` and
+main's ruleset needs CI to pass. Create a
+[fine-grained personal access token](https://github.com/settings/personal-access-tokens/new) for this repository with
+read and write access to Contents, Issues and Pull requests, and save it as the Actions secret `RELEASE_PLEASE_TOKEN`.
 
 ## Developing
 

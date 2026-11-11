@@ -40,11 +40,9 @@
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
-    "@types/semver": "^7.8.0",
     "commander": "^15.1.0",
     "esbuild": "^0.28.2",
     "rimraf": "^6.1.4",
-    "semver": "^7.8.5",
     "typescript": "^6.0.3"
   },
   "peerDependencies": {

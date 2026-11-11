@@ -3,8 +3,9 @@ namespace ChasePie.Lookout.AppHost;
 // Every image and tag, so a version bump changes only this file
 public partial class Program
 {
-    // Lookout's own images in production, which CD (.github/workflows/cd.yml) pushes. Their tag is a deployment setting,
-    // lookout-image-tag. Development builds the Runner from its Dockerfile and runs the Backend as a project instead.
+    // Lookout's own images in production, which each release pushes (.github/workflows/release.yml). Their tag is a
+    // deployment setting, lookout-image-tag. Development builds the Runner from its Dockerfile and runs the Backend as a
+    // project instead.
     private const string BackendImage = "ghcr.io/chasepie/lookout-backend";
     private const string RunnerImage = "ghcr.io/chasepie/lookout-runner";
 

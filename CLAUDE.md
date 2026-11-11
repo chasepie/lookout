@@ -37,9 +37,8 @@ A monorepo with a .NET solution (`Lookout.slnx`) and npm workspaces (root `packa
   and Runner.
 - `src/watch-sdk/`: TypeScript SDK and CLI (Playwright-based) for writing watch scripts. `npm test -w src/watch-sdk`
   builds it and runs its tests (`test/`), the CLI's in a local headless Chromium, which
-  `npx playwright install chromium-headless-shell` installs. CD publishes it to GitHub Packages, versioned like the
-  images (`docs/adr/0007-watch-sdk-published-in-step-with-lookout.md`), for writing scripts in other projects, with the
-  version and dist-tag from `scripts/publish-plan.ts`; its `README.md` is the package's page, for those projects.
+  `npx playwright install chromium-headless-shell` installs. Each release publishes it to GitHub Packages at Lookout's
+  version, for writing scripts in other projects; its `README.md` is the package's page, for those projects.
 - `src/frontend/`: Angular web UI. Its conventions are in `src/frontend/CLAUDE.md`.
 - `deploy/`: the generated production deployment, and how to run it (`deploy/README.md`).
 - `examples/`: example watch scripts built on the SDK.
@@ -52,6 +51,12 @@ you set in development; leave out the ones the AppHost always sets itself, such 
 `EnvVars` names every variable the services read. Production's settings, secrets included, are listed in
 `deploy/.env.example`, which `Production.cs` generates; the ones only Compose reads, such as `LOOKOUT_IMAGE_TAG`, are
 named only there.
+
+PR titles must be Conventional Commits (`fix: …`, `feat: …`, `feat!: …`), since squash merges make them the commit on
+main, and release-please picks the next version from them (`.github/workflows/release.yml`; before 1.0 a breaking change
+is a minor version). A change that needs a new `docker-compose.yaml` or setting, or breaks existing watch scripts, is
+breaking. How releasing works is under "Releasing" in `README.md`, and why in
+`docs/adr/0007-releases-with-release-please.md`.
 
 The domain's terms are in `GLOSSARY.md`, and decisions that would surprise a reader are recorded in `docs/adr/`. How
 signing in, sessions and CSRF protection work, how watch scripts are sandboxed, and the constraints they put on changes

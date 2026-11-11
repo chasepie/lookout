@@ -1,17 +1,20 @@
 # Deploying Lookout
 
-`docker-compose.yaml` runs Lookout from the images CD (`.github/workflows/cd.yml`) publishes to GHCR. It's generated
-from the AppHost's publish mode (`src/AppHost/Production.cs`), so change it there, not here: CI fails while the two
-differ. Why it's built the way it is (the networks, the read-only containers, the secrets) is in
+`docker-compose.yaml` runs Lookout from the images each release (`.github/workflows/release.yml`) publishes to GHCR.
+It's generated from the AppHost's publish mode (`src/AppHost/Production.cs`), so change it there, not here: CI fails
+while the two differ. Why it's built the way it is (the networks, the read-only containers, the secrets) is in
 [`docs/security.md`](../docs/security.md).
 
-The deployment needs only this directory's `docker-compose.yaml` and `.env.example`, not the rest of the repo.
+The deployment needs only this directory's `docker-compose.yaml` and `.env.example`, not the rest of the repo. Take them
+from the release you run: each is tagged, such as `v0.4.3`, so they're at
+`https://github.com/chasepie/lookout/tree/v0.4.3/deploy`.
 
 ## 1. Settings
 
 Copy `.env.example` to `.env` beside `docker-compose.yaml`, and fill it in. It says what each setting is for, and which
 are required. The secrets are there too:
 
+- `LOOKOUT_IMAGE_TAG`: the release to run, such as `0.4`. See [Upgrading](#upgrading).
 - `LOOKOUT_OWNER_USERNAME` and `LOOKOUT_OWNER_PASSWORD`: what you sign in with. Changing either, other than the
   username's case, signs out every session once the Backend restarts.
 - `LOOKOUT_RUNNER_API_KEY`, `BROWSERLESS_TOKEN`, `GLUETUN_API_KEY` and `GLUETUN_PROXY_PASSWORD`: secrets the services
@@ -62,14 +65,27 @@ The Backend creates its database on first start. Sign in at `https://<LOOKOUT_HO
 
 ## Upgrading
 
-`LOOKOUT_IMAGE_TAG` picks the images: `main` follows the main branch, a version such as `1.2.0` stays on a release, and
-`sha-<commit>` on one commit. To upgrade, change it if needed, then:
+`LOOKOUT_IMAGE_TAG` picks the release to run, and is required. Each release, such as `0.4.3`, publishes the images
+under its version and also under:
+
+| Tag | Follows |
+| --- | --- |
+| `0.4` | Before 1.0, each release that keeps the same `docker-compose.yaml` and settings: features and fixes |
+| `1` | From 1.0, the same, within a major version |
+| `latest` | Every release, including the ones that need a new `docker-compose.yaml` |
+
+Follow `0.4` (or, from 1.0, `1`) to take updates as they're released, or set a version to stay on it. A release that
+needs a new `docker-compose.yaml` or a new setting is always a new minor version before 1.0 (`0.5.0`), and a new major
+version after (`2.0.0`), so the tag you follow never moves to one. To move to it, take its `docker-compose.yaml` and
+`.env.example` from its tag, as in [Deploying Lookout](#deploying-lookout), fill in any new settings in `.env`,
+change `LOOKOUT_IMAGE_TAG`, and then:
 
 ```sh
 docker compose pull && docker compose up -d
 ```
 
-Take the new `docker-compose.yaml` and `.env.example` from the same commit or release as the images.
+Any release can migrate the database when the Backend starts, including the ones a tag you follow moves to, and going
+back to an earlier release's images doesn't undo that, so keep [backups](#backups).
 
 ## Backups
 

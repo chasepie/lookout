@@ -1,0 +1,22 @@
+name: PR title
+
+# Squash merges make a PR's title its commit on main, which release-please reads to pick the next version, so titles
+# must be Conventional Commits: `fix: …` releases a patch, `feat: …` a minor and `feat!: …` a major (before 1.0, a patch
+# and a minor). pull_request_target, so it also checks PRs from forks; it only reads the title and never checks out
+# their code.
+on:
+  pull_request_target:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  check:
+    name: Check PR title
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    steps:
+      - uses: amannn/action-semantic-pull-request@v6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

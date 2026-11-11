@@ -15,11 +15,11 @@ The package is on GitHub Packages, whose npm registry needs a token to install f
 //npm.pkg.github.com/:_authToken=${GITHUB_PACKAGES_TOKEN}
 ```
 
-With `GITHUB_PACKAGES_TOKEN` set in your environment (or in CI's), install the SDK, at exactly the version that matches
-your Lookout (see below), and Node's types, which Playwright's need:
+With `GITHUB_PACKAGES_TOKEN` set in your environment (or in CI's), install the SDK of the Lookout release you run (see
+below), and Node's types, which Playwright's need:
 
 ```sh
-npm install --save-dev --save-exact @chasepie/lookout-watch-sdk@main @types/node typescript
+npm install --save-dev @chasepie/lookout-watch-sdk@0.4 @types/node typescript
 ```
 
 npm installs the Playwright version the SDK needs with it, as a peer dependency.
@@ -27,18 +27,18 @@ npm installs the Playwright version the SDK needs with it, as a peer dependency.
 ### Which version
 
 Lookout runs every script against the SDK and Playwright in its own Runner image, not the ones your project installed,
-so install the SDK that matches the Lookout you run, its `LOOKOUT_IMAGE_TAG`:
+and each Lookout release publishes the SDK at its own version. So install the SDK that matches the release you run, its
+`LOOKOUT_IMAGE_TAG`:
 
 | Lookout image tag | SDK |
 | --- | --- |
-| `main` | `@main`, the latest build of main |
-| `latest` | `@latest`, the latest release |
-| A release, such as `1.4.0` | The same version, `@1.4.0` |
-| `sha-<commit>` | The main build of that commit, `0.0.0-main.<time>.sha-<commit>` |
+| A minor version before 1.0, such as `0.4` | `@0.4`, which npm saves as `^0.4.3`: like the image tag, it follows `0.4` |
+| A major version from 1.0, such as `1` | `@1`, saved as `^1.2.0` |
+| A release, such as `0.4.3` | `--save-exact @0.4.3` |
+| `latest` | `@latest` |
 
-The latest pre-release, such as `1.5.0-rc.1`, is under `@next`. Until Lookout's first release, `@latest` may be an old
-build of main, so use `@main`. Versions under `@superseded` are ones that didn't become the latest of their kind, such
-as a backport; install those by their version.
+A Lookout release that would break your scripts is a new minor version before 1.0 (`0.5.0`), and a new major version
+after, so neither your image tag nor the SDK's range moves to it on its own.
 
 ## Writing a script
 
