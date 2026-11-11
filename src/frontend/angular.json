@@ -2,7 +2,10 @@
   "$schema": "../../node_modules/@angular/cli/lib/config/schema.json",
   "version": 1,
   "cli": {
-    "packageManager": "npm"
+    "packageManager": "npm",
+    "schematicCollections": [
+      "angular-eslint"
+    ]
   },
   "newProjectRoot": "projects",
   "projects": {
@@ -21,7 +24,9 @@
           "builder": "@angular/build:application",
           "options": {
             "browser": "src/main.ts",
-            "allowedCommonJsDependencies": ["cronstrue"],
+            "allowedCommonJsDependencies": [
+              "cronstrue"
+            ],
             "outputPath": {
               "base": "../Backend/wwwroot",
               "browser": ""
@@ -112,6 +117,15 @@
               "functions": 75,
               "lines": 85
             }
+          }
+        },
+        "lint": {
+          "builder": "@angular-eslint/builder:lint",
+          "options": {
+            "lintFilePatterns": [
+              "src/**/*.ts",
+              "src/**/*.html"
+            ]
           }
         }
       }
