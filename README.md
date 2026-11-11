@@ -76,6 +76,10 @@ Lookout is versioned with [release-please](https://github.com/googleapis/release
   Release PR** releases it: it tags `v<version>`, creates a GitHub Release, and publishes the images and the watch SDK
   at that version.
 - **Going to 1.0**: merge a PR whose commit message has a `Release-As: 1.0.0` footer.
+- **If a release fails to publish**, fix the cause, then run the Release workflow by hand (Actions → Release → Run
+  workflow) with its version, such as `0.4.3`. It publishes that release again, skipping an SDK that's already
+  published. Only the newest release moves the `0.4`, `1` and `latest` image tags and the SDK's `latest`, so publishing
+  an older one again never moves a deployment back.
 
 release-please opens its Release PRs as a GitHub App, since GitHub runs no CI on PRs opened with `GITHUB_TOKEN` and
 main's ruleset needs CI to pass. To set it up once:

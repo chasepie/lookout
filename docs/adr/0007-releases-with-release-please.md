@@ -23,3 +23,6 @@ check the Dockerfiles.
   `GITHUB_TOKEN` does, so its Release PRs would never run CI, which main's ruleset requires before merging. An App
   rather than a personal access token, so nothing expires, and its PRs and tags are a bot's rather than the Owner's.
 - There are no builds of main to deploy between releases: to run a change, release it.
+- A little of our own logic stays, to keep a release consistent: release-please only acts on main's newest commit, the
+  one its run's CI passed on; only the newest release moves the floating image tags and the SDK's `latest`; and a
+  release can be published again by hand, since release-please reports a release only to the run that creates it.
