@@ -4,7 +4,7 @@ namespace ChasePie.Lookout.Core;
 
 /// <summary>
 /// Names of the environment variables the services read. In development the AppHost sets them: the ones you choose come
-/// from <c>.env</c> and are listed in <c>example.env</c>; it works out or generates the rest. In production they come
+/// from <c>.env</c> and are listed in <c>README.md</c>; it works out or generates the rest. In production they come
 /// from <c>deploy/docker-compose.yaml</c> and its <c>.env</c>.
 /// The images set some of their own: the Runner's <see cref="WatchCliRoot"/>, and both <see cref="LookoutWatchScriptsDir"/> as
 /// <c>/app/scripts</c>, where the scripts are mounted, and the Backend's <see cref="LookoutDatabaseDir"/>.
