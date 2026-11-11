@@ -37,7 +37,9 @@ A monorepo with a .NET solution (`Lookout.slnx`) and npm workspaces (root `packa
   and Runner.
 - `src/watch-sdk/`: TypeScript SDK and CLI (Playwright-based) for writing watch scripts. `npm test -w src/watch-sdk`
   builds it and runs the CLI's tests (`test/`) in a local headless Chromium, which
-  `npx playwright install chromium-headless-shell` installs.
+  `npx playwright install chromium-headless-shell` installs. CD publishes it to GitHub Packages, versioned like the images
+  (`docs/adr/0007-watch-sdk-published-in-step-with-lookout.md`), for writing scripts in other projects; its `README.md` is
+  the package's page, for those projects.
 - `src/frontend/`: Angular web UI. Its conventions are in `src/frontend/CLAUDE.md`.
 - `deploy/`: the generated production deployment, and how to run it (`deploy/README.md`).
 - `examples/`: example watch scripts built on the SDK.
