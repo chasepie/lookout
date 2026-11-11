@@ -11,8 +11,9 @@ check the Dockerfiles.
 
 ## Consequences
 
-- PR titles must be Conventional Commits (`.github/workflows/pr-title.yml` checks them), and squash merges must use them
-  as the commit's title, which is a repository setting: only squash merges are allowed, with the PR's title.
+- PR titles must be Conventional Commits (`.github/workflows/pr-title.yml` checks them), and must become the commits on
+  main: main's ruleset allows only squash merges and requires the title check, and the repository's setting titles a
+  squash merge with the PR's title. PRs into other branches can merge any way.
 - Lookout is in initial development, at `0.x`: a breaking change bumps the minor version, and a feature the patch. A
   breaking change includes one that needs a new `docker-compose.yaml` or setting, so a deployment following a minor
   version's image tag, such as `0.4`, never moves to one; from 1.0, it follows the major, such as `1`.
