@@ -20,7 +20,7 @@ services:
     security_opt:
       - "no-new-privileges:true"
   runner:
-    image: "ghcr.io/chasepie/lookout-runner:${LOOKOUT_IMAGE_TAG:-main}"
+    image: "ghcr.io/chasepie/lookout-runner:${LOOKOUT_IMAGE_TAG:?set it in .env to the release to run, such as 0.1}"
     environment:
       TZ: "${TZ:-Etc/UTC}"
       BROWSERLESS_TOKEN: "${BROWSERLESS_TOKEN}"
@@ -52,7 +52,7 @@ services:
     tmpfs:
       - "/tmp"
   backend:
-    image: "ghcr.io/chasepie/lookout-backend:${LOOKOUT_IMAGE_TAG:-main}"
+    image: "ghcr.io/chasepie/lookout-backend:${LOOKOUT_IMAGE_TAG:?set it in .env to the release to run, such as 0.1}"
     environment:
       AllowedHosts: "${LOOKOUT_HOST}"
       TZ: "${TZ:-Etc/UTC}"

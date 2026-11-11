@@ -1,9 +1,17 @@
 {
   "name": "@chasepie/lookout-watch-sdk",
   "version": "0.0.0",
-  "description": "",
+  "description": "Write and run Lookout watch scripts: their types, and a CLI that runs one in Chromium",
   "license": "MIT",
   "author": "chasepie",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chasepie/lookout.git",
+    "directory": "src/watch-sdk"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
   "type": "module",
   "exports": {
     ".": {
@@ -18,6 +26,9 @@
     "dist",
     "index.ts"
   ],
+  "engines": {
+    "node": ">=22.18"
+  },
   "scripts": {
     "build": "npm run clean && npm run build:lib && npm run build:cli",
     "build:lib": "tsc -p tsconfig.build.json",

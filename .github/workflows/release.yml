@@ -1,0 +1,300 @@
+name: Release
+
+# For each push to main, once CI passes: release-please keeps a Release PR open with the next version and changelog,
+# from the Conventional Commit titles of the PRs merged since the last release. Merging the Release PR tags the release,
+# and this workflow then publishes it: the images the deployment (deploy/) runs to GHCR, and the watch SDK to GitHub
+# Packages. Running it by hand publishes an existing release again, for one whose publishing failed. See
+# docs/adr/0007-releases-with-release-please.md.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: The release to publish again, such as 0.4.3
+        required: true
+
+permissions:
+  contents: read
+
+# One at a time, so releases publish in order. Not the group ci.yml's jobs use when this calls it, which is
+# Release-refs/heads/main: sharing one would deadlock.
+concurrency:
+  group: releases
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io/${{ github.repository_owner }}
+
+jobs:
+  ci:
+    name: CI
+    if: github.event_name == 'push'
+    uses: ./.github/workflows/ci.yml
+
+  release-please:
+    name: Release PR
+    needs: ci
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    outputs:
+      created: ${{ steps.release.outputs.release_created }}
+      version: ${{ steps.release.outputs.version }}
+
+    steps:
+      # release-please acts on main as it is now, not on the commit this run's CI tested, so it only acts when they're
+      # the same. Otherwise a newer push's run is queued, and does it once its CI passes on that push.
+      - name: Check this is main's newest commit
+        id: head
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          head=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+          if [ "$head" = "$GITHUB_SHA" ]; then
+            echo "newest=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Leaving release-please to the run for $head, main's newest commit."
+          fi
+
+      # A token of the release GitHub App's (see "Releasing" in README.md), not GITHUB_TOKEN: GitHub runs no workflows
+      # for what GITHUB_TOKEN does, and the Release PR needs CI to pass before main's ruleset lets it merge. It lasts an
+      # hour, and is revoked when the job ends.
+      - id: app-token
+        if: steps.head.outputs.newest == 'true'
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - id: release
+        if: steps.head.outputs.newest == 'true'
+        uses: googleapis/release-please-action@v5
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  # What to publish: the release release-please just created, or the one asked for by hand. It checks the release's
+  # SDK version before anything is published, so a mismatch fails first.
+  target:
+    name: Release to publish
+    needs: release-please
+    if: >-
+      !cancelled()
+      && (github.event_name == 'workflow_dispatch' || needs.release-please.outputs.created == 'true')
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      major: ${{ steps.version.outputs.major }}
+      sha: ${{ steps.version.outputs.sha }}
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: v${{ github.event_name == 'workflow_dispatch' && inputs.version || needs.release-please.outputs.version }}
+          persist-credentials: false
+
+      - id: version
+        env:
+          VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || needs.release-please.outputs.version }}
+        run: |
+          sdk_version=$(node -p "require('./src/watch-sdk/package.json').version")
+          if [ "$sdk_version" != "$VERSION" ]; then
+            echo "::error::The watch SDK's package.json says $sdk_version, but this is release $VERSION."
+            exit 1
+          fi
+          {
+            echo "version=$VERSION"
+            echo "major=${VERSION%%.*}"
+            echo "sha=$(git rev-parse HEAD)"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.image }} (${{ matrix.arch }})
+    needs: target
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        image: [lookout-backend, lookout-runner]
+        arch: [amd64, arm64]
+        include:
+          - image: lookout-backend
+            dockerfile: src/Backend/Dockerfile
+          - image: lookout-runner
+            dockerfile: src/Runner/Dockerfile
+          - arch: amd64
+            runner: ubuntu-26.04
+          - arch: arm64
+            runner: ubuntu-26.04-arm
+
+    steps:
+      # Without leaving GITHUB_TOKEN in the git config, where anything the build runs could read it
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.target.outputs.sha }}
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Untagged, by digest: the publish job tags both platforms' images together
+      - id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/${{ matrix.arch }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ matrix.image }},push-by-digest=true,name-canonical=true,push=true
+          # The source links the package to this repository on GHCR
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ needs.target.outputs.sha }}
+            org.opencontainers.image.version=${{ needs.target.outputs.version }}
+          cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.arch }}
+
+      - name: Export digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/digests"
+          touch "$RUNNER_TEMP/digests/${DIGEST#sha256:}"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: digests-${{ matrix.image }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Publish ${{ matrix.image }}
+    needs: [target, build]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        image: [lookout-backend, lookout-runner]
+
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-${{ matrix.image }}-*
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Here, right before the tags move, so a re-run of this job checks again: an older release, published again or
+      # re-run after a newer one, gets only its own version's tag
+      - name: Check whether it's the newest release
+        id: newest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.target.outputs.version }}
+        run: |
+          latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
+          if [ "$latest" = "v$VERSION" ]; then
+            echo "newest=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::$latest is newer, so $VERSION gets only its own tag."
+          fi
+
+      # 0.4.3 gets 0.4.3, 0.4 and latest; from 1.0, also its major, 1. A 0.x major isn't published: within it, a minor
+      # is what breaks compatibility, so a deployment follows 0.4, as it later follows 1.
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ matrix.image }}
+          flavor: latest=false
+          tags: |
+            type=semver,pattern={{version}},value=${{ needs.target.outputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.target.outputs.version }},enable=${{ steps.newest.outputs.newest == 'true' }}
+            type=semver,pattern={{major}},value=${{ needs.target.outputs.version }},enable=${{ steps.newest.outputs.newest == 'true' && needs.target.outputs.major != '0' }}
+            type=raw,value=latest,enable=${{ steps.newest.outputs.newest == 'true' }}
+
+      - name: Tag both platforms' images
+        working-directory: ${{ runner.temp }}/digests
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ matrix.image }}
+        run: |
+          tags=()
+          while read -r tag; do tags+=(-t "$tag"); done < <(jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          images=()
+          for digest in *; do images+=("$IMAGE@sha256:$digest"); done
+          docker buildx imagetools create "${tags[@]}" "${images[@]}"
+
+      - name: Inspect
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ matrix.image }}:${{ needs.target.outputs.version }}
+        run: docker buildx imagetools inspect "$IMAGE"
+
+  # The watch SDK, for writing watch scripts outside this repo, at the version of the images it matches. Once they're
+  # published, so the SDK never names a release Lookout doesn't have.
+  publish-watch-sdk:
+    name: Publish watch SDK
+    needs: [target, publish]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.target.outputs.sha }}
+          # Not left in the git config, so the build's dev dependencies can't read GITHUB_TOKEN
+          persist-credentials: false
+
+      # Writes an .npmrc that sends @chasepie's packages to GitHub Packages, with NODE_AUTH_TOKEN
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          registry-url: https://npm.pkg.github.com
+          scope: '@chasepie'
+
+      # Without the token: the build runs the SDK's dev dependencies
+      - name: Build
+        run: |
+          npm ci --workspace src/watch-sdk --ignore-scripts
+          npm run build --workspace src/watch-sdk
+
+      # npm versions can't be published twice, so a release published again skips the SDK if it's there. Every publish
+      # moves a dist-tag: the newest release takes latest, and an older one, published again or re-run after a newer
+      # one, takes previous, which nothing installs from.
+      - name: Publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.target.outputs.version }}
+        run: |
+          published=$(npm view "@chasepie/lookout-watch-sdk@$VERSION" version 2> /dev/null || true)
+          if [ "$published" = "$VERSION" ]; then
+            echo "::notice::The watch SDK $VERSION is already published."
+            exit 0
+          fi
+          latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
+          tag=$([ "$latest" = "v$VERSION" ] && echo latest || echo previous)
+          # Already built, so --ignore-scripts keeps the build (prepack) from running again with the token
+          npm publish --workspace src/watch-sdk --ignore-scripts --tag "$tag"
