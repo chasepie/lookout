@@ -192,6 +192,34 @@ public sealed class VpnFailoverTests
     }
 
     [TestMethod]
+    public async Task ARotationWaitingForTheFailingRunGoesFirstAndTheFailoverOnlyRetries()
+    {
+        await using var lookout = await StartAsync([Albania, Belgium, Chile], current: Albania);
+        lookout.Runner.WhileRunning = async () =>
+        {
+            lookout.Runner.WhileRunning = null;
+            await lookout.UpdateVpnSettingsAsync(s =>
+            {
+                s.RotationEnabled = true;
+                s.NextRotationTime = DateTime.UtcNow.AddMinutes(-1);
+            }, Ct);
+            // Long enough for the rotation to come due and wait for the run
+            await Task.Delay(TimeSpan.FromSeconds(2), Ct);
+        };
+        lookout.Runner.Responses.Enqueue(FailoverFailure);
+        lookout.Runner.Response = Success;
+        var watchId = await lookout.Client.CreateWatchAsync("Tickets", Ct, ("UseVpn", "true"));
+
+        await lookout.Client.RunAsync(watchId, Ct);
+        var runs = await WaitForRunsAsync(lookout.Client, watchId, 2);
+
+        Assert.AreEqual(runs[0].Id, runs[1].RetryOfRunId);
+        Assert.HasCount(1, lookout.Gluetun.SwitchedTo);
+        Assert.AreEqual(lookout.Gluetun.SwitchedTo.Single(), runs[1].Region);
+        Assert.IsNull((await lookout.GetVpnSettingsAsync(Ct)).LastError);
+    }
+
+    [TestMethod]
     public async Task AVpnRunQueuedBehindAFailingOneWaitsForTheFailover()
     {
         await using var lookout = await StartAsync([Albania, Belgium], current: Albania);

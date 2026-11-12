@@ -60,6 +60,10 @@ public partial class VpnRotationService(
 
     private volatile VpnSwitchProgress? _progress;
 
+    // Failovers switch from the run worker, and the rest from this service's loop: one at a time, so each picks its
+    // region from where the last one left the VPN, and only one shows its progress
+    private readonly SemaphoreSlim _switching = new(1, 1);
+
     /// <summary>
     /// The switch in progress, or <see langword="null"/> if there's none.
     /// </summary>
@@ -78,23 +82,23 @@ public partial class VpnRotationService(
 
     /// <summary>
     /// Fails the VPN over from <paramref name="failedRegion"/>, where a run's known failure asked for it, to a random
-    /// region rotation may switch to that isn't one of <paramref name="avoidRegions"/>, whether or not rotation is on.
+    /// region rotation may switch to that isn't one of <paramref name="failedRegions"/>, whether or not rotation is on.
     /// Waits for the gate, then for the new tunnel.
     /// </summary>
     /// <param name="failedRegion">The region the run ran in.</param>
-    /// <param name="avoidRegions">The regions the watch already failed over from during its known-failure streak.</param>
+    /// <param name="failedRegions">The regions the watch already failed over from during its known-failure streak.</param>
     public async Task<FailoverOutcome> FailOverAsync(
-        string? failedRegion, IReadOnlyCollection<string> avoidRegions, CancellationToken cancellationToken)
+        string? failedRegion, IReadOnlyCollection<string> failedRegions, CancellationToken cancellationToken)
     {
         if (!configuration.IsEnabled)
         {
             return FailoverOutcome.Unavailable;
         }
 
-        return await SwitchAsync(SwitchKind.Failover, null, cancellationToken, new FailoverRequest(failedRegion, avoidRegions));
+        return await SwitchAsync(SwitchKind.Failover, null, cancellationToken, new FailoverRequest(failedRegion, failedRegions));
     }
 
-    private sealed record FailoverRequest(string? FailedRegion, IReadOnlyCollection<string> AvoidRegions)
+    private sealed record FailoverRequest(string? FailedRegion, IReadOnlyCollection<string> FailedRegions)
     {
         public bool HasLeft(string? currentRegion) =>
             !string.Equals(currentRegion, FailedRegion, StringComparison.OrdinalIgnoreCase);
@@ -204,10 +208,25 @@ public partial class VpnRotationService(
     private async Task<FailoverOutcome> SwitchAsync(
         SwitchKind kind, string? requestedRegion, CancellationToken cancellationToken, FailoverRequest? failover = null)
     {
+        await _switching.WaitAsync(cancellationToken);
+        try
+        {
+            return await SwitchOneAtATimeAsync(kind, requestedRegion, failover, cancellationToken);
+        }
+        finally
+        {
+            _switching.Release();
+        }
+    }
+
+    private async Task<FailoverOutcome> SwitchOneAtATimeAsync(
+        SwitchKind kind, string? requestedRegion, FailoverRequest? failover, CancellationToken cancellationToken)
+    {
         using var scope = scopeFactory.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<LookoutDbContext>();
         var gluetun = scope.ServiceProvider.GetRequiredService<GluetunHttpClient>();
         var settings = await dbContext.VpnSettings.SingleAsync(s => s.Id == VpnSettings.SingletonId, cancellationToken);
+        // Read after any earlier switch finished, and none can start before this one does
         if (failover is not null && failover.HasLeft(settings.CurrentRegion))
         {
             LogAlreadyLeft(failover.FailedRegion);
@@ -234,13 +253,6 @@ public partial class VpnRotationService(
                 _progress = _progress with { WaitingForRun = false };
                 await notifier.VpnChangedAsync();
 
-                // Another switch may have gone first while this one waited, and already left the failed region
-                if (failover is not null && failover.HasLeft(await GetCurrentRegionAsync(cancellationToken)))
-                {
-                    LogAlreadyLeft(failover.FailedRegion);
-                    return FailoverOutcome.AlreadyLeft;
-                }
-
                 LogSwitching(kind, region);
                 await gluetun.SetRegionAsync(region, cancellationToken);
 
@@ -260,15 +272,7 @@ public partial class VpnRotationService(
         }
         finally
         {
-            if (_progress is not null)
-            {
-                _progress = null;
-                if (!regionApplied && error is null)
-                {
-                    // Skipped after showing the switch, so clients hear it's over
-                    await notifier.VpnChangedAsync();
-                }
-            }
+            _progress = null;
         }
 
         // The settings may have been edited while the switch waited for a run
@@ -334,7 +338,7 @@ public partial class VpnRotationService(
         if (failover is not null)
         {
             // Running out of regions is how a streak in every region ends, not something wrong with the VPN
-            return settings.PickFailoverRegion(regions, failover.AvoidRegions, Random.Shared);
+            return settings.PickFailoverRegion(regions, failover.FailedRegions, Random.Shared);
         }
 
         return settings.PickRotationRegion(regions, Random.Shared)
