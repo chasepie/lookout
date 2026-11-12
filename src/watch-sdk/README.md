@@ -55,7 +55,11 @@ export default class implements LookoutWatchScript {
     await page.goto('https://shop.example/products/123', { signal });
 
     if (await page.getByText('Not available in your country').isVisible()) {
-      return { success: false, failureReason: 'The shop blocks this region', failover: true };
+      return {
+        success: false,
+        failureReason: 'The shop blocks this region',
+        failover: true
+      };
     }
 
     const price = await page.locator('.price').innerText({ signal });
