@@ -55,7 +55,7 @@ export default class implements LookoutWatchScript {
     await page.goto('https://shop.example/products/123', { signal });
 
     if (await page.getByText('Not available in your country').isVisible()) {
-      return { success: false, failureReason: 'The shop blocks this region' };
+      return { success: false, failureReason: 'The shop blocks this region', failover: true };
     }
 
     const price = await page.locator('.price').innerText({ signal });
@@ -66,6 +66,12 @@ export default class implements LookoutWatchScript {
 
 Anything else it does, such as throwing or returning something else, ends the run as a crash. It may also return a PNG
 or JPEG of at most 8 MiB as its `screenshot`, such as `await page.screenshot()`.
+
+A known failure that another VPN region could fix, such as the blocked region above, can ask for a failover with
+`failover: true`: for a watch that uses the VPN, Lookout switches the VPN to a region the watch hasn't failed in since
+its last success, and runs the watch again there, up to 3 times in a row. Leave it out for problems another region
+can't fix, such as a sold-out item, since the switch moves every watch that uses the VPN. A watch that doesn't use the
+VPN only records the request.
 
 Lookout runs only the file you upload, so a script must:
 

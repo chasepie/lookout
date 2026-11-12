@@ -88,6 +88,30 @@ public sealed class VpnSettingsTests
     }
 
     [TestMethod]
+    public void FailoverPicksNeitherAnExcludedRegionNorTheCurrentOneNorOneTheWatchFailedIn()
+    {
+        var settings = Settings();
+        settings.CurrentRegion = "Netherlands";
+        settings.ExcludedRegions = ["Albania"];
+        var random = new Random(1);
+
+        for (var i = 0; i < 20; i++)
+        {
+            Assert.AreEqual("Sweden", settings.PickFailoverRegion(
+                ["Albania", "Netherlands", "Switzerland", "Sweden"], ["switzerland"], random));
+        }
+    }
+
+    [TestMethod]
+    public void FailoverPicksNothingWhenTheWatchFailedInEveryOtherRegion()
+    {
+        var settings = Settings();
+        settings.CurrentRegion = "Netherlands";
+
+        Assert.IsNull(settings.PickFailoverRegion(Regions, ["Albania", "Switzerland"], new Random(1)));
+    }
+
+    [TestMethod]
     public void ChangingTheIntervalCountsFromTheLastSwitch()
     {
         var settings = Settings(interval: 15);

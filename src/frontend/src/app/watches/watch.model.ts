@@ -50,8 +50,14 @@ export interface WatchRunSummary {
   content: string | null;
   /** The script's reason, when it returned a known failure. */
   failureReason: string | null;
+  /** Whether the known failure asked to fail the VPN over to another region. */
+  askedForFailover: boolean;
   /** Why the run crashed. */
   error: string | null;
+  /** The VPN's region while the run ran; `null` if it didn't use the VPN, or before the VPN's first switch. */
+  region: string | null;
+  /** The run this one retries, when Lookout queued it after a failover. */
+  retryOfRunId: number | null;
   hasScreenshot: boolean;
 }
 

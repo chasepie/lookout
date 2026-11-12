@@ -126,11 +126,24 @@ public class VpnSettings : VpnSettingsDto
     /// </summary>
     /// <param name="regions">The regions the VPN provider offers.</param>
     /// <returns>The region, or <see langword="null"/> if no other region is allowed.</returns>
-    public string? PickRotationRegion(IReadOnlyCollection<string> regions, Random random)
+    public string? PickRotationRegion(IReadOnlyCollection<string> regions, Random random) =>
+        PickFailoverRegion(regions, [], random);
+
+    /// <summary>
+    /// Picks a region as <see cref="PickRotationRegion"/> does, but not one of <paramref name="failedRegions"/>.
+    /// </summary>
+    /// <param name="regions">The regions the VPN provider offers.</param>
+    /// <param name="failedRegions">
+    /// The regions the watch asked to fail over from during its current known-failure streak.
+    /// </param>
+    /// <returns>The region, or <see langword="null"/> if no region is left.</returns>
+    public string? PickFailoverRegion(
+        IReadOnlyCollection<string> regions, IReadOnlyCollection<string> failedRegions, Random random)
     {
         var candidates = regions
             .Where(region => !ExcludedRegions.Contains(region, StringComparer.OrdinalIgnoreCase))
             .Where(region => !string.Equals(region, CurrentRegion, StringComparison.OrdinalIgnoreCase))
+            .Where(region => !failedRegions.Contains(region, StringComparer.OrdinalIgnoreCase))
             .ToList();
         return candidates.Count == 0 ? null : candidates[random.Next(candidates.Count)];
     }

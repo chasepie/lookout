@@ -13,6 +13,9 @@ function run(id: number, outcome: { content?: string; failureReason?: string; er
     content: outcome.content ?? null,
     failureReason: outcome.failureReason ?? null,
     error: outcome.error ?? null,
+    askedForFailover: false,
+    region: null,
+    retryOfRunId: null,
     hasScreenshot: false,
   };
 }

@@ -88,6 +88,15 @@ public sealed class RunResultTests
     }
 
     [TestMethod]
+    public async Task AKnownFailuresFailoverRequestIsPassedOn()
+    {
+        var result = await RunAsync(new { write = new { success = false, failureReason = "Blocked", failover = true } });
+
+        Assert.AreEqual("Blocked", result.FailureReason);
+        Assert.IsTrue(result.Failover);
+    }
+
+    [TestMethod]
     public async Task ACliThatDiesWritingItsOutputIsReportedWithItsStderr()
     {
         await using var factory = new RunnerFactory(standInCli: true);

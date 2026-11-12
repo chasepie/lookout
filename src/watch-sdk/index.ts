@@ -27,6 +27,12 @@ export function isSuccess(value: unknown): value is Success {
 export interface KnownFailure extends RunResultBase {
   success: false;
   failureReason: string;
+  /**
+   * Whether Lookout should fail the VPN over to another region and try the watch again there, for a problem another
+   * region could fix, such as a page that blocks this one. Only applies to watches that use the VPN. Leave it out
+   * for a problem another region can't fix, such as a sold-out item.
+   */
+  failover?: boolean;
 }
 
 export function isKnownFailure(value: unknown): value is KnownFailure {
@@ -231,6 +237,9 @@ export async function runWatch(runScript: LookoutWatchScript, options?: RunWatch
       result = await runScript.run(page, signal);
       if (!isRunResult(result)) {
         throw new Error(`Watch script returned an unexpected result: ${JSON.stringify(result)}`);
+      }
+      if (!result.success && result.failover !== undefined && typeof result.failover !== 'boolean') {
+        throw new Error(`The watch script's failover must be true or false, not ${JSON.stringify(result.failover)}.`);
       }
       if (result.screenshot !== undefined && !(result.screenshot instanceof Uint8Array)) {
         throw new Error('The watch script\'s screenshot must be bytes, such as what page.screenshot() returns, '

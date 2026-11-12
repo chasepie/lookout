@@ -11,12 +11,16 @@ namespace ChasePie.Lookout.Core;
 /// The script's own screenshot, or one the CLI took; base64 in JSON. Not yet checked to be an image.
 /// </param>
 /// <param name="Crash">What the script threw, when it crashed instead of returning a result.</param>
+/// <param name="Failover">
+/// Whether the known failure asked for a failover: a switch of the VPN to another region, and a retry there.
+/// </param>
 public sealed record WatchRunResult(
     bool Success,
     string? Content,
     string? FailureReason,
     byte[]? Screenshot = null,
-    WatchRunCrash? Crash = null);
+    WatchRunCrash? Crash = null,
+    bool Failover = false);
 
 /// <summary>
 /// A watch script that threw, or returned something other than a result.

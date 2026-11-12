@@ -25,10 +25,18 @@
   <p class="created">
     <time [attr.datetime]="shownRun.createdTime">{{ created() }}</time>
   </p>
+  @if (shownRun.retryOfRunId; as retried) {
+    <p class="retry-of">
+      Retry of <a [routerLink]="['/watches', id(), 'runs', retried]">run #{{ retried }}</a>
+    </p>
+  }
 
   <div class="seen" [class.seen-crashed]="outcome() === 'crashed'" [class.seen-known-failure]="outcome() === 'knownFailure'">
     <app-run-outcome [run]="shownRun" [clamp]="false" />
   </div>
+  @if (shownRun.askedForFailover) {
+    <p class="failover">Asked for failover</p>
+  }
 
   @if (timings(); as timings) {
     <dl class="timings">
@@ -40,6 +48,12 @@
         <dt>Ran</dt>
         <dd>{{ timings.ran ?? (shownRun.status === statuses.Running ? 'Still running' : '–') }}</dd>
       </div>
+      @if (shownRun.region; as region) {
+        <div>
+          <dt>Region</dt>
+          <dd>{{ region }}</dd>
+        </div>
+      }
     </dl>
   }
 
