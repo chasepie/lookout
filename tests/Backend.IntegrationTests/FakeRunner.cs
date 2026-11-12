@@ -54,7 +54,9 @@ internal sealed class FakeRunner(object response) : HttpMessageHandler
         {
             if (WhileRunning is { } whileRunning)
             {
-                await whileRunning();
+                // Cancelled with the run, so a test that fails before letting a held run go doesn't hold up the Backend
+                // stopping, which waits for its runs
+                await whileRunning().WaitAsync(cancellationToken);
             }
 
             var response = Responses.TryDequeue(out var next) ? next : Response;

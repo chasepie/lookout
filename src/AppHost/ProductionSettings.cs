@@ -86,7 +86,8 @@ public partial class Program
                 name: EnvVars.LookoutMaxConcurrentRuns.ToKebabCase(),
                 defaultValue: EnvVars.DefaultMaxConcurrentRuns.ToString(CultureInfo.InvariantCulture),
                 description: "How many watch runs Lookout runs at once at most, each of a different watch; browserless runs as many "
-                    + "browser sessions at once. Each takes memory in browserless and the Runner, so raise BROWSERLESS_MEMORY and LOOKOUT_RUNNER_MEMORY with it.");
+                    + "browser sessions at once. Each takes memory in browserless and the Runner, so raise BROWSERLESS_MEMORY and LOOKOUT_RUNNER_MEMORY with it. "
+                    + "Scripts that run at once can reach each other's browser sessions and use up each other's memory: see docs/security.md.");
 
             RunnerMemory = Setting(
                 name: "lookout-runner-memory",

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text;
+using ChasePie.Lookout.Backend.Controllers;
 using ChasePie.Lookout.Core;
 
 namespace ChasePie.Lookout.Backend.IntegrationTests;
@@ -82,6 +83,54 @@ internal static class LookoutApi
             }
 
             await Task.Delay(TimeSpan.FromMilliseconds(100), timeout.Token);
+        }
+    }
+
+    /// <summary>
+    /// Creates a run of the watch, without waiting for the worker.
+    /// </summary>
+    public static async Task QueueRunAsync(this HttpClient client, int watchId, CancellationToken cancellationToken)
+    {
+        using var response = await client.PostAsync($"/api/Watches/{watchId}/runs", null, cancellationToken);
+        Assert.AreEqual(HttpStatusCode.Created, response.StatusCode, await response.Content.ReadAsStringAsync(cancellationToken));
+    }
+
+    /// <summary>
+    /// The watch's runs, oldest first.
+    /// </summary>
+    public static async Task<List<WatchRunSummary>> GetRunsAsync(
+        this HttpClient client, int watchId, CancellationToken cancellationToken)
+    {
+        var newestFirst = await client.GetFromJsonAsync<List<WatchRunSummary>>(
+            $"/api/Watches/{watchId}/runs", cancellationToken);
+        return [.. newestFirst!.OrderBy(r => r.Id)];
+    }
+
+    /// <summary>
+    /// Waits for the watch to have <paramref name="count"/> runs, all done, and returns them oldest first.
+    /// </summary>
+    public static async Task<List<WatchRunSummary>> WaitForRunsAsync(
+        this HttpClient client, int watchId, int count, CancellationToken cancellationToken)
+    {
+        List<WatchRunSummary> runs = [];
+        await WaitUntilAsync(async () =>
+        {
+            runs = await client.GetRunsAsync(watchId, cancellationToken);
+            return runs.Count >= count && runs.All(r => r.Status == WatchRunStatus.Done);
+        }, cancellationToken);
+        return runs;
+    }
+
+    /// <summary>
+    /// Waits until <paramref name="condition"/> holds, checking it every 50 ms for up to a minute.
+    /// </summary>
+    public static async Task WaitUntilAsync(Func<Task<bool>> condition, CancellationToken cancellationToken)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(60));
+        while (!await condition())
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(50), timeout.Token);
         }
     }
 }

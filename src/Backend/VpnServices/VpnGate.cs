@@ -33,10 +33,13 @@ public sealed class VpnGate
         {
             lock (_lock)
             {
-                return _switch is not null || _queuedSwitches > 0;
+                return HoldsUpRunsLocked;
             }
         }
     }
+
+    // Called with the lock held
+    private bool HoldsUpRunsLocked => _switch is not null || _queuedSwitches > 0;
 
     /// <summary>
     /// How many runs hold a share.
@@ -60,7 +63,7 @@ public sealed class VpnGate
     {
         lock (_lock)
         {
-            if (_switch is not null || _queuedSwitches > 0)
+            if (HoldsUpRunsLocked)
             {
                 return null;
             }
@@ -142,7 +145,7 @@ public sealed class VpnGate
                 return;
             }
 
-            runsMayEnter = _switch is null && _queuedSwitches == 0;
+            runsMayEnter = !HoldsUpRunsLocked;
         }
 
         if (runsMayEnter)

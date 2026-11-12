@@ -129,14 +129,15 @@ public static class EnvVars
     /// How many runs the Backend runs at once at most, each of a different watch: a whole number of at least 1,
     /// <see cref="DefaultMaxConcurrentRuns"/> when not set. The AppHost also gives it to browserless as its
     /// <c>CONCURRENT</c>, so browserless takes as many sessions at once as the Backend can start. See
-    /// <see cref="ParseMaxConcurrentRuns"/>.
+    /// <see cref="ParseMaxConcurrentRuns"/>, and docs/security.md for what raising it lets scripts that run together do.
     /// </summary>
     public const string LookoutMaxConcurrentRuns = "LOOKOUT_MAX_CONCURRENT_RUNS";
 
     /// <summary>
-    /// <see cref="LookoutMaxConcurrentRuns"/> when it's not set.
+    /// <see cref="LookoutMaxConcurrentRuns"/> when it's not set: one run at a time, so running watches in parallel is
+    /// something the Owner turns on, knowing it shares browserless and the Runner's memory between scripts.
     /// </summary>
-    public const int DefaultMaxConcurrentRuns = 3;
+    public const int DefaultMaxConcurrentRuns = 1;
 
     /// <summary>
     /// Reads a base URL from configuration, adding a trailing slash so relative request URIs append to its path.

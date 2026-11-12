@@ -1,5 +1,3 @@
-using System.Net.Http.Json;
-using ChasePie.Lookout.Backend.Controllers;
 using ChasePie.Lookout.Backend.Services;
 using ChasePie.Lookout.Core;
 using Microsoft.Extensions.DependencyInjection;
@@ -38,19 +36,19 @@ public sealed class ParallelRunsTests
 
         foreach (var watchId in watchIds)
         {
-            await QueueRunAsync(client, watchId);
+            await client.QueueRunAsync(watchId, Ct);
         }
 
-        await WaitUntilAsync(() => Task.FromResult(runner.InProgress == 2));
+        await LookoutApi.WaitUntilAsync(() => Task.FromResult(runner.InProgress == 2), Ct);
         await Task.Delay(WorkerSettleTime, Ct);
         Assert.AreEqual(2, runner.InProgress);
-        var third = (await GetRunsAsync(client, watchIds[2])).Single();
+        var third = (await client.GetRunsAsync(watchIds[2], Ct)).Single();
         Assert.AreEqual(WatchRunStatus.Created, third.Status, "The oldest runs go first, and the third waits for a slot.");
 
         hold.SetResult();
         foreach (var watchId in watchIds)
         {
-            await WaitForRunsAsync(client, watchId, 1);
+            await client.WaitForRunsAsync(watchId, 1, Ct);
         }
 
         Assert.AreEqual(2, runner.MaxInProgress);
@@ -67,15 +65,15 @@ public sealed class ParallelRunsTests
 
         for (var i = 0; i < 3; i++)
         {
-            await QueueRunAsync(client, watchId);
+            await client.QueueRunAsync(watchId, Ct);
         }
 
-        await WaitUntilAsync(() => Task.FromResult(runner.InProgress == 1));
+        await LookoutApi.WaitUntilAsync(() => Task.FromResult(runner.InProgress == 1), Ct);
         await Task.Delay(WorkerSettleTime, Ct);
         Assert.AreEqual(1, runner.InProgress);
 
         hold.SetResult();
-        var runs = await WaitForRunsAsync(client, watchId, 3);
+        var runs = await client.WaitForRunsAsync(watchId, 3, Ct);
 
         Assert.AreEqual(1, runner.MaxInProgress);
         for (var i = 1; i < runs.Count; i++)
@@ -99,20 +97,20 @@ public sealed class ParallelRunsTests
         var busyId = await client.CreateWatchAsync("Busy", Ct);
         var otherId = await client.CreateWatchAsync("Other", Ct);
 
-        await QueueRunAsync(client, busyId);
-        await WaitUntilAsync(() => Task.FromResult(runner.InProgress == 1));
-        await QueueRunAsync(client, busyId);
-        await QueueRunAsync(client, otherId);
-        var other = (await WaitForRunsAsync(client, otherId, 1)).Single();
+        await client.QueueRunAsync(busyId, Ct);
+        await LookoutApi.WaitUntilAsync(() => Task.FromResult(runner.InProgress == 1), Ct);
+        await client.QueueRunAsync(busyId, Ct);
+        await client.QueueRunAsync(otherId, Ct);
+        var other = (await client.WaitForRunsAsync(otherId, 1, Ct)).Single();
 
-        var busy = await GetRunsAsync(client, busyId);
+        var busy = await client.GetRunsAsync(busyId, Ct);
         Assert.AreEqual(WatchRunStatus.Running, busy[0].Status);
         Assert.AreEqual(WatchRunStatus.Created, busy[1].Status);
         Assert.IsLessThan(busy[1].Id, busy[0].Id);
         Assert.IsGreaterThan(busy[1].Id, other.Id);
 
         hold.SetResult();
-        await WaitForRunsAsync(client, busyId, 2);
+        await client.WaitForRunsAsync(busyId, 2, Ct);
     }
 
     private static LookoutFactory CreateFactory(FakeRunner runner, int maxConcurrentRuns) => new(
@@ -122,40 +120,4 @@ public sealed class ParallelRunsTests
         },
         configureServices: services =>
             services.AddHttpClient<RunnerHttpClient>().ConfigurePrimaryHttpMessageHandler(() => runner));
-
-    private async Task QueueRunAsync(HttpClient client, int watchId)
-    {
-        using var response = await client.PostAsync($"/api/Watches/{watchId}/runs", null, Ct);
-        response.EnsureSuccessStatusCode();
-    }
-
-    private async Task WaitUntilAsync(Func<Task<bool>> condition)
-    {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(Ct);
-        timeout.CancelAfter(TimeSpan.FromSeconds(30));
-        while (!await condition())
-        {
-            await Task.Delay(TimeSpan.FromMilliseconds(50), timeout.Token);
-        }
-    }
-
-    /// <summary>
-    /// Waits for the watch to have <paramref name="count"/> runs, all done, and returns them oldest first.
-    /// </summary>
-    private async Task<List<WatchRunSummary>> WaitForRunsAsync(HttpClient client, int watchId, int count)
-    {
-        List<WatchRunSummary> runs = [];
-        await WaitUntilAsync(async () =>
-        {
-            runs = await GetRunsAsync(client, watchId);
-            return runs.Count >= count && runs.All(r => r.Status == WatchRunStatus.Done);
-        });
-        return runs;
-    }
-
-    private async Task<List<WatchRunSummary>> GetRunsAsync(HttpClient client, int watchId)
-    {
-        var newestFirst = await client.GetFromJsonAsync<List<WatchRunSummary>>($"/api/Watches/{watchId}/runs", Ct);
-        return [.. newestFirst!.OrderBy(r => r.Id)];
-    }
 }

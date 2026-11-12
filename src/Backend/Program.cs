@@ -5,7 +5,6 @@ using ChasePie.Lookout.Backend.Hubs;
 using ChasePie.Lookout.Backend.Notifications;
 using ChasePie.Lookout.Backend.Services;
 using System.Text.RegularExpressions;
-using System.Threading.RateLimiting;
 using ChasePie.Lookout.Backend.VpnServices;
 using ChasePie.Lookout.Core;
 using dotenv.net.Configuration;

@@ -113,7 +113,7 @@ settings from a `.env` file at the repo root:
 | `GLUETUN_VPN_SERVICE_PROVIDER` | gluetun's VPN provider. Default: `private internet access`. |
 | `GLUETUN_SERVER_REGIONS` | The VPN regions Lookout may use, comma-separated, as in `DE Berlin,US Texas`. Default: all of them. |
 | `TZ` | The time zone of schedules and scripts' dates. Default: `Etc/UTC`. |
-| `LOOKOUT_MAX_CONCURRENT_RUNS` | How many watch runs run at once at most, each of a different watch; browserless gets it too. Default: `3`. |
+| `LOOKOUT_MAX_CONCURRENT_RUNS` | How many watch runs run at once at most, each of a different watch; browserless gets it too. Scripts that run at once can reach each other's browser sessions; see `docs/security.md`. Default: `1`. |
 | `LOOKOUT_WATCH_SCRIPTS_DIR`, `LOOKOUT_DATABASE_DIR`, `GLUETUN_DATA_DIR` | Where data is kept. Default: a folder for each in `.docker-volumes/`. |
 
 In development, a database with no watches gets one watch for each script in `examples/`.
