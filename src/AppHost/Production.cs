@@ -68,6 +68,8 @@ public partial class Program
                     AddEnvironment(service, BrowserlessEnvironment);
                     service.Environment["TZ"] = settings.Placeholder(settings.TimeZone, resource);
                     service.Environment["TOKEN"] = settings.Placeholder(settings.BrowserlessToken, resource);
+                    // As many sessions as the Backend starts runs, from the same setting
+                    service.Environment[BrowserlessConcurrent] = settings.Placeholder(settings.MaxConcurrentRuns, resource);
                     Harden(service, readOnly: false);
                     LimitMemory(service, settings.Placeholder(settings.BrowserlessMemory, resource));
                     // Chromium loads whatever pages scripts visit, so it shares no network with the Backend
@@ -129,6 +131,7 @@ public partial class Program
                     // Each switch replaces gluetun's filter, so the Backend keeps to the same regions
                     service.Environment[EnvVars.GluetunServerRegions] = settings.Placeholder(settings.ServerRegions, resource);
                     service.Environment[EnvVars.GluetunUrl] = $"http://{GluetunControlRelay}:8000";
+                    service.Environment[EnvVars.LookoutMaxConcurrentRuns] = settings.Placeholder(settings.MaxConcurrentRuns, resource);
                     service.Environment[EnvVars.LookoutOwnerPassword] = settings.Placeholder(settings.OwnerPassword, resource);
                     service.Environment[EnvVars.LookoutOwnerUsername] = settings.Placeholder(settings.OwnerUsername, resource);
                     // Served over HTTPS on the host it's allowed, so notifications link to their runs there

@@ -1,3 +1,4 @@
+using System.Globalization;
 using ChasePie.Lookout.Core;
 
 namespace ChasePie.Lookout.AppHost;
@@ -14,6 +15,8 @@ public partial class Program
         public static void Add(IDistributedApplicationBuilder builder)
         {
             var settings = DevelopmentSettings.Read(RepoRoot.FindRequired(builder.AppHostDirectory));
+            // Read first, so a value that isn't a number stops startup before anything starts
+            var maxConcurrentRuns = settings.MaxConcurrentRuns.ToString(CultureInfo.InvariantCulture);
 
             // Without a token browserless accepts anyone, who could then drive Chromium against the internal network.
             // A new one every time the AppHost starts; only browserless and the Runner have it.
@@ -23,9 +26,11 @@ public partial class Program
             var runnerApiKey = AddGeneratedSecret(builder, EnvVars.LookoutRunnerApiKey);
             var watchScriptsDir = settings.WatchScriptsDir();
 
-            var browserless = AddBrowserless(builder, settings, browserlessToken);
+            var browserless = AddBrowserless(builder, settings, browserlessToken)
+                .WithEnvironment(BrowserlessConcurrent, maxConcurrentRuns);
             var runner = AddRunner(builder, settings, watchScriptsDir, browserless, browserlessToken, runnerApiKey);
-            var backend = AddBackend(builder, settings, watchScriptsDir, runner, runnerApiKey);
+            var backend = AddBackend(builder, settings, watchScriptsDir, runner, runnerApiKey)
+                .WithEnvironment(EnvVars.LookoutMaxConcurrentRuns, maxConcurrentRuns);
             if (settings.OpenVpn is { } openVpn)
             {
                 AddGluetun(builder, settings, openVpn, browserless, runner, backend);

@@ -6,6 +6,7 @@ services:
       TIMEOUT: "180000"
       TZ: "${TZ:-Etc/UTC}"
       TOKEN: "${BROWSERLESS_TOKEN}"
+      CONCURRENT: "${LOOKOUT_MAX_CONCURRENT_RUNS:-3}"
     networks:
       - "browsers"
       - "vpn-proxy"
@@ -62,6 +63,7 @@ services:
       GLUETUN_PROXY_URL: "http://lookout@gluetun-proxy:8888"
       GLUETUN_SERVER_REGIONS: "${GLUETUN_SERVER_REGIONS:-}"
       GLUETUN_URL: "http://gluetun-control:8000"
+      LOOKOUT_MAX_CONCURRENT_RUNS: "${LOOKOUT_MAX_CONCURRENT_RUNS:-3}"
       LOOKOUT_OWNER_PASSWORD: "${LOOKOUT_OWNER_PASSWORD}"
       LOOKOUT_OWNER_USERNAME: "${LOOKOUT_OWNER_USERNAME}"
       LOOKOUT_PUBLIC_URL: "https://${LOOKOUT_HOST}"

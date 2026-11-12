@@ -23,8 +23,12 @@ public partial class Program
     private const string GluetunAuthFileName = "config.toml";
     private const string GluetunAuthPath = GluetunAuthDirectory + "/" + GluetunAuthFileName;
 
+    // browserless's variable for how many sessions it runs at once, before queueing the rest: the Backend's
+    // LOOKOUT_MAX_CONCURRENT_RUNS, so the two can't drift apart
+    private const string BrowserlessConcurrent = "CONCURRENT";
+
     /// <summary>
-    /// browserless's environment, other than its time zone and <c>TOKEN</c>.
+    /// browserless's environment, other than its time zone, <c>TOKEN</c> and <see cref="BrowserlessConcurrent"/>.
     /// </summary>
     private static readonly IReadOnlyDictionary<string, string> BrowserlessEnvironment = new Dictionary<string, string>
     {

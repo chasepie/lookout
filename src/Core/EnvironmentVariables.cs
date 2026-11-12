@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.Extensions.Configuration;
 
 namespace ChasePie.Lookout.Core;
@@ -125,6 +126,19 @@ public static class EnvVars
     public const string LookoutPublicUrl = "LOOKOUT_PUBLIC_URL";
 
     /// <summary>
+    /// How many runs the Backend runs at once at most, each of a different watch: a whole number of at least 1,
+    /// <see cref="DefaultMaxConcurrentRuns"/> when not set. The AppHost also gives it to browserless as its
+    /// <c>CONCURRENT</c>, so browserless takes as many sessions at once as the Backend can start. See
+    /// <see cref="ParseMaxConcurrentRuns"/>.
+    /// </summary>
+    public const string LookoutMaxConcurrentRuns = "LOOKOUT_MAX_CONCURRENT_RUNS";
+
+    /// <summary>
+    /// <see cref="LookoutMaxConcurrentRuns"/> when it's not set.
+    /// </summary>
+    public const int DefaultMaxConcurrentRuns = 3;
+
+    /// <summary>
     /// Reads a base URL from configuration, adding a trailing slash so relative request URIs append to its path.
     /// </summary>
     /// <returns>The URL, or <see langword="null"/> if the variable is not set.</returns>
@@ -190,6 +204,24 @@ public static class EnvVars
         }
 
         return new UriBuilder(url) { Query = "token=" + Uri.EscapeDataString(token) }.Uri.AbsoluteUri;
+    }
+
+    /// <summary>
+    /// <see cref="LookoutMaxConcurrentRuns"/>'s value as a number.
+    /// </summary>
+    /// <param name="value">The setting's value; empty, only whitespace or <see langword="null"/> for the default.</param>
+    /// <exception cref="InvalidOperationException">The value isn't a whole number of at least 1.</exception>
+    public static int ParseMaxConcurrentRuns(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return DefaultMaxConcurrentRuns;
+        }
+
+        return int.TryParse(value.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var max) && max >= 1
+            ? max
+            : throw new InvalidOperationException(
+                $"Environment variable {LookoutMaxConcurrentRuns} must be a whole number of at least 1, but is '{value}'.");
     }
 
     /// <summary>

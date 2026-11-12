@@ -153,6 +153,15 @@ public sealed class ProductionComposeTests
     }
 
     [TestMethod]
+    public void BrowserlessTakesAsManySessionsAtOnceAsTheBackendStartsRuns()
+    {
+        // From the same setting, so they can't drift apart, and with a default, so a .env without it still works
+        var limit = $"${{{EnvVars.LookoutMaxConcurrentRuns}:-{EnvVars.DefaultMaxConcurrentRuns}}}";
+        Assert.AreEqual(limit, Map(Service("backend"), "environment")[EnvVars.LookoutMaxConcurrentRuns]);
+        Assert.AreEqual(limit, Map(Service("browserless"), "environment")["CONCURRENT"]);
+    }
+
+    [TestMethod]
     public void GluetunsKeyMayOnlyUseTheBackendsRoutes()
     {
         var auth = (string)Map(Map(_compose, "configs"), "gluetun_auth")["content"];

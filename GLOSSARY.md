@@ -62,7 +62,8 @@ Where the VPN connects from, among those its provider offers. A run of a watch t
 _Avoid_: Location, server, country
 
 **Region switch**:
-A change of the VPN's region, which waits for any run using the VPN to finish, and which runs using the VPN wait for.
+A change of the VPN's region, which waits for every run using the VPN to finish, and which runs using the VPN that
+haven't started yet wait for.
 _Avoid_: Rotation (for switches in general), reconnect
 
 **Rotation**:
