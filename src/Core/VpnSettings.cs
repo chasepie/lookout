@@ -142,7 +142,9 @@ public class VpnSettings : VpnSettingsDto
         PickRegion(regions, failedRegions, random);
 
     private string? PickRegion(
-        IReadOnlyCollection<string> regions, IReadOnlyCollection<string> failedRegions, Random random)
+        IReadOnlyCollection<string> regions,
+        IReadOnlyCollection<string> failedRegions,
+        Random random)
     {
         var candidates = regions
             .Where(region => !ExcludedRegions.Contains(region, StringComparer.OrdinalIgnoreCase))

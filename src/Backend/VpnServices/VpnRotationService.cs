@@ -88,14 +88,20 @@ public partial class VpnRotationService(
     /// <param name="failedRegion">The region the run ran in.</param>
     /// <param name="failedRegions">The regions the watch already failed over from during its known-failure streak.</param>
     public async Task<FailoverOutcome> FailOverAsync(
-        string? failedRegion, IReadOnlyCollection<string> failedRegions, CancellationToken cancellationToken)
+        string? failedRegion,
+        IReadOnlyCollection<string> failedRegions,
+        CancellationToken cancellationToken)
     {
         if (!configuration.IsEnabled)
         {
             return FailoverOutcome.Unavailable;
         }
 
-        return await SwitchAsync(SwitchKind.Failover, null, cancellationToken, new FailoverRequest(failedRegion, failedRegions));
+        return await SwitchAsync(
+            kind: SwitchKind.Failover,
+            requestedRegion: null,
+            cancellationToken: cancellationToken,
+            failover: new FailoverRequest(failedRegion, failedRegions));
     }
 
     private sealed record FailoverRequest(string? FailedRegion, IReadOnlyCollection<string> FailedRegions)
@@ -206,7 +212,10 @@ public partial class VpnRotationService(
     /// </summary>
     /// <param name="failover">What a <see cref="SwitchKind.Failover"/> fails over from.</param>
     private async Task<FailoverOutcome> SwitchAsync(
-        SwitchKind kind, string? requestedRegion, CancellationToken cancellationToken, FailoverRequest? failover = null)
+        SwitchKind kind,
+        string? requestedRegion,
+        CancellationToken cancellationToken,
+        FailoverRequest? failover = null)
     {
         await _switching.WaitAsync(cancellationToken);
         try
@@ -220,7 +229,10 @@ public partial class VpnRotationService(
     }
 
     private async Task<FailoverOutcome> SwitchOneAtATimeAsync(
-        SwitchKind kind, string? requestedRegion, FailoverRequest? failover, CancellationToken cancellationToken)
+        SwitchKind kind,
+        string? requestedRegion,
+        FailoverRequest? failover,
+        CancellationToken cancellationToken)
     {
         using var scope = scopeFactory.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<LookoutDbContext>();

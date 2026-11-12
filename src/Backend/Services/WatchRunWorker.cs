@@ -114,7 +114,9 @@ public partial class WatchRunWorker(
 
         // Once the run has let go of the VPN, which the switch needs, and before the next run, so none runs in the
         // region that just failed
-        if (watchRun.AskedForFailover && watchRun.Watch.UseVpn && vpnConfiguration.IsEnabled)
+        if (watchRun.AskedForFailover
+            && watchRun.Watch.UseVpn
+            && vpnConfiguration.IsEnabled)
         {
             await FailOverAsync(dbContext, watchRun, stoppingToken);
         }
@@ -127,7 +129,10 @@ public partial class WatchRunWorker(
     /// </summary>
     /// <returns><see langword="false"/> if another worker claimed it first.</returns>
     private async Task<bool> ExecuteRunAsync(
-        IServiceScope scope, LookoutDbContext dbContext, WatchRun watchRun, CancellationToken stoppingToken)
+        IServiceScope scope,
+        LookoutDbContext dbContext,
+        WatchRun watchRun,
+        CancellationToken stoppingToken)
     {
         // Read while holding the gate, so no switch changes it during the run
         var region = watchRun.Watch.UseVpn && vpnConfiguration.IsEnabled
@@ -221,13 +226,29 @@ public partial class WatchRunWorker(
         // A run that crashed doesn't ask; one that ended in a success, or before this run, starts the streak over
         var earlierRuns = await dbContext.WatchRuns
             .AsNoTracking()
-            .Where(wr => wr.WatchId == watchRun.WatchId && wr.Id < watchRun.Id && wr.Status == WatchRunStatus.Done)
+            .Where(wr => wr.WatchId == watchRun.WatchId
+                && wr.Id < watchRun.Id
+                && wr.Status == WatchRunStatus.Done)
             .OrderByDescending(wr => wr.Id)
-            .Select(wr => new { wr.Id, wr.Content, wr.Error, wr.AskedForFailover, wr.Region, wr.RetryOfRunId })
+            .Select(wr => new
+            {
+                wr.Id,
+                wr.Content,
+                wr.Error,
+                wr.AskedForFailover,
+                wr.Region,
+                wr.RetryOfRunId
+            })
             .ToListAsync(stoppingToken);
-        var sinceSuccess = earlierRuns.TakeWhile(wr => wr.Error is not null || wr.Content is null).ToList();
+
+        var sinceSuccess = earlierRuns
+            .TakeWhile(wr => wr.Error is not null || wr.Content is null)
+            .ToList();
+
         var failedRegions = sinceSuccess
-            .Where(wr => wr.Error is null && wr.AskedForFailover && wr.Region is not null)
+            .Where(wr => wr.Error is null
+                && wr.AskedForFailover
+                && wr.Region is not null)
             .Select(wr => wr.Region!)
             .ToList();
 
