@@ -259,6 +259,20 @@ describe('a known failure', () => {
   });
 });
 
+describe('a success', () => {
+  test('is written without a failover, which only a known failure can ask for', async () => {
+    const run = await runCli(`export default {
+      async run() {
+        return { success: true, content: 'In stock', failover: null };
+      },
+    };`);
+
+    assert.equal(run.exitCode, 0, run.stderr);
+    assert.equal(run.output?.content, 'In stock');
+    assert.equal('failover' in (run.output ?? {}), false);
+  });
+});
+
 describe('a crash', () => {
   const throwingScript = `export default {
     async run(page) {
@@ -313,17 +327,6 @@ describe('a crash', () => {
     const run = await runCli(`export default {
       async run() {
         return { success: false, failureReason: 'Blocked', failover: 'yes' };
-      },
-    };`);
-
-    assert.equal(run.exitCode, 1);
-    assert.match(String(run.output?.crash?.error), /failover must be true or false/);
-  });
-
-  test('is what a success with a failover that isn\'t a boolean has', async () => {
-    const run = await runCli(`export default {
-      async run() {
-        return { success: true, content: 'In stock', failover: null };
       },
     };`);
 

@@ -270,6 +270,72 @@ public sealed class VpnFailoverTests
     }
 
     [TestMethod]
+    public async Task AWatchWithARunAlreadyWaitingIsntRetried()
+    {
+        await using var lookout = await StartAsync([Albania, Belgium], current: Albania);
+        lookout.Runner.Responses.Enqueue(FailoverFailure);
+        lookout.Runner.Response = Success;
+        var watchId = await lookout.Client.CreateWatchAsync("Tickets", Ct, ("UseVpn", "true"));
+        // As when the schedule queues a run while this one fails
+        lookout.Runner.WhileRunning = async () =>
+        {
+            lookout.Runner.WhileRunning = null;
+            using var _ = await lookout.Client.PostAsync($"/api/Watches/{watchId}/runs", null, Ct);
+        };
+
+        await lookout.Client.RunAsync(watchId, Ct);
+        await WaitForRunsAsync(lookout.Client, watchId, 2);
+        var runs = await SettleAsync(lookout, watchId);
+
+        Assert.HasCount(3, runs);
+        Assert.IsTrue(runs.All(r => r.RetryOfRunId is null));
+        Assert.AreEqual(Belgium, runs[1].Region, "The run already waiting runs in the new region instead.");
+    }
+
+    [TestMethod]
+    public async Task AFailoverFromARegionThatWasntKnownStillSwitches()
+    {
+        // gluetun isn't ready at first, so the run starts before the Backend's first switch, in a region of gluetun's
+        await using var lookout = await StartAsync([Albania, Belgium], current: null, refuseSwitches: true);
+        lookout.Runner.Responses.Enqueue(FailoverFailure);
+        lookout.Runner.Response = Success;
+        // By the time the run fails, the first switch has landed in that same region
+        lookout.Runner.WhileRunning = async () =>
+        {
+            lookout.Runner.WhileRunning = null;
+            lookout.Gluetun.RefuseSwitches = false;
+            await lookout.UpdateVpnSettingsAsync(s => s.CurrentRegion = Albania, Ct);
+        };
+        var watchId = await lookout.Client.CreateWatchAsync("Tickets", Ct, ("UseVpn", "true"));
+
+        await lookout.Client.RunAsync(watchId, Ct);
+        var runs = await WaitForRunsAsync(lookout.Client, watchId, 2);
+
+        Assert.IsNull(runs[0].Region);
+        Assert.AreSequenceEqual(new[] { Belgium }, lookout.Gluetun.SwitchedTo.ToArray());
+        Assert.AreEqual(Belgium, runs[1].Region);
+    }
+
+    [TestMethod]
+    public async Task AFailoverWithNoRegionAllowedSaysWhyAndIsntRetried()
+    {
+        // Not the streak's doing: rotation couldn't leave either
+        await using var lookout = await StartAsync([Albania, Belgium], current: Albania, s => s.ExcludedRegions = [Belgium]);
+        lookout.Runner.Responses.Enqueue(FailoverFailure);
+        lookout.Runner.Response = Success;
+        var watchId = await lookout.Client.CreateWatchAsync("Tickets", Ct, ("UseVpn", "true"));
+
+        await lookout.Client.RunAsync(watchId, Ct);
+        var runs = await SettleAsync(lookout, watchId);
+
+        Assert.HasCount(2, runs);
+        Assert.IsNull(runs[1].RetryOfRunId);
+        var settings = await lookout.GetVpnSettingsAsync(Ct);
+        Assert.AreEqual(
+            "There are no regions to fail over to: every region other than the current one is excluded.", settings.LastError);
+    }
+
+    [TestMethod]
     public async Task ASuccessfulFailoverRestartsTheRotationTimer()
     {
         var farOff = DateTime.UtcNow.AddDays(1);
@@ -294,7 +360,9 @@ public sealed class VpnFailoverTests
     /// <summary>
     /// Starts the Backend with gluetun offering <paramref name="regions"/>, and the VPN in <paramref name="current"/>.
     /// </summary>
-    private async Task<Lookout> StartAsync(string[] regions, string current, Action<VpnSettings>? configure = null)
+    /// <param name="refuseSwitches">Whether gluetun refuses switches from the start, as when it isn't ready.</param>
+    private async Task<Lookout> StartAsync(
+        string[] regions, string? current, Action<VpnSettings>? configure = null, bool refuseSwitches = false)
     {
         var dataDirectory = Directory.CreateTempSubdirectory("lookout-tests-").FullName;
         // Stored before the Backend with the VPN starts, as if it had switched there before a restart
@@ -308,7 +376,7 @@ public sealed class VpnFailoverTests
         }
 
         var runner = new FakeRunner(Success);
-        var gluetun = new FakeGluetun([current]);
+        var gluetun = new FakeGluetun(current is null ? null : [current]) { RefuseSwitches = refuseSwitches };
         var factory = new LookoutFactory(
             dataDirectory: dataDirectory,
             settings: FakeGluetun.Settings(dataDirectory, string.Join(',', regions), regions),

@@ -262,6 +262,14 @@ public partial class WatchRunWorker(
             return;
         }
 
+        // A run already waiting, such as a scheduled one, runs in the new region anyway
+        if (await dbContext.WatchRuns.AnyAsync(
+            wr => wr.WatchId == watchRun.WatchId && wr.Status == WatchRunStatus.Created, stoppingToken))
+        {
+            LogRunAlreadyWaiting(watchRun.WatchId);
+            return;
+        }
+
         var retry = new WatchRun(watchRun.Watch) { RetryOfRunId = watchRun.Id };
         dbContext.WatchRuns.Add(retry);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -317,6 +325,11 @@ public partial class WatchRunWorker(
         Level = LogLevel.Information,
         Message = "Watch {WatchId} isn't retried after its failover: it was retried {Count} times in a row")]
     private partial void LogRetriesUsedUp(int watchId, int count);
+
+    [LoggerMessage(
+        Level = LogLevel.Information,
+        Message = "Watch {WatchId} isn't retried after its failover: it has a run waiting already")]
+    private partial void LogRunAlreadyWaiting(int watchId);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Failed to process pending watch runs")]
     private partial void LogPollFailed(Exception exception);

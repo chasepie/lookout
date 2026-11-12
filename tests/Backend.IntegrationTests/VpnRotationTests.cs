@@ -71,6 +71,16 @@ public sealed class VpnRotationTests
     }
 
     [TestMethod]
+    public async Task AFirstSwitchWithEveryRegionExcludedSaysSo()
+    {
+        // Rotation may be off, so the message mustn't speak of rotating
+        var (settings, gluetun) = await StartWithStoredRegionAsync(null, gluetunRegions: null, excludedRegions: Berlin);
+
+        Assert.AreEqual("There are no regions to switch to: every region is excluded.", settings.LastError);
+        Assert.IsEmpty(gluetun.SwitchedTo);
+    }
+
+    [TestMethod]
     public async Task RotationWithOnlyOneAllowedRegionBlamesTheServerRegions()
     {
         // Nothing is excluded, so blaming the exclusions would send the Owner to the wrong setting

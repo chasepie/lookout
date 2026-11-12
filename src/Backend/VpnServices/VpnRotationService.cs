@@ -113,8 +113,13 @@ public partial class VpnRotationService(
 
     private sealed record FailoverRequest(string? FailedRegion, IReadOnlyCollection<string> FailedRegions)
     {
+        /// <summary>
+        /// Whether the VPN is known to have left <see cref="FailedRegion"/>. A run before the Backend's first switch
+        /// doesn't know its region, and the first switch may have landed in it, so the failover goes ahead.
+        /// </summary>
         public bool HasLeft(string? currentRegion) =>
-            !string.Equals(currentRegion, FailedRegion, StringComparison.OrdinalIgnoreCase);
+            FailedRegion is not null
+            && !string.Equals(currentRegion, FailedRegion, StringComparison.OrdinalIgnoreCase);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -179,6 +184,9 @@ public partial class VpnRotationService(
         // The checks each use a scope of their own, so none is held through a switch, which can wait minutes
         if (await GetCurrentRegionAsync(cancellationToken) is not { } currentRegion)
         {
+            // While gluetun starts up this throws, which the poll only logs, rather than the switch showing it as the
+            // VPN's error every minute
+            await GetGluetunSettingsAsync(cancellationToken);
             LogFirstSwitch();
             await SwitchAsync(SwitchKind.First, null, cancellationToken);
             return;
@@ -209,11 +217,17 @@ public partial class VpnRotationService(
 
     private async Task<bool> IsGluetunRestrictedToAsync(string region, CancellationToken cancellationToken)
     {
-        using var scope = scopeFactory.CreateScope();
-        var gluetun = scope.ServiceProvider.GetRequiredService<GluetunHttpClient>();
-        var gluetunSettings = await gluetun.GetVpnSettingsAsync(cancellationToken);
+        var gluetunSettings = await GetGluetunSettingsAsync(cancellationToken);
         return gluetunSettings.Provider.ServerSelection.Regions is [var restrictedTo]
             && string.Equals(restrictedTo, region, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <exception cref="GluetunException">gluetun couldn't be reached.</exception>
+    private async Task<GluetunVpnSettings> GetGluetunSettingsAsync(CancellationToken cancellationToken)
+    {
+        using var scope = scopeFactory.CreateScope();
+        var gluetun = scope.ServiceProvider.GetRequiredService<GluetunHttpClient>();
+        return await gluetun.GetVpnSettingsAsync(cancellationToken);
     }
 
     /// <summary>
@@ -361,31 +375,42 @@ public partial class VpnRotationService(
             return regions[Random.Shared.Next(regions.Count)];
         }
 
-        if (failover is not null)
-        {
-            // Running out of regions is how a streak in every region ends, not something wrong with the VPN
-            return settings.PickFailoverRegion(regions, failover.FailedRegions, Random.Shared);
-        }
-
-        return settings.PickRotationRegion(regions, Random.Shared)
-            ?? throw new InvalidOperationException(DescribeNoRotationRegion(settings, regions));
+        var rotationRegion = settings.PickRotationRegion(regions, Random.Shared)
+            ?? throw new InvalidOperationException(DescribeNoRotationRegion(kind, settings, regions));
+        // Running out of regions is how a streak in every region ends, not something wrong with the VPN, so only the
+        // settings leaving no region at all count as an error
+        return failover is null
+            ? rotationRegion
+            : settings.PickFailoverRegion(regions, failover.FailedRegions, Random.Shared);
     }
 
     /// <summary>
     /// Why <see cref="VpnSettings.PickRotationRegion"/> found no region in <paramref name="regions"/>.
     /// </summary>
-    private string DescribeNoRotationRegion(VpnSettings settings, IReadOnlyList<string> regions)
+    private string DescribeNoRotationRegion(SwitchKind kind, VpnSettings settings, IReadOnlyList<string> regions)
     {
+        // A first switch may come with rotation off, so it mustn't speak of rotating
+        var noRegions = kind switch
+        {
+            SwitchKind.Rotation => "There are no regions to rotate to",
+            SwitchKind.Failover => "There are no regions to fail over to",
+            _ => "There are no regions to switch to",
+        };
+        if (settings.CurrentRegion is null)
+        {
+            return $"{noRegions}: every region is excluded.";
+        }
+
         var onlyTheCurrentRegion = regions.All(
             region => string.Equals(region, settings.CurrentRegion, StringComparison.OrdinalIgnoreCase));
         if (!onlyTheCurrentRegion)
         {
-            return "There are no regions to rotate to: every region other than the current one is excluded.";
+            return $"{noRegions}: every region other than the current one is excluded.";
         }
 
         return configuration.LimitsRegions
-            ? $"There are no regions to rotate to: {EnvVars.GluetunServerRegions} allows only {regions[0]}."
-            : $"There are no regions to rotate to: gluetun's servers list has only {regions[0]} for this VPN provider.";
+            ? $"{noRegions}: {EnvVars.GluetunServerRegions} allows only {regions[0]}."
+            : $"{noRegions}: gluetun's servers list has only {regions[0]} for this VPN provider.";
     }
 
     /// <summary>

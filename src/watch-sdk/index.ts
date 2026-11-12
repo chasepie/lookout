@@ -241,6 +241,21 @@ async function takeScreenshot(page: Page): Promise<Uint8Array | undefined> {
 }
 
 /**
+ * The result without any `failover` on a success. Only a known failure can ask for one, so a success's is left out
+ * rather than checked, as it was before failovers existed, and the Runner, which reads it only as true or false, never
+ * sees it.
+ */
+function withoutFailoverOnSuccess(result: RunResult): RunResult {
+  if (!result.success || !('failover' in result)) {
+    return result;
+  }
+
+  const { failover, ...success } = result;
+  void failover;
+  return success;
+}
+
+/**
  * Opens a browser, runs a watch script on a new page in it, and closes the browser, as Lookout's Runner does.
  * Takes the screenshot {@link RunWatchOptions.screenshotOn} asks for when the script returned none.
  * @returns What the script returned, with any screenshot taken for it.
@@ -270,10 +285,8 @@ export async function runWatch(runScript: LookoutWatchScript, options?: RunWatch
       if (!isRunResult(result)) {
         throw new Error(`Watch script returned an unexpected result: ${JSON.stringify(result)}`);
       }
-      // On a success too: it's written with the result, and the Runner only reads true or false
-      const failover: unknown = 'failover' in result ? result.failover : undefined;
-      if (failover !== undefined && typeof failover !== 'boolean') {
-        throw new Error(`The watch script's failover must be true or false, not ${JSON.stringify(failover)}.`);
+      if (!result.success && result.failover !== undefined && typeof result.failover !== 'boolean') {
+        throw new Error(`The watch script's failover must be true or false, not ${JSON.stringify(result.failover)}.`);
       }
       if (result.screenshot !== undefined && !(result.screenshot instanceof Uint8Array)) {
         throw new Error('The watch script\'s screenshot must be bytes, such as what page.screenshot() returns, '
@@ -285,14 +298,15 @@ export async function runWatch(runScript: LookoutWatchScript, options?: RunWatch
       throw new WatchScriptCrash(error, screenshot);
     }
 
+    const kept = withoutFailoverOnSuccess(result);
     // As with a crash, a run that's being cancelled ends without one, so stopping isn't held up
-    const wanted = result.success ? screenshotOn?.success : screenshotOn?.knownFailure;
-    if (result.screenshot === undefined && wanted && !signal.aborted) {
+    const wanted = kept.success ? screenshotOn?.success : screenshotOn?.knownFailure;
+    if (kept.screenshot === undefined && wanted && !signal.aborted) {
       const screenshot = await takeScreenshot(page);
-      return screenshot === undefined ? result : { ...result, screenshot };
+      return screenshot === undefined ? kept : { ...kept, screenshot };
     }
 
-    return result;
+    return kept;
   } finally {
     await browser.close();
   }
