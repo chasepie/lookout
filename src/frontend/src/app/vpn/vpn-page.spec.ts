@@ -93,7 +93,7 @@ describe('VpnPage', () => {
     );
 
     expect(textOf(page.querySelector('[role=status]'))).toBe(
-      'Switching to DE Berlin once the VPN watch run in progress finishes…',
+      'Switching to DE Berlin once the VPN watch runs in progress finish…',
     );
     expect(textOf(page.querySelector('.facts'))).toContain('Reconnecting…');
     expect(textOf(page.querySelector('[role=alert]'))).toBe('The last switch failed: Timed out waiting for the tunnel');

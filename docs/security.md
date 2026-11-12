@@ -192,6 +192,19 @@ A known failure's `failover` only makes the Backend switch the VPN to a region i
 use, and retry the watch at most 3 times in a row, so a script that asks on every run can move the VPN for every watch
 that uses it, but can't pick where it goes or run without end ([ADR 0008](adr/0008-scripts-ask-for-failover.md)).
 
+**Runs at once.** `LOOKOUT_MAX_CONCURRENT_RUNS` lets scripts of different watches run at the same time, and by default
+it's 1, so they don't. Raising it trades isolation between watches for throughput, since nothing keeps scripts that run
+together apart:
+
+- Every script has the same browserless token, which browserless checks on its whole API, so a script should be
+  assumed able to find the other browser sessions in progress and connect to them, reading their pages and cookies.
+- The scripts share the Runner's memory limit, and their sessions share browserless's, so one that takes too much can
+  get the container killed, and every run in progress with it. Raise `LOOKOUT_RUNNER_MEMORY` and `BROWSERLESS_MEMORY`
+  with the limit.
+
+Raise it only if a script compromised through one watch, or through a package it depends on, may reach the other
+watches' pages.
+
 ## The containers
 
 browserless and gluetun's HTTP proxy would each let anyone who reaches them use Lookout's resources: browserless drives

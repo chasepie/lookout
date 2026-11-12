@@ -125,6 +125,23 @@ public sealed class DevelopmentSettingsTests
         Assert.AreEqual(SettingNames.DefaultVpnServiceProvider, settings.VpnServiceProvider);
     }
 
+    [TestMethod]
+    public void ReadsTheMostRunsAtOnceOrItsDefault()
+    {
+        Assert.AreEqual(5, Settings(new() { [EnvVars.LookoutMaxConcurrentRuns] = "5" }).MaxConcurrentRuns);
+        Assert.AreEqual(EnvVars.DefaultMaxConcurrentRuns, Settings([]).MaxConcurrentRuns);
+    }
+
+    [TestMethod]
+    public void RefusesAMostRunsAtOnceBelowOne()
+    {
+        var settings = Settings(new() { [EnvVars.LookoutMaxConcurrentRuns] = "0" });
+
+        var ex = Assert.Throws<InvalidOperationException>(() => settings.MaxConcurrentRuns);
+
+        Assert.Contains(EnvVars.LookoutMaxConcurrentRuns, ex.Message);
+    }
+
     private DevelopmentSettings Settings(Dictionary<string, string?> values) =>
         new(values.Where(pair => pair.Value is not null).ToDictionary(pair => pair.Key, pair => pair.Value!), _repoRoot);
 }

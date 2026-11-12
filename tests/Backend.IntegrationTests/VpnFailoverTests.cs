@@ -1,7 +1,7 @@
-using System.Net.Http.Json;
 using ChasePie.Lookout.Backend.Controllers;
 using ChasePie.Lookout.Backend.Database;
 using ChasePie.Lookout.Backend.Services;
+using ChasePie.Lookout.Backend.VpnServices;
 using ChasePie.Lookout.Core;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -9,8 +9,8 @@ using Microsoft.Extensions.DependencyInjection;
 namespace ChasePie.Lookout.Backend.IntegrationTests;
 
 /// <summary>
-/// Failovers that known failures ask for, and the retries after them, with the Runner and gluetun faked at their HTTP
-/// boundaries.
+/// Failovers that known failures ask for, the retries after them, and how VPN runs and region switches wait for each
+/// other, with the Runner and gluetun faked at their HTTP boundaries.
 /// </summary>
 [TestClass]
 public sealed class VpnFailoverTests
@@ -24,6 +24,9 @@ public sealed class VpnFailoverTests
     private static readonly object PlainFailure = new { success = false, failureReason = "Sold out" };
     private static readonly object Success = new { success = true, content = "In stock" };
     private static readonly object Crash = new { crash = new { error = "Error: No price" } };
+
+    // Long enough for the worker to have started a run, or the rotation service a switch, were it going to
+    private static readonly TimeSpan SettleTime = TimeSpan.FromSeconds(2);
 
     public TestContext TestContext { get; set; } = null!;
 
@@ -39,7 +42,7 @@ public sealed class VpnFailoverTests
         var watchId = await lookout.Client.CreateWatchAsync("Tickets", Ct, ("UseVpn", "true"));
 
         await lookout.Client.RunAsync(watchId, Ct);
-        var runs = await WaitForRunsAsync(lookout.Client, watchId, 2);
+        var runs = await lookout.Client.WaitForRunsAsync(watchId, 2, Ct);
 
         var (failed, retry) = (runs[0], runs[1]);
         Assert.AreEqual(Albania, failed.Region);
@@ -111,7 +114,7 @@ public sealed class VpnFailoverTests
 
         // Albania fails over to Belgium or Chile, that to the other, and then no region is left
         await lookout.Client.RunAsync(watchId, Ct);
-        await WaitForRunsAsync(lookout.Client, watchId, 3);
+        await lookout.Client.WaitForRunsAsync(watchId, 3, Ct);
         var runs = await SettleAsync(lookout, watchId);
 
         Assert.HasCount(4, runs);
@@ -123,7 +126,7 @@ public sealed class VpnFailoverTests
         // The success started the streak over, so Albania and the region it first failed over to can be picked again
         lookout.Runner.Responses.Enqueue(FailoverFailure);
         await lookout.Client.RunAsync(watchId, Ct);
-        runs = await WaitForRunsAsync(lookout.Client, watchId, 6);
+        runs = await lookout.Client.WaitForRunsAsync(watchId, 6, Ct);
 
         Assert.HasCount(3, lookout.Gluetun.SwitchedTo);
         var thirdSwitch = lookout.Gluetun.SwitchedTo.Last();
@@ -145,7 +148,7 @@ public sealed class VpnFailoverTests
         var watchId = await lookout.Client.CreateWatchAsync("Tickets", Ct, ("UseVpn", "true"));
 
         await lookout.Client.RunAsync(watchId, Ct);
-        await WaitForRunsAsync(lookout.Client, watchId, 4);
+        await lookout.Client.WaitForRunsAsync(watchId, 4, Ct);
         var runs = await SettleAsync(lookout, watchId);
 
         Assert.HasCount(5, runs);
@@ -184,7 +187,7 @@ public sealed class VpnFailoverTests
         var watchId = await lookout.Client.CreateWatchAsync("Tickets", Ct, ("UseVpn", "true"));
 
         await lookout.Client.RunAsync(watchId, Ct);
-        var runs = await WaitForRunsAsync(lookout.Client, watchId, 2);
+        var runs = await lookout.Client.WaitForRunsAsync(watchId, 2, Ct);
 
         Assert.AreEqual(runs[0].Id, runs[1].RetryOfRunId);
         Assert.AreEqual(Chile, runs[1].Region);
@@ -211,7 +214,7 @@ public sealed class VpnFailoverTests
         var watchId = await lookout.Client.CreateWatchAsync("Tickets", Ct, ("UseVpn", "true"));
 
         await lookout.Client.RunAsync(watchId, Ct);
-        var runs = await WaitForRunsAsync(lookout.Client, watchId, 2);
+        var runs = await lookout.Client.WaitForRunsAsync(watchId, 2, Ct);
 
         Assert.AreEqual(runs[0].Id, runs[1].RetryOfRunId);
         Assert.HasCount(1, lookout.Gluetun.SwitchedTo);
@@ -220,7 +223,7 @@ public sealed class VpnFailoverTests
     }
 
     [TestMethod]
-    public async Task AVpnRunQueuedBehindAFailingOneWaitsForTheFailover()
+    public async Task AVpnRunQueuedAfterAFailingOneWaitsForTheFailover()
     {
         await using var lookout = await StartAsync([Albania, Belgium], current: Albania);
         lookout.Gluetun.HoldSwitches = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -229,21 +232,133 @@ public sealed class VpnFailoverTests
         var failingId = await lookout.Client.CreateWatchAsync("Tickets", Ct, ("UseVpn", "true"));
         var otherId = await lookout.Client.CreateWatchAsync("Prices", Ct, ("UseVpn", "true"));
 
-        using (await lookout.Client.PostAsync($"/api/Watches/{failingId}/runs", null, Ct))
-        using (await lookout.Client.PostAsync($"/api/Watches/{otherId}/runs", null, Ct))
-        {
-        }
-
+        await lookout.Client.QueueRunAsync(failingId, Ct);
         await lookout.Gluetun.SwitchStarted.Task.WaitAsync(TimeSpan.FromSeconds(30), Ct);
-        // Long enough for the worker to have started it, were it not waiting
-        await Task.Delay(TimeSpan.FromSeconds(2), Ct);
-        var waiting = (await GetRunsAsync(lookout.Client, otherId, Ct)).Single();
+        await lookout.Client.QueueRunAsync(otherId, Ct);
+        await Task.Delay(SettleTime, Ct);
+        var waiting = (await lookout.Client.GetRunsAsync(otherId, Ct)).Single();
         Assert.AreEqual(WatchRunStatus.Created, waiting.Status);
 
         lookout.Gluetun.HoldSwitches.SetResult();
-        var other = (await WaitForRunsAsync(lookout.Client, otherId, 1)).Single();
+        var other = (await lookout.Client.WaitForRunsAsync(otherId, 1, Ct)).Single();
 
         Assert.AreEqual(Belgium, other.Region);
+    }
+
+    [TestMethod]
+    public async Task VpnRunsOfDifferentWatchesRunAtOnce()
+    {
+        await using var lookout = await StartAsync([Albania, Belgium], current: Albania);
+        var hold = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        lookout.Runner.WhileRunning = () => hold.Task;
+        var firstId = await lookout.Client.CreateWatchAsync("Tickets", Ct, ("UseVpn", "true"));
+        var secondId = await lookout.Client.CreateWatchAsync("Prices", Ct, ("UseVpn", "true"));
+
+        await lookout.Client.QueueRunAsync(firstId, Ct);
+        await lookout.Client.QueueRunAsync(secondId, Ct);
+        await LookoutApi.WaitUntilAsync(() => Task.FromResult(lookout.Runner.InProgress == 2), Ct);
+        hold.SetResult();
+
+        Assert.AreEqual(Albania, (await lookout.Client.WaitForRunsAsync(firstId, 1, Ct)).Single().Region);
+        Assert.AreEqual(Albania, (await lookout.Client.WaitForRunsAsync(secondId, 1, Ct)).Single().Region);
+    }
+
+    [TestMethod]
+    public async Task AVpnRunHeldUpByASwitchDoesntHoldUpALaterRunWithoutTheVpn()
+    {
+        await using var lookout = await StartAsync([Albania, Belgium], current: Albania);
+        lookout.Gluetun.HoldSwitches = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var vpnId = await lookout.Client.CreateWatchAsync("Tickets", Ct, ("UseVpn", "true"));
+        var plainId = await lookout.Client.CreateWatchAsync("Prices", Ct);
+        await MakeRotationDueAsync(lookout);
+        await lookout.Gluetun.SwitchStarted.Task.WaitAsync(TimeSpan.FromSeconds(30), Ct);
+
+        await lookout.Client.QueueRunAsync(vpnId, Ct);
+        await lookout.Client.QueueRunAsync(plainId, Ct);
+        var plain = (await lookout.Client.WaitForRunsAsync(plainId, 1, Ct)).Single();
+
+        Assert.IsNull(plain.Region);
+        Assert.AreEqual(WatchRunStatus.Created, (await lookout.Client.GetRunsAsync(vpnId, Ct)).Single().Status);
+        lookout.Gluetun.HoldSwitches.SetResult();
+        Assert.AreEqual(Belgium, (await lookout.Client.WaitForRunsAsync(vpnId, 1, Ct)).Single().Region);
+    }
+
+    [TestMethod]
+    public async Task AWaitingSwitchKeepsNewVpnRunsOutAndWaitsForTheOnesInProgress()
+    {
+        await using var lookout = await StartAsync([Albania, Belgium], current: Albania);
+        var hold = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var calls = 0;
+        lookout.Runner.WhileRunning = () => Interlocked.Increment(ref calls) == 1 ? hold.Task : Task.CompletedTask;
+        var runningId = await lookout.Client.CreateWatchAsync("Tickets", Ct, ("UseVpn", "true"));
+        var laterId = await lookout.Client.CreateWatchAsync("Prices", Ct, ("UseVpn", "true"));
+        await lookout.Client.QueueRunAsync(runningId, Ct);
+        await LookoutApi.WaitUntilAsync(() => Task.FromResult(lookout.Runner.InProgress == 1), Ct);
+
+        await MakeRotationDueAsync(lookout);
+        await LookoutApi.WaitUntilAsync(() => Task.FromResult(lookout.SwitchProgress is { WaitingForRun: true }), Ct);
+        await lookout.Client.QueueRunAsync(laterId, Ct);
+        await Task.Delay(SettleTime, Ct);
+
+        Assert.AreEqual(WatchRunStatus.Created, (await lookout.Client.GetRunsAsync(laterId, Ct)).Single().Status);
+        Assert.IsEmpty(lookout.Gluetun.SwitchedTo, "The switch waits for the run in progress.");
+        hold.SetResult();
+        var running = (await lookout.Client.WaitForRunsAsync(runningId, 1, Ct)).Single();
+        var later = (await lookout.Client.WaitForRunsAsync(laterId, 1, Ct)).Single();
+        Assert.AreEqual(Albania, running.Region);
+        Assert.AreEqual("In stock", running.Content);
+        Assert.AreEqual(Belgium, later.Region);
+    }
+
+    [TestMethod]
+    public async Task AFailoverKeepsNewVpnRunsOutWhileRunsInProgressFinishAndASecondOneOnlyRetries()
+    {
+        await using var lookout = await StartAsync([Albania, Belgium, Chile], current: Albania);
+        var holdFirst = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var holdSecond = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var calls = 0;
+        lookout.Runner.WhileRunning = () => Interlocked.Increment(ref calls) switch
+        {
+            1 => holdFirst.Task,
+            2 => holdSecond.Task,
+            _ => Task.CompletedTask,
+        };
+        lookout.Runner.Responses.Enqueue(FailoverFailure);
+        lookout.Runner.Responses.Enqueue(FailoverFailure);
+        lookout.Runner.Response = Success;
+        var firstId = await lookout.Client.CreateWatchAsync("Tickets", Ct, ("UseVpn", "true"));
+        var secondId = await lookout.Client.CreateWatchAsync("Prices", Ct, ("UseVpn", "true"));
+        var laterId = await lookout.Client.CreateWatchAsync("Stock", Ct, ("UseVpn", "true"));
+        await lookout.Client.QueueRunAsync(firstId, Ct);
+        await lookout.Client.QueueRunAsync(secondId, Ct);
+        await LookoutApi.WaitUntilAsync(() => Task.FromResult(lookout.Runner.InProgress == 2), Ct);
+
+        // One of them ends in a known failure that asks for a failover, while the other is still running there
+        holdFirst.SetResult();
+        await LookoutApi.WaitUntilAsync(() => Task.FromResult(lookout.Runner.InProgress == 1), Ct);
+        await lookout.Client.QueueRunAsync(laterId, Ct);
+        await Task.Delay(SettleTime, Ct);
+        Assert.AreEqual(WatchRunStatus.Created, (await lookout.Client.GetRunsAsync(laterId, Ct)).Single().Status);
+        Assert.IsEmpty(lookout.Gluetun.SwitchedTo, "The failover waits for the run still in the region.");
+
+        // The other finishes rather than being cut off, and asks for a failover too
+        holdSecond.SetResult();
+        var first = await lookout.Client.WaitForRunsAsync(firstId, 2, Ct);
+        var second = await lookout.Client.WaitForRunsAsync(secondId, 2, Ct);
+        var later = (await lookout.Client.WaitForRunsAsync(laterId, 1, Ct)).Single();
+
+        Assert.HasCount(1, lookout.Gluetun.SwitchedTo, "The second failover found the VPN had already left.");
+        var newRegion = lookout.Gluetun.SwitchedTo.Single();
+        foreach (var runs in new[] { first, second })
+        {
+            Assert.AreEqual(Albania, runs[0].Region);
+            Assert.AreEqual("Blocked", runs[0].FailureReason);
+            Assert.IsNull(runs[0].Error);
+            Assert.AreEqual(runs[0].Id, runs[1].RetryOfRunId);
+            Assert.AreEqual(newRegion, runs[1].Region);
+        }
+
+        Assert.AreEqual(newRegion, later.Region);
     }
 
     [TestMethod]
@@ -264,7 +379,7 @@ public sealed class VpnFailoverTests
         }
 
         lookout.Gluetun.HoldSwitches.SetResult();
-        var run = (await WaitForRunsAsync(lookout.Client, watchId, 1)).Single();
+        var run = (await lookout.Client.WaitForRunsAsync(watchId, 1, Ct)).Single();
 
         Assert.AreEqual(Belgium, run.Region);
     }
@@ -284,7 +399,7 @@ public sealed class VpnFailoverTests
         };
 
         await lookout.Client.RunAsync(watchId, Ct);
-        await WaitForRunsAsync(lookout.Client, watchId, 2);
+        await lookout.Client.WaitForRunsAsync(watchId, 2, Ct);
         var runs = await SettleAsync(lookout, watchId);
 
         Assert.HasCount(3, runs);
@@ -309,7 +424,7 @@ public sealed class VpnFailoverTests
         var watchId = await lookout.Client.CreateWatchAsync("Tickets", Ct, ("UseVpn", "true"));
 
         await lookout.Client.RunAsync(watchId, Ct);
-        var runs = await WaitForRunsAsync(lookout.Client, watchId, 2);
+        var runs = await lookout.Client.WaitForRunsAsync(watchId, 2, Ct);
 
         Assert.IsNull(runs[0].Region);
         Assert.AreSequenceEqual(new[] { Belgium }, lookout.Gluetun.SwitchedTo.ToArray());
@@ -351,7 +466,7 @@ public sealed class VpnFailoverTests
         var watchId = await lookout.Client.CreateWatchAsync("Tickets", Ct, ("UseVpn", "true"));
 
         await lookout.Client.RunAsync(watchId, Ct);
-        await WaitForRunsAsync(lookout.Client, watchId, 2);
+        await lookout.Client.WaitForRunsAsync(watchId, 2, Ct);
 
         var settings = await lookout.GetVpnSettingsAsync(Ct);
         Assert.IsLessThan(DateTime.UtcNow.AddMinutes(16), settings.NextRotationTime!.Value);
@@ -377,9 +492,12 @@ public sealed class VpnFailoverTests
 
         var runner = new FakeRunner(Success);
         var gluetun = new FakeGluetun(current is null ? null : [current]) { RefuseSwitches = refuseSwitches };
+        var settings = FakeGluetun.Settings(dataDirectory, string.Join(',', regions), regions);
+        // More than the default of one, so VPN runs can overlap, as they do once the Owner raises it
+        settings[EnvVars.LookoutMaxConcurrentRuns] = "3";
         var factory = new LookoutFactory(
             dataDirectory: dataDirectory,
-            settings: FakeGluetun.Settings(dataDirectory, string.Join(',', regions), regions),
+            settings: settings,
             configureServices: services =>
             {
                 gluetun.Register(services);
@@ -399,41 +517,21 @@ public sealed class VpnFailoverTests
     }
 
     /// <summary>
-    /// Runs the watch once more and returns all its runs, oldest first, once that run is done. The worker runs one at a
-    /// time and finishes a failover before the next run, so by then any failover and retry before it has happened.
+    /// Runs the watch once more and returns all its runs, oldest first, once that run is done. A watch's runs go one at a
+    /// time, and a failover is queued before its run is done, so the new run waits for any failover before it.
     /// </summary>
     private async Task<List<WatchRunSummary>> SettleAsync(Lookout lookout, int watchId)
     {
         await lookout.Client.RunAsync(watchId, Ct);
-        return await GetRunsAsync(lookout.Client, watchId, Ct);
+        return await lookout.Client.GetRunsAsync(watchId, Ct);
     }
 
-    /// <summary>
-    /// Waits for the watch to have <paramref name="count"/> runs, all done, and returns them oldest first.
-    /// </summary>
-    private async Task<List<WatchRunSummary>> WaitForRunsAsync(HttpClient client, int watchId, int count)
-    {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(Ct);
-        timeout.CancelAfter(TimeSpan.FromSeconds(60));
-        while (true)
+    private Task MakeRotationDueAsync(Lookout lookout) =>
+        lookout.UpdateVpnSettingsAsync(s =>
         {
-            var runs = await GetRunsAsync(client, watchId, timeout.Token);
-            if (runs.Count >= count && runs.All(r => r.Status == WatchRunStatus.Done))
-            {
-                return runs;
-            }
-
-            await Task.Delay(TimeSpan.FromMilliseconds(100), timeout.Token);
-        }
-    }
-
-    private static async Task<List<WatchRunSummary>> GetRunsAsync(
-        HttpClient client, int watchId, CancellationToken cancellationToken)
-    {
-        var newestFirst = await client.GetFromJsonAsync<List<WatchRunSummary>>(
-            $"/api/Watches/{watchId}/runs", cancellationToken);
-        return [.. newestFirst!.OrderBy(r => r.Id)];
-    }
+            s.RotationEnabled = true;
+            s.NextRotationTime = DateTime.UtcNow.AddMinutes(-1);
+        }, Ct);
 
     private sealed class Lookout(
         LookoutFactory factory, FakeRunner runner, FakeGluetun gluetun, string dataDirectory, HttpClient client)
@@ -442,6 +540,8 @@ public sealed class VpnFailoverTests
         public FakeRunner Runner => runner;
         public FakeGluetun Gluetun => gluetun;
         public HttpClient Client => client;
+
+        public VpnSwitchProgress? SwitchProgress => factory.Services.GetRequiredService<VpnRotationService>().Progress;
 
         public Task UpdateVpnSettingsAsync(Action<VpnSettings> update, CancellationToken cancellationToken) =>
             VpnFailoverTests.UpdateVpnSettingsAsync(factory, update, cancellationToken);

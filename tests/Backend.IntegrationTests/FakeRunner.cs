@@ -28,24 +28,50 @@ internal sealed class FakeRunner(object response) : HttpMessageHandler
 
     public List<Uri> Requests { get; } = [];
 
+    private int _inProgress;
+    private int _maxInProgress;
+
+    /// <summary>
+    /// How many runs it's running now.
+    /// </summary>
+    public int InProgress => Volatile.Read(ref _inProgress);
+
+    /// <summary>
+    /// The most runs it has run at once.
+    /// </summary>
+    public int MaxInProgress => Volatile.Read(ref _maxInProgress);
+
     protected override async Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request, CancellationToken cancellationToken)
     {
         lock (Requests)
         {
             Requests.Add(request.RequestUri!);
+            _maxInProgress = Math.Max(_maxInProgress, ++_inProgress);
         }
 
-        if (WhileRunning is { } whileRunning)
+        try
         {
-            await whileRunning();
-        }
+            if (WhileRunning is { } whileRunning)
+            {
+                // Cancelled with the run, so a test that fails before letting a held run go doesn't hold up the Backend
+                // stopping, which waits for its runs
+                await whileRunning().WaitAsync(cancellationToken);
+            }
 
-        var response = Responses.TryDequeue(out var next) ? next : Response;
-        return new HttpResponseMessage(HttpStatusCode.OK)
+            var response = Responses.TryDequeue(out var next) ? next : Response;
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    JsonSerializer.Serialize(response, JsonSerializerOptions.Web), Encoding.UTF8, "application/json"),
+            };
+        }
+        finally
         {
-            Content = new StringContent(
-                JsonSerializer.Serialize(response, JsonSerializerOptions.Web), Encoding.UTF8, "application/json"),
-        };
+            lock (Requests)
+            {
+                _inProgress--;
+            }
+        }
     }
 }

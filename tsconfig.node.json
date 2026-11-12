@@ -1,7 +1,9 @@
 {
   "extends": "./tsconfig.json",
   "include": [
-    "**/*"
+    "**/*",
+    // Globs skip dot-directories, so the run-lookout skill's sample watch scripts need naming
+    ".claude/skills/**/*"
   ],
   "exclude": [
     "src/frontend"

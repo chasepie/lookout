@@ -29,6 +29,13 @@ internal sealed class DevelopmentSettings(IReadOnlyDictionary<string, string> va
     public string VpnServiceProvider => Value(SettingNames.GluetunVpnServiceProvider) ?? SettingNames.DefaultVpnServiceProvider;
 
     /// <summary>
+    /// How many runs the Backend runs at once at most, which browserless takes as many sessions at once for. See
+    /// <see cref="EnvVars.LookoutMaxConcurrentRuns"/>.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">It isn't a whole number of at least 1.</exception>
+    public int MaxConcurrentRuns => EnvVars.ParseMaxConcurrentRuns(Value(EnvVars.LookoutMaxConcurrentRuns));
+
+    /// <summary>
     /// The VPN regions Lookout may use, comma-separated, or <see langword="null"/> for every region. See
     /// <see cref="EnvVars.GluetunServerRegions"/>.
     /// </summary>

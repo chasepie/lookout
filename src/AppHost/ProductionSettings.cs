@@ -1,3 +1,4 @@
+using System.Globalization;
 using Aspire.Hosting.Docker;
 using ChasePie.Lookout.Core;
 
@@ -81,6 +82,13 @@ public partial class Program
                     + "such as 'DE Berlin,US Texas'. gluetun connects to one of them, and the Backend switches and rotates only "
                     + "among them. Without it, every region of the provider.");
 
+            MaxConcurrentRuns = Setting(
+                name: EnvVars.LookoutMaxConcurrentRuns.ToKebabCase(),
+                defaultValue: EnvVars.DefaultMaxConcurrentRuns.ToString(CultureInfo.InvariantCulture),
+                description: "How many watch runs Lookout runs at once at most, each of a different watch; browserless runs as many "
+                    + "browser sessions at once. Each takes memory in browserless and the Runner, so raise BROWSERLESS_MEMORY and LOOKOUT_RUNNER_MEMORY with it. "
+                    + "Scripts that run at once can reach each other's browser sessions and use up each other's memory: see docs/security.md.");
+
             RunnerMemory = Setting(
                 name: "lookout-runner-memory",
                 defaultValue: "1g",
@@ -130,6 +138,7 @@ public partial class Program
         public IResourceBuilder<ParameterResource> EdgeSubnet { get; }
         public IResourceBuilder<ParameterResource> VpnServiceProvider { get; }
         public IResourceBuilder<ParameterResource> ServerRegions { get; }
+        public IResourceBuilder<ParameterResource> MaxConcurrentRuns { get; }
         public IResourceBuilder<ParameterResource> RunnerMemory { get; }
         public IResourceBuilder<ParameterResource> BrowserlessMemory { get; }
 

@@ -1,5 +1,4 @@
 using System.Threading.Channels;
-using System.Threading.RateLimiting;
 using ChasePie.Lookout.Backend.Database;
 using ChasePie.Lookout.Backend.Hubs;
 using ChasePie.Lookout.Core;
@@ -15,14 +14,15 @@ namespace ChasePie.Lookout.Backend.VpnServices;
 /// <see cref="VpnConfiguration.ServerRegions"/> no longer allows it.
 /// </summary>
 /// <remarks>
-/// A switch holds <see cref="VpnServiceKeys.Gate"/> until the new tunnel is up, so it waits for a VPN run in progress and
-/// VPN runs wait for it. Every switch to a new region restarts the rotation timer. A failed rotation is retried after
-/// <see cref="RetryDelay"/>. Does nothing unless <see cref="VpnConfiguration.IsEnabled"/>.
+/// A switch holds <see cref="VpnGate"/> to itself until the new tunnel is up, so it waits for the VPN runs in progress,
+/// and VPN runs that haven't started wait for it from when it's queued. Every switch to a new region restarts the
+/// rotation timer. A failed rotation is retried after <see cref="RetryDelay"/>. Does nothing unless
+/// <see cref="VpnConfiguration.IsEnabled"/>.
 /// </remarks>
 public partial class VpnRotationService(
     IServiceScopeFactory scopeFactory,
     VpnConfiguration configuration,
-    [FromKeyedServices(VpnServiceKeys.Gate)] ConcurrencyLimiter gate,
+    VpnGate gate,
     VpnRegionCatalog catalog,
     UpdatesNotifier notifier,
     ILogger<VpnRotationService> logger) : BackgroundService
@@ -67,8 +67,10 @@ public partial class VpnRotationService(
 
     private volatile VpnSwitchProgress? _progress;
 
-    // Failovers switch from the run worker, and the rest from this service's loop: one at a time, so each picks its
-    // region from where the last one left the VPN, and only one shows its progress
+    // Failovers switch from the run worker's background, and the rest from this service's loop: one at a time, so each
+    // picks its region from where the last one left the VPN, and only one shows its progress. A failover may be queued in
+    // the gate while it waits here, which keeps new VPN runs out but doesn't hold up the switch ahead of it, since the
+    // gate only goes to a switch that waits for it.
     private readonly SemaphoreSlim _switching = new(1, 1);
 
     /// <summary>
@@ -77,7 +79,7 @@ public partial class VpnRotationService(
     public VpnSwitchProgress? Progress => _progress;
 
     /// <summary>
-    /// Queues a switch, made within a second unless another switch or a VPN run is in progress.
+    /// Queues a switch, made within a second unless another switch or VPN runs are in progress.
     /// Clients hear about it through <see cref="IUpdatesClient.VpnChanged"/>.
     /// </summary>
     /// <param name="region">A region from <see cref="VpnRegionCatalog"/>, or <see langword="null"/> for a random
@@ -90,17 +92,23 @@ public partial class VpnRotationService(
     /// <summary>
     /// Fails the VPN over from <paramref name="failedRegion"/>, where a run's known failure asked for it, to a random
     /// region rotation may switch to that isn't one of <paramref name="failedRegions"/>, whether or not rotation is on.
-    /// Waits for the gate, then for the new tunnel.
+    /// Waits for any other switch, then for the gate, then for the new tunnel.
     /// </summary>
     /// <param name="failedRegion">The region the run ran in.</param>
     /// <param name="failedRegions">The regions the watch already failed over from during its known-failure streak.</param>
+    /// <param name="ticket">
+    /// The failover's place in <see cref="VpnGate"/>'s queue, which the run took before letting go of its share, so no
+    /// VPN run starts in the failed region meanwhile. Disposed when the failover is done, whatever the outcome.
+    /// </param>
     public async Task<FailoverOutcome> FailOverAsync(
         string? failedRegion,
         IReadOnlyCollection<string> failedRegions,
+        VpnGate.SwitchTicket ticket,
         CancellationToken cancellationToken)
     {
         if (!configuration.IsEnabled)
         {
+            ticket.Dispose();
             return FailoverOutcome.Unavailable;
         }
 
@@ -108,7 +116,8 @@ public partial class VpnRotationService(
             kind: SwitchKind.Failover,
             requestedRegion: null,
             cancellationToken: cancellationToken,
-            failover: new FailoverRequest(failedRegion, failedRegions));
+            failover: new FailoverRequest(failedRegion, failedRegions),
+            queuedTicket: ticket);
     }
 
     private sealed record FailoverRequest(string? FailedRegion, IReadOnlyCollection<string> FailedRegions)
@@ -235,20 +244,26 @@ public partial class VpnRotationService(
     /// Failures are recorded in <see cref="VpnSettings.LastError"/> rather than thrown.
     /// </summary>
     /// <param name="failover">What a <see cref="SwitchKind.Failover"/> fails over from.</param>
+    /// <param name="queuedTicket">The switch's place in <see cref="VpnGate"/>'s queue, if it took one already; it's
+    /// disposed when the switch is done. Otherwise the switch queues once it knows its region.</param>
     private async Task<FailoverOutcome> SwitchAsync(
         SwitchKind kind,
         string? requestedRegion,
         CancellationToken cancellationToken,
-        FailoverRequest? failover = null)
+        FailoverRequest? failover = null,
+        VpnGate.SwitchTicket? queuedTicket = null)
     {
-        await _switching.WaitAsync(cancellationToken);
-        try
+        using (queuedTicket)
         {
-            return await SwitchOneAtATimeAsync(kind, requestedRegion, failover, cancellationToken);
-        }
-        finally
-        {
-            _switching.Release();
+            await _switching.WaitAsync(cancellationToken);
+            try
+            {
+                return await SwitchOneAtATimeAsync(kind, requestedRegion, failover, queuedTicket, cancellationToken);
+            }
+            finally
+            {
+                _switching.Release();
+            }
         }
     }
 
@@ -256,6 +271,7 @@ public partial class VpnRotationService(
         SwitchKind kind,
         string? requestedRegion,
         FailoverRequest? failover,
+        VpnGate.SwitchTicket? queuedTicket,
         CancellationToken cancellationToken)
     {
         using var scope = scopeFactory.CreateScope();
@@ -282,10 +298,12 @@ public partial class VpnRotationService(
                 return FailoverOutcome.NoRegionLeft;
             }
 
-            _progress = new VpnSwitchProgress(region, WaitingForRun: true, DateTime.UtcNow);
-            await notifier.VpnChangedAsync();
-            using (await gate.AcquireVpnLeaseAsync(cancellationToken))
+            // Once queued, no new VPN run starts, so it's queued before it shows as waiting for the ones in progress
+            using (var ticket = queuedTicket ?? gate.QueueSwitch())
             {
+                _progress = new VpnSwitchProgress(region, WaitingForRun: true, DateTime.UtcNow);
+                await notifier.VpnChangedAsync();
+                await ticket.WaitAsync(cancellationToken);
                 _progress = _progress with { WaitingForRun = false };
                 await notifier.VpnChangedAsync();
 
@@ -293,7 +311,7 @@ public partial class VpnRotationService(
                 await gluetun.SetRegionAsync(region, cancellationToken);
 
                 regionApplied = true;
-                // Saved before letting go of the gate, so a run waiting for it records where it runs
+                // Saved before letting go of the gate, so a run that starts after it records where it runs
                 await dbContext.VpnSettings
                     .Where(s => s.Id == VpnSettings.SingletonId)
                     .ExecuteUpdateAsync(s => s.SetProperty(x => x.CurrentRegion, region), CancellationToken.None);
@@ -487,6 +505,6 @@ public enum FailoverOutcome
 /// <summary>
 /// A region switch in progress.
 /// </summary>
-/// <param name="WaitingForRun">Whether it's waiting for a VPN run to finish before restarting the tunnel.</param>
+/// <param name="WaitingForRun">Whether it's waiting for the VPN runs in progress to finish before restarting the tunnel.</param>
 /// <param name="StartedTime">When the switch began, in UTC.</param>
 public sealed record VpnSwitchProgress(string Region, bool WaitingForRun, DateTime StartedTime);

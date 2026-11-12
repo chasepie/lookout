@@ -5,7 +5,6 @@ using ChasePie.Lookout.Backend.Hubs;
 using ChasePie.Lookout.Backend.Notifications;
 using ChasePie.Lookout.Backend.Services;
 using System.Text.RegularExpressions;
-using System.Threading.RateLimiting;
 using ChasePie.Lookout.Backend.VpnServices;
 using ChasePie.Lookout.Core;
 using dotenv.net.Configuration;
@@ -61,6 +60,8 @@ public partial class Program
         services.AddSingleton(RunLinks.FromConfiguration(configuration));
 
         services.AddHostedService<WatchScheduler>();
+        // Resolved here, so a value that isn't a number of at least 1 stops startup
+        services.AddSingleton(WatchRunLimit.FromConfiguration(configuration));
         services.AddHostedService<WatchRunWorker>();
 
         var vpnConfiguration = VpnConfiguration.FromConfiguration(configuration);
@@ -68,13 +69,7 @@ public partial class Program
         services.AddHttpClient<GluetunHttpClient>(GluetunHttpClient.Configure);
         services.AddHttpClient<VpnProbeHttpClient>().ConfigureVpnProbeHttpClient();
         services.AddSingleton<VpnRegionCatalog>();
-        services.AddKeyedSingleton(VpnServiceKeys.Gate, (_, _) => new ConcurrencyLimiter(
-            new ConcurrencyLimiterOptions
-            {
-                PermitLimit = 1,
-                QueueLimit = int.MaxValue,
-                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-            }));
+        services.AddSingleton<VpnGate>();
         // A singleton too, so the controller can queue switches on the instance that makes them
         services.AddSingleton<VpnRotationService>();
         services.AddHostedService(provider => provider.GetRequiredService<VpnRotationService>());
