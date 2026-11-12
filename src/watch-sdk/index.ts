@@ -13,9 +13,14 @@ interface RunResultBase {
 /** The script found what it looked for on the page: its content. */
 export interface Success extends RunResultBase {
   success: true;
+  /**
+   * What the script found, such as a price or a stock status. Lookout compares it with the last success's to tell when
+   * it changed, so leave out anything that changes on every visit, such as the time.
+   */
   content: string;
 }
 
+/** Whether `value` is a {@link Success}: `success` is `true` and `content` is a string. */
 export function isSuccess(value: unknown): value is Success {
   return typeof value === 'object'
     && value !== null
@@ -26,9 +31,17 @@ export function isSuccess(value: unknown): value is Success {
 /** The script recognised a problem, such as a page the VPN region is blocked from, and why. */
 export interface KnownFailure extends RunResultBase {
   success: false;
+  /** What the problem is, as the Owner reads it on the run and in notifications. */
   failureReason: string;
+  /**
+   * Whether Lookout should fail the VPN over to another region and try the watch again there, for a problem another
+   * region could fix, such as a page that blocks this one. Only applies to watches that use the VPN. Leave it out
+   * for a problem another region can't fix, such as a sold-out item.
+   */
+  failover?: boolean;
 }
 
+/** Whether `value` is a {@link KnownFailure}: `success` is `false` and `failureReason` is a string. */
 export function isKnownFailure(value: unknown): value is KnownFailure {
   return typeof value === 'object'
     && value !== null
@@ -36,8 +49,13 @@ export function isKnownFailure(value: unknown): value is KnownFailure {
     && 'failureReason' in value && typeof value.failureReason === 'string';
 }
 
+/** How a watch script ends when it doesn't crash: what it found, or a problem it recognised. */
 export type RunResult = Success | KnownFailure;
 
+/**
+ * Whether `value` is a {@link RunResult}. Doesn't check `screenshot` or `failover`, which {@link runWatch} checks
+ * itself.
+ */
 export function isRunResult(value: unknown): value is RunResult {
   return isSuccess(value) || isKnownFailure(value);
 }
@@ -70,7 +88,14 @@ function describeThrown(value: unknown): string {
   return typeof value === 'string' ? value : inspect(value, { depth: 4 });
 }
 
+/** A watch script: the default export of its file, as a class or an object. */
 export interface LookoutWatchScript {
+  /**
+   * Looks at a page and says what it found. Throwing, or returning something other than a {@link RunResult}, makes the
+   * run a crash.
+   * @param page A blank page in a new browser context, through the VPN if the watch uses it.
+   * @param signal Aborts when the run is cancelled or times out; pass it on to Playwright calls that take one.
+   */
   run(page: Page, signal: AbortSignal): Promise<RunResult>;
 }
 
@@ -91,6 +116,7 @@ export interface RunWatchOptions {
    * go in the URL, as in `http://user:password@gluetun:8888`, percent-encoded if they contain reserved characters.
    */
   proxy?: string;
+  /** Aborts the run, as when it's cancelled or times out. It's passed on to the script's `run`. */
   signal?: AbortSignal;
   /**
    * How a run must end for Lookout to take a full-page screenshot of the page given to the script, when the script
@@ -101,7 +127,9 @@ export interface RunWatchOptions {
 
 /** For each way a run can end, whether to take a full-page screenshot of the page given to the script. */
 export interface ScreenshotOptions {
+  /** When the script returned a {@link Success}. */
   success?: boolean;
+  /** When the script returned a {@link KnownFailure}. */
   knownFailure?: boolean;
   /** Only when the script threw: a run that timed out or was cancelled gets none. */
   crash?: boolean;
@@ -110,6 +138,8 @@ export interface ScreenshotOptions {
 /**
  * Builds the WebSocket URL for Playwright's `chromium.connect()` from a browserless base URL. Browserless
  * launches the browser itself, so the launch options go in its `launch` query parameter.
+ * @param browserlessUrl The server's base URL, such as `http://localhost:3000`, with any query parameters to keep.
+ * @param launchOptions The options browserless launches Chromium with.
  */
 export function getBrowserlessEndpoint(browserlessUrl: string, launchOptions: Pick<LaunchOptions, 'headless' | 'args'>): string {
   const url = new URL(browserlessUrl);
@@ -125,6 +155,8 @@ export function getBrowserlessEndpoint(browserlessUrl: string, launchOptions: Pi
 /**
  * Playwright's proxy settings for a proxy URL. Playwright ignores credentials in `server`, so they're passed
  * separately.
+ * @param proxyUrl A proxy URL, such as `http://user:password@gluetun:8888`, or just `host:port` for an HTTP proxy.
+ * @throws If the username or password isn't valid percent-encoding.
  */
 export function getProxySettings(proxyUrl: string): NonNullable<BrowserContextOptions['proxy']> {
   // Playwright takes `host:port` as an HTTP proxy, and so does this
@@ -208,6 +240,27 @@ async function takeScreenshot(page: Page): Promise<Uint8Array | undefined> {
   }
 }
 
+/**
+ * The result without any `failover` on a success. Only a known failure can ask for one, so a success's is left out
+ * rather than checked, as it was before failovers existed, and the Runner, which reads it only as true or false, never
+ * sees it.
+ */
+function withoutFailoverOnSuccess(result: RunResult): RunResult {
+  if (!result.success || !('failover' in result)) {
+    return result;
+  }
+
+  const { failover, ...success } = result;
+  void failover;
+  return success;
+}
+
+/**
+ * Opens a browser, runs a watch script on a new page in it, and closes the browser, as Lookout's Runner does.
+ * Takes the screenshot {@link RunWatchOptions.screenshotOn} asks for when the script returned none.
+ * @returns What the script returned, with any screenshot taken for it.
+ * @throws {WatchScriptCrash} If the script crashed, with any screenshot taken for it.
+ */
 export async function runWatch(runScript: LookoutWatchScript, options?: RunWatchOptions): Promise<RunResult> {
   const signal = options?.signal ?? new AbortController().signal;
   const launchOptions: LaunchOptions = {
@@ -232,6 +285,9 @@ export async function runWatch(runScript: LookoutWatchScript, options?: RunWatch
       if (!isRunResult(result)) {
         throw new Error(`Watch script returned an unexpected result: ${JSON.stringify(result)}`);
       }
+      if (!result.success && result.failover !== undefined && typeof result.failover !== 'boolean') {
+        throw new Error(`The watch script's failover must be true or false, not ${JSON.stringify(result.failover)}.`);
+      }
       if (result.screenshot !== undefined && !(result.screenshot instanceof Uint8Array)) {
         throw new Error('The watch script\'s screenshot must be bytes, such as what page.screenshot() returns, '
           + `not ${result.screenshot === null ? 'null' : typeof result.screenshot}.`);
@@ -242,14 +298,15 @@ export async function runWatch(runScript: LookoutWatchScript, options?: RunWatch
       throw new WatchScriptCrash(error, screenshot);
     }
 
+    const kept = withoutFailoverOnSuccess(result);
     // As with a crash, a run that's being cancelled ends without one, so stopping isn't held up
-    const wanted = result.success ? screenshotOn?.success : screenshotOn?.knownFailure;
-    if (result.screenshot === undefined && wanted && !signal.aborted) {
+    const wanted = kept.success ? screenshotOn?.success : screenshotOn?.knownFailure;
+    if (kept.screenshot === undefined && wanted && !signal.aborted) {
       const screenshot = await takeScreenshot(page);
-      return screenshot === undefined ? result : { ...result, screenshot };
+      return screenshot === undefined ? kept : { ...kept, screenshot };
     }
 
-    return result;
+    return kept;
   } finally {
     await browser.close();
   }

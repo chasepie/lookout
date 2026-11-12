@@ -77,6 +77,25 @@ public sealed class WatchRunOutcomeTests
     }
 
     [TestMethod]
+    public async Task AFailoverRequestWithoutTheVpnConfiguredIsOnlyRecorded()
+    {
+        var runner = new FakeRunner(new { success = false, failureReason = "Blocked", failover = true });
+        await using var factory = CreateFactory(runner);
+        using var client = await factory.CreateSignedInClientAsync(Ct);
+
+        var watchId = await client.CreateWatchAsync("Watch", Ct, ("UseVpn", "true"));
+        var run = await RunAsync(client, watchId);
+        runner.Response = new { success = true, content = "Hello" };
+        await RunAsync(client, watchId);
+
+        Assert.IsTrue(run.AskedForFailover);
+        Assert.IsNull(run.Region);
+        var runs = await client.GetFromJsonAsync<List<WatchRunSummary>>($"/api/Watches/{watchId}/runs", Ct);
+        Assert.HasCount(2, runs!);
+        Assert.IsTrue(runs!.All(r => r.RetryOfRunId is null));
+    }
+
+    [TestMethod]
     public async Task ACrashIsKeptAsItsErrorWithItsScreenshot()
     {
         var runner = new FakeRunner(new { crash = new { error = "Error: No price on the page" }, screenshot = Png });

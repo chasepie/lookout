@@ -356,6 +356,29 @@ describe('WatchDetail', () => {
       expect(panel().querySelector('#error-title')).toBeNull();
     });
 
+    it('shows the region it ran in, that it asked for a failover, and the run it retries', async () => {
+      await open('/watches/1/runs/3');
+      await answer(
+        request('GET', `${runsUrl}/3`),
+        fullRun(3, { content: null, failureReason: 'Blocked', askedForFailover: true, region: 'Belgium', retryOfRunId: 2 }),
+      );
+
+      expect(textOf(panel().querySelector('.failover'))).toBe('Asked for failover');
+      expect(textOf(panel().querySelector('.retry-of'))).toBe('Retry of run #2');
+      expect(panel().querySelector('.retry-of a')?.getAttribute('href')).toBe('/watches/1/runs/2');
+      expect([...panel().querySelectorAll('.timings dt')].map(textOf)).toEqual(['Waited', 'Ran', 'Region']);
+      expect(textOf(panel().querySelectorAll('.timings dd')[2])).toBe('Belgium');
+    });
+
+    it('leaves out the region, failover and retry when the run has none', async () => {
+      await open('/watches/1/runs/3');
+      await answer(request('GET', `${runsUrl}/3`), fullRun(3));
+
+      expect(panel().querySelector('.failover')).toBeNull();
+      expect(panel().querySelector('.retry-of')).toBeNull();
+      expect([...panel().querySelectorAll('.timings dt')].map(textOf)).toEqual(['Waited', 'Ran']);
+    });
+
     it('shows a JPEG screenshot as one', async () => {
       await open('/watches/1/runs/3');
       await answer(

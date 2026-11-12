@@ -15,7 +15,10 @@ export function runSummary(id: number, overrides: Partial<WatchRunSummary> = {})
     status: WatchRunStatus.Done,
     content: `seen by run ${id}`,
     failureReason: null,
+    askedForFailover: false,
     error: null,
+    region: null,
+    retryOfRunId: null,
     hasScreenshot: false,
     ...overrides,
   };

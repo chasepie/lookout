@@ -15,7 +15,7 @@ namespace ChasePie.Lookout.Backend.Database.Migrations
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "10.0.14");
+            modelBuilder.HasAnnotation("ProductVersion", "10.0.15");
 
             modelBuilder.Entity("ChasePie.Lookout.Backend.Auth.OwnerSessionState", b =>
                 {
@@ -178,6 +178,9 @@ namespace ChasePie.Lookout.Backend.Database.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("AskedForFailover")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Content")
                         .HasColumnType("TEXT");
 
@@ -197,6 +200,12 @@ namespace ChasePie.Lookout.Backend.Database.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<bool>("Interrupted")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Region")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("RetryOfRunId")
                         .HasColumnType("INTEGER");
 
                     b.Property<byte[]>("Screenshot")

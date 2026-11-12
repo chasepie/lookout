@@ -24,6 +24,7 @@ interface CliOutput {
   success?: unknown;
   content?: unknown;
   failureReason?: unknown;
+  failover?: unknown;
   crash?: { error?: unknown };
   screenshot?: unknown;
 }
@@ -233,6 +234,45 @@ describe('an automatic screenshot that can\'t be taken', () => {
   });
 });
 
+describe('a known failure', () => {
+  test('is written with its request for a failover', async () => {
+    const run = await runCli(`export default {
+      async run() {
+        return { success: false, failureReason: 'Blocked in this region', failover: true };
+      },
+    };`);
+
+    assert.equal(run.exitCode, 0, run.stderr);
+    assert.equal(run.output?.failureReason, 'Blocked in this region');
+    assert.equal(run.output?.failover, true);
+  });
+
+  test('is written without a failover when it asks for none', async () => {
+    const run = await runCli(`export default {
+      async run() {
+        return { success: false, failureReason: 'Sold out' };
+      },
+    };`);
+
+    assert.equal(run.exitCode, 0, run.stderr);
+    assert.equal(run.output?.failover, undefined);
+  });
+});
+
+describe('a success', () => {
+  test('is written without a failover, which only a known failure can ask for', async () => {
+    const run = await runCli(`export default {
+      async run() {
+        return { success: true, content: 'In stock', failover: null };
+      },
+    };`);
+
+    assert.equal(run.exitCode, 0, run.stderr);
+    assert.equal(run.output?.content, 'In stock');
+    assert.equal('failover' in (run.output ?? {}), false);
+  });
+});
+
 describe('a crash', () => {
   const throwingScript = `export default {
     async run(page) {
@@ -281,6 +321,17 @@ describe('a crash', () => {
     assert.equal(run.exitCode, 1);
     assert.match(String(run.output?.crash?.error), /screenshot must be bytes/);
     assert.equal(screenshotTypeOf(run.output), 'jpeg');
+  });
+
+  test('is what a script that asks for a failover with something other than a boolean has', async () => {
+    const run = await runCli(`export default {
+      async run() {
+        return { success: false, failureReason: 'Blocked', failover: 'yes' };
+      },
+    };`);
+
+    assert.equal(run.exitCode, 1);
+    assert.match(String(run.output?.crash?.error), /failover must be true or false/);
   });
 
   test('says what the script threw when it isn\'t an error', async () => {

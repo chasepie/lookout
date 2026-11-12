@@ -188,6 +188,9 @@ nothing else. In development, Node's network is open too, since limiting it need
 the screenshot included, and nothing the Runner passes on is to be trusted. The Backend keeps a screenshot only if its
 first bytes are a PNG's or a JPEG's and it's at most 8 MiB; otherwise the run is a crash. It stores the type it found,
 and the frontend shows the image as a `data:` URL of that type in an `<img>`, which runs no script whatever the bytes.
+A known failure's `failover` only makes the Backend switch the VPN to a region it picks itself, among those rotation may
+use, and retry the watch at most 3 times in a row, so a script that asks on every run can move the VPN for every watch
+that uses it, but can't pick where it goes or run without end ([ADR 0008](adr/0008-scripts-ask-for-failover.md)).
 
 ## The containers
 

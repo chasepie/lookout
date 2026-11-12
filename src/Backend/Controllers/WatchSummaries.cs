@@ -18,7 +18,10 @@ public sealed record WatchRunSummary(
     WatchRunStatus Status,
     string? Content,
     string? FailureReason,
+    bool AskedForFailover,
     string? Error,
+    string? Region,
+    int? RetryOfRunId,
     bool HasScreenshot)
 {
     /// <summary>
@@ -33,7 +36,10 @@ public sealed record WatchRunSummary(
         Status: run.Status,
         Content: run.Content,
         FailureReason: run.FailureReason,
+        AskedForFailover: run.AskedForFailover,
         Error: run.Error,
+        Region: run.Region,
+        RetryOfRunId: run.RetryOfRunId,
         HasScreenshot: run.Screenshot != null);
 }
 
