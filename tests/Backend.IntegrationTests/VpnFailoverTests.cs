@@ -247,6 +247,29 @@ public sealed class VpnFailoverTests
     }
 
     [TestMethod]
+    public async Task AVpnRunWaitingForASwitchRecordsTheRegionItSwitchedTo()
+    {
+        await using var lookout = await StartAsync([Albania, Belgium], current: Albania);
+        lookout.Gluetun.HoldSwitches = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var watchId = await lookout.Client.CreateWatchAsync("Tickets", Ct, ("UseVpn", "true"));
+        await lookout.UpdateVpnSettingsAsync(s =>
+        {
+            s.RotationEnabled = true;
+            s.NextRotationTime = DateTime.UtcNow.AddMinutes(-1);
+        }, Ct);
+        await lookout.Gluetun.SwitchStarted.Task.WaitAsync(TimeSpan.FromSeconds(30), Ct);
+
+        using (await lookout.Client.PostAsync($"/api/Watches/{watchId}/runs", null, Ct))
+        {
+        }
+
+        lookout.Gluetun.HoldSwitches.SetResult();
+        var run = (await WaitForRunsAsync(lookout.Client, watchId, 1)).Single();
+
+        Assert.AreEqual(Belgium, run.Region);
+    }
+
+    [TestMethod]
     public async Task ASuccessfulFailoverRestartsTheRotationTimer()
     {
         var farOff = DateTime.UtcNow.AddDays(1);
@@ -273,9 +296,19 @@ public sealed class VpnFailoverTests
     /// </summary>
     private async Task<Lookout> StartAsync(string[] regions, string current, Action<VpnSettings>? configure = null)
     {
+        var dataDirectory = Directory.CreateTempSubdirectory("lookout-tests-").FullName;
+        // Stored before the Backend with the VPN starts, as if it had switched there before a restart
+        await using (var before = new LookoutFactory(dataDirectory: dataDirectory))
+        {
+            await UpdateVpnSettingsAsync(before, settings =>
+            {
+                settings.CurrentRegion = current;
+                configure?.Invoke(settings);
+            }, Ct);
+        }
+
         var runner = new FakeRunner(Success);
         var gluetun = new FakeGluetun([current]);
-        var dataDirectory = Directory.CreateTempSubdirectory("lookout-tests-").FullName;
         var factory = new LookoutFactory(
             dataDirectory: dataDirectory,
             settings: FakeGluetun.Settings(dataDirectory, string.Join(',', regions), regions),
@@ -284,13 +317,17 @@ public sealed class VpnFailoverTests
                 gluetun.Register(services);
                 services.AddHttpClient<RunnerHttpClient>().ConfigurePrimaryHttpMessageHandler(() => runner);
             });
-        var lookout = new Lookout(factory, runner, gluetun, dataDirectory, await factory.CreateSignedInClientAsync(Ct));
-        await lookout.UpdateVpnSettingsAsync(settings =>
-        {
-            settings.CurrentRegion = current;
-            configure?.Invoke(settings);
-        }, Ct);
-        return lookout;
+        return new Lookout(factory, runner, gluetun, dataDirectory, await factory.CreateSignedInClientAsync(Ct));
+    }
+
+    private static async Task UpdateVpnSettingsAsync(
+        LookoutFactory factory, Action<VpnSettings> update, CancellationToken cancellationToken)
+    {
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<LookoutDbContext>();
+        var settings = await dbContext.VpnSettings.SingleAsync(s => s.Id == VpnSettings.SingletonId, cancellationToken);
+        update(settings);
+        await dbContext.SaveChangesAsync(cancellationToken);
     }
 
     /// <summary>
@@ -338,14 +375,8 @@ public sealed class VpnFailoverTests
         public FakeGluetun Gluetun => gluetun;
         public HttpClient Client => client;
 
-        public async Task UpdateVpnSettingsAsync(Action<VpnSettings> update, CancellationToken cancellationToken)
-        {
-            using var scope = factory.Services.CreateScope();
-            var dbContext = scope.ServiceProvider.GetRequiredService<LookoutDbContext>();
-            var settings = await dbContext.VpnSettings.SingleAsync(s => s.Id == VpnSettings.SingletonId, cancellationToken);
-            update(settings);
-            await dbContext.SaveChangesAsync(cancellationToken);
-        }
+        public Task UpdateVpnSettingsAsync(Action<VpnSettings> update, CancellationToken cancellationToken) =>
+            VpnFailoverTests.UpdateVpnSettingsAsync(factory, update, cancellationToken);
 
         public async Task<VpnSettings> GetVpnSettingsAsync(CancellationToken cancellationToken)
         {

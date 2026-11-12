@@ -320,6 +320,17 @@ describe('a crash', () => {
     assert.match(String(run.output?.crash?.error), /failover must be true or false/);
   });
 
+  test('is what a success with a failover that isn\'t a boolean has', async () => {
+    const run = await runCli(`export default {
+      async run() {
+        return { success: true, content: 'In stock', failover: null };
+      },
+    };`);
+
+    assert.equal(run.exitCode, 1);
+    assert.match(String(run.output?.crash?.error), /failover must be true or false/);
+  });
+
   test('says what the script threw when it isn\'t an error', async () => {
     const run = await runCli(`export default {
       async run() {

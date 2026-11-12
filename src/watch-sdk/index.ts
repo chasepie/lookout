@@ -270,8 +270,10 @@ export async function runWatch(runScript: LookoutWatchScript, options?: RunWatch
       if (!isRunResult(result)) {
         throw new Error(`Watch script returned an unexpected result: ${JSON.stringify(result)}`);
       }
-      if (!result.success && result.failover !== undefined && typeof result.failover !== 'boolean') {
-        throw new Error(`The watch script's failover must be true or false, not ${JSON.stringify(result.failover)}.`);
+      // On a success too: it's written with the result, and the Runner only reads true or false
+      const failover: unknown = 'failover' in result ? result.failover : undefined;
+      if (failover !== undefined && typeof failover !== 'boolean') {
+        throw new Error(`The watch script's failover must be true or false, not ${JSON.stringify(failover)}.`);
       }
       if (result.screenshot !== undefined && !(result.screenshot instanceof Uint8Array)) {
         throw new Error('The watch script\'s screenshot must be bytes, such as what page.screenshot() returns, '

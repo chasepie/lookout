@@ -223,32 +223,22 @@ public partial class WatchRunWorker(
     /// </summary>
     private async Task FailOverAsync(LookoutDbContext dbContext, WatchRun watchRun, CancellationToken stoppingToken)
     {
-        // A run that crashed doesn't ask; one that ended in a success, or before this run, starts the streak over
-        var earlierRuns = await dbContext.WatchRuns
+        var earlierRunsQuery = dbContext.WatchRuns
             .AsNoTracking()
-            .Where(wr => wr.WatchId == watchRun.WatchId
-                && wr.Id < watchRun.Id
-                && wr.Status == WatchRunStatus.Done)
-            .OrderByDescending(wr => wr.Id)
-            .Select(wr => new
-            {
-                wr.Id,
-                wr.Content,
-                wr.Error,
-                wr.AskedForFailover,
-                wr.Region,
-                wr.RetryOfRunId
-            })
+            .Where(wr => wr.WatchId == watchRun.WatchId && wr.Id < watchRun.Id && wr.Status == WatchRunStatus.Done);
+        // A success starts the known-failure streak over, so only the runs since the watch's previous one are read, as
+        // for the run's event. They also hold every retry in a row before this run, since each retried a known failure.
+        var previousSuccessId = await earlierRunsQuery
+            .Where(WatchEvents.IsSuccessQuery)
+            .MaxAsync(wr => (int?)wr.Id, stoppingToken) ?? 0;
+        var sinceSuccess = await earlierRunsQuery
+            .Where(wr => wr.Id > previousSuccessId)
+            .Select(wr => new { wr.Id, wr.AskedForFailover, wr.Region, wr.RetryOfRunId })
             .ToListAsync(stoppingToken);
 
-        var sinceSuccess = earlierRuns
-            .TakeWhile(wr => wr.Error is not null || wr.Content is null)
-            .ToList();
-
+        // Only known failures ask, so crashes add no region to the list
         var failedRegions = sinceSuccess
-            .Where(wr => wr.Error is null
-                && wr.AskedForFailover
-                && wr.Region is not null)
+            .Where(wr => wr.AskedForFailover && wr.Region is not null)
             .Select(wr => wr.Region!)
             .ToList();
 
@@ -260,7 +250,7 @@ public partial class WatchRunWorker(
 
         // Each retry names the run it retries, so the ones in a row lead back through them
         var retriesInARow = 0;
-        var byId = earlierRuns.ToDictionary(wr => wr.Id, wr => wr.RetryOfRunId);
+        var byId = sinceSuccess.ToDictionary(wr => wr.Id, wr => wr.RetryOfRunId);
         for (var retried = watchRun.RetryOfRunId; retried is { } id; retried = byId.GetValueOrDefault(id))
         {
             retriesInARow++;

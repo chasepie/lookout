@@ -49,7 +49,8 @@ public class VpnSettings : VpnSettingsDto
 
     /// <summary>
     /// The region the Backend last switched the VPN to, which it reapplies if gluetun restarts and forgets it.
-    /// <see langword="null"/> until the first switch; until then gluetun picks any region.
+    /// <see langword="null"/> until the first switch, which the Backend makes when it starts; until then gluetun picks any
+    /// region.
     /// </summary>
     public string? CurrentRegion { get; set; }
 

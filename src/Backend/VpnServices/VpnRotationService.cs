@@ -9,7 +9,8 @@ namespace ChasePie.Lookout.Backend.VpnServices;
 
 /// <summary>
 /// Makes every VPN region switch: rotations when <see cref="VpnSettings.NextRotationTime"/> comes due,
-/// switches asked for with <see cref="RequestSwitch"/>, failovers asked for with <see cref="FailOverAsync"/>, reapplying <see cref="VpnSettings.CurrentRegion"/>
+/// switches asked for with <see cref="RequestSwitch"/>, failovers asked for with <see cref="FailOverAsync"/>, a first
+/// switch when it has made none, so the region is always known, reapplying <see cref="VpnSettings.CurrentRegion"/>
 /// when gluetun has lost it, which happens when gluetun restarts, and replacing it when
 /// <see cref="VpnConfiguration.ServerRegions"/> no longer allows it.
 /// </summary>
@@ -52,6 +53,12 @@ public partial class VpnRotationService(
         /// failed in during its known-failure streak.
         /// </summary>
         Failover,
+
+        /// <summary>
+        /// To a region rotation may switch to, when the Backend hasn't switched yet. Until then gluetun picks a region
+        /// of its own and doesn't say which, so runs couldn't record theirs or a failover avoid it.
+        /// </summary>
+        First,
     }
 
     // Requested regions, null for a random one. Only the latest matters; one made while another waits replaces it
@@ -164,13 +171,16 @@ public partial class VpnRotationService(
     /// <summary>
     /// Switches back to <see cref="VpnSettings.CurrentRegion"/> if gluetun isn't restricted to it.
     /// gluetun keeps settings changed through its API only until it restarts. If the region is no longer one of
-    /// <see cref="VpnConfiguration.ServerRegions"/>, switches to a random one that is instead.
+    /// <see cref="VpnConfiguration.ServerRegions"/>, switches to a random one that is instead. If the Backend hasn't
+    /// switched yet, makes its first switch, and tries again next time if that fails.
     /// </summary>
     private async Task ReapplyIfLostAsync(CancellationToken cancellationToken)
     {
         // The checks each use a scope of their own, so none is held through a switch, which can wait minutes
         if (await GetCurrentRegionAsync(cancellationToken) is not { } currentRegion)
         {
+            LogFirstSwitch();
+            await SwitchAsync(SwitchKind.First, null, cancellationToken);
             return;
         }
 
@@ -269,6 +279,10 @@ public partial class VpnRotationService(
                 await gluetun.SetRegionAsync(region, cancellationToken);
 
                 regionApplied = true;
+                // Saved before letting go of the gate, so a run waiting for it records where it runs
+                await dbContext.VpnSettings
+                    .Where(s => s.Id == VpnSettings.SingletonId)
+                    .ExecuteUpdateAsync(s => s.SetProperty(x => x.CurrentRegion, region), CancellationToken.None);
                 publicIp = await WaitForTunnelAsync(
                     scope.ServiceProvider.GetRequiredService<VpnProbeHttpClient>(), cancellationToken);
             }
@@ -408,6 +422,9 @@ public partial class VpnRotationService(
         Level = LogLevel.Information,
         Message = $"The VPN is on {{Region}}, which isn't in {EnvVars.GluetunServerRegions}; switching to a region that is")]
     private partial void LogRegionNotAllowed(string region);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "The Backend hasn't switched the VPN yet; switching to a known region")]
+    private partial void LogFirstSwitch();
 
     [LoggerMessage(Level = LogLevel.Information, Message = "The VPN already left {Region}, so it isn't failed over")]
     private partial void LogAlreadyLeft(string? region);

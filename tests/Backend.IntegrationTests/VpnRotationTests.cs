@@ -60,6 +60,17 @@ public sealed class VpnRotationTests
     }
 
     [TestMethod]
+    public async Task TheBackendMakesItsFirstSwitchSoTheRegionIsKnown()
+    {
+        // gluetun picked a region of its own, and doesn't say which, so neither runs nor failovers could know it
+        var (settings, gluetun) = await StartWithStoredRegionAsync(null, gluetunRegions: null);
+
+        Assert.IsNull(settings.LastError);
+        Assert.AreEqual("DE Berlin", settings.CurrentRegion);
+        Assert.AreSequenceEqual(Berlin, gluetun.SwitchedTo.ToArray());
+    }
+
+    [TestMethod]
     public async Task RotationWithOnlyOneAllowedRegionBlamesTheServerRegions()
     {
         // Nothing is excluded, so blaming the exclusions would send the Owner to the wrong setting
