@@ -21,7 +21,7 @@ export interface VpnSettings extends VpnSettingsDto {
   lastError: string | null;
 }
 
-/** Mirrors `VpnSwitchProgress` in src/Backend/VpnServices/VpnRotationService.cs. */
+/** Mirrors `VpnSwitchProgress` in src/Backend/VpnServices/Vpn.cs. */
 export interface VpnSwitchProgress {
   region: string;
   /** Whether the switch is waiting for the VPN watch runs in progress to finish first. */

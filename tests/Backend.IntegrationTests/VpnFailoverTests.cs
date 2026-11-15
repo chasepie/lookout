@@ -541,7 +541,7 @@ public sealed class VpnFailoverTests
         public FakeGluetun Gluetun => gluetun;
         public HttpClient Client => client;
 
-        public VpnSwitchProgress? SwitchProgress => factory.Services.GetRequiredService<VpnRotationService>().Progress;
+        public VpnSwitchProgress? SwitchProgress => factory.Services.GetRequiredService<Vpn>().Progress;
 
         public Task UpdateVpnSettingsAsync(Action<VpnSettings> update, CancellationToken cancellationToken) =>
             VpnFailoverTests.UpdateVpnSettingsAsync(factory, update, cancellationToken);

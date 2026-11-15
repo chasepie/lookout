@@ -18,7 +18,7 @@ public class VpnController(
     LookoutDbContext dbContext,
     VpnConfiguration configuration,
     VpnRegionCatalog catalog,
-    VpnRotationService rotationService,
+    Vpn rotationService,
     GluetunHttpClient gluetun,
     UpdatesNotifier notifier) : ControllerBase
 {
@@ -28,7 +28,7 @@ public class VpnController(
     private readonly LookoutDbContext _dbContext = dbContext;
     private readonly VpnConfiguration _configuration = configuration;
     private readonly VpnRegionCatalog _catalog = catalog;
-    private readonly VpnRotationService _rotationService = rotationService;
+    private readonly Vpn _rotationService = rotationService;
     private readonly GluetunHttpClient _gluetun = gluetun;
     private readonly UpdatesNotifier _notifier = notifier;
 
