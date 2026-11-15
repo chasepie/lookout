@@ -26,8 +26,8 @@ namespace ChasePie.Lookout.Backend.VpnServices;
 /// </para>
 /// <para>
 /// Every switch to a new region restarts the rotation timer. A failed rotation is retried after
-/// <see cref="RetryDelay"/>. Switches nothing unless <see cref="VpnConfiguration.IsEnabled"/>, though runs still get
-/// a <see cref="VpnRun"/>.
+/// <see cref="RetryDelay"/>. Its clock, timers and delays are the host's <see cref="TimeProvider"/>. Switches nothing
+/// unless <see cref="VpnConfiguration.IsEnabled"/>, though runs still get a <see cref="VpnRun"/>.
 /// </para>
 /// </remarks>
 public partial class Vpn(
@@ -35,6 +35,7 @@ public partial class Vpn(
     VpnConfiguration configuration,
     VpnRegionCatalog catalog,
     UpdatesNotifier notifier,
+    TimeProvider timeProvider,
     ILogger<Vpn> logger) : BackgroundService
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(1);
@@ -99,6 +100,8 @@ public partial class Vpn(
     // the gate while it waits here, which keeps new VPN runs out but doesn't hold up the switch ahead of it, since the
     // gate only goes to a switch that waits for it.
     private readonly SemaphoreSlim _switching = new(1, 1);
+
+    private DateTime UtcNow => timeProvider.GetUtcNow().UtcDateTime;
 
     /// <summary>
     /// The switch in progress, or <see langword="null"/> if there's none.
@@ -205,7 +208,7 @@ public partial class Vpn(
         using var scope = scopeFactory.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<LookoutDbContext>();
         var settings = await dbContext.VpnSettings.SingleAsync(s => s.Id == VpnSettings.SingletonId, cancellationToken);
-        settings.Update(dto, DateTime.UtcNow, Random.Shared);
+        settings.Update(dto, UtcNow, Random.Shared);
         await dbContext.SaveChangesAsync(cancellationToken);
         await notifier.VpnChangedAsync();
         return settings;
@@ -288,7 +291,7 @@ public partial class Vpn(
         }
 
         var nextReconcileTime = DateTime.MinValue;
-        using var timer = new PeriodicTimer(PollInterval);
+        using var timer = new PeriodicTimer(PollInterval, timeProvider);
         do
         {
             try
@@ -301,9 +304,9 @@ public partial class Vpn(
                 {
                     await SwitchAsync(SwitchKind.Rotation, null, stoppingToken);
                 }
-                else if (DateTime.UtcNow >= nextReconcileTime)
+                else if (UtcNow >= nextReconcileTime)
                 {
-                    nextReconcileTime = DateTime.UtcNow + ReconcileInterval;
+                    nextReconcileTime = UtcNow + ReconcileInterval;
                     await ReapplyIfLostAsync(stoppingToken);
                 }
             }
@@ -323,7 +326,7 @@ public partial class Vpn(
     {
         using var scope = scopeFactory.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<LookoutDbContext>();
-        var now = DateTime.UtcNow;
+        var now = UtcNow;
         return await dbContext.VpnSettings.AnyAsync(
             s => s.Id == VpnSettings.SingletonId
                 && s.RotationEnabled
@@ -444,7 +447,7 @@ public partial class Vpn(
                     // Once queued, no new VPN run starts, so it's queued before it shows as waiting for the ones in
                     // progress
                     ticket ??= _gate.QueueSwitch();
-                    _progress = new VpnSwitchProgress(region, WaitingForRun: true, DateTime.UtcNow);
+                    _progress = new VpnSwitchProgress(region, WaitingForRun: true, UtcNow);
                     await notifier.VpnChangedAsync();
                     await ticket.WaitAsync(cancellationToken);
                     _progress = _progress with { WaitingForRun = false };
@@ -505,7 +508,7 @@ public partial class Vpn(
     {
         // The settings may have been edited while the switch waited for a run
         await dbContext.Entry(settings).ReloadAsync(CancellationToken.None);
-        var now = DateTime.UtcNow;
+        var now = UtcNow;
         if (appliedRegion is not null)
         {
             settings.CurrentRegion = appliedRegion;
@@ -604,12 +607,12 @@ public partial class Vpn(
     /// Polls until traffic gets through the VPN proxy, which gluetun's firewall blocks until the new tunnel is up.
     /// </summary>
     /// <returns>The new public IP, or <see langword="null"/> if the tunnel wasn't up within <see cref="TunnelUpTimeout"/>.</returns>
-    private static async Task<string?> WaitForTunnelAsync(VpnProbeHttpClient probe, CancellationToken cancellationToken)
+    private async Task<string?> WaitForTunnelAsync(VpnProbeHttpClient probe, CancellationToken cancellationToken)
     {
-        var deadline = DateTime.UtcNow + TunnelUpTimeout;
-        while (DateTime.UtcNow < deadline)
+        var deadline = UtcNow + TunnelUpTimeout;
+        while (UtcNow < deadline)
         {
-            await Task.Delay(PollInterval, cancellationToken);
+            await Task.Delay(PollInterval, timeProvider, cancellationToken);
             if (await probe.TryGetPublicIpAsync(cancellationToken) is { } publicIp)
             {
                 return publicIp;

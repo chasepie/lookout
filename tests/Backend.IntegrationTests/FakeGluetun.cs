@@ -30,6 +30,28 @@ internal sealed class FakeGluetun(string[]? regions)
     public bool RefuseSwitches { get; set; }
 
     /// <summary>
+    /// Whether gluetun's control server can't be reached at all.
+    /// </summary>
+    public bool Unreachable { get; set; }
+
+    /// <summary>
+    /// Whether the tunnel stays down after a switch, so traffic doesn't get through the proxy.
+    /// </summary>
+    public bool TunnelDown { get; set; }
+
+    /// <summary>
+    /// How many times gluetun was asked for its VPN settings.
+    /// </summary>
+    public int SettingsReads => _settingsReads;
+
+    private int _settingsReads;
+
+    /// <summary>
+    /// Forgets the region gluetun was switched to, as it does when it restarts.
+    /// </summary>
+    public void ForgetRegion() => _regions = null;
+
+    /// <summary>
     /// When set, switches wait for it to complete before gluetun answers.
     /// </summary>
     public TaskCompletionSource? HoldSwitches { get; set; }
@@ -67,8 +89,9 @@ internal sealed class FakeGluetun(string[]? regions)
         services.AddHttpClient<GluetunHttpClient>()
             .ConfigurePrimaryHttpMessageHandler(() => new StubHandler(HandleAsync));
         services.AddHttpClient<VpnProbeHttpClient>()
-            .ConfigurePrimaryHttpMessageHandler(() => new StubHandler(_ =>
-                Task.FromResult(Text(HttpStatusCode.OK, "ip=203.0.113.7\n"))));
+            .ConfigurePrimaryHttpMessageHandler(() => new StubHandler(_ => TunnelDown
+                ? throw new HttpRequestException("The proxy refused the connection.")
+                : Task.FromResult(Text(HttpStatusCode.OK, "ip=203.0.113.7\n"))));
     }
 
     private static void WriteServers(string dataDirectory, string[] regions)
@@ -90,6 +113,11 @@ internal sealed class FakeGluetun(string[]? regions)
 
     private async Task<HttpResponseMessage> HandleAsync(HttpRequestMessage request)
     {
+        if (Unreachable)
+        {
+            throw new HttpRequestException("gluetun refused the connection.");
+        }
+
         if (request.RequestUri?.AbsolutePath != "/v1/vpn/settings")
         {
             return Text(HttpStatusCode.NotFound, "not found");
@@ -115,6 +143,7 @@ internal sealed class FakeGluetun(string[]? regions)
             return Text(HttpStatusCode.OK, "settings updated");
         }
 
+        Interlocked.Increment(ref _settingsReads);
         var settings = new JsonObject
         {
             ["type"] = "openvpn",
