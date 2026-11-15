@@ -400,6 +400,76 @@ public sealed class VpnTests
         Assert.IsGreaterThanOrEqualTo(VpnHost.Start.AddMinutes(1), host.Now);
     }
 
+    [TestMethod]
+    public async Task ACheckOfGluetunsRegionDoesntUndoAFailoverThatLandedWhileItAsked()
+    {
+        // The check read the VPN's region, Albania, then asks gluetun for its own, which answers once the failover is done
+        var gluetunAnswers = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var gluetun = new FakeGluetun([Albania]) { HoldNextSettingsRead = gluetunAnswers };
+        await using var host = await VpnHost.StartAsync(gluetun, [Albania, Belgium], s => s.CurrentRegion = Albania, Ct);
+
+        Assert.IsTrue(await FailOverFromANewRunAsync(host));
+        gluetunAnswers.SetResult();
+        await host.AdvanceAsync(TimeSpan.FromSeconds(5), Ct);
+
+        Assert.AreSequenceEqual(new[] { Belgium }, gluetun.SwitchedTo.ToArray());
+        Assert.AreEqual(Belgium, (await host.GetSettingsAsync(Ct)).CurrentRegion);
+    }
+
+    [TestMethod]
+    public async Task AReplacementTheCheckAskedForIsDroppedIfAFailoverLeftTheRegionFirst()
+    {
+        // Iceland is no longer allowed, but gluetun refuses the first replacement
+        var gluetun = new FakeGluetun(["Iceland"]) { RefuseSwitches = true };
+        await using var host = await VpnHost.StartAsync(
+            gluetun, [Albania, Belgium, "Iceland"], s => s.CurrentRegion = "Iceland", Ct,
+            serverRegions: $"{Albania},{Belgium}");
+        await host.WaitUntilAsync(async () => (await host.GetSettingsAsync(Ct)).LastError is not null, Ct);
+        gluetun.RefuseSwitches = false;
+
+        // A failover from Iceland is switching when the next check finds the VPN still there, and asks to replace it
+        var gluetunSwitches = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        gluetun.HoldSwitches = gluetunSwitches;
+        var run = await host.StartRunAsync(Ct);
+        using var failover = run.QueueFailover()!;
+        run.Dispose();
+        var failingOver = failover.FailOverAsync([], Ct);
+        await host.AdvanceAsync(TimeSpan.FromSeconds(61), Ct);
+        gluetunSwitches.SetResult();
+
+        await host.AdvanceUntilAsync(() => failingOver.IsCompleted, Ct);
+        Assert.IsTrue(await failingOver);
+        await host.AdvanceAsync(TimeSpan.FromSeconds(5), Ct);
+        Assert.HasCount(1, gluetun.SwitchedTo);
+        Assert.AreEqual(gluetun.SwitchedTo.Single(), (await host.GetSettingsAsync(Ct)).CurrentRegion);
+    }
+
+    [TestMethod]
+    public async Task AFirstSwitchTheCheckAskedForIsDroppedIfAFailoverSwitchedFirst()
+    {
+        // The Backend hasn't switched yet, and gluetun refuses its first switch
+        var gluetun = new FakeGluetun(null) { RefuseSwitches = true };
+        await using var host = await VpnHost.StartAsync(gluetun, [Albania, Belgium], _ => { }, Ct);
+        await host.WaitUntilAsync(async () => (await host.GetSettingsAsync(Ct)).LastError is not null, Ct);
+        gluetun.RefuseSwitches = false;
+
+        // A failover is switching when the next check finds no region yet, and asks for a first switch
+        var gluetunSwitches = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        gluetun.HoldSwitches = gluetunSwitches;
+        var run = await host.StartRunAsync(Ct);
+        using var failover = run.QueueFailover()!;
+        run.Dispose();
+        var failingOver = failover.FailOverAsync([], Ct);
+        await host.AdvanceAsync(TimeSpan.FromSeconds(61), Ct);
+        gluetunSwitches.SetResult();
+
+        await host.AdvanceUntilAsync(() => failingOver.IsCompleted, Ct);
+        Assert.IsTrue(await failingOver);
+        await host.AdvanceAsync(TimeSpan.FromSeconds(5), Ct);
+        Assert.HasCount(1, gluetun.SwitchedTo);
+        Assert.AreEqual(gluetun.SwitchedTo.Single(), (await host.GetSettingsAsync(Ct)).CurrentRegion);
+    }
+
     /// <summary>
     /// Starts the Backend with gluetun offering <paramref name="regions"/>, and the VPN in <paramref name="current"/>,
     /// where gluetun is too.

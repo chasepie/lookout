@@ -87,6 +87,11 @@ public partial class Vpn(
         /// <summary>Every region a failover may pick was the current one or already failed in.</summary>
         NoRegionLeft,
 
+        /// <summary>
+        /// Another switch changed the VPN's region since the check that asked for this one read it, so it isn't needed.
+        /// </summary>
+        Overtaken,
+
         /// <summary>The switch failed, as <see cref="VpnSettings.LastError"/> says.</summary>
         Failed,
     }
@@ -342,7 +347,8 @@ public partial class Vpn(
     /// Switches back to <see cref="VpnSettings.CurrentRegion"/> if gluetun isn't restricted to it.
     /// gluetun keeps settings changed through its API only until it restarts. If the region is no longer one of
     /// <see cref="VpnConfiguration.ServerRegions"/>, switches to a random one that is instead. If the Backend hasn't
-    /// switched yet, makes its first switch, and tries again next time if that fails.
+    /// switched yet, makes its first switch, and tries again next time if that fails. It doesn't wait for switches,
+    /// so the switch it asks for is dropped if another one changed the region meanwhile.
     /// </summary>
     private async Task ReapplyIfLostAsync(CancellationToken cancellationToken)
     {
@@ -353,7 +359,7 @@ public partial class Vpn(
             // VPN's error every minute
             await GetGluetunSettingsAsync(cancellationToken);
             LogFirstSwitch();
-            await SwitchAsync(SwitchKind.First, null, cancellationToken);
+            await SwitchAsync(SwitchKind.First, null, cancellationToken, checkedRegion: null);
             return;
         }
 
@@ -361,12 +367,12 @@ public partial class Vpn(
         {
             // GLUETUN_SERVER_REGIONS changed since the switch to it, and reapplying it would undo the change
             LogRegionNotAllowed(currentRegion);
-            await SwitchAsync(SwitchKind.Replacement, null, cancellationToken);
+            await SwitchAsync(SwitchKind.Replacement, null, cancellationToken, checkedRegion: currentRegion);
         }
         else if (!await IsGluetunRestrictedToAsync(currentRegion, cancellationToken))
         {
             LogReapplying(currentRegion);
-            await SwitchAsync(SwitchKind.Reapply, currentRegion, cancellationToken);
+            await SwitchAsync(SwitchKind.Reapply, currentRegion, cancellationToken, checkedRegion: currentRegion);
         }
     }
 
@@ -400,6 +406,8 @@ public partial class Vpn(
     /// Failures are recorded in <see cref="VpnSettings.LastError"/> rather than thrown.
     /// </summary>
     /// <param name="failover">What a <see cref="SwitchKind.Failover"/> fails over from.</param>
+    /// <param name="checkedRegion">For a switch the check of gluetun's region asks for, the VPN's region the check
+    /// read.</param>
     /// <param name="queuedTicket">The switch's place in <see cref="VpnGate"/>'s queue, if it took one already, which
     /// the switch owns from here. Otherwise the switch queues once it knows its region.</param>
     private async Task<SwitchOutcome> SwitchAsync(
@@ -407,7 +415,8 @@ public partial class Vpn(
         string? requestedRegion,
         CancellationToken cancellationToken,
         FailoverRequest? failover = null,
-        VpnGate.SwitchTicket? queuedTicket = null)
+        VpnGate.SwitchTicket? queuedTicket = null,
+        string? checkedRegion = null)
     {
         // Let go of once, when the tunnel is up or the switch ends without getting that far
         var ticket = queuedTicket;
@@ -432,6 +441,15 @@ public partial class Vpn(
                 {
                     LogAlreadyLeft(failover.FailedRegion);
                     return SwitchOutcome.AlreadyLeft;
+                }
+
+                // The check that asked for it read the VPN's region without waiting for switches, so one may have
+                // changed it since, and this would undo it
+                if (kind is SwitchKind.Reapply or SwitchKind.Replacement or SwitchKind.First
+                    && !string.Equals(settings.CurrentRegion, checkedRegion, StringComparison.OrdinalIgnoreCase))
+                {
+                    LogOvertaken(kind);
+                    return SwitchOutcome.Overtaken;
                 }
 
                 string? region = null;
@@ -654,6 +672,11 @@ public partial class Vpn(
 
     [LoggerMessage(Level = LogLevel.Information, Message = "The Backend hasn't switched the VPN yet; switching to a known region")]
     private partial void LogFirstSwitch();
+
+    [LoggerMessage(
+        Level = LogLevel.Information,
+        Message = "Another switch changed the VPN's region since it was checked, so the {Kind} isn't needed")]
+    private partial void LogOvertaken(SwitchKind kind);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "The VPN already left {Region}, so it isn't failed over")]
     private partial void LogAlreadyLeft(string? region);

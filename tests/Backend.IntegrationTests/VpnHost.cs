@@ -84,8 +84,7 @@ internal sealed class VpnHost : IAsyncDisposable
                 services.AddSingleton<TimeProvider>(time);
             });
         var host = new VpnHost(factory, gluetun, time, dataDirectory);
-        // The loop's first pass checks gluetun's region at once. A switch a test makes before then could land between
-        // that check reading the VPN's region and asking gluetun for its own, which would undo it
+        // The loop's first pass checks gluetun's region at once, so tests start once it has, rather than racing it
         await host.WaitUntilAsync(() => Task.FromResult(gluetun.SettingsReads > 0), cancellationToken);
         return host;
     }

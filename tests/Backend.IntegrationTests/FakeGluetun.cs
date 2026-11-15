@@ -52,6 +52,18 @@ internal sealed class FakeGluetun(string[]? regions)
     public void ForgetRegion() => _regions = null;
 
     /// <summary>
+    /// When set, the next request for gluetun's VPN settings waits for it to complete, then answers with the settings
+    /// gluetun has by then. Later requests don't wait.
+    /// </summary>
+    public TaskCompletionSource? HoldNextSettingsRead
+    {
+        get => _holdNextSettingsRead;
+        set => _holdNextSettingsRead = value;
+    }
+
+    private TaskCompletionSource? _holdNextSettingsRead;
+
+    /// <summary>
     /// When set, switches wait for it to complete before gluetun answers.
     /// </summary>
     public TaskCompletionSource? HoldSwitches { get; set; }
@@ -144,6 +156,11 @@ internal sealed class FakeGluetun(string[]? regions)
         }
 
         Interlocked.Increment(ref _settingsReads);
+        if (Interlocked.Exchange(ref _holdNextSettingsRead, null) is { } holdRead)
+        {
+            await holdRead.Task;
+        }
+
         var settings = new JsonObject
         {
             ["type"] = "openvpn",
