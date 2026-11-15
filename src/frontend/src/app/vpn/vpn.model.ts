@@ -21,7 +21,7 @@ export interface VpnSettings extends VpnSettingsDto {
   lastError: string | null;
 }
 
-/** Mirrors `VpnSwitchProgress` in src/Backend/VpnServices/VpnRotationService.cs. */
+/** Mirrors `VpnSwitchProgress` in src/Backend/VpnServices/Vpn.cs. */
 export interface VpnSwitchProgress {
   region: string;
   /** Whether the switch is waiting for the VPN watch runs in progress to finish first. */
@@ -38,7 +38,7 @@ export interface VpnPublicIp {
   organization: string | null;
 }
 
-/** Mirrors `VpnStatus` in src/Backend/Controllers/VpnController.cs. */
+/** Mirrors `VpnStatus` in src/Backend/VpnServices/Vpn.cs. */
 export interface VpnStatus {
   /** Whether the Backend knows where gluetun is. If not, every other field is `null`. */
   configured: boolean;
