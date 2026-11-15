@@ -51,7 +51,7 @@ internal sealed class VpnHost : IAsyncDisposable
 
     /// <summary>
     /// Stores the settings <paramref name="seed"/> makes, as if from before a restart, then starts the Backend with
-    /// gluetun offering <paramref name="servers"/>, and returns once the VPN has checked gluetun's region.
+    /// gluetun offering <paramref name="servers"/>, and returns once the VPN has asked gluetun for its region.
     /// </summary>
     /// <param name="serverRegions">
     /// <c>GLUETUN_SERVER_REGIONS</c>; every one of <paramref name="servers"/> if not given.
@@ -84,7 +84,8 @@ internal sealed class VpnHost : IAsyncDisposable
                 services.AddSingleton<TimeProvider>(time);
             });
         var host = new VpnHost(factory, gluetun, time, dataDirectory);
-        // The loop's first pass checks gluetun's region at once, so tests start once it has, rather than racing it
+        // The loop's first pass checks gluetun's region at once, so tests start once it has asked gluetun, rather than
+        // racing it. A first switch that check asks for may still be under way, for tests to wait for
         await host.WaitUntilAsync(() => Task.FromResult(gluetun.SettingsReads > 0), cancellationToken);
         return host;
     }

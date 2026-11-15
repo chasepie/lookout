@@ -470,6 +470,34 @@ public sealed class VpnTests
         Assert.AreEqual(gluetun.SwitchedTo.Single(), (await host.GetSettingsAsync(Ct)).CurrentRegion);
     }
 
+    [TestMethod]
+    public async Task ARotationThatCameDueWhileAFailoverWaitedIsDroppedOnceTheFailoverRestartsTheTimer()
+    {
+        await using var host = await StartAsync([Albania, Belgium, Chile], current: Albania, settings =>
+        {
+            settings.RotationEnabled = true;
+            settings.RotationIntervalMinutes = 15;
+            settings.RotationJitterMinutes = 0;
+            settings.NextRotationTime = VpnHost.Start.AddSeconds(30);
+        });
+        var failing = await host.StartRunAsync(Ct);
+        var stillRunning = await host.StartRunAsync(Ct);
+
+        // The failover waits for the run still in the region, and the rotation comes due and waits behind it
+        using var failover = failing.QueueFailover()!;
+        failing.Dispose();
+        var failingOver = failover.FailOverAsync([], Ct);
+        await host.AdvanceAsync(TimeSpan.FromSeconds(35), Ct);
+        stillRunning.Dispose();
+
+        await host.AdvanceUntilAsync(() => failingOver.IsCompleted, Ct);
+        Assert.IsTrue(await failingOver);
+        await host.AdvanceAsync(TimeSpan.FromSeconds(5), Ct);
+        Assert.HasCount(1, host.Gluetun.SwitchedTo, "The failover restarted the rotation timer.");
+        var settings = await host.GetSettingsAsync(Ct);
+        Assert.AreEqual(settings.LastSwitchTime!.Value.AddMinutes(15), settings.NextRotationTime);
+    }
+
     /// <summary>
     /// Starts the Backend with gluetun offering <paramref name="regions"/>, and the VPN in <paramref name="current"/>,
     /// where gluetun is too.

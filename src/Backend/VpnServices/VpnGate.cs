@@ -4,8 +4,9 @@ namespace ChasePie.Lookout.Backend.VpnServices;
 /// Keeps runs that use the VPN and region switches apart: a switch restarts the tunnel, which would cut off a run using
 /// it. Any number of VPN runs share the gate, and a switch needs it to itself. Only <see cref="Vpn"/> uses it: each
 /// <see cref="VpnRun"/> holds a share, taken with <see cref="TryEnterRun"/>, and a switch holds it alone from asking
-/// gluetun to switch until the new tunnel is up, queued with <see cref="QueueSwitch"/>, either by the switch itself or,
-/// for a failover, by the <see cref="PendingFailover"/> the failing run took.
+/// gluetun to switch until the new tunnel is up and the switch has saved how it went, queued with
+/// <see cref="QueueSwitch"/>, either by the switch itself or, for a failover, by the <see cref="PendingFailover"/> the
+/// failing run took.
 /// </summary>
 /// <remarks>
 /// Switches go first: once one is queued, no new run gets a share until every queued switch is done, so runs can't keep

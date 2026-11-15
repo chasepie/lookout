@@ -19,8 +19,8 @@ namespace ChasePie.Lookout.Backend.VpnServices;
 /// <remarks>
 /// <para>
 /// Runs and switches are kept apart by a <see cref="VpnGate"/> of its own: each <see cref="VpnRun"/> holds a share of
-/// it, which any number of runs hold at once, and a switch holds it to itself until the new tunnel is up, so it waits
-/// for the VPN runs in progress, and VPN runs that haven't started wait for it from when it's queued. A run reads its
+/// it, which any number of runs hold at once, and a switch holds it to itself until the new tunnel is up and it has
+/// saved how it went, whether it worked or not, so it waits for the VPN runs in progress, and VPN runs that haven't started wait for it from when it's queued. A run reads its
 /// region while holding its share, and a switch saves the new region before letting go, so the region a run records
 /// is the one it ran in. A run whose known failure asks for a failover takes its <see cref="PendingFailover"/> before
 /// it's saved as done and before it lets go of its <see cref="VpnRun"/>, which queues the failover's switch at once,
@@ -88,7 +88,8 @@ public partial class Vpn(
         NoRegionLeft,
 
         /// <summary>
-        /// Another switch changed the VPN's region since the check that asked for this one read it, so it isn't needed.
+        /// Something changed while the switch waited for its turn that makes it unneeded: another switch changed the
+        /// region the check that asked for it read, or restarted the rotation timer.
         /// </summary>
         Overtaken,
 
@@ -418,14 +419,8 @@ public partial class Vpn(
         VpnGate.SwitchTicket? queuedTicket = null,
         string? checkedRegion = null)
     {
-        // Let go of once, when the tunnel is up or the switch ends without getting that far
+        // Let go of once the outcome is saved, however the switch ends, so no VPN run starts before then
         var ticket = queuedTicket;
-        void LetGoOfGate()
-        {
-            ticket?.Dispose();
-            ticket = null;
-        }
-
         try
         {
             await _switching.WaitAsync(cancellationToken);
@@ -452,13 +447,18 @@ public partial class Vpn(
                     return SwitchOutcome.Overtaken;
                 }
 
+                // Found due before waiting for the switch ahead of it, which may have restarted the timer, or the Owner
+                // may have turned rotation off meanwhile
+                if (kind == SwitchKind.Rotation && !(settings.RotationEnabled && settings.NextRotationTime <= UtcNow))
+                {
+                    LogOvertaken(kind);
+                    return SwitchOutcome.Overtaken;
+                }
+
                 string? region = null;
                 var regionApplied = false;
                 string? publicIp = null;
                 string? error = null;
-                // Whether the switch got as far as waiting for the gate: if it fails after that, it lets go before
-                // saving the error, and before that it keeps a failover's place until the outcome is saved
-                var waitedForGate = false;
                 try
                 {
                     region = requestedRegion
@@ -472,7 +472,6 @@ public partial class Vpn(
                     // Once queued, no new VPN run starts, so it's queued before it shows as waiting for the ones in
                     // progress
                     ticket ??= _gate.QueueSwitch();
-                    waitedForGate = true;
                     _progress = new VpnSwitchProgress(region, WaitingForRun: true, UtcNow);
                     await notifier.VpnChangedAsync();
                     await ticket.WaitAsync(cancellationToken);
@@ -483,13 +482,12 @@ public partial class Vpn(
                     await gluetun.SetRegionAsync(region, cancellationToken);
 
                     regionApplied = true;
-                    // Saved before letting go of the gate, so a run that starts after it records where it runs
+                    // Saved while holding the gate, so a run that starts after it records where it runs
                     await dbContext.VpnSettings
                         .Where(s => s.Id == VpnSettings.SingletonId)
                         .ExecuteUpdateAsync(s => s.SetProperty(x => x.CurrentRegion, region), CancellationToken.None);
                     publicIp = await WaitForTunnelAsync(
                         scope.ServiceProvider.GetRequiredService<VpnProbeHttpClient>(), cancellationToken);
-                    LetGoOfGate();
 
                     if (publicIp is null)
                     {
@@ -500,11 +498,6 @@ public partial class Vpn(
                 catch (Exception ex)
                     when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
                 {
-                    if (waitedForGate)
-                    {
-                        LetGoOfGate();
-                    }
-
                     error = ex.Message;
                 }
                 finally
@@ -522,7 +515,7 @@ public partial class Vpn(
         }
         finally
         {
-            LetGoOfGate();
+            ticket?.Dispose();
         }
     }
 
@@ -675,7 +668,7 @@ public partial class Vpn(
 
     [LoggerMessage(
         Level = LogLevel.Information,
-        Message = "Another switch changed the VPN's region since it was checked, so the {Kind} isn't needed")]
+        Message = "The VPN changed while the {Kind} waited for another switch, so it isn't needed")]
     private partial void LogOvertaken(SwitchKind kind);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "The VPN already left {Region}, so it isn't failed over")]
