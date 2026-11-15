@@ -44,7 +44,8 @@ public class VpnController(Vpn vpn) : ControllerBase
     }
 
     [HttpPut("settings")]
-    public async Task<ActionResult<VpnSettings>> UpdateSettings(VpnSettingsDto dto, CancellationToken cancellationToken) =>
+    public async Task<ActionResult<VpnSettings>> UpdateSettings(
+        VpnSettingsDto dto, CancellationToken cancellationToken) =>
         await _vpn.UpdateSettingsAsync(dto, cancellationToken) is { } settings
             ? settings
             : Conflict(NotConfiguredMessage);

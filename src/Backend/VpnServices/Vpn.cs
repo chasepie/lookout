@@ -22,7 +22,9 @@ namespace ChasePie.Lookout.Backend.VpnServices;
 /// it, which any number of runs hold at once, and a switch holds it to itself until the new tunnel is up, so it waits
 /// for the VPN runs in progress, and VPN runs that haven't started wait for it from when it's queued. A run reads its
 /// region while holding its share, and a switch saves the new region before letting go, so the region a run records
-/// is the one it ran in.
+/// is the one it ran in. A run whose known failure asks for a failover takes its <see cref="PendingFailover"/> before
+/// it's saved as done and before it lets go of its <see cref="VpnRun"/>, which queues the failover's switch at once,
+/// so no VPN run starts in the failed region; the failover itself runs later, outliving the lease.
 /// </para>
 /// <para>
 /// Every switch to a new region restarts the rotation timer. A failed rotation is retried after
@@ -77,7 +79,9 @@ public partial class Vpn(
         /// <summary>The VPN switched to another region.</summary>
         Switched,
 
-        /// <summary>A failover found another switch had already left the failed region, so there was no need for one.</summary>
+        /// <summary>
+        /// A failover found another switch had already left the failed region, so there was no need for one.
+        /// </summary>
         AlreadyLeft,
 
         /// <summary>Every region a failover may pick was the current one or already failed in.</summary>
@@ -434,6 +438,9 @@ public partial class Vpn(
                 var regionApplied = false;
                 string? publicIp = null;
                 string? error = null;
+                // Whether the switch got as far as waiting for the gate: if it fails after that, it lets go before
+                // saving the error, and before that it keeps a failover's place until the outcome is saved
+                var waitedForGate = false;
                 try
                 {
                     region = requestedRegion
@@ -447,6 +454,7 @@ public partial class Vpn(
                     // Once queued, no new VPN run starts, so it's queued before it shows as waiting for the ones in
                     // progress
                     ticket ??= _gate.QueueSwitch();
+                    waitedForGate = true;
                     _progress = new VpnSwitchProgress(region, WaitingForRun: true, UtcNow);
                     await notifier.VpnChangedAsync();
                     await ticket.WaitAsync(cancellationToken);
@@ -467,12 +475,18 @@ public partial class Vpn(
 
                     if (publicIp is null)
                     {
-                        error = $"Switched to {region}, but the tunnel wasn't back up after {TunnelUpTimeout.TotalMinutes:0} minutes.";
+                        error = $"Switched to {region}, but the tunnel wasn't back up after "
+                            + $"{TunnelUpTimeout.TotalMinutes:0} minutes.";
                     }
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+                catch (Exception ex)
+                    when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
                 {
-                    LetGoOfGate();
+                    if (waitedForGate)
+                    {
+                        LetGoOfGate();
+                    }
+
                     error = ex.Message;
                 }
                 finally
