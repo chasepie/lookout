@@ -7,12 +7,14 @@ using Microsoft.EntityFrameworkCore;
 namespace ChasePie.Lookout.Backend.VpnServices;
 
 /// <summary>
-/// The VPN, to the rest of the Backend: runs of watches with <c>UseVpn</c> use it through a <see cref="VpnRun"/>, and
-/// it makes every region switch: rotations when <see cref="VpnSettings.NextRotationTime"/> comes due, switches asked
-/// for with <see cref="RequestSwitch"/>, failovers a run asks for with <see cref="VpnRun.QueueFailover"/>, a first
-/// switch when it has made none, so the region is always known, reapplying <see cref="VpnSettings.CurrentRegion"/>
-/// when gluetun has lost it, which happens when gluetun restarts, and replacing it when
-/// <see cref="VpnConfiguration.ServerRegions"/> no longer allows it.
+/// The VPN, to the rest of the Backend: runs of watches with <c>UseVpn</c> use it through a <see cref="VpnRun"/>, the
+/// Owner sees and sets it up through <see cref="Controllers.VpnController"/>, and it makes every region switch:
+/// rotations when <see cref="VpnSettings.NextRotationTime"/> comes due, switches the Owner asks for with
+/// <see cref="RequestSwitchAsync"/>, failovers a run asks for with <see cref="VpnRun.QueueFailover"/>, a first switch
+/// when it has made none, so the region is always known, reapplying <see cref="VpnSettings.CurrentRegion"/> when
+/// gluetun has lost it, which happens when gluetun restarts, and replacing it when
+/// <see cref="VpnConfiguration.ServerRegions"/> no longer allows it. It's the only reader and writer of the
+/// <see cref="VpnSettings"/> row.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -151,14 +153,95 @@ public partial class Vpn(
         configuration.IsEnabled ? new PendingFailover(this, _gate.QueueSwitch(), run.Region) : null;
 
     /// <summary>
-    /// Queues a switch, made within a second unless another switch or VPN runs are in progress.
-    /// Clients hear about it through <see cref="IUpdatesClient.VpnChanged"/>.
+    /// The settings, the switch in progress, and the tunnel's public IP as gluetun reports it, or why gluetun couldn't
+    /// be reached. If the VPN isn't set up, says so and nothing else.
     /// </summary>
-    /// <param name="region">A region from <see cref="VpnRegionCatalog"/>, or <see langword="null"/> for a random
-    /// one. Excluded regions are allowed: exclusions only apply to rotation.</param>
-    public void RequestSwitch(string? region)
+    public async Task<VpnStatus> GetStatusAsync(CancellationToken cancellationToken)
     {
-        _requests.Writer.TryWrite(region);
+        if (!configuration.IsEnabled)
+        {
+            return new VpnStatus(false, null, null, null, null);
+        }
+
+        using var scope = scopeFactory.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<LookoutDbContext>();
+        var settings = await dbContext.VpnSettings.AsNoTracking()
+            .SingleAsync(s => s.Id == VpnSettings.SingletonId, cancellationToken);
+        GluetunPublicIp? publicIp = null;
+        string? gluetunError = null;
+        try
+        {
+            publicIp = await scope.ServiceProvider.GetRequiredService<GluetunHttpClient>()
+                .GetPublicIpAsync(cancellationToken);
+        }
+        catch (GluetunException ex)
+        {
+            gluetunError = ex.Message;
+        }
+
+        return new VpnStatus(true, settings, Progress, publicIp, gluetunError);
+    }
+
+    /// <summary>
+    /// The regions the VPN provider offers, from gluetun's servers list, limited to
+    /// <see cref="VpnConfiguration.ServerRegions"/>.
+    /// </summary>
+    /// <returns>The regions, or <see langword="null"/> if the VPN isn't set up.</returns>
+    /// <exception cref="GluetunException">gluetun couldn't be reached.</exception>
+    public async Task<VpnRegions?> GetRegionsAsync(CancellationToken cancellationToken) =>
+        configuration.IsEnabled ? await catalog.GetRegionsAsync(cancellationToken) : null;
+
+    /// <summary>
+    /// Applies the Owner's rotation settings, and tells clients through <see cref="IUpdatesClient.VpnChanged"/>.
+    /// </summary>
+    /// <returns>The settings now, or <see langword="null"/> if the VPN isn't set up.</returns>
+    public async Task<VpnSettings?> UpdateSettingsAsync(VpnSettingsDto dto, CancellationToken cancellationToken)
+    {
+        if (!configuration.IsEnabled)
+        {
+            return null;
+        }
+
+        using var scope = scopeFactory.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<LookoutDbContext>();
+        var settings = await dbContext.VpnSettings.SingleAsync(s => s.Id == VpnSettings.SingletonId, cancellationToken);
+        settings.Update(dto, DateTime.UtcNow, Random.Shared);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await notifier.VpnChangedAsync();
+        return settings;
+    }
+
+    /// <summary>
+    /// Queues a switch the Owner asked for, made within a second unless another switch or VPN runs are in progress.
+    /// Clients hear how it went through <see cref="IUpdatesClient.VpnChanged"/>.
+    /// </summary>
+    /// <param name="region">
+    /// The region the Owner typed, matched to <see cref="GetRegionsAsync"/>'s ignoring case, or
+    /// <see langword="null"/> or blank for a random one. Excluded regions are allowed: exclusions only apply to
+    /// rotation.
+    /// </param>
+    /// <exception cref="GluetunException">gluetun couldn't be reached to check the region.</exception>
+    public async Task<ManualSwitchResult> RequestSwitchAsync(string? region, CancellationToken cancellationToken)
+    {
+        if (!configuration.IsEnabled)
+        {
+            return ManualSwitchResult.NotSetUp;
+        }
+
+        string? listed = null;
+        if (!string.IsNullOrWhiteSpace(region))
+        {
+            // Matches gluetun's case-insensitive check, but sends the list's spelling, which reapplying compares to
+            listed = (await catalog.GetRegionsAsync(cancellationToken)).Regions
+                .FirstOrDefault(r => string.Equals(r, region.Trim(), StringComparison.OrdinalIgnoreCase));
+            if (listed is null)
+            {
+                return ManualSwitchResult.UnknownRegion;
+            }
+        }
+
+        _requests.Writer.TryWrite(listed);
+        return ManualSwitchResult.Queued;
     }
 
     /// <summary>
@@ -351,7 +434,7 @@ public partial class Vpn(
                 try
                 {
                     region = requestedRegion
-                        ?? await PickRegionAsync(kind, settings, gluetun, failover, cancellationToken);
+                        ?? await PickRegionAsync(kind, settings, failover, cancellationToken);
                     if (region is null)
                     {
                         LogNoFailoverRegion(failover!.FailedRegion);
@@ -462,11 +545,10 @@ public partial class Vpn(
     private async Task<string?> PickRegionAsync(
         SwitchKind kind,
         VpnSettings settings,
-        GluetunHttpClient gluetun,
         FailoverRequest? failover,
         CancellationToken cancellationToken)
     {
-        var regions = (await catalog.GetRegionsAsync(gluetun, cancellationToken)).Regions;
+        var regions = (await catalog.GetRegionsAsync(cancellationToken)).Regions;
         if (regions.Count == 0)
         {
             throw new InvalidOperationException(configuration.LimitsRegions
@@ -567,6 +649,32 @@ public partial class Vpn(
     [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to check the VPN rotation")]
     private partial void LogPollFailed(Exception exception);
 }
+
+/// <summary>
+/// How <see cref="Vpn.RequestSwitchAsync"/> took a switch the Owner asked for.
+/// </summary>
+public enum ManualSwitchResult
+{
+    /// <summary>The switch is queued.</summary>
+    Queued,
+
+    /// <summary>The VPN isn't set up.</summary>
+    NotSetUp,
+
+    /// <summary>The region isn't one of <see cref="Vpn.GetRegionsAsync"/>'s.</summary>
+    UnknownRegion,
+}
+
+/// <param name="Configured">Whether the Backend knows where gluetun is. If not, every other field is null.</param>
+/// <param name="Switch">The region switch in progress, if any.</param>
+/// <param name="PublicIp">The tunnel's public IP, or null while the tunnel is down or gluetun is unreachable.</param>
+/// <param name="GluetunError">Why gluetun couldn't be reached, if it couldn't.</param>
+public sealed record VpnStatus(
+    bool Configured,
+    VpnSettings? Settings,
+    VpnSwitchProgress? Switch,
+    GluetunPublicIp? PublicIp,
+    string? GluetunError);
 
 /// <summary>
 /// A region switch in progress.

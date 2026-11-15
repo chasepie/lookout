@@ -12,7 +12,8 @@ namespace ChasePie.Lookout.Backend.VpnServices;
 /// file when it starts and whenever its updater refreshes the list. The file is re-read only after it changes.
 /// Providers that group their servers by country or city rather than region have no regions here.
 /// </remarks>
-public partial class VpnRegionCatalog(VpnConfiguration configuration, ILogger<VpnRegionCatalog> logger)
+public partial class VpnRegionCatalog(
+    VpnConfiguration configuration, IServiceScopeFactory scopeFactory, ILogger<VpnRegionCatalog> logger)
 {
     // Replaced whole, never changed, so readers need no lock
     private volatile CachedRegions? _cached;
@@ -23,14 +24,18 @@ public partial class VpnRegionCatalog(VpnConfiguration configuration, ILogger<Vp
     /// The regions of the provider and VPN type gluetun is using that Lookout may use, sorted, or an empty list if
     /// gluetun hasn't written its servers list yet.
     /// </summary>
-    /// <param name="gluetun">
-    /// The caller's client. It's a typed HTTP client, so it's transient, and this singleton would otherwise keep
-    /// one instance forever, which stops <c>IHttpClientFactory</c> from rotating its handler.
-    /// </param>
     /// <exception cref="GluetunException">gluetun couldn't say which provider it's using.</exception>
-    public async Task<VpnRegions> GetRegionsAsync(GluetunHttpClient gluetun, CancellationToken cancellationToken)
+    public async Task<VpnRegions> GetRegionsAsync(CancellationToken cancellationToken)
     {
-        var settings = await gluetun.GetVpnSettingsAsync(cancellationToken);
+        GluetunVpnSettings settings;
+        // A client of its own each time: it's a typed HTTP client, so it's transient, and this singleton holding one for
+        // good would stop IHttpClientFactory from rotating its handler
+        using (var scope = scopeFactory.CreateScope())
+        {
+            settings = await scope.ServiceProvider.GetRequiredService<GluetunHttpClient>()
+                .GetVpnSettingsAsync(cancellationToken);
+        }
+
         return new VpnRegions(
             Provider: settings.Provider.Name,
             Regions: GetRegions(settings.Provider.Name, settings.Type),

@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using ChasePie.Lookout.Backend.VpnServices;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ChasePie.Lookout.Backend.UnitTests;
@@ -20,6 +21,12 @@ public sealed class VpnRegionCatalogTests
 
     private string _dataDirectory = null!;
 
+    // What gluetun says it's using
+    private string _gluetunProvider = Pia;
+    private string _gluetunVpnType = "openvpn";
+
+    private ServiceProvider _services = null!;
+
     public TestContext TestContext { get; set; } = null!;
 
     private string ServersFile => Path.Join(_dataDirectory, "servers.json");
@@ -29,10 +36,21 @@ public sealed class VpnRegionCatalogTests
     {
         _dataDirectory = Path.Join(Path.GetTempPath(), "lookout-vpn-region-catalog-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_dataDirectory);
+        _services = new ServiceCollection()
+            .AddTransient(_ => new GluetunHttpClient(
+                new HttpClient(new SettingsHandler(_gluetunProvider, _gluetunVpnType))
+                {
+                    BaseAddress = new Uri("http://gluetun.test/"),
+                }))
+            .BuildServiceProvider();
     }
 
     [TestCleanup]
-    public void DeleteDataDirectory() => Directory.Delete(_dataDirectory, recursive: true);
+    public void DeleteDataDirectory()
+    {
+        _services.Dispose();
+        Directory.Delete(_dataDirectory, recursive: true);
+    }
 
     [TestMethod]
     public async Task ReadsTheRegionsOfTheProviderGluetunUses()
@@ -180,15 +198,16 @@ public sealed class VpnRegionCatalogTests
     private VpnRegionCatalog CreateCatalog(string[]? serverRegions = null) =>
         new(new VpnConfiguration(
                 new Uri("http://gluetun.test/"), "key", _dataDirectory, new Uri("http://lookout@gluetun.test:8888/"), serverRegions ?? []),
+            _services.GetRequiredService<IServiceScopeFactory>(),
             NullLogger<VpnRegionCatalog>.Instance);
 
     private Task<VpnRegions> GetRegionsAsync(string provider, string vpnType) =>
         GetRegionsAsync(CreateCatalog(), provider, vpnType);
 
-    private async Task<VpnRegions> GetRegionsAsync(VpnRegionCatalog catalog, string provider, string vpnType)
+    private Task<VpnRegions> GetRegionsAsync(VpnRegionCatalog catalog, string provider, string vpnType)
     {
-        using var httpClient = new HttpClient(new SettingsHandler(provider, vpnType)) { BaseAddress = new Uri("http://gluetun.test/") };
-        return await catalog.GetRegionsAsync(new GluetunHttpClient(httpClient), TestContext.CancellationToken);
+        (_gluetunProvider, _gluetunVpnType) = (provider, vpnType);
+        return catalog.GetRegionsAsync(TestContext.CancellationToken);
     }
 
     /// <summary>
