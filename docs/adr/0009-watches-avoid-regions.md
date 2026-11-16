@@ -27,5 +27,7 @@ them, and a check that's missed is made again at the next poll.
   until the Owner clears one. Its retry is queued anyway, and crashes too.
 - A region switch made for a watch prefers a region that no other watch with a pending VPN run avoids, and rotation one
   that no watch using the VPN avoids, so watches avoiding different regions don't switch the VPN back and forth.
-- VPN runs wait for the Backend's first region switch, so every one knows its region.
+- VPN runs wait for the Backend's first region switch, so every one knows its region. With no regions to pick, because
+  gluetun's servers list has none for the provider, `GLUETUN_SERVER_REGIONS` matches none of them, or the Owner has
+  excluded every one, that switch can't be made, so VPN runs don't start until there is one.
 - Runs that asked for a failover before this change don't make their regions avoided.

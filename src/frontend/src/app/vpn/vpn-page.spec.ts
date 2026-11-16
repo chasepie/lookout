@@ -103,7 +103,9 @@ describe('VpnPage', () => {
   it("says when the provider has no regions to switch to", async () => {
     await open(status(), { provider: 'private internet access', regions: [], limited: false });
 
-    expect(textOf(page.querySelector('[role=alert]'))).toContain('no regions for private internet access');
+    const alert = textOf(page.querySelector('[role=alert]'));
+    expect(alert).toContain('no regions for private internet access');
+    expect(alert).toContain("Runs of watches that use the VPN can't start until it can.");
   });
 
   it('says when GLUETUN_SERVER_REGIONS matches none of the provider’s regions', async () => {
@@ -112,6 +114,7 @@ describe('VpnPage', () => {
     const alert = textOf(page.querySelector('[role=alert]'));
     expect(alert).toContain('GLUETUN_SERVER_REGIONS');
     expect(alert).not.toContain('no regions for private internet access');
+    expect(alert).toContain("Runs of watches that use the VPN can't start until it can.");
   });
 
   it('keeps the status shown when a refresh fails', async () => {
