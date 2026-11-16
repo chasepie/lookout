@@ -126,7 +126,7 @@ dotnet test --solution Lookout.slnx      # Backend, Runner and AppHost
 npm run test:ci -w src/frontend         # ng test, once
 npx playwright install chromium-headless-shell
 npm test -w src/watch-sdk
-npm run lint && npm run typecheck
+npm run lint && npm run typecheck        # lint is ESLint, then Markdown (lint:js, lint:md)
 dotnet format whitespace Lookout.slnx --verify-no-changes
 ```
 

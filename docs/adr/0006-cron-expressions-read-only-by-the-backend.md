@@ -10,7 +10,7 @@ one until the two agree.
 
 ## Consequences
 
-- The watch list and a watch's page show "Cron 0 9 * * 1-5", not a sentence; the page's next run time says when it
+- The watch list and a watch's page show "Cron `0 9 * * 1-5`", not a sentence; the page's next run time says when it
   runs.
 - The form checks the expression on each change, so it needs the Backend to tell whether an expression is valid.
 - The preview's times are shown in the Owner's time zone, while the expression's are in the server's, which the form
