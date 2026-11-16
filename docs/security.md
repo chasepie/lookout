@@ -301,11 +301,11 @@ out through gluetun, just as it can through Chromium.
 
 The Backend's port is published on `127.0.0.1` unless `LOOKOUT_BIND_ADDRESS` says otherwise, for a reverse proxy that
 terminates TLS. Docker only publishes ports from containers on a network that leads out, so the Backend can reach the
-internet, which it needs to send notifications to services such as Pushover. The `edge` network has a fixed subnet (`LOOKOUT_EDGE_SUBNET`), so its gateway,
-which connections to the published port come from and which a reverse proxy on the same machine is trusted as, stays the
-same when the network is re-created. That trusts every process on the host that connects to the port, not just the
-proxy; a proxy on another machine is trusted by its own address instead. The Compose project is named `lookout`, so the
-volumes are `lookout_*` wherever the file is.
+internet, which it needs to send notifications to services such as Pushover. The `edge` network has a fixed subnet
+(`LOOKOUT_EDGE_SUBNET`), so its gateway, which connections to the published port come from and which a reverse proxy on
+the same machine is trusted as, stays the same when the network is re-created. That trusts every process on the host
+that connects to the port, not just the proxy; a proxy on another machine is trusted by its own address instead. The
+Compose project is named `lookout`, so the volumes are `lookout_*` wherever the file is.
 
 **Containers.** The Backend, the Runner and the relays run with a read-only root filesystem (a tmpfs for `/tmp`), no
 Linux capabilities and `no-new-privileges`, and the Backend and the Runner as uid 1654. Both images start with `tini` as
