@@ -22,5 +22,7 @@ only change a plan must survive while it waits is one the Owner makes.
   rotation off, and so is a switch for a watch, since the Owner may have cleared the region.
 - A switch waits only for the VPN runs already in progress. Runs that don't use the VPN keep starting while it waits
   and while it's made.
-- The loop checks gluetun once a minute itself, so a gluetun that's slow to answer holds up the start of every run, not
-  only VPN ones, for as long as its requests take to time out.
+- The loop asks gluetun itself, when it checks it once a minute and when it plans a switch, so a gluetun that's slow
+  to answer holds up the start of every run, not only VPN ones. Reads from gluetun time out after 5 seconds, sooner
+  than switches, which the loop doesn't wait for, so that's at most a few seconds now and then. Checking gluetun in a
+  task of its own would avoid even that, but cost the loop a third thing to track.
