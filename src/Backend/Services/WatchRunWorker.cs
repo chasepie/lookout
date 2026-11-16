@@ -305,13 +305,14 @@ public partial class WatchRunWorker(
     /// </summary>
     private async Task EndWithNoRegionLeftAsync(LookoutDbContext dbContext, int runId, CancellationToken stoppingToken)
     {
-        if (!await ClaimAsync(dbContext, runId, null, stoppingToken))
-        {
-            return;
-        }
-
+        // Claimed inside, so a failure ends only this run, and the turn goes on to start the others
         try
         {
+            if (!await ClaimAsync(dbContext, runId, null, stoppingToken))
+            {
+                return;
+            }
+
             using var scope = scopeFactory.CreateScope();
             var runDbContext = scope.ServiceProvider.GetRequiredService<LookoutDbContext>();
             var watchRun = await runDbContext.WatchRuns
@@ -326,6 +327,7 @@ public partial class WatchRunWorker(
         }
         catch (Exception ex)
         {
+            // A run that couldn't be claimed is still pending, which this leaves alone, for a later turn
             LogRunFailed(ex, runId);
             await EndBrokenRunAsync(runId, ex);
         }
