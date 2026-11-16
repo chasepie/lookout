@@ -1,6 +1,6 @@
 {
   "name": "@chasepie/lookout-watch-sdk",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Write and run Lookout watch scripts: their types, and a CLI that runs one in Chromium",
   "license": "MIT",
   "author": "chasepie",
