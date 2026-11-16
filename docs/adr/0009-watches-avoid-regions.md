@@ -16,9 +16,9 @@ them, and a check that's missed is made again at the next poll.
   script may avoid a region that's flaky rather than blocked, and a success elsewhere says nothing about whether it's
   better now.
 - **Avoid regions for a fixed time.** Left for later; it needs a time the Owner would have to pick.
-- **Run anyway in the current region when the watch avoids every region it may switch to.** Rejected for a crash, which
-  notifies the Owner that the watch can't run until they clear a region, where another known failure might not reach the
-  watch's threshold.
+- **Run anyway in the current region when the watch avoids every region it may switch to.** Rejected: the watch asked to
+  avoid that region, and Lookout shouldn't assume the Owner is happy for it to run there again. The run crashes instead,
+  which tells the Owner the watch can't run until they clear a region.
 
 ## Consequences
 
