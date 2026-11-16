@@ -148,13 +148,6 @@ public class VpnSettings : VpnSettingsDto
         Random random) =>
         PickRegion(regions, avoidedByWatch, avoidedByOthers, random);
 
-    /// <summary>
-    /// Whether a watch that avoids <paramref name="avoidedByWatch"/> has a region left that it may run in: one of
-    /// <paramref name="regions"/> that the Owner hasn't excluded and the watch doesn't avoid.
-    /// </summary>
-    public bool HasRegionLeftFor(IReadOnlyCollection<string> regions, IReadOnlyCollection<string> avoidedByWatch) =>
-        regions.Any(region => !IsExcluded(region) && !avoidedByWatch.Contains(region, StringComparer.OrdinalIgnoreCase));
-
     private bool IsExcluded(string region) => ExcludedRegions.Contains(region, StringComparer.OrdinalIgnoreCase);
 
     private string? PickRegion(

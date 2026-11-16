@@ -153,11 +153,13 @@ public sealed class VpnSettingsTests
     [TestMethod]
     public void AWatchHasARegionLeftUnlessItAvoidsEveryOneTheOwnerHasntExcluded()
     {
+        // The VPN is in a region the watch avoids, as when its run asks for a region
         var settings = Settings();
+        settings.CurrentRegion = "Netherlands";
         settings.ExcludedRegions = ["Albania"];
 
-        Assert.IsTrue(settings.HasRegionLeftFor(Regions, ["Netherlands"]));
-        Assert.IsFalse(settings.HasRegionLeftFor(Regions, ["netherlands", "Switzerland"]));
+        Assert.AreEqual("Switzerland", settings.PickRegionForWatch(Regions, ["Netherlands"], [], new Random(1)));
+        Assert.IsNull(settings.PickRegionForWatch(Regions, ["netherlands", "Switzerland"], [], new Random(1)));
     }
 
     [TestMethod]
