@@ -5,8 +5,8 @@ using Microsoft.Extensions.DependencyInjection;
 namespace ChasePie.Lookout.Backend.IntegrationTests;
 
 /// <summary>
-/// Which runs the worker runs at once, with the Runner faked at its HTTP boundary. How VPN runs and region switches wait
-/// for each other is in <see cref="VpnTests"/>, and how the worker holds VPN runs back for them in
+/// Which runs the worker runs at once, with the Runner faked at its HTTP boundary. How it fits region switches around
+/// VPN runs is in <see cref="VpnTests"/>, and how it holds back runs in a region their watch avoids in
 /// <see cref="AvoidedRegionsTests"/>.
 /// </summary>
 [TestClass]

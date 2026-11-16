@@ -1,39 +1,31 @@
-using System.Threading.Channels;
 using ChasePie.Lookout.Backend.Database;
 using ChasePie.Lookout.Backend.Hubs;
+using ChasePie.Lookout.Backend.Services;
 using ChasePie.Lookout.Core;
 using Microsoft.EntityFrameworkCore;
 
 namespace ChasePie.Lookout.Backend.VpnServices;
 
 /// <summary>
-/// The VPN, to the rest of the Backend: runs of watches with <c>UseVpn</c> use it through a <see cref="VpnRun"/>, the
-/// Owner sees and sets it up through <see cref="Controllers.VpnController"/>, and it makes every region switch:
-/// rotations when <see cref="VpnSettings.NextRotationTime"/> comes due, switches the Owner asks for with
-/// <see cref="RequestSwitchAsync"/>, switches away from a region a watch avoids when its run is about to start there
-/// (<see cref="TryStartRunAsync"/>), a first switch when it has made none, so the region is always known, reapplying
-/// <see cref="VpnSettings.CurrentRegion"/> when gluetun has lost it, which happens when gluetun restarts, and replacing it when
-/// <see cref="VpnConfiguration.ServerRegions"/> no longer allows it. It's the only reader and writer of the
-/// <see cref="VpnSettings"/> row.
+/// The VPN, to the rest of the Backend: it knows gluetun, the regions, and the <see cref="VpnSettings"/> row, of which
+/// it's the only reader and writer. The Owner sees and sets it up through <see cref="Controllers.VpnController"/>, and
+/// <see cref="WatchRunWorker"/>, which decides when runs start and when switches happen, asks it which switch is due
+/// and has it make them.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Runs and switches are kept apart by a <see cref="VpnGate"/> of its own: each <see cref="VpnRun"/> holds a share of
-/// it, which any number of runs hold at once, and a switch holds it to itself until the new tunnel is up and it has
-/// saved how it went, whether it worked or not, so it waits for the VPN runs in progress, and VPN runs that haven't
-/// started wait for it from when it starts waiting. A run reads its region while holding its share, and a switch saves
-/// the new region before letting go, so the region a run records is the one it ran in. Every switch is made by this
-/// service's loop, one at a time, so each picks its region from where the last one left the VPN.
+/// A switch is planned, which picks its region, then made once no VPN run is in progress, which may be minutes later. A
+/// switch is due when the Owner asks for one with <see cref="RequestSwitchAsync"/>, when
+/// <see cref="VpnSettings.NextRotationTime"/> comes, and from a check of gluetun once a minute: a first switch when the
+/// Backend has made none, so the region is always known, reapplying <see cref="VpnSettings.CurrentRegion"/> when gluetun
+/// has lost it, which happens when gluetun restarts, and replacing it when <see cref="VpnConfiguration.ServerRegions"/>
+/// no longer allows it. A watch's run in a region the watch avoids plans one away from it
+/// (<see cref="PlanSwitchForWatchAsync"/>).
 /// </para>
 /// <para>
-/// A run checks its watch's avoided regions as it starts, rather than anything being carried from the run that asked to
-/// avoid one: if the VPN is in one, the run lets go and asks for a switch for its watch, and a request that's dropped,
-/// since only the latest is kept, is made again by the run's next try.
-/// </para>
-/// <para>
-/// Every switch to a new region restarts the rotation timer. A failed rotation is retried after
-/// <see cref="RetryDelay"/>. Its clock, timers and delays are the host's <see cref="TimeProvider"/>. Switches nothing
-/// unless <see cref="VpnConfiguration.IsEnabled"/>, though runs still get a <see cref="VpnRun"/>.
+/// Every switch to a new region restarts the rotation timer. A failed rotation, or switch for a watch, is tried again
+/// after <see cref="RetryDelay"/>. Its clock and delays are the host's <see cref="TimeProvider"/>. Nothing is due unless
+/// <see cref="VpnConfiguration.IsEnabled"/>.
 /// </para>
 /// </remarks>
 public partial class Vpn(
@@ -42,54 +34,23 @@ public partial class Vpn(
     VpnRegionCatalog catalog,
     UpdatesNotifier notifier,
     TimeProvider timeProvider,
-    ILogger<Vpn> logger) : BackgroundService
+    ILogger<Vpn> logger)
 {
-    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(1);
-    private static readonly TimeSpan ReconcileInterval = TimeSpan.FromMinutes(1);
+    private static readonly TimeSpan TunnelPollInterval = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan CheckInterval = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan TunnelUpTimeout = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan RetryDelay = TimeSpan.FromMinutes(1);
 
-    private enum SwitchKind
-    {
-        Rotation,
-        Manual,
+    // The latest switch the Owner asked for, until it's planned; one asked for meanwhile replaces it
+    private ManualRequest? _manualRequest;
 
-        /// <summary>
-        /// Back to <see cref="VpnSettings.CurrentRegion"/>, which gluetun lost when it restarted.
-        /// </summary>
-        Reapply,
+    private sealed record ManualRequest(string? Region);
 
-        /// <summary>
-        /// Away from <see cref="VpnSettings.CurrentRegion"/>, which <see cref="VpnConfiguration.ServerRegions"/>
-        /// no longer allows, to any region it does. Exclusions only apply to rotation, so they don't apply here.
-        /// </summary>
-        Replacement,
+    // Read and written only while planning, which the scheduler does one plan at a time
+    private DateTime _nextCheckTime = DateTime.MinValue;
 
-        /// <summary>
-        /// Away from a region a watch avoids, which its run is about to start in, to one the Owner hasn't excluded and
-        /// the watch doesn't avoid.
-        /// </summary>
-        ForWatch,
-
-        /// <summary>
-        /// To a region rotation may switch to, when the Backend hasn't switched yet. Until then gluetun picks a region
-        /// of its own and doesn't say which, so runs couldn't record theirs or check it against what their watch avoids.
-        /// </summary>
-        First,
-    }
-
-    private readonly VpnGate _gate = new();
-
-    // Requested regions, null for a random one. Only the latest matters; one made while another waits replaces it
-    private readonly Channel<string?> _requests = Channel.CreateBounded<string?>(
-        new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropOldest });
-
-    // Watches whose runs wait to leave a region they avoid. Only the latest is kept: a dropped one asks again
-    private readonly Channel<int> _watchSwitches = Channel.CreateBounded<int>(
-        new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropOldest });
-
-    // After a switch for a watch fails, the next waits RetryDelay, rather than its run asking again every poll. Only the
-    // loop reads and writes it
+    // After a switch for a watch fails, the next waits RetryDelay, rather than its run planning one every turn. Written
+    // by a switch and read while planning, which never happen at once
     private DateTime _nextWatchSwitchTime = DateTime.MinValue;
 
     private volatile VpnSwitchProgress? _progress;
@@ -97,110 +58,84 @@ public partial class Vpn(
     private DateTime UtcNow => timeProvider.GetUtcNow().UtcDateTime;
 
     /// <summary>
-    /// The switch in progress, or <see langword="null"/> if there's none.
+    /// Whether the Backend knows where gluetun is. If not, VPN runs run with no region, and no switch is ever due.
+    /// </summary>
+    public bool IsEnabled => configuration.IsEnabled;
+
+    /// <summary>
+    /// The switch planned or in progress, or <see langword="null"/> if there's none.
     /// </summary>
     public VpnSwitchProgress? Progress => _progress;
 
     /// <summary>
-    /// Whether no VPN run can start now, since a switch is waiting or in progress.
+    /// <see cref="VpnSettings.CurrentRegion"/>: the region the Backend last switched the VPN to, or
+    /// <see langword="null"/> until its first switch.
     /// </summary>
-    public bool HoldsUpRuns => _gate.HoldsUpRuns;
-
-    /// <summary>
-    /// Raised when a switch is done, so VPN runs held up by it can start now.
-    /// Raised on the thread that ended the switch; handlers must be quick and not throw.
-    /// </summary>
-    public event Action? RunsMayStart
+    public async Task<string?> GetCurrentRegionAsync(CancellationToken cancellationToken)
     {
-        add => _gate.RunsMayEnter += value;
-        remove => _gate.RunsMayEnter -= value;
+        using var scope = scopeFactory.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<LookoutDbContext>();
+        return await dbContext.VpnSettings
+            .Where(s => s.Id == VpnSettings.SingletonId)
+            .Select(s => s.CurrentRegion)
+            .SingleAsync(cancellationToken);
     }
 
     /// <summary>
-    /// Lets a run of a watch with <c>UseVpn</c> use the VPN, unless a switch is waiting or in progress, the Backend
-    /// hasn't made its first switch, so the region isn't known, or the VPN is in a region the watch avoids. No switch
-    /// starts until the run disposes the <see cref="VpnRun"/>, so the run stays in <see cref="VpnRun.Region"/>
-    /// throughout. In a region the watch avoids, it asks for a switch away from it for the watch.
+    /// Plans the switch that's due, if any: the latest one the Owner asked for, then a rotation, then whatever the
+    /// check of gluetun once a minute finds. A switch whose region can't be picked isn't planned, and its error is
+    /// recorded as the VPN's.
     /// </summary>
-    /// <param name="watchId">The run's watch.</param>
-    public async Task<VpnRunStart> TryStartRunAsync(int watchId, CancellationToken cancellationToken)
+    /// <returns>The switch, for <see cref="SwitchAsync"/>, or <see langword="null"/> if none is due.</returns>
+    /// <exception cref="GluetunException">gluetun couldn't be reached to check it.</exception>
+    public async Task<VpnSwitch?> PlanDueSwitchAsync(CancellationToken cancellationToken)
     {
-        if (_gate.TryEnterRun() is not { } share)
+        if (!IsEnabled)
         {
-            return new VpnRunStart(VpnRunStartOutcome.HeldUp);
+            return null;
         }
 
-        try
+        if (Interlocked.Exchange(ref _manualRequest, null) is { } request)
         {
-            if (!configuration.IsEnabled)
-            {
-                return new VpnRunStart(VpnRunStartOutcome.Started, new VpnRun(share, null));
-            }
-
-            // Read while holding the share, so no switch changes it during the run
-            using var scope = scopeFactory.CreateScope();
-            var dbContext = scope.ServiceProvider.GetRequiredService<LookoutDbContext>();
-            var settings = await dbContext.VpnSettings.AsNoTracking()
-                .SingleAsync(s => s.Id == VpnSettings.SingletonId, cancellationToken);
-            if (settings.CurrentRegion is not { } region)
-            {
-                share.Dispose();
-                return new VpnRunStart(VpnRunStartOutcome.HeldUp);
-            }
-
-            var avoided = await GetAvoidedRegionsAsync(dbContext, watchId, cancellationToken);
-            if (!avoided.Contains(region, StringComparer.OrdinalIgnoreCase))
-            {
-                return new VpnRunStart(VpnRunStartOutcome.Started, new VpnRun(share, region));
-            }
-
-            share.Dispose();
-            if (await HasNoRegionLeftAsync(settings, avoided, cancellationToken))
-            {
-                return new VpnRunStart(VpnRunStartOutcome.NoRegionLeft);
-            }
-
-            LogLeavingAvoidedRegion(watchId, region);
-            _watchSwitches.Writer.TryWrite(watchId);
-            return new VpnRunStart(VpnRunStartOutcome.InAvoidedRegion);
+            return (await PlanAsync(SwitchKind.Manual, request.Region, cancellationToken)).Switch;
         }
-        catch
+
+        if (await IsRotationDueAsync(cancellationToken))
         {
-            share.Dispose();
-            throw;
+            return (await PlanAsync(SwitchKind.Rotation, null, cancellationToken)).Switch;
         }
+
+        if (UtcNow >= _nextCheckTime)
+        {
+            _nextCheckTime = UtcNow + CheckInterval;
+            return await CheckGluetunAsync(cancellationToken);
+        }
+
+        return null;
     }
 
     /// <summary>
-    /// Whether a watch that avoids <paramref name="avoided"/> is known to have no region left. Not when the regions
-    /// can't be read, which the switch then reports as the VPN's error, rather than the watch's runs crashing for it.
+    /// Plans a switch away from the region the VPN is in, which the watch's run is about to start in and the watch
+    /// avoids, to one the Owner hasn't excluded and the watch doesn't avoid, preferring one no other watch with a pending
+    /// VPN run avoids. Plans none within <see cref="RetryDelay"/> of a switch for a watch that failed.
     /// </summary>
-    private async Task<bool> HasNoRegionLeftAsync(
-        VpnSettings settings, IReadOnlyCollection<string> avoided, CancellationToken cancellationToken)
+    /// <param name="avoidedByWatch">The regions the watch avoids, one of which the VPN is in.</param>
+    public async Task<WatchSwitchPlan> PlanSwitchForWatchAsync(
+        int watchId, IReadOnlyCollection<string> avoidedByWatch, CancellationToken cancellationToken)
     {
-        IReadOnlyList<string> regions;
-        try
+        if (UtcNow < _nextWatchSwitchTime)
         {
-            regions = (await catalog.GetRegionsAsync(cancellationToken)).Regions;
-        }
-        catch (GluetunException)
-        {
-            return false;
+            return new WatchSwitchPlan(null, NoRegionLeft: false);
         }
 
-        return regions.Count > 0 && !settings.HasRegionLeftFor(regions, avoided);
+        var planned = await PlanAsync(
+            SwitchKind.ForWatch, null, cancellationToken, forWatchId: watchId, avoidedByWatch: avoidedByWatch);
+        return new WatchSwitchPlan(planned.Switch, planned.NoRegionLeft);
     }
 
-    private static Task<List<string>> GetAvoidedRegionsAsync(
-        LookoutDbContext dbContext, int watchId, CancellationToken cancellationToken) =>
-        dbContext.AvoidedRegions
-            .Where(a => a.WatchId == watchId)
-            .Select(a => a.Region)
-            .ToListAsync(cancellationToken);
-
     /// <summary>
-    /// The settings, the switch in progress, and the tunnel's public IP as gluetun reports it, or why gluetun couldn't
-    /// be reached. If the VPN isn't set up, says so and nothing else.
+    /// The settings, the switch planned or in progress, and the tunnel's public IP as gluetun reports it, or why gluetun
+    /// couldn't be reached. If the VPN isn't set up, says so and nothing else.
     /// </summary>
     public async Task<VpnStatus> GetStatusAsync(CancellationToken cancellationToken)
     {
@@ -258,8 +193,9 @@ public partial class Vpn(
     }
 
     /// <summary>
-    /// Queues a switch the Owner asked for, made within a second unless another switch or VPN runs are in progress.
-    /// Clients hear how it went through <see cref="IUpdatesClient.VpnChanged"/>.
+    /// Queues a switch the Owner asked for, planned within a second unless another switch is planned or in progress,
+    /// and made once the VPN runs in progress have finished. Clients hear how it went through
+    /// <see cref="IUpdatesClient.VpnChanged"/>.
     /// </summary>
     /// <param name="region">
     /// The region the Owner typed, matched to <see cref="GetRegionsAsync"/>'s ignoring case, or
@@ -286,52 +222,97 @@ public partial class Vpn(
             }
         }
 
-        _requests.Writer.TryWrite(listed);
+        Volatile.Write(ref _manualRequest, new ManualRequest(listed));
         return ManualSwitchResult.Queued;
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    /// <summary>
+    /// Makes a planned switch, unless it's no longer needed: switches gluetun to its region and waits for the tunnel,
+    /// then records the outcome. Failures are recorded in <see cref="VpnSettings.LastError"/> rather than thrown. No VPN
+    /// run may be in progress, or start, until it returns, since restarting the tunnel would cut it off, and the region
+    /// it would record would be wrong.
+    /// </summary>
+    /// <param name="planned">From <see cref="PlanDueSwitchAsync"/> or <see cref="PlanSwitchForWatchAsync"/>.</param>
+    public async Task SwitchAsync(VpnSwitch planned, CancellationToken cancellationToken)
     {
-        if (!configuration.IsEnabled)
+        try
         {
-            return;
-        }
+            using var scope = scopeFactory.CreateScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<LookoutDbContext>();
+            var gluetun = scope.ServiceProvider.GetRequiredService<GluetunHttpClient>();
+            var settings = await dbContext.VpnSettings.SingleAsync(
+                s => s.Id == VpnSettings.SingletonId, cancellationToken);
 
-        var nextReconcileTime = DateTime.MinValue;
-        using var timer = new PeriodicTimer(PollInterval, timeProvider);
-        do
-        {
-            try
+            // Planned while VPN runs were in progress, maybe minutes ago, and the Owner may have changed what made it due
+            // since. Only switches change the region, so nothing else can have overtaken it
+            if (!await IsStillNeededAsync(planned, dbContext, settings, cancellationToken))
             {
-                if (_requests.Reader.TryRead(out var requestedRegion))
-                {
-                    await SwitchAsync(SwitchKind.Manual, requestedRegion, stoppingToken);
-                }
-                else if (UtcNow >= _nextWatchSwitchTime && _watchSwitches.Reader.TryRead(out var watchId))
-                {
-                    await SwitchAsync(SwitchKind.ForWatch, null, stoppingToken, forWatchId: watchId);
-                }
-                else if (await IsRotationDueAsync(stoppingToken))
-                {
-                    await SwitchAsync(SwitchKind.Rotation, null, stoppingToken);
-                }
-                else if (UtcNow >= nextReconcileTime)
-                {
-                    nextReconcileTime = UtcNow + ReconcileInterval;
-                    await ReapplyIfLostAsync(stoppingToken);
-                }
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
+                LogNoLongerNeeded(planned.Kind);
                 return;
             }
-            catch (Exception ex)
+
+            var regionApplied = false;
+            string? publicIp = null;
+            string? error = null;
+            try
             {
-                LogPollFailed(ex);
+                _progress = new VpnSwitchProgress(planned.Region, WaitingForRun: false, planned.PlannedTime);
+                await notifier.VpnChangedAsync();
+
+                LogSwitching(planned.Kind, planned.Region);
+                await gluetun.SetRegionAsync(planned.Region, cancellationToken);
+
+                regionApplied = true;
+                // Saved before the tunnel is up, so a run started after the switch records where it runs even if the
+                // outcome can't be saved
+                await dbContext.VpnSettings
+                    .Where(s => s.Id == VpnSettings.SingletonId)
+                    .ExecuteUpdateAsync(
+                        s => s.SetProperty(x => x.CurrentRegion, planned.Region), CancellationToken.None);
+                publicIp = await WaitForTunnelAsync(
+                    scope.ServiceProvider.GetRequiredService<VpnProbeHttpClient>(), cancellationToken);
+
+                if (publicIp is null)
+                {
+                    error = $"Switched to {planned.Region}, but the tunnel wasn't back up after "
+                        + $"{TunnelUpTimeout.TotalMinutes:0} minutes.";
+                }
+            }
+            catch (Exception ex)
+                when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+            {
+                error = ex.Message;
+            }
+
+            _progress = null;
+            await RecordOutcomeAsync(
+                planned.Kind, dbContext, settings, regionApplied ? planned.Region : null, publicIp, error);
+        }
+        finally
+        {
+            // However it ended, so clients don't keep showing it
+            if (_progress is not null)
+            {
+                _progress = null;
+                await notifier.VpnChangedAsync();
             }
         }
-        while (await timer.WaitForNextTickAsync(stoppingToken));
     }
+
+    /// <summary>
+    /// Whether a planned switch should still be made: a rotation only while one is still due, since the Owner may have
+    /// turned rotation off or put it back, and a switch for a watch only while the watch still avoids the region,
+    /// since the Owner may have cleared it.
+    /// </summary>
+    private async Task<bool> IsStillNeededAsync(
+        VpnSwitch planned, LookoutDbContext dbContext, VpnSettings settings, CancellationToken cancellationToken) =>
+        planned.Kind switch
+        {
+            SwitchKind.Rotation => settings.RotationEnabled && settings.NextRotationTime <= UtcNow,
+            SwitchKind.ForWatch => (await GetAvoidedRegionsAsync(dbContext, planned.ForWatchId!.Value, cancellationToken))
+                .Contains(settings.CurrentRegion, StringComparer.OrdinalIgnoreCase),
+            _ => true,
+        };
 
     private async Task<bool> IsRotationDueAsync(CancellationToken cancellationToken)
     {
@@ -346,53 +327,38 @@ public partial class Vpn(
     }
 
     /// <summary>
-    /// Switches back to <see cref="VpnSettings.CurrentRegion"/> if gluetun isn't restricted to it.
+    /// Plans a switch back to <see cref="VpnSettings.CurrentRegion"/> if gluetun isn't restricted to it.
     /// gluetun keeps settings changed through its API only until it restarts. If the region is no longer one of
-    /// <see cref="VpnConfiguration.ServerRegions"/>, switches to a random one that is instead. If the Backend hasn't
-    /// switched yet, makes its first switch, and tries again next time if that fails. It doesn't wait for switches,
-    /// so the switch it asks for is dropped if another one changed the region meanwhile.
+    /// <see cref="VpnConfiguration.ServerRegions"/>, plans one to a random one that is instead. If the Backend hasn't
+    /// switched yet, plans its first switch, and tries again next time if that fails.
     /// </summary>
-    private async Task ReapplyIfLostAsync(CancellationToken cancellationToken)
+    /// <exception cref="GluetunException">gluetun couldn't be reached.</exception>
+    private async Task<VpnSwitch?> CheckGluetunAsync(CancellationToken cancellationToken)
     {
-        // The checks each use a scope of their own, so none is held through a switch, which can wait minutes
         if (await GetCurrentRegionAsync(cancellationToken) is not { } currentRegion)
         {
-            // While gluetun starts up this throws, which the poll only logs, rather than the switch showing it as the
-            // VPN's error every minute
-            await GetGluetunSettingsAsync(cancellationToken);
+            // While gluetun starts up this throws, which the scheduler only logs, rather than the switch showing it as
+            // the VPN's error every minute
+            var gluetunSettings = await GetGluetunSettingsAsync(cancellationToken);
             LogFirstSwitch();
-            await SwitchAsync(SwitchKind.First, null, cancellationToken, checkedRegion: null);
-            return;
+            return (await PlanAsync(SwitchKind.First, null, cancellationToken, gluetunSettings: gluetunSettings)).Switch;
         }
 
         if (!configuration.AllowsRegion(currentRegion))
         {
             // GLUETUN_SERVER_REGIONS changed since the switch to it, and reapplying it would undo the change
             LogRegionNotAllowed(currentRegion);
-            await SwitchAsync(SwitchKind.Replacement, null, cancellationToken, checkedRegion: currentRegion);
+            return (await PlanAsync(SwitchKind.Replacement, null, cancellationToken)).Switch;
         }
-        else if (!await IsGluetunRestrictedToAsync(currentRegion, cancellationToken))
+
+        var restrictedTo = (await GetGluetunSettingsAsync(cancellationToken)).Provider.ServerSelection.Regions;
+        if (restrictedTo is [var region] && string.Equals(region, currentRegion, StringComparison.OrdinalIgnoreCase))
         {
-            LogReapplying(currentRegion);
-            await SwitchAsync(SwitchKind.Reapply, currentRegion, cancellationToken, checkedRegion: currentRegion);
+            return null;
         }
-    }
 
-    private async Task<string?> GetCurrentRegionAsync(CancellationToken cancellationToken)
-    {
-        using var scope = scopeFactory.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<LookoutDbContext>();
-        return await dbContext.VpnSettings
-            .Where(s => s.Id == VpnSettings.SingletonId)
-            .Select(s => s.CurrentRegion)
-            .SingleAsync(cancellationToken);
-    }
-
-    private async Task<bool> IsGluetunRestrictedToAsync(string region, CancellationToken cancellationToken)
-    {
-        var gluetunSettings = await GetGluetunSettingsAsync(cancellationToken);
-        return gluetunSettings.Provider.ServerSelection.Regions is [var restrictedTo]
-            && string.Equals(restrictedTo, region, StringComparison.OrdinalIgnoreCase);
+        LogReapplying(currentRegion);
+        return (await PlanAsync(SwitchKind.Reapply, currentRegion, cancellationToken)).Switch;
     }
 
     /// <exception cref="GluetunException">gluetun couldn't be reached.</exception>
@@ -404,143 +370,59 @@ public partial class Vpn(
     }
 
     /// <summary>
-    /// Picks the region, switches gluetun to it and waits for the tunnel, then records the outcome.
-    /// Failures are recorded in <see cref="VpnSettings.LastError"/> rather than thrown.
+    /// Picks the switch's region, unless <paramref name="requestedRegion"/> is it, and shows the switch as waiting for
+    /// the VPN runs in progress. A region that can't be picked is recorded as the VPN's error.
     /// </summary>
-    /// <param name="checkedRegion">For a switch the check of gluetun's region asks for, the VPN's region the check
-    /// read.</param>
     /// <param name="forWatchId">For a <see cref="SwitchKind.ForWatch"/>, the watch whose run waits to leave a region it
     /// avoids.</param>
-    private async Task SwitchAsync(
+    /// <param name="avoidedByWatch">For a <see cref="SwitchKind.ForWatch"/>, the regions the watch avoids.</param>
+    /// <param name="gluetunSettings">What gluetun said it's using, if it was just asked, so it isn't asked again.</param>
+    /// <returns>The switch, if one is planned, and whether a watch has no region left.</returns>
+    private async Task<(VpnSwitch? Switch, bool NoRegionLeft)> PlanAsync(
         SwitchKind kind,
         string? requestedRegion,
         CancellationToken cancellationToken,
-        string? checkedRegion = null,
-        int? forWatchId = null)
+        int? forWatchId = null,
+        IReadOnlyCollection<string>? avoidedByWatch = null,
+        GluetunVpnSettings? gluetunSettings = null)
     {
         using var scope = scopeFactory.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<LookoutDbContext>();
-        var gluetun = scope.ServiceProvider.GetRequiredService<GluetunHttpClient>();
         var settings = await dbContext.VpnSettings.SingleAsync(
             s => s.Id == VpnSettings.SingletonId, cancellationToken);
-
-        // The check that asked for it read the VPN's region without waiting for switches, so one may have changed it
-        // since, and this would undo it
-        if (kind is SwitchKind.Reapply or SwitchKind.Replacement or SwitchKind.First
-            && !string.Equals(settings.CurrentRegion, checkedRegion, StringComparison.OrdinalIgnoreCase))
-        {
-            LogOvertaken(kind);
-            return;
-        }
-
-        // Found due before the switch ahead of it, which may have restarted the timer, or the Owner may have turned
-        // rotation off meanwhile
-        if (kind == SwitchKind.Rotation && !(settings.RotationEnabled && settings.NextRotationTime <= UtcNow))
-        {
-            LogOvertaken(kind);
-            return;
-        }
-
-        IReadOnlyList<string> avoidedByWatch = [];
-        if (forWatchId is { } watchId)
-        {
-            // Asked for before the switch ahead of it, which may have left the region, or the Owner may have cleared it
-            avoidedByWatch = await GetAvoidedRegionsAsync(dbContext, watchId, cancellationToken);
-            if (!avoidedByWatch.Contains(settings.CurrentRegion, StringComparer.OrdinalIgnoreCase))
-            {
-                LogOvertaken(kind);
-                return;
-            }
-        }
 
         string? region;
         try
         {
-            region = requestedRegion
-                ?? await PickRegionAsync(kind, dbContext, settings, forWatchId, avoidedByWatch, cancellationToken);
+            region = requestedRegion ?? await PickRegionAsync(
+                kind, dbContext, settings, forWatchId, avoidedByWatch ?? [], gluetunSettings, cancellationToken);
         }
         catch (Exception ex)
             when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
             await RecordOutcomeAsync(kind, dbContext, settings, null, null, ex.Message);
-            return;
+            return (null, false);
         }
 
         if (region is null)
         {
-            // The run's next try finds the watch has no region left, and ends the run, which says why
             LogNoRegionForWatch(forWatchId);
-            return;
+            return (null, true);
         }
 
-        _progress = new VpnSwitchProgress(region, WaitingForRun: true, UtcNow);
+        if (forWatchId is { } watchId)
+        {
+            LogLeavingAvoidedRegion(watchId, settings.CurrentRegion);
+        }
+
+        var planned = new VpnSwitch(kind, region, forWatchId, UtcNow);
+        _progress = new VpnSwitchProgress(region, WaitingForRun: true, planned.PlannedTime);
         await notifier.VpnChangedAsync();
-        IDisposable hold;
-        try
-        {
-            hold = await _gate.EnterSwitchAsync(cancellationToken);
-        }
-        catch
-        {
-            _progress = null;
-            throw;
-        }
-
-        // Let go of once the outcome is saved, however the switch ends, so no VPN run starts before then
-        using (hold)
-        {
-            // The Owner may have cleared the region while the switch waited for the VPN runs in progress
-            if (forWatchId is { } stillAvoiding
-                && !(await GetAvoidedRegionsAsync(dbContext, stillAvoiding, cancellationToken))
-                    .Contains(settings.CurrentRegion, StringComparer.OrdinalIgnoreCase))
-            {
-                _progress = null;
-                await notifier.VpnChangedAsync();
-                LogOvertaken(kind);
-                return;
-            }
-
-            var regionApplied = false;
-            string? publicIp = null;
-            string? error = null;
-            try
-            {
-                _progress = _progress with { WaitingForRun = false };
-                await notifier.VpnChangedAsync();
-
-                LogSwitching(kind, region);
-                await gluetun.SetRegionAsync(region, cancellationToken);
-
-                regionApplied = true;
-                // Saved while holding the gate, so a run that starts after it records where it runs
-                await dbContext.VpnSettings
-                    .Where(s => s.Id == VpnSettings.SingletonId)
-                    .ExecuteUpdateAsync(s => s.SetProperty(x => x.CurrentRegion, region), CancellationToken.None);
-                publicIp = await WaitForTunnelAsync(
-                    scope.ServiceProvider.GetRequiredService<VpnProbeHttpClient>(), cancellationToken);
-
-                if (publicIp is null)
-                {
-                    error = $"Switched to {region}, but the tunnel wasn't back up after "
-                        + $"{TunnelUpTimeout.TotalMinutes:0} minutes.";
-                }
-            }
-            catch (Exception ex)
-                when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
-            {
-                error = ex.Message;
-            }
-            finally
-            {
-                _progress = null;
-            }
-
-            await RecordOutcomeAsync(kind, dbContext, settings, regionApplied ? region : null, publicIp, error);
-        }
+        return (planned, false);
     }
 
     /// <summary>
-    /// Saves how a switch that got as far as picking a region went.
+    /// Saves how a switch that got as far as picking a region went, or why it didn't.
     /// </summary>
     /// <param name="appliedRegion">The region gluetun was switched to, if it got that far.</param>
     private async Task RecordOutcomeAsync(
@@ -551,7 +433,7 @@ public partial class Vpn(
         string? publicIp,
         string? error)
     {
-        // The settings may have been edited while the switch waited for a run
+        // The Owner may have edited the settings while the switch was made
         await dbContext.Entry(settings).ReloadAsync(CancellationToken.None);
         var now = UtcNow;
         if (appliedRegion is not null)
@@ -593,6 +475,7 @@ public partial class Vpn(
     /// pending VPN run avoids, and otherwise one rotation may switch to, preferring one no watch using the VPN avoids.
     /// </summary>
     /// <param name="avoidedByWatch">For a <see cref="SwitchKind.ForWatch"/>, the regions the watch avoids.</param>
+    /// <param name="gluetunSettings">What gluetun said it's using, if it was just asked.</param>
     /// <returns>The region, or <see langword="null"/> if the watch has no region left.</returns>
     /// <exception cref="InvalidOperationException">No region is allowed.</exception>
     private async Task<string?> PickRegionAsync(
@@ -600,10 +483,13 @@ public partial class Vpn(
         LookoutDbContext dbContext,
         VpnSettings settings,
         int? forWatchId,
-        IReadOnlyList<string> avoidedByWatch,
+        IReadOnlyCollection<string> avoidedByWatch,
+        GluetunVpnSettings? gluetunSettings,
         CancellationToken cancellationToken)
     {
-        var regions = (await catalog.GetRegionsAsync(cancellationToken)).Regions;
+        var regions = (gluetunSettings is not null
+            ? catalog.GetRegions(gluetunSettings)
+            : await catalog.GetRegionsAsync(cancellationToken)).Regions;
         if (regions.Count == 0)
         {
             throw new InvalidOperationException(configuration.LimitsRegions
@@ -639,6 +525,13 @@ public partial class Vpn(
         return settings.PickRotationRegion(regions, avoidedByWatches, Random.Shared)
             ?? throw new InvalidOperationException(DescribeNoRotationRegion(kind, settings, regions));
     }
+
+    private static Task<List<string>> GetAvoidedRegionsAsync(
+        LookoutDbContext dbContext, int watchId, CancellationToken cancellationToken) =>
+        dbContext.AvoidedRegions
+            .Where(a => a.WatchId == watchId)
+            .Select(a => a.Region)
+            .ToListAsync(cancellationToken);
 
     /// <summary>
     /// Why <see cref="VpnSettings.PickRotationRegion"/> found no region in <paramref name="regions"/>.
@@ -677,7 +570,7 @@ public partial class Vpn(
         var deadline = UtcNow + TunnelUpTimeout;
         while (UtcNow < deadline)
         {
-            await Task.Delay(PollInterval, timeProvider, cancellationToken);
+            await Task.Delay(TunnelPollInterval, timeProvider, cancellationToken);
             if (await probe.TryGetPublicIpAsync(cancellationToken) is { } publicIp)
             {
                 return publicIp;
@@ -708,22 +601,90 @@ public partial class Vpn(
 
     [LoggerMessage(
         Level = LogLevel.Information,
-        Message = "The VPN changed since the {Kind} was asked for, so it isn't needed")]
-    private partial void LogOvertaken(SwitchKind kind);
+        Message = "The VPN switch ({Kind}) isn't needed any more, since the Owner changed what made it due")]
+    private partial void LogNoLongerNeeded(SwitchKind kind);
 
     [LoggerMessage(
         Level = LogLevel.Information,
         Message = "A run of watch {WatchId} waits for the VPN to leave {Region}, which the watch avoids")]
-    private partial void LogLeavingAvoidedRegion(int watchId, string region);
+    private partial void LogLeavingAvoidedRegion(int watchId, string? region);
 
     [LoggerMessage(
         Level = LogLevel.Information,
         Message = "The VPN isn't switched for watch {WatchId}: it avoids every region it may switch to")]
     private partial void LogNoRegionForWatch(int? watchId);
-
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to check the VPN rotation")]
-    private partial void LogPollFailed(Exception exception);
 }
+
+/// <summary>
+/// What a region switch is for.
+/// </summary>
+internal enum SwitchKind
+{
+    Rotation,
+    Manual,
+
+    /// <summary>
+    /// Back to <see cref="VpnSettings.CurrentRegion"/>, which gluetun lost when it restarted.
+    /// </summary>
+    Reapply,
+
+    /// <summary>
+    /// Away from <see cref="VpnSettings.CurrentRegion"/>, which <see cref="VpnConfiguration.ServerRegions"/>
+    /// no longer allows, to any region it does. Exclusions only apply to rotation, so they don't apply here.
+    /// </summary>
+    Replacement,
+
+    /// <summary>
+    /// Away from a region a watch avoids, which its run is about to start in, to one the Owner hasn't excluded and
+    /// the watch doesn't avoid.
+    /// </summary>
+    ForWatch,
+
+    /// <summary>
+    /// To a region rotation may switch to, when the Backend hasn't switched yet. Until then gluetun picks a region
+    /// of its own and doesn't say which, so runs couldn't record theirs or check it against what their watch avoids.
+    /// </summary>
+    First,
+}
+
+/// <summary>
+/// A region switch <see cref="Vpn"/> has planned, with its region picked, for <see cref="Vpn.SwitchAsync"/> to make.
+/// </summary>
+public sealed class VpnSwitch
+{
+    internal VpnSwitch(SwitchKind kind, string region, int? forWatchId, DateTime plannedTime)
+    {
+        Kind = kind;
+        Region = region;
+        ForWatchId = forWatchId;
+        PlannedTime = plannedTime;
+    }
+
+    internal SwitchKind Kind { get; }
+
+    /// <summary>
+    /// The region it switches to.
+    /// </summary>
+    public string Region { get; }
+
+    /// <summary>
+    /// For a switch away from a region a watch avoids, the watch.
+    /// </summary>
+    internal int? ForWatchId { get; }
+
+    internal DateTime PlannedTime { get; }
+}
+
+/// <summary>
+/// What <see cref="Vpn.PlanSwitchForWatchAsync"/> made of a run in a region its watch avoids. With neither, the run
+/// waits, as other runs may start meanwhile: a switch for a watch failed less than a minute ago, or the region couldn't be
+/// picked, which is recorded as the VPN's error.
+/// </summary>
+/// <param name="Switch">The switch away from the region, if one is planned.</param>
+/// <param name="NoRegionLeft">
+/// Whether the watch avoids every region the VPN may switch to for it, so its run can't start until the Owner clears one.
+/// </param>
+public sealed record WatchSwitchPlan(VpnSwitch? Switch, bool NoRegionLeft);
 
 /// <summary>
 /// How <see cref="Vpn.RequestSwitchAsync"/> took a switch the Owner asked for.
@@ -741,7 +702,7 @@ public enum ManualSwitchResult
 }
 
 /// <param name="Configured">Whether the Backend knows where gluetun is. If not, every other field is null.</param>
-/// <param name="Switch">The region switch in progress, if any.</param>
+/// <param name="Switch">The region switch planned or in progress, if any.</param>
 /// <param name="PublicIp">The tunnel's public IP, or null while the tunnel is down or gluetun is unreachable.</param>
 /// <param name="GluetunError">Why gluetun couldn't be reached, if it couldn't.</param>
 public sealed record VpnStatus(
@@ -752,8 +713,8 @@ public sealed record VpnStatus(
     string? GluetunError);
 
 /// <summary>
-/// A region switch in progress.
+/// A region switch planned or in progress.
 /// </summary>
 /// <param name="WaitingForRun">Whether it's waiting for the VPN runs in progress to finish before restarting the tunnel.</param>
-/// <param name="StartedTime">When the switch began, in UTC.</param>
+/// <param name="StartedTime">When the switch was planned, in UTC.</param>
 public sealed record VpnSwitchProgress(string Region, bool WaitingForRun, DateTime StartedTime);

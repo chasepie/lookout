@@ -11,9 +11,9 @@ using Microsoft.Extensions.DependencyInjection;
 namespace ChasePie.Lookout.Backend.IntegrationTests;
 
 /// <summary>
-/// What the run worker does with the VPN: which runs make their regions avoided, the retries after them, how a watch's
-/// runs leave the regions it avoids, and how VPN runs wait for switches, with the Runner and gluetun faked at their HTTP
-/// boundaries. The VPN's own rules are in <see cref="VpnTests"/>.
+/// What the run worker does with avoided regions: which runs make their regions avoided, the retries after them, and how
+/// a watch's runs leave the regions it avoids, with the Runner and gluetun faked at their HTTP boundaries, on the real
+/// clock. The VPN's own rules, and how the worker fits switches around VPN runs, are in <see cref="VpnTests"/>.
 /// </summary>
 [TestClass]
 public sealed class AvoidedRegionsTests
@@ -27,7 +27,7 @@ public sealed class AvoidedRegionsTests
     private static readonly object Success = new { success = true, content = "In stock" };
     private static readonly object Crash = new { crash = new { error = "Error: No price" } };
 
-    // Long enough for the worker to have started a run, or the rotation service a switch, were it going to
+    // Long enough for the worker to have started a run or a switch, were it going to
     private static readonly TimeSpan SettleTime = TimeSpan.FromSeconds(2);
 
     public TestContext TestContext { get; set; } = null!;
@@ -349,7 +349,7 @@ public sealed class AvoidedRegionsTests
         }
 
         await LookoutApi.WaitUntilAsync(
-            async () => (await lookout.GetVpnSettingsAsync(Ct)).CurrentRegion == region && !lookout.Vpn.HoldsUpRuns, Ct);
+            async () => (await lookout.GetVpnSettingsAsync(Ct)).CurrentRegion == region && lookout.Vpn.Progress is null, Ct);
     }
 
     private Task MakeRotationDueAsync(Lookout lookout) =>

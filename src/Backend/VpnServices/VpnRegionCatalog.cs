@@ -36,11 +36,16 @@ public partial class VpnRegionCatalog(
                 .GetVpnSettingsAsync(cancellationToken);
         }
 
-        return new VpnRegions(
-            Provider: settings.Provider.Name,
-            Regions: GetRegions(settings.Provider.Name, settings.Type),
-            Limited: configuration.LimitsRegions);
+        return GetRegions(settings);
     }
+
+    /// <summary>
+    /// The regions <see cref="GetRegionsAsync"/> gives, for what gluetun just said it's using, so it isn't asked again.
+    /// </summary>
+    public VpnRegions GetRegions(GluetunVpnSettings settings) => new(
+        Provider: settings.Provider.Name,
+        Regions: GetRegions(settings.Provider.Name, settings.Type),
+        Limited: configuration.LimitsRegions);
 
     /// <param name="providerName">gluetun's provider name, such as <c>private internet access</c>.</param>
     /// <param name="vpnType"><c>openvpn</c> or <c>wireguard</c>.</param>

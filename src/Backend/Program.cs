@@ -69,9 +69,8 @@ public partial class Program
         services.AddHttpClient<GluetunHttpClient>(GluetunHttpClient.Configure);
         services.AddHttpClient<VpnProbeHttpClient>().ConfigureVpnProbeHttpClient();
         services.AddSingleton<VpnRegionCatalog>();
-        // A singleton too, so runs and the controller use the instance that makes the switches
+        // A singleton, so the controller and the run worker share the switch the Owner asked for and the one in progress
         services.AddSingleton<Vpn>();
-        services.AddHostedService(provider => provider.GetRequiredService<Vpn>());
     }
 
     private static async Task ConfigureAppAsync(WebApplication app)
