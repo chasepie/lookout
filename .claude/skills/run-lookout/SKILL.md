@@ -24,7 +24,7 @@ L=.claude/skills/run-lookout/lookout.sh
 $L start --limit 3        # ~20s once images are built; signs in. --limit sets LOOKOUT_MAX_CONCURRENT_RUNS (default here 3)
 a=$($L watch vpn-a true .claude/skills/run-lookout/watch-scripts/slow-ip.ts)        # prints the watch's id
 e=$($L watch direct-e false .claude/skills/run-lookout/watch-scripts/slow-ip.ts)
-f=$($L watch failover true .claude/skills/run-lookout/watch-scripts/asks-for-failover.ts)
+f=$($L watch avoider true .claude/skills/run-lookout/watch-scripts/asks-to-avoid-region.ts)
 $L run $a $e              # queues a run of each
 $L runs $a $e             # status, start/end, VPN region, retryOf, content of each watch's latest runs
 $L switch                 # queues a VPN region switch (random region; or: $L switch "US Texas")
@@ -42,8 +42,11 @@ The sample scripts in `watch-scripts/`:
 - `slow-ip.ts` looks up its public IP and location on ipinfo.io, then holds its browser session for 25 seconds, so runs
   overlap. Its content shows where the run came from (the VPN region, or your own connection) and when it started and
   ended.
-- `asks-for-failover.ts` holds its session for 10 seconds, then returns a known failure with `failover: true`. A VPN
-  watch running it fails the VPN over and gets retried, three times in a row at most.
+- `asks-to-avoid-region.ts` holds its session for 10 seconds, then returns a known failure with `avoidRegion: true`. A
+  VPN watch running it avoids each region it runs in and gets retried, three times in a row at most, each retry
+  switching the VPN away first. Clear its avoided regions with
+  `$L api DELETE /api/Watches/$f/avoided-regions/<id>`; `$L api GET /api/Watches/$f` lists them, with their ids, as
+  `avoidedRegions`.
 
 ## Run (human path)
 
@@ -82,7 +85,6 @@ The sample scripts in `watch-scripts/`:
 ## Troubleshooting
 
 - `$L vpn` shows `lastError: Switched to US …, but the tunnel wasn't back up after 2 minutes`: the new tunnel didn't
-  come up in time, which happened with one of the provider's regions. A failover that ends this way doesn't retry its
-  watch, so an `asks-for-failover.ts` watch can stop short of 3 retries, and `wait-idle` takes the 2 minutes. Switch again.
+  come up in time, which happened with one of the provider's regions, and `wait-idle` takes the 2 minutes. Switch again.
 - The Watches page in a screenshot shows "Hasn't run yet" next to "Running now": that's right, it means the watch has no
   finished run yet.

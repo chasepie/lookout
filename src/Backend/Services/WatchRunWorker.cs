@@ -8,19 +8,28 @@ using Microsoft.EntityFrameworkCore;
 namespace ChasePie.Lookout.Backend.Services;
 
 /// <summary>
-/// Polls the database for runs that are still <see cref="WatchRunStatus.Created"/> and executes them by asking the Runner
-/// to run the watch's script, up to <see cref="WatchRunLimit.MaxConcurrentRuns"/> at once. Whenever fewer are running,
-/// the oldest run that can start now starts. It passes over runs of a watch that already has one running, so a watch
-/// never has two at once and its runs go in order, and runs of watches with <see cref="CreateWatchDto.UseVpn"/> while
-/// <see cref="Vpn"/> holds them up for a region switch, which stay <see cref="WatchRunStatus.Created"/> meanwhile.
+/// The one scheduler of watch runs and VPN region switches. It polls the database for runs that are still
+/// <see cref="WatchRunStatus.Created"/> and executes them by asking the Runner to run the watch's script, up to
+/// <see cref="WatchRunLimit.MaxConcurrentRuns"/> at once, and makes the switches <see cref="Vpn"/> plans. Whenever fewer
+/// runs are running, the oldest run that can start now starts. It passes over runs of a watch that already has one
+/// running, so a watch never has two at once and its runs go in order, and runs of watches with
+/// <see cref="CreateWatchDto.UseVpn"/> that can't start yet, which stay <see cref="WatchRunStatus.Created"/> meanwhile.
 /// </summary>
 /// <remarks>
-/// A VPN run holds a <see cref="VpnRun"/> from before it's claimed until it ends, and records the region it gives.
-/// When a run's known failure asks for a failover, the run takes a <see cref="PendingFailover"/> from it before the run
-/// is saved as done and before it lets go of the lease, so no VPN run starts in the region that failed; VPN runs
-/// already in progress there finish as usual. The failover, then the retry it queues, carry on in the background
-/// without taking a slot. The worker works out from the watch's runs which regions the failover avoids, and whether
-/// the watch is retried; the VPN decides the rest.
+/// <para>
+/// A switch restarts the tunnel, which would cut off a VPN run, so each turn of the loop goes: plan the switch that's
+/// due, if none is planned or in progress; make the planned one, in the background, once no VPN run is in progress; then
+/// start runs. While a switch is planned or in progress no VPN run starts, so a switch waits only for the runs already in
+/// progress, and runs without the VPN keep starting. Only the loop changes the region, so a VPN run records the region
+/// it read as it started. The loop alone reads and writes the planned switch and the switch in progress; the counts of
+/// runs in progress are also lowered by the runs as they end.
+/// </para>
+/// <para>
+/// A VPN run waits for the Backend's first switch, so it knows its region. In a region its watch avoids, it waits while
+/// the VPN switches away from it for the watch, or ends as a crash if the watch has no region left, and other watches
+/// keep running in the region meanwhile. When a run's known failure asks to avoid its region, the region is saved as
+/// one its watch avoids, with a retry of the watch, in the same save as the finished run.
+/// </para>
 /// </remarks>
 public partial class WatchRunWorker(
     IServiceScopeFactory scopeFactory,
@@ -32,23 +41,36 @@ public partial class WatchRunWorker(
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(1);
 
     /// <summary>
-    /// How many retries in a row a watch gets at most. The last one still fails over, but isn't retried.
+    /// How many retries in a row a watch gets at most. The last one still makes its region avoided, but isn't retried.
     /// </summary>
     public const int MaxRetriesInARow = 3;
 
-    // Runs and failovers in progress, waited for when the worker stops. Guarded by itself
+    /// <summary>
+    /// Why a run of a watch that avoids every region the VPN may switch to ends without running its script.
+    /// </summary>
+    public const string NoRegionLeftError =
+        "The run couldn't start: the watch avoids every VPN region it may run in. Clear one of its avoided regions, "
+        + "or stop excluding one, for its runs to start again.";
+
+    // Runs in progress, and the switch in progress, waited for when the worker stops. Guarded by itself
     private readonly HashSet<Task> _inProgress = [];
 
-    // Runs in progress, each taking one of the limit's slots
+    // Runs in progress, each taking one of the limit's slots, and how many of them use the VPN
     private int _running;
+    private int _vpnRunning;
 
-    // Released when a run ends or the VPN lets runs start again, so a run that can start now does without waiting for
-    // the next poll
+    // The switch to make once no VPN run is in progress
+    private VpnSwitch? _plannedSwitch;
+
+    private Task _switch = Task.CompletedTask;
+
+    // Released when a run or switch ends, so what waited for it starts without waiting for the next poll
     private readonly SemaphoreSlim _wake = new(0, 1);
+
+    private bool SwitchPlannedOrInProgress => _plannedSwitch is not null || !_switch.IsCompleted;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        vpn.RunsMayStart += Wake;
         try
         {
             var interruptedRunsEnded = false;
@@ -64,6 +86,8 @@ public partial class WatchRunWorker(
                         interruptedRunsEnded = true;
                     }
 
+                    await PlanSwitchAsync(stoppingToken);
+                    StartPlannedSwitch(stoppingToken);
                     await StartRunsAsync(stoppingToken);
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -83,8 +107,6 @@ public partial class WatchRunWorker(
         }
         finally
         {
-            vpn.RunsMayStart -= Wake;
-
             // Cancelled with stoppingToken; a run cut off stays running, for the next start to mark as interrupted
             await WhenInProgressDoneAsync();
         }
@@ -112,74 +134,207 @@ public partial class WatchRunWorker(
     }
 
     /// <summary>
-    /// Starts pending runs until every slot is taken or no run can start now.
+    /// Plans the switch that's due, if no switch is planned or in progress.
     /// </summary>
-    private async Task StartRunsAsync(CancellationToken stoppingToken)
+    private async Task PlanSwitchAsync(CancellationToken stoppingToken)
     {
-        while (Volatile.Read(ref _running) < limit.MaxConcurrentRuns
-            && await TryStartNextRunAsync(stoppingToken))
+        if (SwitchPlannedOrInProgress)
         {
+            return;
+        }
+
+        try
+        {
+            _plannedSwitch = await vpn.PlanDueSwitchAsync(stoppingToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
+        {
+            // Only logged, so runs still start, and the check is made again in a minute
+            LogPlanFailed(ex);
         }
     }
 
     /// <summary>
-    /// Claims the oldest run that can start now and starts executing it in the background.
+    /// Makes the planned switch in the background, once no VPN run is in progress.
     /// </summary>
-    /// <returns><see langword="false"/> if no run can start now.</returns>
-    private async Task<bool> TryStartNextRunAsync(CancellationToken stoppingToken)
+    private void StartPlannedSwitch(CancellationToken stoppingToken)
     {
+        if (_plannedSwitch is not { } planned || !_switch.IsCompleted || Volatile.Read(ref _vpnRunning) > 0)
+        {
+            return;
+        }
+
+        _plannedSwitch = null;
+        _switch = Task.Run(() => SwitchAsync(planned, stoppingToken), CancellationToken.None);
+        Track(_switch);
+    }
+
+    private async Task SwitchAsync(VpnSwitch planned, CancellationToken stoppingToken)
+    {
+        try
+        {
+            await vpn.SwitchAsync(planned, stoppingToken);
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            LogSwitchFailed(ex);
+        }
+        finally
+        {
+            Wake();
+        }
+    }
+
+    /// <summary>
+    /// Starts pending runs, oldest first, until every slot is taken or no other run can start now.
+    /// </summary>
+    private async Task StartRunsAsync(CancellationToken stoppingToken)
+    {
+        if (Volatile.Read(ref _running) >= limit.MaxConcurrentRuns)
+        {
+            return;
+        }
+
         using var scope = scopeFactory.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<LookoutDbContext>();
-
-        var vpnHeldUp = vpn.HoldsUpRuns;
-        var next = await dbContext.WatchRuns
+        var pending = await dbContext.WatchRuns
             .Where(wr => wr.Status == WatchRunStatus.Created)
             // The watch's oldest pending run, once its run in progress, if any, is done
             .Where(wr => !dbContext.WatchRuns.Any(other =>
                 other.WatchId == wr.WatchId
                 && (other.Status == WatchRunStatus.Running
                     || (other.Status == WatchRunStatus.Created && other.Id < wr.Id))))
-            .Where(wr => !vpnHeldUp || !wr.Watch.UseVpn)
             .OrderBy(wr => wr.Id)
-            .Select(wr => new { wr.Id, wr.Watch.UseVpn })
-            .FirstOrDefaultAsync(stoppingToken);
-        if (next is null)
-        {
-            return false;
-        }
+            .Select(wr => new { wr.Id, wr.WatchId, wr.Watch.UseVpn })
+            .ToListAsync(stoppingToken);
 
-        // Taken before claiming, so a run held up by a switch doesn't show as running
-        VpnRun? vpnRun = null;
-        if (next.UseVpn && (vpnRun = await vpn.TryStartRunAsync(stoppingToken)) is null)
+        // Read once, for the VPN runs that start this turn: no switch is in progress while they do, and only the loop
+        // starts one. Likewise the regions their watches avoid, which only their runs add to, and none of them is running
+        string? region = null;
+        ILookup<int, string>? avoidedByWatch = null;
+        var regionRead = false;
+        foreach (var run in pending)
         {
-            // A switch was queued since; look again, passing over VPN runs
-            return true;
-        }
-
-        var claimed = false;
-        try
-        {
-            claimed = await ClaimAsync(dbContext, next.Id, vpnRun?.Region, stoppingToken);
-        }
-        finally
-        {
-            if (!claimed)
+            if (Volatile.Read(ref _running) >= limit.MaxConcurrentRuns)
             {
-                vpnRun?.Dispose();
+                return;
+            }
+
+            if (!run.UseVpn)
+            {
+                await StartRunAsync(dbContext, run.Id, useVpn: false, region: null, stoppingToken);
+                continue;
+            }
+
+            if (SwitchPlannedOrInProgress)
+            {
+                continue;
+            }
+
+            if (!vpn.IsEnabled)
+            {
+                await StartRunAsync(dbContext, run.Id, useVpn: true, region: null, stoppingToken);
+                continue;
+            }
+
+            if (!regionRead)
+            {
+                region = await vpn.GetCurrentRegionAsync(stoppingToken);
+                regionRead = true;
+            }
+
+            if (region is null)
+            {
+                // Waits for the first switch, which the check of gluetun plans
+                continue;
+            }
+
+            avoidedByWatch ??= await dbContext.GetAvoidedRegionsAsync(
+                [.. pending.Where(r => r.UseVpn).Select(r => r.WatchId)], stoppingToken);
+            var avoided = avoidedByWatch[run.WatchId].ToList();
+            if (!avoided.Contains(region, StringComparer.OrdinalIgnoreCase))
+            {
+                await StartRunAsync(dbContext, run.Id, useVpn: true, region, stoppingToken);
+                continue;
+            }
+
+            var plan = await vpn.PlanSwitchForWatchAsync(run.WatchId, avoided, stoppingToken);
+            if (plan.NoRegionLeft)
+            {
+                await EndWithNoRegionLeftAsync(dbContext, run.Id, stoppingToken);
+            }
+            else if (plan.Switch is not null)
+            {
+                // From now on no VPN run starts, so the switch waits only for those in progress. The next turn makes it
+                // if none is
+                _plannedSwitch = plan.Switch;
+                Wake();
             }
         }
-
-        if (claimed)
-        {
-            Interlocked.Increment(ref _running);
-            Track(Task.Run(() => RunAsync(next.Id, vpnRun, stoppingToken), CancellationToken.None));
-        }
-
-        return true;
     }
 
     /// <summary>
-    /// Marks a pending run as running, in <paramref name="region"/>, its <see cref="VpnRun.Region"/> if it uses the VPN.
+    /// Claims a pending run and starts executing it in the background, taking a slot.
+    /// </summary>
+    /// <param name="region">The region the VPN is in, if the run uses it and the VPN is set up.</param>
+    private async Task StartRunAsync(
+        LookoutDbContext dbContext, int runId, bool useVpn, string? region, CancellationToken stoppingToken)
+    {
+        if (!await ClaimAsync(dbContext, runId, region, stoppingToken))
+        {
+            return;
+        }
+
+        // Counted before the next turn of the loop, which mustn't start a switch while the run is in progress
+        Interlocked.Increment(ref _running);
+        if (useVpn)
+        {
+            Interlocked.Increment(ref _vpnRunning);
+        }
+
+        Track(Task.Run(() => RunAsync(runId, useVpn, region, stoppingToken), CancellationToken.None));
+    }
+
+    /// <summary>
+    /// Ends a pending run as a crash without running its script, or taking a slot, since its watch avoids every region
+    /// the VPN may switch to for it. It goes through <see cref="FinishRunAsync"/>, as any run does, so a streak of them
+    /// is notified.
+    /// </summary>
+    private async Task EndWithNoRegionLeftAsync(LookoutDbContext dbContext, int runId, CancellationToken stoppingToken)
+    {
+        // Claimed inside, so a failure ends only this run, and the turn goes on to start the others
+        try
+        {
+            if (!await ClaimAsync(dbContext, runId, null, stoppingToken))
+            {
+                return;
+            }
+
+            using var scope = scopeFactory.CreateScope();
+            var runDbContext = scope.ServiceProvider.GetRequiredService<LookoutDbContext>();
+            var watchRun = await runDbContext.WatchRuns
+                .Include(wr => wr.Watch)
+                .SingleAsync(wr => wr.Id == runId, stoppingToken);
+            watchRun.Error = NoRegionLeftError;
+            await FinishRunAsync(scope, runDbContext, watchRun, stoppingToken);
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            // Left running, for the next start to mark as interrupted
+        }
+        catch (Exception ex)
+        {
+            // A run that couldn't be claimed is still pending, which this leaves alone, for a later turn
+            LogRunFailed(ex, runId);
+            await EndBrokenRunAsync(runId, ex);
+        }
+    }
+
+    /// <summary>
+    /// Marks a pending run as running, in <paramref name="region"/>.
     /// </summary>
     /// <returns><see langword="false"/> if it was no longer pending.</returns>
     private static async Task<bool> ClaimAsync(
@@ -199,16 +354,13 @@ public partial class WatchRunWorker(
     }
 
     /// <summary>
-    /// Executes a claimed run, then lets go of its <see cref="VpnRun"/>, if it has one, and of its slot.
+    /// Executes a claimed run, then lets go of its slot.
     /// </summary>
-    private async Task RunAsync(int runId, VpnRun? vpnRun, CancellationToken stoppingToken)
+    private async Task RunAsync(int runId, bool useVpn, string? region, CancellationToken stoppingToken)
     {
         try
         {
-            using (vpnRun)
-            {
-                await ExecuteRunAsync(runId, vpnRun, stoppingToken);
-            }
+            await ExecuteRunAsync(runId, useVpn, region, stoppingToken);
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
@@ -221,13 +373,18 @@ public partial class WatchRunWorker(
         }
         finally
         {
+            if (useVpn)
+            {
+                Interlocked.Decrement(ref _vpnRunning);
+            }
+
             Interlocked.Decrement(ref _running);
             Wake();
         }
     }
 
     /// <summary>
-    /// Has the loop look for runs to start now, rather than at the next poll.
+    /// Has the loop take its next turn now, rather than at the next poll.
     /// </summary>
     private void Wake()
     {
@@ -242,23 +399,24 @@ public partial class WatchRunWorker(
     }
 
     /// <summary>
-    /// Keeps how a running run ended, works out its event and notifies of it, and queues its failover if it asked for
-    /// one.
+    /// Keeps how a running run ended, works out its event and notifies of it, and, if its known failure asked to avoid
+    /// its region, makes the region avoided and queues a retry.
     /// </summary>
-    /// <param name="vpnRun">
-    /// The run's lease, if it uses the VPN, as read when it was claimed, rather than the watch's setting now, which the
-    /// Owner may have changed since: the run's region goes by it, so how it runs must too.
+    /// <param name="useVpn">
+    /// Whether the run uses the VPN, as read when it was claimed, rather than the watch's setting now, which the Owner
+    /// may have changed since: the run's region goes by it, so how it runs must too.
     /// </param>
-    private async Task ExecuteRunAsync(int runId, VpnRun? vpnRun, CancellationToken stoppingToken)
+    /// <param name="region">The region the run is in, if it uses the VPN and the VPN is set up.</param>
+    private async Task ExecuteRunAsync(int runId, bool useVpn, string? region, CancellationToken stoppingToken)
     {
         using var scope = scopeFactory.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<LookoutDbContext>();
         var watchRun = await dbContext.WatchRuns
             .Include(wr => wr.Watch)
             .SingleAsync(wr => wr.Id == runId, stoppingToken);
+
         LogRunStarted(watchRun.Id, watchRun.WatchId);
         await notifier.RunUpdatedAsync(watchRun);
-
         try
         {
             var scriptName = WatchScriptsDirectory.GetStoredFileName(watchRun.Watch)
@@ -266,7 +424,7 @@ public partial class WatchRunWorker(
             var runner = scope.ServiceProvider.GetRequiredService<RunnerHttpClient>();
             var result = await runner.RunWatchScriptAsync(
                 scriptName: scriptName,
-                useVpn: vpnRun is not null,
+                useVpn: useVpn,
                 screenshots: watchRun.Watch.GetScreenshotSettings(),
                 cancellationToken: stoppingToken);
             KeepResult(watchRun, result);
@@ -277,26 +435,81 @@ public partial class WatchRunWorker(
             watchRun.Error = ex.Message;
         }
 
-        // Queued before the run is saved as done and lets go of its lease, so no VPN run starts in the region that
-        // failed, neither this watch's next run nor another's
-        var failover = watchRun.AskedForFailover ? vpnRun?.QueueFailover() : null;
-        try
+        // Saved with the run, so the watch's next run can't start in the region before it's avoided
+        var avoidsRegion = watchRun.AskedToAvoidRegion && region is not null;
+        var retry = avoidsRegion
+            ? await AvoidRegionAsync(dbContext, watchRun, region!, stoppingToken)
+            : null;
+
+        await FinishRunAsync(scope, dbContext, watchRun, stoppingToken);
+        if (retry is not null)
         {
-            await FinishRunAsync(scope, dbContext, watchRun, stoppingToken);
-            if (failover is not null)
+            await notifier.RunUpdatedAsync(retry);
+        }
+
+        if (avoidsRegion)
+        {
+            await notifier.WatchChangedAsync(watchRun.WatchId);
+        }
+    }
+
+    /// <summary>
+    /// Adds <paramref name="region"/> to the regions <paramref name="watchRun"/>'s watch avoids, unless it does already,
+    /// and a retry of the watch, unless it has a later run already or the run was already the last retry in a row. Both
+    /// are saved with the run.
+    /// </summary>
+    /// <returns>The retry, if there is one.</returns>
+    private async Task<WatchRun?> AvoidRegionAsync(
+        LookoutDbContext dbContext,
+        WatchRun watchRun,
+        string region,
+        CancellationToken stoppingToken)
+    {
+        var avoided = await dbContext.GetAvoidedRegionsAsync(watchRun.WatchId, stoppingToken);
+        if (!avoided.Contains(region, StringComparer.OrdinalIgnoreCase))
+        {
+            dbContext.AvoidedRegions.Add(new AvoidedRegion
             {
-                var pending = failover;
-                failover = null;
-                // Only what the failover needs, so the run, with its screenshot, isn't kept while it waits
-                var asking = new RunAskingForFailover(watchRun.Id, watchRun.WatchId, watchRun.RetryOfRunId);
-                // In the background, so the run's slot is free for another run meanwhile
-                Track(Task.Run(() => FailOverAsync(asking, pending, stoppingToken), CancellationToken.None));
-            }
+                WatchId = watchRun.WatchId,
+                Region = region,
+                CreatedTime = DateTime.UtcNow,
+                Run = watchRun,
+            });
         }
-        finally
+
+        // A run queued since, such as a scheduled one, tries the watch again anyway
+        if (await dbContext.WatchRuns.AnyAsync(
+            wr => wr.WatchId == watchRun.WatchId && wr.Id > watchRun.Id, stoppingToken))
         {
-            failover?.Dispose();
+            LogRunAlreadyQueued(watchRun.WatchId);
+            return null;
         }
+
+        // Each retry names the run it retries, so the ones in a row lead back through them
+        var retriesInARow = 0;
+        for (var retried = watchRun.RetryOfRunId; retried is { } id && retriesInARow < MaxRetriesInARow; retriesInARow++)
+        {
+            retried = await dbContext.WatchRuns
+                .Where(wr => wr.Id == id)
+                .Select(wr => wr.RetryOfRunId)
+                .SingleOrDefaultAsync(stoppingToken);
+        }
+
+        if (retriesInARow >= MaxRetriesInARow)
+        {
+            LogRetriesUsedUp(watchRun.WatchId, MaxRetriesInARow);
+            return null;
+        }
+
+        var retry = new WatchRun
+        {
+            WatchId = watchRun.WatchId,
+            CreatedTime = DateTime.UtcNow,
+            Status = WatchRunStatus.Created,
+            RetryOfRunId = watchRun.Id,
+        };
+        dbContext.WatchRuns.Add(retry);
+        return retry;
     }
 
     /// <summary>
@@ -377,99 +590,6 @@ public partial class WatchRunWorker(
         }
     }
 
-    /// <summary>
-    /// The run whose known failure asked for a failover: what the failover and its retry need of it.
-    /// </summary>
-    private sealed record RunAskingForFailover(int Id, int WatchId, int? RetryOfRunId);
-
-    /// <summary>
-    /// Fails the VPN over from the region <paramref name="watchRun"/> ran in, then queues a retry of its watch, unless
-    /// the VPN didn't leave the region, or the run was already the last retry in a row.
-    /// </summary>
-    /// <param name="failover">The failover the run queued, abandoned if it doesn't get to run.</param>
-    private async Task FailOverAsync(
-        RunAskingForFailover watchRun, PendingFailover failover, CancellationToken stoppingToken)
-    {
-        try
-        {
-            using (failover)
-            {
-                await FailOverAndRetryAsync(watchRun, failover, stoppingToken);
-            }
-        }
-        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-        {
-        }
-        catch (Exception ex)
-        {
-            LogFailoverFailed(ex, watchRun.Id);
-        }
-    }
-
-    private async Task FailOverAndRetryAsync(
-        RunAskingForFailover watchRun, PendingFailover failover, CancellationToken stoppingToken)
-    {
-        using var scope = scopeFactory.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<LookoutDbContext>();
-        var earlierRunsQuery = dbContext.WatchRuns
-            .AsNoTracking()
-            .Where(wr => wr.WatchId == watchRun.WatchId && wr.Id < watchRun.Id && wr.Status == WatchRunStatus.Done);
-        // A success starts the known-failure streak over, so only the runs since the watch's previous one are read, as
-        // for the run's event. They also hold every retry in a row before this run, since each retried a known failure.
-        var previousSuccessId = await earlierRunsQuery
-            .Where(WatchEvents.IsSuccessQuery)
-            .MaxAsync(wr => (int?)wr.Id, stoppingToken) ?? 0;
-        var sinceSuccess = await earlierRunsQuery
-            .Where(wr => wr.Id > previousSuccessId)
-            .Select(wr => new { wr.Id, wr.AskedForFailover, wr.Region, wr.RetryOfRunId })
-            .ToListAsync(stoppingToken);
-
-        // Only known failures ask, so crashes add no region to the list
-        var failedRegions = sinceSuccess
-            .Where(wr => wr.AskedForFailover && wr.Region is not null)
-            .Select(wr => wr.Region!)
-            .ToList();
-
-        if (!await failover.FailOverAsync(failedRegions, stoppingToken))
-        {
-            return;
-        }
-
-        // Each retry names the run it retries, so the ones in a row lead back through them
-        var retriesInARow = 0;
-        var byId = sinceSuccess.ToDictionary(wr => wr.Id, wr => wr.RetryOfRunId);
-        for (var retried = watchRun.RetryOfRunId; retried is { } id; retried = byId.GetValueOrDefault(id))
-        {
-            retriesInARow++;
-        }
-
-        if (retriesInARow >= MaxRetriesInARow)
-        {
-            LogRetriesUsedUp(watchRun.WatchId, MaxRetriesInARow);
-            return;
-        }
-
-        // A run queued since, such as a scheduled one, runs in the new region anyway. Whatever its status: the switch let
-        // VPN runs in again once the tunnel was up, so it may have started, or even finished, by now
-        if (await dbContext.WatchRuns.AnyAsync(
-            wr => wr.WatchId == watchRun.WatchId && wr.Id > watchRun.Id, stoppingToken))
-        {
-            LogRunAlreadyQueued(watchRun.WatchId);
-            return;
-        }
-
-        var retry = new WatchRun
-        {
-            WatchId = watchRun.WatchId,
-            CreatedTime = DateTime.UtcNow,
-            Status = WatchRunStatus.Created,
-            RetryOfRunId = watchRun.Id,
-        };
-        dbContext.WatchRuns.Add(retry);
-        await dbContext.SaveChangesAsync(CancellationToken.None);
-        await notifier.RunUpdatedAsync(retry);
-    }
-
     private void Track(Task task)
     {
         lock (_inProgress)
@@ -480,7 +600,7 @@ public partial class WatchRunWorker(
     }
 
     /// <summary>
-    /// Waits for every run and failover in progress, including failovers that runs start meanwhile.
+    /// Waits for every run and switch in progress, including runs started meanwhile.
     /// </summary>
     private async Task WhenInProgressDoneAsync()
     {
@@ -532,7 +652,7 @@ public partial class WatchRunWorker(
             watchRun.FailureReason = string.IsNullOrWhiteSpace(result.FailureReason)
                 ? "The script reported a known failure without giving a reason."
                 : result.FailureReason;
-            watchRun.AskedForFailover = result.Failover;
+            watchRun.AskedToAvoidRegion = result.AvoidRegion;
         }
 
         if (screenshotProblem is null && result.Screenshot is { } keptScreenshot)
@@ -550,20 +670,23 @@ public partial class WatchRunWorker(
 
     [LoggerMessage(
         Level = LogLevel.Information,
-        Message = "Watch {WatchId} isn't retried after its failover: it was retried {Count} times in a row")]
+        Message = "Watch {WatchId} isn't retried after avoiding a region: it was retried {Count} times in a row")]
     private partial void LogRetriesUsedUp(int watchId, int count);
 
     [LoggerMessage(
         Level = LogLevel.Information,
-        Message = "Watch {WatchId} isn't retried after its failover: it has a later run already")]
+        Message = "Watch {WatchId} isn't retried after avoiding a region: it has a later run already")]
     private partial void LogRunAlreadyQueued(int watchId);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Failed to process pending watch runs")]
     private partial void LogPollFailed(Exception exception);
 
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to check whether a VPN switch is due")]
+    private partial void LogPlanFailed(Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Failed to make a VPN switch")]
+    private partial void LogSwitchFailed(Exception exception);
+
     [LoggerMessage(Level = LogLevel.Error, Message = "Failed to execute watch run {WatchRunId}")]
     private partial void LogRunFailed(Exception exception, int watchRunId);
-
-    [LoggerMessage(Level = LogLevel.Error, Message = "Failed to fail the VPN over after watch run {WatchRunId}")]
-    private partial void LogFailoverFailed(Exception exception, int watchRunId);
 }

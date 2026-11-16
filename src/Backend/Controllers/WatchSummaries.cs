@@ -18,7 +18,7 @@ public sealed record WatchRunSummary(
     WatchRunStatus Status,
     string? Content,
     string? FailureReason,
-    bool AskedForFailover,
+    bool AskedToAvoidRegion,
     string? Error,
     string? Region,
     int? RetryOfRunId,
@@ -36,7 +36,7 @@ public sealed record WatchRunSummary(
         Status: run.Status,
         Content: run.Content,
         FailureReason: run.FailureReason,
-        AskedForFailover: run.AskedForFailover,
+        AskedToAvoidRegion: run.AskedToAvoidRegion,
         Error: run.Error,
         Region: run.Region,
         RetryOfRunId: run.RetryOfRunId,
@@ -44,11 +44,19 @@ public sealed record WatchRunSummary(
 }
 
 /// <summary>
-/// A watch with its latest runs, newest first, and when its schedule next creates a run.
+/// A region a watch avoids, as its page lists it.
+/// </summary>
+/// <param name="CreatedTime">When the run asked to avoid it, in UTC.</param>
+/// <param name="RunId">The run whose known failure asked to avoid it, unless that run was deleted.</param>
+public sealed record AvoidedRegionSummary(int Id, string Region, DateTime CreatedTime, int? RunId);
+
+/// <summary>
+/// A watch with its latest runs, newest first, the regions it avoids, and when its schedule next creates a run.
 /// </summary>
 /// <param name="RecentRuns">
 /// At most <see cref="RecentRunCount"/> runs, newest first: as many as were asked for.
 /// </param>
+/// <param name="AvoidedRegions">The regions the watch avoids, oldest first.</param>
 /// <param name="NextRunTime">
 /// When the schedule next creates a run, in UTC, from <see cref="Watch.GetDueTime"/>; <see langword="null"/> if the
 /// watch isn't scheduled, has no script, or has a run waiting to start. A time in the past means any moment now.
@@ -66,6 +74,7 @@ public sealed record WatchSummary(
     int KnownFailureThreshold,
     string? ScriptFileName,
     IReadOnlyList<WatchRunSummary> RecentRuns,
+    IReadOnlyList<AvoidedRegionSummary> AvoidedRegions,
     DateTime? NextRunTime)
 {
     /// <summary>
@@ -82,6 +91,8 @@ public sealed record WatchSummary(
     {
         var rows = await watches
             .AsNoTracking()
+            // Its recent runs and avoided regions each in a query of their own, rather than joined into every pair
+            .AsSplitQuery()
             .WithScheduleState()
             .Select(state => new
             {
@@ -91,6 +102,10 @@ public sealed record WatchSummary(
                     .OrderByDescending(wr => wr.Id)
                     .Take(recentRunCount)
                     .Select(WatchRunSummary.Projection)
+                    .ToList(),
+                AvoidedRegions = state.Watch.AvoidedRegions
+                    .OrderBy(a => a.Id)
+                    .Select(a => new AvoidedRegionSummary(a.Id, a.Region, a.CreatedTime, a.RunId))
                     .ToList(),
             })
             .ToListAsync(cancellationToken);
@@ -107,6 +122,7 @@ public sealed record WatchSummary(
             KnownFailureThreshold: row.State.Watch.KnownFailureThreshold,
             ScriptFileName: row.State.Watch.ScriptFileName,
             RecentRuns: row.RecentRuns,
+            AvoidedRegions: row.AvoidedRegions,
             NextRunTime: row.State.DueTime(now)));
     }
 }

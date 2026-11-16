@@ -41,6 +41,7 @@ import { VpnSwitchForm } from './vpn-switch-form';
                 } @else {
                   gluetun's servers list has no regions for {{ available.provider }}, so the VPN can't switch region.
                 }
+                Runs of watches that use the VPN can't start until it can.
               </p>
             </div>
           } @else {

@@ -13,6 +13,7 @@ import { lastValue } from '../shared/last-value';
 import { Notices } from '../shared/notices';
 import { RelativeTime } from '../shared/relative-time';
 import { injectRunLog } from './run-log';
+import { AvoidedRegion } from './watch.model';
 import { RunPanel } from './run-panel';
 import { describeSchedule } from './schedule';
 import { WatchLog } from './watch-log';
@@ -68,6 +69,8 @@ export class WatchDetail {
   protected readonly selectedRunId = computed(() => this.panel()?.shownRunId() ?? null);
 
   protected readonly starting = signal(false);
+  /** The avoided regions being cleared, by ID. */
+  protected readonly clearing = signal<ReadonlySet<number>>(new Set());
   protected readonly describeError = describeError;
 
   /** The menu's button, which a dialog opened from the menu returns focus to. */
@@ -122,6 +125,19 @@ export class WatchDetail {
       this.notices.fail(`Couldn't start a run: ${describeError(e)}`);
     } finally {
       this.starting.set(false);
+    }
+  }
+
+  protected async clearAvoidedRegion(avoided: AvoidedRegion) {
+    this.clearing.update((ids) => new Set(ids).add(avoided.id));
+    try {
+      await this.api.clearAvoidedRegion(this.id(), avoided.id);
+      this.updates.watchChangedHere(Number(this.id()));
+      this.notices.say(`Cleared ${avoided.region}: the watch's runs may run there again.`);
+    } catch (e) {
+      this.notices.fail(`Couldn't clear ${avoided.region}: ${describeError(e)}`);
+    } finally {
+      this.clearing.update((ids) => new Set([...ids].filter((id) => id !== avoided.id)));
     }
   }
 

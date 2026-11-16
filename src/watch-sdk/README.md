@@ -58,7 +58,7 @@ export default class implements LookoutWatchScript {
       return {
         success: false,
         failureReason: 'The shop blocks this region',
-        failover: true
+        avoidRegion: true
       };
     }
 
@@ -71,11 +71,13 @@ export default class implements LookoutWatchScript {
 Anything else it does, such as throwing or returning something else, ends the run as a crash. It may also return a PNG
 or JPEG of at most 8 MiB as its `screenshot`, such as `await page.screenshot()`.
 
-A known failure that another VPN region could fix, such as the blocked region above, can ask for a failover with
-`failover: true`: for a watch that uses the VPN, Lookout switches the VPN to a region the watch hasn't failed in since
-its last success, and runs the watch again there, up to 3 times in a row. Leave it out for problems another region
-can't fix, such as a sold-out item, since the switch moves every watch that uses the VPN. A watch that doesn't use the
-VPN only records the request.
+A known failure that another VPN region could fix, such as the blocked region above, can ask its watch to avoid the
+region with `avoidRegion: true`: for a watch that uses the VPN, Lookout adds the region to the ones the watch avoids,
+and tries the watch again, up to 3 times in a row. Before each of the watch's runs, Lookout switches the VPN away from
+any region it avoids, and the region stays avoided until the Owner clears it on the watch's page, even after a success
+elsewhere. Leave it out for problems another region can't fix, such as a sold-out item, since a switch moves every
+watch that uses the VPN. A watch that avoids every region it may use crashes until the Owner clears one. A watch that
+doesn't use the VPN only records the request. It used to be `failover: true`, which Lookout now ignores.
 
 Lookout runs only the file you upload, so a script must:
 

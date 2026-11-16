@@ -17,6 +17,10 @@ export class FakeLiveUpdates {
     this.runUpdated.next(run);
   }
 
+  watchChangedHere(watchId: number) {
+    this.watchChanged.next(watchId);
+  }
+
   runsDeletedHere(watchId: number, runIds: number[]) {
     this.runsDeleted.next({ watchId, runIds });
   }

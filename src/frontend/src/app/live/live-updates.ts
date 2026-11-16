@@ -97,6 +97,11 @@ export class LiveUpdates {
     this.runUpdated.next(run);
   }
 
+  /** Passes on a change this page made to a watch; see {@link runCreatedHere}. */
+  watchChangedHere(watchId: number) {
+    this.watchChanged.next(watchId);
+  }
+
   /** Passes on runs this page deleted; see {@link runCreatedHere}. `runIds` may be empty when they aren't known. */
   runsDeletedHere(watchId: number, runIds: number[]) {
     this.runsDeleted.next({ watchId, runIds });

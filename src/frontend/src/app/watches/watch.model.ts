@@ -50,13 +50,13 @@ export interface WatchRunSummary {
   content: string | null;
   /** The script's reason, when it returned a known failure. */
   failureReason: string | null;
-  /** Whether the known failure asked to fail the VPN over to another region. */
-  askedForFailover: boolean;
+  /** Whether the known failure asked for its watch to avoid the region it ran in. */
+  askedToAvoidRegion: boolean;
   /** Why the run crashed. */
   error: string | null;
-  /** The VPN's region while the run ran; `null` if it didn't use the VPN, or before the VPN's first switch. */
+  /** The VPN's region while the run ran; `null` if it didn't use the VPN, or couldn't start. */
   region: string | null;
-  /** The run this one retries, when Lookout queued it after a failover. */
+  /** The run this one retries, when Lookout queued it after a known failure that asked to avoid its region. */
   retryOfRunId: number | null;
   hasScreenshot: boolean;
 }
@@ -74,8 +74,20 @@ export interface WatchSummary extends CreateWatchDto {
   scriptFileName: string | null;
   /** At most 24, newest first. */
   recentRuns: WatchRunSummary[];
+  /** The VPN regions the watch's runs no longer run in, oldest first. */
+  avoidedRegions: AvoidedRegion[];
   /** When the schedule next creates a run; `null` if it isn't scheduled. In the past means any moment now. */
   nextRunTime: string | null;
+}
+
+/** A region a watch avoids. Mirrors `AvoidedRegionSummary` in src/Backend/Controllers/WatchSummaries.cs. */
+export interface AvoidedRegion {
+  id: number;
+  region: string;
+  /** When the run asked to avoid it. */
+  createdTime: string;
+  /** The run whose known failure asked to avoid it, unless that run was deleted. */
+  runId: number | null;
 }
 
 /** When a cron expression would run a watch. Mirrors `CronPreview` in src/Backend/Controllers/CronController.cs. */

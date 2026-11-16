@@ -15,7 +15,7 @@ export function runSummary(id: number, overrides: Partial<WatchRunSummary> = {})
     status: WatchRunStatus.Done,
     content: `seen by run ${id}`,
     failureReason: null,
-    askedForFailover: false,
+    askedToAvoidRegion: false,
     error: null,
     region: null,
     retryOfRunId: null,
@@ -49,6 +49,7 @@ export function watchSummary(overrides: Partial<WatchSummary> = {}): WatchSummar
     knownFailureThreshold: 3,
     scriptFileName: 'bot-detection.ts',
     recentRuns: [runSummary(2, { content: 'Normal' }), runSummary(1, { content: 'Normal' })],
+    avoidedRegions: [],
     nextRunTime: null,
     ...overrides,
   };

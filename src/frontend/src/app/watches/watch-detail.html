@@ -43,6 +43,28 @@
             }
           </dd>
         </div>
+        @if (shownWatch.avoidedRegions.length > 0) {
+          <div class="avoided">
+            <dt>Avoids</dt>
+            <dd>
+              <ul class="avoided-regions">
+                @for (avoided of shownWatch.avoidedRegions; track avoided.id) {
+                  <li>
+                    {{ avoided.region }}
+                    <button
+                      type="button"
+                      class="button button-quiet"
+                      [disabled]="clearing().has(avoided.id)"
+                      (click)="clearAvoidedRegion(avoided)"
+                    >
+                      Clear<span class="visually-hidden"> {{ avoided.region }}</span>
+                    </button>
+                  </li>
+                }
+              </ul>
+            </dd>
+          </div>
+        }
       </dl>
     </div>
 
