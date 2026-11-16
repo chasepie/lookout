@@ -91,6 +91,8 @@ public sealed record WatchSummary(
     {
         var rows = await watches
             .AsNoTracking()
+            // Its recent runs and avoided regions each in a query of their own, rather than joined into every pair
+            .AsSplitQuery()
             .WithScheduleState()
             .Select(state => new
             {
