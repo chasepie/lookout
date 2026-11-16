@@ -313,11 +313,10 @@ public partial class Vpn(
         return planned.Kind switch
         {
             SwitchKind.Rotation => settings.RotationEnabled && settings.NextRotationTime <= UtcNow,
-            SwitchKind.ForWatch => (await dbContext.AvoidedRegions
-                    .Where(a => a.WatchId == planned.ForWatchId && a.Watch.UseVpn)
-                    .Select(a => a.Region)
-                    .ToListAsync(cancellationToken))
-                .Contains(settings.CurrentRegion, StringComparer.OrdinalIgnoreCase),
+            SwitchKind.ForWatch => await dbContext.Watches.AnyAsync(
+                    w => w.Id == planned.ForWatchId && w.UseVpn, cancellationToken)
+                && (await dbContext.GetAvoidedRegionsAsync(planned.ForWatchId!.Value, cancellationToken))
+                    .Contains(settings.CurrentRegion, StringComparer.OrdinalIgnoreCase),
             _ => true,
         };
     }
@@ -535,13 +534,6 @@ public partial class Vpn(
         return settings.PickRotationRegion(regions, avoidedByWatches, Random.Shared)
             ?? throw new InvalidOperationException(DescribeNoRotationRegion(kind, settings, regions));
     }
-
-    private static Task<List<string>> GetAvoidedRegionsAsync(
-        LookoutDbContext dbContext, int watchId, CancellationToken cancellationToken) =>
-        dbContext.AvoidedRegions
-            .Where(a => a.WatchId == watchId)
-            .Select(a => a.Region)
-            .ToListAsync(cancellationToken);
 
     /// <summary>
     /// Why <see cref="VpnSettings.PickRotationRegion"/> found no region in <paramref name="regions"/>.

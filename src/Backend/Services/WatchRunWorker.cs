@@ -251,10 +251,7 @@ public partial class WatchRunWorker(
                 continue;
             }
 
-            var avoided = await dbContext.AvoidedRegions
-                .Where(a => a.WatchId == run.WatchId)
-                .Select(a => a.Region)
-                .ToListAsync(stoppingToken);
+            var avoided = await dbContext.GetAvoidedRegionsAsync(run.WatchId, stoppingToken);
             if (!avoided.Contains(region, StringComparer.OrdinalIgnoreCase))
             {
                 await StartRunAsync(dbContext, run.Id, useVpn: true, region, stoppingToken);
@@ -463,10 +460,7 @@ public partial class WatchRunWorker(
         string region,
         CancellationToken stoppingToken)
     {
-        var avoided = await dbContext.AvoidedRegions
-            .Where(a => a.WatchId == watchRun.WatchId)
-            .Select(a => a.Region)
-            .ToListAsync(stoppingToken);
+        var avoided = await dbContext.GetAvoidedRegionsAsync(watchRun.WatchId, stoppingToken);
         if (!avoided.Contains(region, StringComparer.OrdinalIgnoreCase))
         {
             dbContext.AvoidedRegions.Add(new AvoidedRegion
