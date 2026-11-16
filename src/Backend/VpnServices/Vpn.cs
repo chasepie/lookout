@@ -400,6 +400,8 @@ public partial class Vpn(
         catch (Exception ex)
             when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
+            // Such as gluetun not answering: whether a watch has a region left isn't known then, so its run waits rather
+            // than crashing for the VPN's problem
             await RecordOutcomeAsync(kind, dbContext, settings, null, null, ex.Message);
             return (null, false);
         }

@@ -299,6 +299,30 @@ public sealed class VpnTests
     }
 
     [TestMethod]
+    public async Task ARunInAnAvoidedRegionWaitsRatherThanCrashingWhileGluetunCantBeReached()
+    {
+        // Its regions can't be read, so whether the watch has a region left isn't known
+        await using var host = await StartAsync([Albania, Belgium], current: Albania);
+        host.Gluetun.Unreachable = true;
+        var watchId = await host.AddVpnWatchAsync(Ct, Albania);
+
+        await host.Client.QueueRunAsync(watchId, Ct);
+        VpnSettings settings = null!;
+        await host.WaitUntilAsync(async () => (settings = await host.GetSettingsAsync(Ct)).LastError is not null, Ct);
+        var failed = host.Now;
+        host.Gluetun.Unreachable = false;
+        await host.AdvanceAsync(TimeSpan.FromSeconds(50), Ct);
+
+        Assert.StartsWith("Couldn't reach gluetun", settings.LastError!);
+        var waiting = await host.GetRunAsync(watchId, Ct);
+        Assert.AreEqual(WatchRunStatus.Created, waiting.Status);
+        Assert.IsNull(waiting.Error);
+        var run = await host.WaitForRunAsync(watchId, 0, Ct);
+        Assert.AreEqual(Belgium, run.Region);
+        Assert.IsGreaterThanOrEqualTo(failed.AddMinutes(1), host.Now);
+    }
+
+    [TestMethod]
     public async Task RotationPrefersARegionNoWatchAvoids()
     {
         await using var host = await StartAsync([Albania, Belgium, Chile], current: Albania, settings =>
