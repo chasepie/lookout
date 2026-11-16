@@ -146,6 +146,18 @@ internal sealed class VpnHost : IAsyncDisposable
         Client.CreateWatchAsync("Prices", cancellationToken);
 
     /// <summary>
+    /// Turns the watch's <c>UseVpn</c> off, as the Owner would.
+    /// </summary>
+    public async Task TurnVpnOffAsync(int watchId, CancellationToken cancellationToken)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<LookoutDbContext>();
+        await dbContext.Watches
+            .Where(w => w.Id == watchId)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(w => w.UseVpn, false), cancellationToken);
+    }
+
+    /// <summary>
     /// Clears every region the watch avoids, as the Owner would.
     /// </summary>
     public async Task ClearAvoidedRegionsAsync(int watchId, CancellationToken cancellationToken)

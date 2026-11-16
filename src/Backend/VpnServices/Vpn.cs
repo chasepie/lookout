@@ -301,15 +301,18 @@ public partial class Vpn(
 
     /// <summary>
     /// Whether a planned switch should still be made: a rotation only while one is still due, since the Owner may have
-    /// turned rotation off or put it back, and a switch for a watch only while the watch still avoids the region,
-    /// since the Owner may have cleared it.
+    /// turned rotation off or put it back, and a switch for a watch only while the watch still uses the VPN and avoids
+    /// the region, since the Owner may have turned its VPN off or cleared the region.
     /// </summary>
     private async Task<bool> IsStillNeededAsync(
         VpnSwitch planned, LookoutDbContext dbContext, VpnSettings settings, CancellationToken cancellationToken) =>
         planned.Kind switch
         {
             SwitchKind.Rotation => settings.RotationEnabled && settings.NextRotationTime <= UtcNow,
-            SwitchKind.ForWatch => (await GetAvoidedRegionsAsync(dbContext, planned.ForWatchId!.Value, cancellationToken))
+            SwitchKind.ForWatch => (await dbContext.AvoidedRegions
+                    .Where(a => a.WatchId == planned.ForWatchId && a.Watch.UseVpn)
+                    .Select(a => a.Region)
+                    .ToListAsync(cancellationToken))
                 .Contains(settings.CurrentRegion, StringComparer.OrdinalIgnoreCase),
             _ => true,
         };
