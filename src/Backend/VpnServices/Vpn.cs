@@ -305,8 +305,12 @@ public partial class Vpn(
     /// the region, since the Owner may have turned its VPN off or cleared the region.
     /// </summary>
     private async Task<bool> IsStillNeededAsync(
-        VpnSwitch planned, LookoutDbContext dbContext, VpnSettings settings, CancellationToken cancellationToken) =>
-        planned.Kind switch
+        VpnSwitch planned,
+        LookoutDbContext dbContext,
+        VpnSettings settings,
+        CancellationToken cancellationToken)
+    {
+        return planned.Kind switch
         {
             SwitchKind.Rotation => settings.RotationEnabled && settings.NextRotationTime <= UtcNow,
             SwitchKind.ForWatch => (await dbContext.AvoidedRegions
@@ -316,6 +320,7 @@ public partial class Vpn(
                 .Contains(settings.CurrentRegion, StringComparer.OrdinalIgnoreCase),
             _ => true,
         };
+    }
 
     private async Task<bool> IsRotationDueAsync(CancellationToken cancellationToken)
     {
