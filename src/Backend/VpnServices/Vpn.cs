@@ -426,7 +426,17 @@ public partial class Vpn(
 
         var planned = new VpnSwitch(kind, region, forWatchId, UtcNow);
         _progress = new VpnSwitchProgress(region, WaitingForRun: true, planned.PlannedTime);
-        await notifier.VpnChangedAsync();
+        try
+        {
+            await notifier.VpnChangedAsync();
+        }
+        catch
+        {
+            // The plan is lost, so it mustn't go on showing
+            _progress = null;
+            throw;
+        }
+
         return (planned, false);
     }
 
