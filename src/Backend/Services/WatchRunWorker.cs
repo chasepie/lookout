@@ -289,7 +289,10 @@ public partial class WatchRunWorker(
     /// </param>
     /// <param name="cantStart">Why the run ends as a crash without running its script, if it does.</param>
     private async Task ExecuteRunAsync(
-        int runId, VpnRun? vpnRun, string? cantStart, CancellationToken stoppingToken)
+        int runId,
+        VpnRun? vpnRun,
+        string? cantStart,
+        CancellationToken stoppingToken)
     {
         using var scope = scopeFactory.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<LookoutDbContext>();
@@ -326,7 +329,10 @@ public partial class WatchRunWorker(
 
         // Saved with the run, so the watch's next run can't start in the region before it's avoided
         var avoidsRegion = watchRun.AskedToAvoidRegion && vpnRun?.Region is not null;
-        var retry = avoidsRegion ? await AvoidRegionAsync(dbContext, watchRun, vpnRun!.Region!, stoppingToken) : null;
+        var retry = avoidsRegion
+            ? await AvoidRegionAsync(dbContext, watchRun, vpnRun!.Region!, stoppingToken)
+            : null;
+
         await FinishRunAsync(scope, dbContext, watchRun, stoppingToken);
         if (retry is not null)
         {
@@ -346,7 +352,10 @@ public partial class WatchRunWorker(
     /// </summary>
     /// <returns>The retry, if there is one.</returns>
     private async Task<WatchRun?> AvoidRegionAsync(
-        LookoutDbContext dbContext, WatchRun watchRun, string region, CancellationToken stoppingToken)
+        LookoutDbContext dbContext,
+        WatchRun watchRun,
+        string region,
+        CancellationToken stoppingToken)
     {
         var avoided = await dbContext.AvoidedRegions
             .Where(a => a.WatchId == watchRun.WatchId)

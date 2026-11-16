@@ -27,9 +27,15 @@ public class LookoutDbContext(DbContextOptions<LookoutDbContext> options) : DbCo
         modelBuilder.Entity<Subscription>().OwnsOne(s => s.Pushover);
         modelBuilder.Entity<AvoidedRegion>(avoided =>
         {
-            avoided.HasIndex(a => new { a.WatchId, a.Region }).IsUnique();
+            avoided
+                .HasIndex(a => new { a.WatchId, a.Region })
+                .IsUnique();
             // Deleting the run that asked doesn't clear the region: only the Owner does
-            avoided.HasOne(a => a.Run).WithMany().HasForeignKey(a => a.RunId).OnDelete(DeleteBehavior.SetNull);
+            avoided
+                .HasOne(a => a.Run)
+                .WithMany()
+                .HasForeignKey(a => a.RunId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
     }
 
