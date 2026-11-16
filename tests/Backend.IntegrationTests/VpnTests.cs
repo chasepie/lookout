@@ -302,6 +302,32 @@ public sealed class VpnTests
     }
 
     [TestMethod]
+    public async Task APlannedSwitchForAWatchIsDroppedIfTheOwnerDeletesItsPendingRunWhileItWaits()
+    {
+        await using var host = await StartAsync([Albania, Belgium], current: Albania);
+        var hold = HoldFirstRun(host);
+        var otherId = await host.AddVpnWatchAsync(Ct);
+        var avoidingId = await host.AddVpnWatchAsync(Ct, Albania);
+        await host.Client.QueueRunAsync(otherId, Ct);
+        await host.WaitUntilAsync(() => host.Runner.InProgress == 1, Ct);
+        await host.Client.QueueRunAsync(avoidingId, Ct);
+        await host.WaitUntilAsync(() => host.Vpn.Progress is { WaitingForRun: true }, Ct);
+
+        using (var response = await host.Client.DeleteAsync($"/api/Watches/{avoidingId}/runs", Ct))
+        {
+            response.EnsureSuccessStatusCode();
+        }
+
+        hold.SetResult();
+        await host.WaitForRunAsync(otherId, 0, Ct);
+        await host.AdvanceUntilAsync(() => host.Vpn.Progress is null, Ct);
+        await host.AdvanceAsync(TimeSpan.FromSeconds(5), Ct);
+
+        Assert.IsEmpty(host.Gluetun.SwitchedTo);
+        Assert.IsNull(host.Vpn.Progress);
+    }
+
+    [TestMethod]
     public async Task AFailedSwitchForAWatchIsTriedAgainAfterTheRetryDelayAndNotBefore()
     {
         await using var host = await StartAsync([Albania, Belgium], current: Albania);

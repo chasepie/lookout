@@ -301,8 +301,9 @@ public partial class Vpn(
 
     /// <summary>
     /// Whether a planned switch should still be made: a rotation only while one is still due, since the Owner may have
-    /// turned rotation off or put it back, and a switch for a watch only while the watch still uses the VPN and avoids
-    /// the region, since the Owner may have turned its VPN off or cleared the region.
+    /// turned rotation off or put it back, and a switch for a watch only while the watch still uses the VPN, has a
+    /// pending run, and avoids the region, since the Owner may have turned its VPN off, deleted its runs, or cleared the
+    /// region.
     /// </summary>
     private async Task<bool> IsStillNeededAsync(
         VpnSwitch planned,
@@ -314,7 +315,10 @@ public partial class Vpn(
         {
             SwitchKind.Rotation => settings.RotationEnabled && settings.NextRotationTime <= UtcNow,
             SwitchKind.ForWatch => await dbContext.Watches.AnyAsync(
-                    w => w.Id == planned.ForWatchId && w.UseVpn, cancellationToken)
+                    w => w.Id == planned.ForWatchId
+                        && w.UseVpn
+                        && w.WatchRuns.Any(wr => wr.Status == WatchRunStatus.Created),
+                    cancellationToken)
                 && (await dbContext.GetAvoidedRegionsAsync(planned.ForWatchId!.Value, cancellationToken))
                     .Contains(settings.CurrentRegion, StringComparer.OrdinalIgnoreCase),
             _ => true,
