@@ -56,7 +56,7 @@ jobs:
         run: npm run build -w src/watch-sdk
 
       - name: Lint TypeScript
-        run: npm run lint
+        run: npm run lint:js
 
       - name: Typecheck TypeScript
         run: npm run typecheck
