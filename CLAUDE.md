@@ -9,13 +9,15 @@ A monorepo with a .NET solution (`Lookout.slnx`) and npm workspaces (root `packa
   `LOOKOUT_OWNER_USERNAME` and `LOOKOUT_OWNER_PASSWORD` (`Auth/`), and outside `localhost` it must be served over HTTPS,
   behind a reverse proxy in production (`Hosting/`); see `docs/security.md`. It calls the Runner over HTTP
   (`LOOKOUT_RUNNER_URL`). It also rotates the VPN between regions through gluetun's control server (`VpnServices/`).
-  A run's known failure can ask for its watch to avoid the region it ran in, which then holds until the Owner clears it:
-  the watch is retried, and before each of its runs the VPN switches away from any region it avoids. The region list
-  comes from gluetun's servers list in `GLUETUN_DATA_DIR`, limited to `GLUETUN_SERVER_REGIONS`, which gluetun also gets
-  as `SERVER_REGIONS`. It notifies the Owner of what runs show through notification channels
-  (`Notifications/`; Pushover so far), working out each finished run's event from the watch's earlier runs and sending
-  in the background; notifications link to their runs when `LOOKOUT_PUBLIC_URL` is set. The SQLite schema is managed
-  with EF Core migrations in `Database/Migrations`: after changing the model, run `dotnet tool restore` once, then
+  One loop, `WatchRunWorker`, starts runs and makes the switches `Vpn` plans, so a switch waits for the VPN runs in
+  progress and no VPN run starts during one. A run's known failure can ask for its watch to avoid the region it ran in,
+  which then holds until the Owner clears it: the watch is retried, and before each of its runs the VPN switches away
+  from any region it avoids. The region list comes from gluetun's servers list in `GLUETUN_DATA_DIR`, limited to
+  `GLUETUN_SERVER_REGIONS`, which gluetun also gets as `SERVER_REGIONS`. It notifies the Owner of what runs show
+  through notification channels (`Notifications/`; Pushover so far), working out each finished run's event from the
+  watch's earlier runs and sending in the background; notifications link to their runs when `LOOKOUT_PUBLIC_URL` is
+  set. The SQLite schema is managed with EF Core migrations in `Database/Migrations`: after changing the model, run
+  `dotnet tool restore` once, then
   `dotnet ef migrations add <Name> --project src/Backend --output-dir Database/Migrations`. In Development,
   `DevelopmentDataSeeder` gives a database with no watches one watch per script in `examples/`.
 - `src/Runner/`: ASP.NET Core service that runs watch scripts, sandboxed with Node's permission model in a container
