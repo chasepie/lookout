@@ -170,6 +170,33 @@ describe('WatchDetail', () => {
     expect(notices()).toContain("Cleared Albania: the watch's runs may run there again.");
   });
 
+  it('keeps a region being cleared disabled while another one finishes clearing', async () => {
+    await harness.navigateByUrl('/watches/1');
+    const avoiding = watchSummary({
+      avoidedRegions: [
+        { id: 7, region: 'Albania', createdTime: minutesAgo(5), runId: 2 },
+        { id: 8, region: 'Belgium', createdTime: minutesAgo(4), runId: 3 },
+      ],
+    });
+    await respond(request('GET', watchUrl), avoiding);
+    await answer(request('GET', runsUrl), log);
+
+    button('Clear Albania').click();
+    button('Clear Belgium').click();
+    await respond(request('DELETE', `${watchUrl}/avoided-regions/7`), null);
+    await respond(request('GET', watchUrl), watchSummary({ avoidedRegions: [avoiding.avoidedRegions[1]] }));
+    // Not settled: Belgium's request is still out
+    await vi.waitFor(() => {
+      TestBed.tick();
+      expect(textOf(page().querySelector('.avoided'))).toBe('Avoids Belgium Clear Belgium');
+    });
+
+    expect(button('Clear Belgium').disabled).toBe(true);
+
+    await respond(request('DELETE', `${watchUrl}/avoided-regions/8`), null);
+    await answer(request('GET', watchUrl), watchSummary({ avoidedRegions: [] }));
+  });
+
   it("says so when it couldn't clear an avoided region", async () => {
     await harness.navigateByUrl('/watches/1');
     await respond(

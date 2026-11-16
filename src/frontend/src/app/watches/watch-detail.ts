@@ -69,8 +69,8 @@ export class WatchDetail {
   protected readonly selectedRunId = computed(() => this.panel()?.shownRunId() ?? null);
 
   protected readonly starting = signal(false);
-  /** The avoided region being cleared, if one is. */
-  protected readonly clearing = signal<number | null>(null);
+  /** The avoided regions being cleared, by ID. */
+  protected readonly clearing = signal<ReadonlySet<number>>(new Set());
   protected readonly describeError = describeError;
 
   /** The menu's button, which a dialog opened from the menu returns focus to. */
@@ -129,7 +129,7 @@ export class WatchDetail {
   }
 
   protected async clearAvoidedRegion(avoided: AvoidedRegion) {
-    this.clearing.set(avoided.id);
+    this.clearing.update((ids) => new Set(ids).add(avoided.id));
     try {
       await this.api.clearAvoidedRegion(this.id(), avoided.id);
       this.updates.watchChangedHere(Number(this.id()));
@@ -137,7 +137,7 @@ export class WatchDetail {
     } catch (e) {
       this.notices.fail(`Couldn't clear ${avoided.region}: ${describeError(e)}`);
     } finally {
-      this.clearing.set(null);
+      this.clearing.update((ids) => new Set([...ids].filter((id) => id !== avoided.id)));
     }
   }
 

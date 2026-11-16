@@ -54,7 +54,7 @@
                     <button
                       type="button"
                       class="button button-quiet"
-                      [disabled]="clearing() === avoided.id"
+                      [disabled]="clearing().has(avoided.id)"
                       (click)="clearAvoidedRegion(avoided)"
                     >
                       Clear<span class="visually-hidden"> {{ avoided.region }}</span>
