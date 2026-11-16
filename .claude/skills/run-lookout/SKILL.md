@@ -45,7 +45,8 @@ The sample scripts in `watch-scripts/`:
 - `asks-to-avoid-region.ts` holds its session for 10 seconds, then returns a known failure with `avoidRegion: true`. A
   VPN watch running it avoids each region it runs in and gets retried, three times in a row at most, each retry
   switching the VPN away first. Clear its avoided regions with
-  `$L api DELETE /api/Watches/$f/avoided-regions/<id>` (list them with `GET`).
+  `$L api DELETE /api/Watches/$f/avoided-regions/<id>`; `$L api GET /api/Watches/$f` lists them, with their ids, as
+  `avoidedRegions`.
 
 ## Run (human path)
 
