@@ -127,6 +127,7 @@ npm run test:ci -w src/frontend         # ng test, once
 npx playwright install chromium-headless-shell
 npm test -w src/watch-sdk
 npm run lint && npm run typecheck
+npm run lint:md                          # every Markdown file, by .markdownlint-cli2.jsonc
 dotnet format whitespace Lookout.slnx --verify-no-changes
 ```
 

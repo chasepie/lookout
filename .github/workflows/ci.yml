@@ -47,6 +47,10 @@ jobs:
       - name: Check .NET formatting
         run: dotnet format whitespace Lookout.slnx --verify-no-changes
 
+      # Rules and ignored files are in .markdownlint-cli2.jsonc
+      - name: Lint Markdown
+        run: npm run lint:md
+
       # The SDK goes before the TypeScript checks: the Runner and examples resolve its types from dist/
       - name: Build watch SDK
         run: npm run build -w src/watch-sdk
