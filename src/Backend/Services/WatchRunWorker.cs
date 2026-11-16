@@ -212,8 +212,9 @@ public partial class WatchRunWorker(
             .ToListAsync(stoppingToken);
 
         // Read once, for the VPN runs that start this turn: no switch is in progress while they do, and only the loop
-        // starts one
+        // starts one. Likewise the regions their watches avoid, which only their runs add to, and none of them is running
         string? region = null;
+        ILookup<int, string>? avoidedByWatch = null;
         var regionRead = false;
         foreach (var run in pending)
         {
@@ -251,7 +252,9 @@ public partial class WatchRunWorker(
                 continue;
             }
 
-            var avoided = await dbContext.GetAvoidedRegionsAsync(run.WatchId, stoppingToken);
+            avoidedByWatch ??= await dbContext.GetAvoidedRegionsAsync(
+                [.. pending.Where(r => r.UseVpn).Select(r => r.WatchId)], stoppingToken);
+            var avoided = avoidedByWatch[run.WatchId].ToList();
             if (!avoided.Contains(region, StringComparer.OrdinalIgnoreCase))
             {
                 await StartRunAsync(dbContext, run.Id, useVpn: true, region, stoppingToken);
