@@ -88,12 +88,12 @@ public sealed class RunResultTests
     }
 
     [TestMethod]
-    public async Task AKnownFailuresFailoverRequestIsPassedOn()
+    public async Task AKnownFailuresRequestToAvoidItsRegionIsPassedOn()
     {
-        var result = await RunAsync(new { write = new { success = false, failureReason = "Blocked", failover = true } });
+        var result = await RunAsync(new { write = new { success = false, failureReason = "Blocked", avoidRegion = true } });
 
         Assert.AreEqual("Blocked", result.FailureReason);
-        Assert.IsTrue(result.Failover);
+        Assert.IsTrue(result.AvoidRegion);
     }
 
     [TestMethod]

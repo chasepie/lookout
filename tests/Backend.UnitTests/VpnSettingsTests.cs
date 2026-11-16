@@ -73,7 +73,7 @@ public sealed class VpnSettingsTests
 
         for (var i = 0; i < 20; i++)
         {
-            Assert.AreEqual("Switzerland", settings.PickRotationRegion(Regions, random));
+            Assert.AreEqual("Switzerland", settings.PickRotationRegion(Regions, [], random));
         }
     }
 
@@ -84,11 +84,33 @@ public sealed class VpnSettingsTests
         settings.CurrentRegion = "Netherlands";
         settings.ExcludedRegions = ["Albania", "Switzerland"];
 
-        Assert.IsNull(settings.PickRotationRegion(Regions, new Random(1)));
+        Assert.IsNull(settings.PickRotationRegion(Regions, [], new Random(1)));
     }
 
     [TestMethod]
-    public void FailoverPicksNeitherAnExcludedRegionNorTheCurrentOneNorOneTheWatchFailedIn()
+    public void RotationPrefersARegionNoWatchAvoids()
+    {
+        var settings = Settings();
+        settings.CurrentRegion = "Netherlands";
+        var random = new Random(1);
+
+        for (var i = 0; i < 20; i++)
+        {
+            Assert.AreEqual("Switzerland", settings.PickRotationRegion(Regions, ["albania"], random));
+        }
+    }
+
+    [TestMethod]
+    public void RotationStillPicksARegionWhenWatchesAvoidEveryOne()
+    {
+        var settings = Settings();
+        settings.CurrentRegion = "Netherlands";
+
+        Assert.IsNotNull(settings.PickRotationRegion(Regions, ["Albania", "Switzerland"], new Random(1)));
+    }
+
+    [TestMethod]
+    public void AWatchsRegionIsNeitherExcludedNorTheCurrentOneNorOneItAvoids()
     {
         var settings = Settings();
         settings.CurrentRegion = "Netherlands";
@@ -97,18 +119,45 @@ public sealed class VpnSettingsTests
 
         for (var i = 0; i < 20; i++)
         {
-            Assert.AreEqual("Sweden", settings.PickFailoverRegion(
-                ["Albania", "Netherlands", "Switzerland", "Sweden"], ["switzerland"], random));
+            Assert.AreEqual("Sweden", settings.PickRegionForWatch(
+                ["Albania", "Netherlands", "Switzerland", "Sweden"], ["switzerland"], [], random));
         }
     }
 
     [TestMethod]
-    public void FailoverPicksNothingWhenTheWatchFailedInEveryOtherRegion()
+    public void AWatchsRegionIsOneNoOtherWatchAvoidsIfThereIsOne()
+    {
+        var settings = Settings();
+        settings.CurrentRegion = "Netherlands";
+        string[] regions = ["Albania", "Netherlands", "Switzerland", "Sweden"];
+        var random = new Random(1);
+
+        for (var i = 0; i < 20; i++)
+        {
+            Assert.AreEqual("Sweden", settings.PickRegionForWatch(regions, ["Netherlands"], ["albania", "Switzerland"], random));
+        }
+
+        Assert.AreEqual("Albania", settings.PickRegionForWatch(
+            regions, ["Netherlands", "Switzerland", "Sweden"], ["Albania"], random), "Avoided by others is only a preference.");
+    }
+
+    [TestMethod]
+    public void AWatchThatAvoidsEveryOtherRegionGetsNone()
     {
         var settings = Settings();
         settings.CurrentRegion = "Netherlands";
 
-        Assert.IsNull(settings.PickFailoverRegion(Regions, ["Albania", "Switzerland"], new Random(1)));
+        Assert.IsNull(settings.PickRegionForWatch(Regions, ["Albania", "Switzerland"], [], new Random(1)));
+    }
+
+    [TestMethod]
+    public void AWatchHasARegionLeftUnlessItAvoidsEveryOneTheOwnerHasntExcluded()
+    {
+        var settings = Settings();
+        settings.ExcludedRegions = ["Albania"];
+
+        Assert.IsTrue(settings.HasRegionLeftFor(Regions, ["Netherlands"]));
+        Assert.IsFalse(settings.HasRegionLeftFor(Regions, ["netherlands", "Switzerland"]));
     }
 
     [TestMethod]

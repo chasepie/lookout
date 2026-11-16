@@ -148,6 +148,50 @@ describe('WatchDetail', () => {
     expect(entries()[0].classList).toContain('entry-arrived');
   });
 
+  it('lists the regions the watch avoids, and clears one on request', async () => {
+    await harness.navigateByUrl('/watches/1');
+    const avoiding = watchSummary({
+      avoidedRegions: [
+        { id: 7, region: 'Albania', createdTime: minutesAgo(5), runId: 2 },
+        { id: 8, region: 'Belgium', createdTime: minutesAgo(4), runId: 3 },
+      ],
+    });
+    await respond(request('GET', watchUrl), avoiding);
+    await answer(request('GET', runsUrl), log);
+
+    expect(textOf(page().querySelector('.avoided'))).toBe('Avoids Albania Clear Albania Belgium Clear Belgium');
+
+    button('Clear Albania').click();
+    await respond(request('DELETE', `${watchUrl}/avoided-regions/7`), null);
+    await answer(request('GET', watchUrl), watchSummary({ avoidedRegions: [avoiding.avoidedRegions[1]] }));
+    await stable();
+
+    expect(textOf(page().querySelector('.avoided'))).toBe('Avoids Belgium Clear Belgium');
+    expect(notices()).toContain("Cleared Albania: the watch's runs may run there again.");
+  });
+
+  it("says so when it couldn't clear an avoided region", async () => {
+    await harness.navigateByUrl('/watches/1');
+    await respond(
+      request('GET', watchUrl),
+      watchSummary({ avoidedRegions: [{ id: 7, region: 'Albania', createdTime: minutesAgo(5), runId: null }] }),
+    );
+    await answer(request('GET', runsUrl), log);
+
+    button('Clear Albania').click();
+    await fail(request('DELETE', `${watchUrl}/avoided-regions/7`), 404);
+    await stable();
+
+    expect(notices()).toContain("Couldn't clear Albania");
+    expect(button('Clear Albania').disabled).toBe(false);
+  });
+
+  it('lists no avoided regions when the watch avoids none', async () => {
+    await open();
+
+    expect(page().querySelector('.avoided')).toBeNull();
+  });
+
   it('deletes the watch once the Owner confirms', async () => {
     await open();
 
@@ -356,25 +400,25 @@ describe('WatchDetail', () => {
       expect(panel().querySelector('#error-title')).toBeNull();
     });
 
-    it('shows the region it ran in, that it asked for a failover, and the run it retries', async () => {
+    it('shows the region it ran in, that it asked to avoid it, and the run it retries', async () => {
       await open('/watches/1/runs/3');
       await answer(
         request('GET', `${runsUrl}/3`),
-        fullRun(3, { content: null, failureReason: 'Blocked', askedForFailover: true, region: 'Belgium', retryOfRunId: 2 }),
+        fullRun(3, { content: null, failureReason: 'Blocked', askedToAvoidRegion: true, region: 'Belgium', retryOfRunId: 2 }),
       );
 
-      expect(textOf(panel().querySelector('.failover'))).toBe('Asked for failover');
+      expect(textOf(panel().querySelector('.avoid-region'))).toBe('Asked to avoid its region');
       expect(textOf(panel().querySelector('.retry-of'))).toBe('Retry of run #2');
       expect(panel().querySelector('.retry-of a')?.getAttribute('href')).toBe('/watches/1/runs/2');
       expect([...panel().querySelectorAll('.timings dt')].map(textOf)).toEqual(['Waited', 'Ran', 'Region']);
       expect(textOf(panel().querySelectorAll('.timings dd')[2])).toBe('Belgium');
     });
 
-    it('leaves out the region, failover and retry when the run has none', async () => {
+    it('leaves out the region, the request to avoid it and the retry when the run has none', async () => {
       await open('/watches/1/runs/3');
       await answer(request('GET', `${runsUrl}/3`), fullRun(3));
 
-      expect(panel().querySelector('.failover')).toBeNull();
+      expect(panel().querySelector('.avoid-region')).toBeNull();
       expect(panel().querySelector('.retry-of')).toBeNull();
       expect([...panel().querySelectorAll('.timings dt')].map(textOf)).toEqual(['Waited', 'Ran']);
     });

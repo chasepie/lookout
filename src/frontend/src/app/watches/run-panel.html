@@ -34,8 +34,8 @@
   <div class="seen" [class.seen-crashed]="outcome() === 'crashed'" [class.seen-known-failure]="outcome() === 'knownFailure'">
     <app-run-outcome [run]="shownRun" [clamp]="false" />
   </div>
-  @if (shownRun.askedForFailover) {
-    <p class="failover">Asked for failover</p>
+  @if (shownRun.askedToAvoidRegion) {
+    <p class="avoid-region">Asked to avoid its region</p>
   }
 
   @if (timings(); as timings) {

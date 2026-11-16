@@ -7,7 +7,7 @@ namespace ChasePie.Lookout.Backend.IntegrationTests;
 /// <summary>
 /// Which runs the worker runs at once, with the Runner faked at its HTTP boundary. How VPN runs and region switches wait
 /// for each other is in <see cref="VpnTests"/>, and how the worker holds VPN runs back for them in
-/// <see cref="VpnFailoverTests"/>.
+/// <see cref="AvoidedRegionsTests"/>.
 /// </summary>
 [TestClass]
 public sealed class ParallelRunsTests

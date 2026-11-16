@@ -126,6 +126,9 @@ public class Watch : CreateWatchDto
     [JsonIgnore]
     public ICollection<Subscription> Subscriptions { get; set; } = [];
 
+    [JsonIgnore]
+    public ICollection<AvoidedRegion> AvoidedRegions { get; set; } = [];
+
     public Watch() { }
 
     [SetsRequiredMembers]

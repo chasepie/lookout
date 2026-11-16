@@ -29,7 +29,7 @@ _Avoid_: Observation, pass
 
 **Known failure**:
 A result in which the watch script reports that it recognised a problem, such as a page that a VPN region is blocked
-from, and why. It can ask for a failover.
+from, and why. It can ask for its watch to avoid the region it ran in.
 _Avoid_: Failed run, failure, error
 
 **Crash**:
@@ -69,13 +69,13 @@ _Avoid_: Rotation (for switches in general), reconnect
 **Rotation**:
 A region switch made on a timer, to a region the Owner hasn't excluded.
 
-**Failover**:
-A region switch made because a run ended in a known failure that asked for one, to a region the Owner hasn't excluded
-and the watch hasn't already failed in during its known-failure streak.
-_Avoid_: Fallback, escape
+**Avoided region**:
+A region a watch's runs no longer run in, because one of its runs' known failures asked to avoid it, until the Owner
+clears it.
+_Avoid_: Blocked region, failed region, excluded region, failover
 
 **Retry**:
-A run Lookout queues after a failover, to try the watch again in the new region.
+A run Lookout queues after a known failure that asked to avoid its region, to try the watch again in another region.
 _Avoid_: Rerun, re-check
 
 ### Notifying

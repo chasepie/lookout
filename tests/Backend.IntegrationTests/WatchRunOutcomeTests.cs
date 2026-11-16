@@ -77,9 +77,9 @@ public sealed class WatchRunOutcomeTests
     }
 
     [TestMethod]
-    public async Task AFailoverRequestWithoutTheVpnConfiguredIsOnlyRecorded()
+    public async Task ARequestToAvoidARegionWithoutTheVpnConfiguredIsOnlyRecorded()
     {
-        var runner = new FakeRunner(new { success = false, failureReason = "Blocked", failover = true });
+        var runner = new FakeRunner(new { success = false, failureReason = "Blocked", avoidRegion = true });
         await using var factory = CreateFactory(runner);
         using var client = await factory.CreateSignedInClientAsync(Ct);
 
@@ -88,7 +88,7 @@ public sealed class WatchRunOutcomeTests
         runner.Response = new { success = true, content = "Hello" };
         await RunAsync(client, watchId);
 
-        Assert.IsTrue(run.AskedForFailover);
+        Assert.IsTrue(run.AskedToAvoidRegion);
         Assert.IsNull(run.Region);
         var runs = await client.GetFromJsonAsync<List<WatchRunSummary>>($"/api/Watches/{watchId}/runs", Ct);
         Assert.HasCount(2, runs!);

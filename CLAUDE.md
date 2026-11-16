@@ -8,8 +8,9 @@ A monorepo with a .NET solution (`Lookout.slnx`) and npm workspaces (root `packa
   from `wwwroot`, which its image (`src/Backend/Dockerfile`) builds in. Only the Owner can use it: they sign in with
   `LOOKOUT_OWNER_USERNAME` and `LOOKOUT_OWNER_PASSWORD` (`Auth/`), and outside `localhost` it must be served over HTTPS,
   behind a reverse proxy in production (`Hosting/`); see `docs/security.md`. It calls the Runner over HTTP
-  (`LOOKOUT_RUNNER_URL`). It also rotates the VPN between regions through gluetun's control server (`VpnServices/`),
-  and fails it over to another region, then retries the watch, when a run's known failure asks for it; the region list
+  (`LOOKOUT_RUNNER_URL`). It also rotates the VPN between regions through gluetun's control server (`VpnServices/`).
+  A run's known failure can ask for its watch to avoid the region it ran in, which then holds until the Owner clears it:
+  the watch is retried, and before each of its runs the VPN switches away from any region it avoids. The region list
   comes from gluetun's servers list in `GLUETUN_DATA_DIR`, limited to `GLUETUN_SERVER_REGIONS`, which gluetun also gets
   as `SERVER_REGIONS`. It notifies the Owner of what runs show through notification channels
   (`Notifications/`; Pushover so far), working out each finished run's event from the watch's earlier runs and sending

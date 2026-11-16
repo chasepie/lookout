@@ -94,25 +94,34 @@ internal sealed class VpnHost : IAsyncDisposable
         (await Vpn.GetStatusAsync(cancellationToken)).Settings!;
 
     /// <summary>
-    /// Starts a VPN run, once no switch holds runs up, moving the clock on until then.
+    /// Starts a VPN run, once the VPN lets it, moving the clock on until then.
     /// </summary>
-    public async Task<VpnRun> StartRunAsync(CancellationToken cancellationToken)
+    /// <param name="watchId">The run's watch; by default one that avoids no region.</param>
+    public async Task<VpnRun> StartRunAsync(CancellationToken cancellationToken, int watchId = 0)
     {
         VpnRun? run = null;
-        await AdvanceUntilAsync(async () => (run = await Vpn.TryStartRunAsync(cancellationToken)) is not null,
+        await AdvanceUntilAsync(async () => (run = (await Vpn.TryStartRunAsync(watchId, cancellationToken)).Run) is not null,
             cancellationToken);
         return run!;
     }
 
     /// <summary>
-    /// Runs <paramref name="failover"/>, moving the clock on until it's done.
+    /// Adds a watch with <c>UseVpn</c> that avoids <paramref name="regions"/>, and no runs.
     /// </summary>
-    public async Task<bool> FailOverAsync(
-        PendingFailover failover, IReadOnlyCollection<string> failedRegions, CancellationToken cancellationToken)
+    /// <returns>The watch's ID.</returns>
+    public async Task<int> AddWatchAvoidingAsync(CancellationToken cancellationToken, params string[] regions)
     {
-        var failingOver = failover.FailOverAsync(failedRegions, cancellationToken);
-        await AdvanceUntilAsync(() => failingOver.IsCompleted, cancellationToken);
-        return await failingOver;
+        using var scope = _factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<LookoutDbContext>();
+        var watch = new Watch(new CreateWatchDto { Name = "Tickets", UseVpn = true });
+        foreach (var region in regions)
+        {
+            watch.AvoidedRegions.Add(new AvoidedRegion { WatchId = 0, Region = region, CreatedTime = Now });
+        }
+
+        dbContext.Watches.Add(watch);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return watch.Id;
     }
 
     /// <summary>

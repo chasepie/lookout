@@ -122,36 +122,56 @@ public class VpnSettings : VpnSettingsDto
     }
 
     /// <summary>
-    /// Picks a random region that isn't excluded and isn't <see cref="CurrentRegion"/>. Staying in the current
-    /// region would leave gluetun on the same server, since it skips settings that didn't change.
+    /// Picks a random region that isn't excluded and isn't <see cref="CurrentRegion"/>, preferring one that no watch
+    /// using the VPN avoids. Staying in the current region would leave gluetun on the same server, since it skips
+    /// settings that didn't change.
     /// </summary>
     /// <param name="regions">The regions the VPN provider offers.</param>
+    /// <param name="avoidedByWatches">The regions any watch using the VPN avoids.</param>
     /// <returns>The region, or <see langword="null"/> if no other region is allowed.</returns>
-    public string? PickRotationRegion(IReadOnlyCollection<string> regions, Random random) =>
-        PickRegion(regions, [], random);
+    public string? PickRotationRegion(
+        IReadOnlyCollection<string> regions, IReadOnlyCollection<string> avoidedByWatches, Random random) =>
+        PickRegion(regions, avoided: [], avoidedByWatches, random);
 
     /// <summary>
-    /// Picks a region as <see cref="PickRotationRegion"/> does, but not one of <paramref name="failedRegions"/>.
+    /// Picks a region for a watch to run in, as <see cref="PickRotationRegion"/> does, but never one the watch avoids,
+    /// and preferring one that no other watch with a pending VPN run avoids.
     /// </summary>
     /// <param name="regions">The regions the VPN provider offers.</param>
-    /// <param name="failedRegions">
-    /// The regions the watch asked to fail over from during its current known-failure streak.
-    /// </param>
-    /// <returns>The region, or <see langword="null"/> if no region is left.</returns>
-    public string? PickFailoverRegion(
-        IReadOnlyCollection<string> regions, IReadOnlyCollection<string> failedRegions, Random random) =>
-        PickRegion(regions, failedRegions, random);
+    /// <param name="avoidedByWatch">The regions the watch avoids.</param>
+    /// <param name="avoidedByOthers">The regions the other watches with a pending VPN run avoid.</param>
+    /// <returns>The region, or <see langword="null"/> if the watch has no region left.</returns>
+    public string? PickRegionForWatch(
+        IReadOnlyCollection<string> regions,
+        IReadOnlyCollection<string> avoidedByWatch,
+        IReadOnlyCollection<string> avoidedByOthers,
+        Random random) =>
+        PickRegion(regions, avoidedByWatch, avoidedByOthers, random);
+
+    /// <summary>
+    /// Whether a watch that avoids <paramref name="avoidedByWatch"/> has a region left that it may run in: one of
+    /// <paramref name="regions"/> that the Owner hasn't excluded and the watch doesn't avoid.
+    /// </summary>
+    public bool HasRegionLeftFor(IReadOnlyCollection<string> regions, IReadOnlyCollection<string> avoidedByWatch) =>
+        regions.Any(region => !IsExcluded(region) && !avoidedByWatch.Contains(region, StringComparer.OrdinalIgnoreCase));
+
+    private bool IsExcluded(string region) => ExcludedRegions.Contains(region, StringComparer.OrdinalIgnoreCase);
 
     private string? PickRegion(
         IReadOnlyCollection<string> regions,
-        IReadOnlyCollection<string> failedRegions,
+        IReadOnlyCollection<string> avoided,
+        IReadOnlyCollection<string> avoidedElsewhere,
         Random random)
     {
         var candidates = regions
-            .Where(region => !ExcludedRegions.Contains(region, StringComparer.OrdinalIgnoreCase))
+            .Where(region => !IsExcluded(region))
             .Where(region => !string.Equals(region, CurrentRegion, StringComparison.OrdinalIgnoreCase))
-            .Where(region => !failedRegions.Contains(region, StringComparer.OrdinalIgnoreCase))
+            .Where(region => !avoided.Contains(region, StringComparer.OrdinalIgnoreCase))
             .ToList();
-        return candidates.Count == 0 ? null : candidates[random.Next(candidates.Count)];
+        var preferred = candidates
+            .Where(region => !avoidedElsewhere.Contains(region, StringComparer.OrdinalIgnoreCase))
+            .ToList();
+        var pool = preferred.Count > 0 ? preferred : candidates;
+        return pool.Count == 0 ? null : pool[random.Next(pool.Count)];
     }
 }

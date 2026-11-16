@@ -3,30 +3,24 @@ namespace ChasePie.Lookout.Backend.VpnServices;
 /// <summary>
 /// Keeps runs that use the VPN and region switches apart: a switch restarts the tunnel, which would cut off a run using
 /// it. Any number of VPN runs share the gate, and a switch needs it to itself. Only <see cref="Vpn"/> uses it: each
-/// <see cref="VpnRun"/> holds a share, taken with <see cref="TryEnterRun"/>, and a switch holds it alone from asking
-/// gluetun to switch until the new tunnel is up and the switch has saved how it went, queued with
-/// <see cref="QueueSwitch"/>, either by the switch itself or, for a failover, by the <see cref="PendingFailover"/> the
-/// failing run took.
+/// <see cref="VpnRun"/> holds a share, taken with <see cref="TryEnterRun"/>, and a switch holds it alone, taken with
+/// <see cref="EnterSwitchAsync"/>, from asking gluetun to switch until the new tunnel is up and the switch has saved
+/// how it went.
 /// </summary>
 /// <remarks>
-/// Switches go first: once one is queued, no new run gets a share until every queued switch is done, so runs can't keep
-/// a switch waiting for good, and a switch waits only for the runs already in progress. Runs don't queue: one that can't
-/// enter is passed over, and tried again later.
+/// Switches go first: once one waits, no new run gets a share until it's done, so runs can't keep a switch waiting for
+/// good, and a switch waits only for the runs already in progress. Runs don't queue: one that can't enter is passed
+/// over, and tried again later. <see cref="Vpn"/> makes one switch at a time, so the gate takes only one.
 /// </remarks>
 internal sealed class VpnGate
 {
     private readonly Lock _lock = new();
 
-    // Switches waiting for the gate, oldest first. Only those queued with WaitAsync, so the gate never goes to a switch
-    // that isn't ready for it, such as a failover waiting for another switch to finish
-    private readonly LinkedList<Waiter> _waiters = [];
-
     private int _runs;
-    private int _queuedSwitches;
-    private SwitchTicket? _switch;
+    private SwitchHold? _switch;
 
     /// <summary>
-    /// Whether a run can't enter now, since a switch is in progress or queued.
+    /// Whether a run can't enter now, since a switch is waiting or in progress.
     /// </summary>
     public bool HoldsUpRuns
     {
@@ -34,13 +28,10 @@ internal sealed class VpnGate
         {
             lock (_lock)
             {
-                return HoldsUpRunsLocked;
+                return _switch is not null;
             }
         }
     }
-
-    // Called with the lock held
-    private bool HoldsUpRunsLocked => _switch is not null || _queuedSwitches > 0;
 
     /// <summary>
     /// How many runs hold a share.
@@ -57,14 +48,20 @@ internal sealed class VpnGate
     }
 
     /// <summary>
-    /// Takes a share for a run, unless a switch is in progress or queued. Dispose it when the run ends.
+    /// Raised when a switch is done or given up, so runs held up by it can enter now. Raised outside the gate's lock, on
+    /// the thread that ended the switch; handlers must be quick and not throw.
+    /// </summary>
+    public event Action? RunsMayEnter;
+
+    /// <summary>
+    /// Takes a share for a run, unless a switch is waiting or in progress. Dispose it when the run ends.
     /// </summary>
     /// <returns>The share, or <see langword="null"/> if the run must wait.</returns>
     public IDisposable? TryEnterRun()
     {
         lock (_lock)
         {
-            if (HoldsUpRunsLocked)
+            if (_switch is not null)
             {
                 return null;
             }
@@ -75,16 +72,33 @@ internal sealed class VpnGate
     }
 
     /// <summary>
-    /// Queues a switch: from now on no new run enters, though the switch doesn't have the gate until
-    /// <see cref="SwitchTicket.WaitAsync"/> says so. Dispose the ticket when the switch is done or given up.
+    /// Keeps new runs out from now on, and waits until every run that holds a share has let go. Dispose what it returns
+    /// when the switch is done. Cancelling it gives the switch up, letting runs in again.
     /// </summary>
-    public SwitchTicket QueueSwitch()
+    /// <exception cref="InvalidOperationException">Another switch is waiting or in progress.</exception>
+    public Task<IDisposable> EnterSwitchAsync(CancellationToken cancellationToken)
     {
+        var hold = new SwitchHold(this);
         lock (_lock)
         {
-            _queuedSwitches++;
-            return new SwitchTicket(this);
+            if (_switch is not null)
+            {
+                throw new InvalidOperationException("Another switch is waiting for the gate, or has it.");
+            }
+
+            _switch = hold;
+            GrantSwitchIfFree();
         }
+
+        // Outside the lock, since a token cancelled already runs the callback at once. Once granted, it does nothing
+        hold.Cancellation = cancellationToken.Register(() =>
+        {
+            if (EndSwitch(hold, onlyIfWaiting: true))
+            {
+                hold.Granted.TrySetCanceled(cancellationToken);
+            }
+        });
+        return hold.Granted.Task;
     }
 
     private void LeaveRun()
@@ -92,134 +106,37 @@ internal sealed class VpnGate
         lock (_lock)
         {
             _runs--;
-            GrantNextSwitch();
+            GrantSwitchIfFree();
         }
-    }
-
-    private Task WaitForSwitchAsync(SwitchTicket ticket, CancellationToken cancellationToken)
-    {
-        lock (_lock)
-        {
-            if (ticket.State != SwitchState.Queued || ticket.Waiter is not null)
-            {
-                throw new InvalidOperationException("The switch has already waited for the gate, or is done.");
-            }
-
-            var waiter = new Waiter(ticket);
-            ticket.Waiter = waiter;
-            _waiters.AddLast(waiter.Node);
-            GrantNextSwitch();
-            if (waiter.Completion.Task.IsCompleted)
-            {
-                return waiter.Completion.Task;
-            }
-
-            waiter.Cancellation = cancellationToken.Register(() =>
-            {
-                lock (_lock)
-                {
-                    if (waiter.Node.List is not null)
-                    {
-                        _waiters.Remove(waiter.Node);
-                        ticket.Waiter = null;
-                        waiter.Completion.TrySetCanceled(cancellationToken);
-                    }
-                }
-            });
-            return waiter.Completion.Task;
-        }
-    }
-
-    /// <summary>
-    /// Raised when the last switch in progress or queued is done, so runs held up by switches can enter now.
-    /// Raised outside the gate's lock, on the thread that ended the switch; handlers must be quick and not throw.
-    /// </summary>
-    public event Action? RunsMayEnter;
-
-    private void EndSwitch(SwitchTicket ticket)
-    {
-        bool runsMayEnter;
-        lock (_lock)
-        {
-            if (!EndSwitchLocked(ticket))
-            {
-                return;
-            }
-
-            runsMayEnter = !HoldsUpRunsLocked;
-        }
-
-        if (runsMayEnter)
-        {
-            RunsMayEnter?.Invoke();
-        }
-    }
-
-    // Called with the lock held. Returns false if the switch was done already
-    private bool EndSwitchLocked(SwitchTicket ticket)
-    {
-        switch (ticket.State)
-        {
-            case SwitchState.Queued:
-                _queuedSwitches--;
-                if (ticket.Waiter is { } waiter && waiter.Node.List is not null)
-                {
-                    _waiters.Remove(waiter.Node);
-                    waiter.Cancellation.Unregister();
-                    waiter.Completion.TrySetCanceled();
-                }
-                break;
-            case SwitchState.Holding:
-                _switch = null;
-                break;
-            default:
-                return false;
-        }
-
-        ticket.State = SwitchState.Done;
-        GrantNextSwitch();
-        return true;
     }
 
     // Called with the lock held
-    private void GrantNextSwitch()
+    private void GrantSwitchIfFree()
     {
-        if (_switch is not null || _runs > 0 || _waiters.First is not { } first)
+        if (_switch is not { Holding: false } waiting || _runs > 0)
         {
             return;
         }
 
-        var waiter = first.Value;
-        _waiters.RemoveFirst();
-        // Not Dispose, which would wait for a cancellation callback running now, which waits for the lock
-        waiter.Cancellation.Unregister();
-        _queuedSwitches--;
-        _switch = waiter.Ticket;
-        waiter.Ticket.State = SwitchState.Holding;
-        waiter.Completion.TrySetResult();
+        waiting.Holding = true;
+        waiting.Granted.TrySetResult(waiting);
     }
 
-    internal enum SwitchState
+    /// <returns>Whether the switch was ended now, rather than already.</returns>
+    private bool EndSwitch(SwitchHold hold, bool onlyIfWaiting = false)
     {
-        Queued,
-        Holding,
-        Done,
-    }
-
-    internal sealed class Waiter
-    {
-        public Waiter(SwitchTicket ticket)
+        lock (_lock)
         {
-            Ticket = ticket;
-            Node = new LinkedListNode<Waiter>(this);
+            if (_switch != hold || (onlyIfWaiting && hold.Holding))
+            {
+                return false;
+            }
+
+            _switch = null;
         }
 
-        public SwitchTicket Ticket { get; }
-        public LinkedListNode<Waiter> Node { get; }
-
-        // Continuations run elsewhere, so a switch doesn't go on under the lock or in the run that let go of the gate
-        public TaskCompletionSource Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public CancellationTokenRegistration Cancellation { get; set; }
+        RunsMayEnter?.Invoke();
+        return true;
     }
 
     private sealed class RunShare(VpnGate gate) : IDisposable
@@ -236,28 +153,24 @@ internal sealed class VpnGate
     }
 
     /// <summary>
-    /// A switch's place in the gate's queue, from <see cref="QueueSwitch"/>. Disposing it lets go of the gate, or gives up
-    /// the place, and may be done more than once.
+    /// A switch's hold on the gate, from <see cref="EnterSwitchAsync"/>. Disposing it lets go, and may be done more
+    /// than once.
     /// </summary>
-    public sealed class SwitchTicket : IDisposable
+    private sealed class SwitchHold(VpnGate gate) : IDisposable
     {
-        private readonly VpnGate _gate;
+        // Continuations run elsewhere, so a switch doesn't go on under the lock or in the run that let go of the gate
+        public TaskCompletionSource<IDisposable> Granted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        internal SwitchTicket(VpnGate gate)
+        public CancellationTokenRegistration Cancellation { get; set; }
+
+        // Guarded by the gate's lock
+        public bool Holding { get; set; }
+
+        public void Dispose()
         {
-            _gate = gate;
+            Cancellation.Unregister();
+            gate.EndSwitch(this);
         }
-
-        internal SwitchState State { get; set; } = SwitchState.Queued;
-
-        internal Waiter? Waiter { get; set; }
-
-        /// <summary>
-        /// Waits until the switch has the gate to itself: every run that held a share has let go, and every switch that
-        /// waited before it is done. Call it once. The switch still holds its place if it's cancelled.
-        /// </summary>
-        public Task WaitAsync(CancellationToken cancellationToken) => _gate.WaitForSwitchAsync(this, cancellationToken);
-
-        public void Dispose() => _gate.EndSwitch(this);
     }
 }

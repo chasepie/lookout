@@ -38,6 +38,35 @@ namespace ChasePie.Lookout.Backend.Database.Migrations
                         });
                 });
 
+            modelBuilder.Entity("ChasePie.Lookout.Core.AvoidedRegion", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedTime")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Region")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("RunId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("WatchId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RunId");
+
+                    b.HasIndex("WatchId", "Region")
+                        .IsUnique();
+
+                    b.ToTable("AvoidedRegions");
+                });
+
             modelBuilder.Entity("ChasePie.Lookout.Core.NotificationChannel", b =>
                 {
                     b.Property<int>("Id")
@@ -178,7 +207,7 @@ namespace ChasePie.Lookout.Backend.Database.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
-                    b.Property<bool>("AskedForFailover")
+                    b.Property<bool>("AskedToAvoidRegion")
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("Content")
@@ -228,6 +257,24 @@ namespace ChasePie.Lookout.Backend.Database.Migrations
                     b.HasIndex("WatchId");
 
                     b.ToTable("WatchRuns");
+                });
+
+            modelBuilder.Entity("ChasePie.Lookout.Core.AvoidedRegion", b =>
+                {
+                    b.HasOne("ChasePie.Lookout.Core.WatchRun", "Run")
+                        .WithMany()
+                        .HasForeignKey("RunId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("ChasePie.Lookout.Core.Watch", "Watch")
+                        .WithMany("AvoidedRegions")
+                        .HasForeignKey("WatchId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Run");
+
+                    b.Navigation("Watch");
                 });
 
             modelBuilder.Entity("ChasePie.Lookout.Core.NotificationChannel", b =>
@@ -320,6 +367,8 @@ namespace ChasePie.Lookout.Backend.Database.Migrations
 
             modelBuilder.Entity("ChasePie.Lookout.Core.Watch", b =>
                 {
+                    b.Navigation("AvoidedRegions");
+
                     b.Navigation("Subscriptions");
 
                     b.Navigation("WatchRuns");

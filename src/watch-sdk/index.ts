@@ -34,11 +34,11 @@ export interface KnownFailure extends RunResultBase {
   /** What the problem is, as the Owner reads it on the run and in notifications. */
   failureReason: string;
   /**
-   * Whether Lookout should fail the VPN over to another region and try the watch again there, for a problem another
-   * region could fix, such as a page that blocks this one. Only applies to watches that use the VPN. Leave it out
-   * for a problem another region can't fix, such as a sold-out item.
+   * Whether the watch should avoid the VPN region it ran in and try again in another, for a problem another region
+   * could fix, such as a page that blocks this one. The watch's runs avoid the region until the Owner clears it. Only
+   * applies to watches that use the VPN. Leave it out for a problem another region can't fix, such as a sold-out item.
    */
-  failover?: boolean;
+  avoidRegion?: boolean;
 }
 
 /** Whether `value` is a {@link KnownFailure}: `success` is `false` and `failureReason` is a string. */
@@ -53,7 +53,7 @@ export function isKnownFailure(value: unknown): value is KnownFailure {
 export type RunResult = Success | KnownFailure;
 
 /**
- * Whether `value` is a {@link RunResult}. Doesn't check `screenshot` or `failover`, which {@link runWatch} checks
+ * Whether `value` is a {@link RunResult}. Doesn't check `screenshot` or `avoidRegion`, which {@link runWatch} checks
  * itself.
  */
 export function isRunResult(value: unknown): value is RunResult {
@@ -241,17 +241,16 @@ async function takeScreenshot(page: Page): Promise<Uint8Array | undefined> {
 }
 
 /**
- * The result without any `failover` on a success. Only a known failure can ask for one, so a success's is left out
- * rather than checked, as it was before failovers existed, and the Runner, which reads it only as true or false, never
- * sees it.
+ * The result without any `avoidRegion` on a success. Only a known failure can ask to avoid its region, so a success's
+ * is left out rather than checked, and the Runner, which reads it only as true or false, never sees it.
  */
-function withoutFailoverOnSuccess(result: RunResult): RunResult {
-  if (!result.success || !('failover' in result)) {
+function withoutAvoidRegionOnSuccess(result: RunResult): RunResult {
+  if (!result.success || !('avoidRegion' in result)) {
     return result;
   }
 
-  const { failover, ...success } = result;
-  void failover;
+  const { avoidRegion, ...success } = result;
+  void avoidRegion;
   return success;
 }
 
@@ -285,8 +284,9 @@ export async function runWatch(runScript: LookoutWatchScript, options?: RunWatch
       if (!isRunResult(result)) {
         throw new Error(`Watch script returned an unexpected result: ${JSON.stringify(result)}`);
       }
-      if (!result.success && result.failover !== undefined && typeof result.failover !== 'boolean') {
-        throw new Error(`The watch script's failover must be true or false, not ${JSON.stringify(result.failover)}.`);
+      if (!result.success && result.avoidRegion !== undefined && typeof result.avoidRegion !== 'boolean') {
+        throw new Error(
+          `The watch script's avoidRegion must be true or false, not ${JSON.stringify(result.avoidRegion)}.`);
       }
       if (result.screenshot !== undefined && !(result.screenshot instanceof Uint8Array)) {
         throw new Error('The watch script\'s screenshot must be bytes, such as what page.screenshot() returns, '
@@ -298,7 +298,7 @@ export async function runWatch(runScript: LookoutWatchScript, options?: RunWatch
       throw new WatchScriptCrash(error, screenshot);
     }
 
-    const kept = withoutFailoverOnSuccess(result);
+    const kept = withoutAvoidRegionOnSuccess(result);
     // As with a crash, a run that's being cancelled ends without one, so stopping isn't held up
     const wanted = kept.success ? screenshotOn?.success : screenshotOn?.knownFailure;
     if (kept.screenshot === undefined && wanted && !signal.aborted) {

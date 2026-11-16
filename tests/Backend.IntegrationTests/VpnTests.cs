@@ -5,8 +5,8 @@ namespace ChasePie.Lookout.Backend.IntegrationTests;
 
 /// <summary>
 /// The VPN's rules, at <see cref="Vpn"/>'s interface: how it switches region, how runs and switches wait for each
-/// other, and how failovers go, against a fake gluetun whose tunnel comes up at once, on a fake clock. What the run
-/// worker does with the VPN's answers is in <see cref="VpnFailoverTests"/>.
+/// other, and how a run leaves a region its watch avoids, against a fake gluetun whose tunnel comes up at once, on a fake clock. What the run
+/// worker does with the VPN's answers is in <see cref="AvoidedRegionsTests"/>.
 /// </summary>
 [TestClass]
 public sealed class VpnTests
@@ -14,7 +14,6 @@ public sealed class VpnTests
     private const string Albania = "Albania";
     private const string Belgium = "Belgium";
     private const string Chile = "Chile";
-    private const string Denmark = "Denmark";
     private const string Berlin = "DE Berlin";
 
     // Set before the Backend starts, and replaced by the outcome of the switch it makes, which tells the tests it's done
@@ -30,7 +29,7 @@ public sealed class VpnTests
     [TestMethod]
     public async Task TheBackendMakesItsFirstSwitchSoTheRegionIsKnown()
     {
-        // gluetun picked a region of its own, and doesn't say which, so neither runs nor failovers could know it
+        // gluetun picked a region of its own, and doesn't say which, so runs couldn't know it
         await using var host = await StartWithStoredRegionAsync(null, gluetunRegions: null);
 
         var settings = await WaitForStartupSwitchAsync(host);
@@ -132,7 +131,7 @@ public sealed class VpnTests
         await host.AdvanceUntilAsync(() => host.Vpn.Progress is { WaitingForRun: true }, Ct);
 
         Assert.IsTrue(host.Vpn.HoldsUpRuns);
-        Assert.IsNull(await host.Vpn.TryStartRunAsync(Ct));
+        Assert.IsNull((await host.Vpn.TryStartRunAsync(0, Ct)).Run);
         await host.AdvanceAsync(TimeSpan.FromSeconds(5), Ct);
         Assert.IsEmpty(host.Gluetun.SwitchedTo, "The switch waits for the run in progress.");
         Assert.AreEqual(Albania, running.Region);
@@ -151,7 +150,7 @@ public sealed class VpnTests
         await host.Vpn.RequestSwitchAsync(null, Ct);
         await host.AdvanceUntilAsync(() => host.Gluetun.SwitchStarted.Task.IsCompleted, Ct);
 
-        Assert.IsNull(await host.Vpn.TryStartRunAsync(Ct));
+        Assert.IsNull((await host.Vpn.TryStartRunAsync(0, Ct)).Run);
         host.Gluetun.HoldSwitches.SetResult();
         using var run = await host.StartRunAsync(Ct);
 
@@ -159,158 +158,61 @@ public sealed class VpnTests
     }
 
     [TestMethod]
-    public async Task AFailoverKeepsNewVpnRunsOutWhileRunsInProgressFinishAndASecondOneOnlyFindsItLeft()
+    public async Task VpnRunsWaitForTheBackendsFirstSwitch()
     {
-        await using var host = await StartAsync([Albania, Belgium, Chile], current: Albania);
-        var first = await host.StartRunAsync(Ct);
-        var second = await host.StartRunAsync(Ct);
+        // gluetun isn't ready at first, so the Backend can't make its first switch, and gluetun's region isn't known
+        var gluetun = new FakeGluetun(null) { RefuseSwitches = true };
+        await using var host = await VpnHost.StartAsync(gluetun, [Albania, Belgium], _ => { }, Ct);
+        await host.WaitUntilAsync(async () => (await host.GetSettingsAsync(Ct)).LastError is not null, Ct);
 
-        // One of them ends in a known failure that asks for a failover, while the other is still running there
-        using var firstFailover = first.QueueFailover()!;
-        first.Dispose();
-        Assert.IsNull(await host.Vpn.TryStartRunAsync(Ct));
-        var firstLeft = firstFailover.FailOverAsync([], Ct);
-        await host.AdvanceAsync(TimeSpan.FromSeconds(5), Ct);
-        Assert.IsFalse(firstLeft.IsCompleted);
-        Assert.IsEmpty(host.Gluetun.SwitchedTo, "The failover waits for the run still in the region.");
+        Assert.AreEqual(VpnRunStartOutcome.HeldUp, (await host.Vpn.TryStartRunAsync(0, Ct)).Outcome);
 
-        // The other finishes rather than being cut off, and asks for a failover too
-        using var secondFailover = second.QueueFailover()!;
-        second.Dispose();
-        await host.AdvanceUntilAsync(() => firstLeft.IsCompleted, Ct);
-        Assert.IsTrue(await firstLeft);
-        Assert.IsTrue(await host.FailOverAsync(secondFailover, [], Ct));
-
-        Assert.HasCount(1, host.Gluetun.SwitchedTo, "The second failover found the VPN had already left.");
-        using var later = await host.StartRunAsync(Ct);
-        Assert.AreEqual(host.Gluetun.SwitchedTo.Single(), later.Region);
+        gluetun.RefuseSwitches = false;
+        using var run = await host.StartRunAsync(Ct);
+        Assert.AreEqual(gluetun.SwitchedTo.Single(), run.Region);
     }
 
     [TestMethod]
-    public async Task AFailoverFromARegionTheVpnAlreadyLeftFindsItLeftWithoutSwitching()
+    public async Task ARunInARegionItsWatchAvoidsWaitsWhileTheVpnSwitchesToOneItDoesnt()
     {
         await using var host = await StartAsync([Albania, Belgium, Chile], current: Albania);
-        var run = await host.StartRunAsync(Ct);
-        using var failover = run.QueueFailover()!;
-        run.Dispose();
+        var watchId = await host.AddWatchAvoidingAsync(Ct, Albania, Belgium);
 
-        // Another switch gets in between the run and its failover
-        await host.Vpn.RequestSwitchAsync(Chile, Ct);
-        await host.AdvanceUntilAsync(async () => (await host.GetSettingsAsync(Ct)).CurrentRegion == Chile, Ct);
+        Assert.AreEqual(VpnRunStartOutcome.InAvoidedRegion, (await host.Vpn.TryStartRunAsync(watchId, Ct)).Outcome);
+        using var run = await host.StartRunAsync(Ct, watchId);
 
-        Assert.IsTrue(await host.FailOverAsync(failover, [], Ct));
+        Assert.AreEqual(Chile, run.Region);
         Assert.AreSequenceEqual(new[] { Chile }, host.Gluetun.SwitchedTo.ToArray());
     }
 
     [TestMethod]
-    public async Task ARotationWaitingForTheFailingRunGoesFirstAndTheFailoverOnlyFindsItLeft()
+    public async Task ARunOfAWatchThatAvoidsEveryRegionTheOwnerHasntExcludedHasNoRegionLeft()
+    {
+        await using var host = await StartAsync(
+            [Albania, Belgium, Chile], current: Albania, settings => settings.ExcludedRegions = [Chile]);
+        var watchId = await host.AddWatchAvoidingAsync(Ct, Albania, Belgium);
+
+        Assert.AreEqual(VpnRunStartOutcome.NoRegionLeft, (await host.Vpn.TryStartRunAsync(watchId, Ct)).Outcome);
+        await host.AdvanceAsync(TimeSpan.FromSeconds(5), Ct);
+
+        Assert.IsEmpty(host.Gluetun.SwitchedTo);
+        Assert.IsFalse(host.Vpn.HoldsUpRuns);
+    }
+
+    [TestMethod]
+    public async Task RotationPrefersARegionNoWatchAvoids()
     {
         await using var host = await StartAsync([Albania, Belgium, Chile], current: Albania, settings =>
         {
             settings.RotationEnabled = true;
-            settings.NextRotationTime = VpnHost.Start.AddMinutes(5);
+            // Due once the watch is added, since the clock only moves when the test moves it
+            settings.NextRotationTime = VpnHost.Start.AddSeconds(5);
         });
-        var run = await host.StartRunAsync(Ct);
-        await host.AdvanceUntilAsync(() => host.Vpn.Progress is { WaitingForRun: true }, Ct);
+        await host.AddWatchAvoidingAsync(Ct, Belgium);
 
-        using var failover = run.QueueFailover()!;
-        run.Dispose();
+        await host.AdvanceUntilAsync(() => !host.Gluetun.SwitchedTo.IsEmpty, Ct);
 
-        Assert.IsTrue(await host.FailOverAsync(failover, [], Ct));
-        Assert.HasCount(1, host.Gluetun.SwitchedTo);
-        var settings = await host.GetSettingsAsync(Ct);
-        Assert.AreEqual(host.Gluetun.SwitchedTo.Single(), settings.CurrentRegion);
-        Assert.IsNull(settings.LastError);
-    }
-
-    [TestMethod]
-    public async Task AFailoverFromARegionThatWasntKnownStillSwitches()
-    {
-        // gluetun isn't ready at first, so the run starts before the Backend's first switch, in a region of gluetun's
-        var gluetun = new FakeGluetun(null) { RefuseSwitches = true };
-        await using var host = await VpnHost.StartAsync(gluetun, [Albania, Belgium], _ => { }, Ct);
-        await host.WaitUntilAsync(async () => (await host.GetSettingsAsync(Ct)).LastError is not null, Ct);
-        var run = await host.StartRunAsync(Ct);
-        Assert.IsNull(run.Region);
-        using var failover = run.QueueFailover()!;
-        run.Dispose();
-
-        // By the time the failover runs, the first switch may have landed in that same region
-        gluetun.RefuseSwitches = false;
-        await host.AdvanceUntilAsync(() => !gluetun.SwitchedTo.IsEmpty, Ct);
-        var firstSwitch = gluetun.SwitchedTo.Single();
-
-        Assert.IsTrue(await host.FailOverAsync(failover, [], Ct));
-        Assert.HasCount(2, gluetun.SwitchedTo);
-        Assert.AreNotEqual(firstSwitch, gluetun.SwitchedTo.Last());
-    }
-
-    [TestMethod]
-    public async Task AFailoverAvoidsExcludedRegionsAndTheRegionsTheWatchFailedIn()
-    {
-        await using var host = await StartAsync(
-            [Albania, Belgium, Chile, Denmark], current: Albania, settings => settings.ExcludedRegions = [Denmark]);
-
-        var first = await host.StartRunAsync(Ct);
-        using var firstFailover = first.QueueFailover()!;
-        first.Dispose();
-        Assert.IsTrue(await host.FailOverAsync(firstFailover, [Belgium], Ct));
         Assert.AreSequenceEqual(new[] { Chile }, host.Gluetun.SwitchedTo.ToArray());
-
-        // Running out of regions ends the watch's streak, and isn't something wrong with the VPN
-        var second = await host.StartRunAsync(Ct);
-        Assert.AreEqual(Chile, second.Region);
-        using var secondFailover = second.QueueFailover()!;
-        second.Dispose();
-        Assert.IsFalse(await host.FailOverAsync(secondFailover, [Albania, Belgium], Ct));
-        Assert.HasCount(1, host.Gluetun.SwitchedTo);
-        Assert.IsNull((await host.GetSettingsAsync(Ct)).LastError);
-    }
-
-    [TestMethod]
-    public async Task AFailoverWithNoRegionAllowedSaysWhy()
-    {
-        // Not the streak's doing: rotation couldn't leave either
-        await using var host = await StartAsync(
-            [Albania, Belgium], current: Albania, settings => settings.ExcludedRegions = [Belgium]);
-
-        Assert.IsFalse(await FailOverFromANewRunAsync(host));
-
-        Assert.AreEqual(
-            "There are no regions to fail over to: every region other than the current one is excluded.",
-            (await host.GetSettingsAsync(Ct)).LastError);
-        Assert.IsEmpty(host.Gluetun.SwitchedTo);
-    }
-
-    [TestMethod]
-    public async Task AFailedFailoverIsRecordedAsTheVpnsError()
-    {
-        await using var host = await StartAsync([Albania, Belgium], current: Albania);
-        host.Gluetun.RefuseSwitches = true;
-
-        Assert.IsFalse(await FailOverFromANewRunAsync(host));
-
-        var settings = await host.GetSettingsAsync(Ct);
-        Assert.Contains("gluetun is unwell", settings.LastError!);
-        Assert.AreEqual(Albania, settings.CurrentRegion);
-    }
-
-    [TestMethod]
-    public async Task ASuccessfulFailoverRestartsTheRotationTimer()
-    {
-        await using var host = await StartAsync([Albania, Belgium], current: Albania, settings =>
-        {
-            settings.RotationEnabled = true;
-            settings.RotationIntervalMinutes = 15;
-            settings.RotationJitterMinutes = 0;
-            settings.NextRotationTime = VpnHost.Start.AddDays(1);
-        });
-
-        Assert.IsTrue(await FailOverFromANewRunAsync(host));
-
-        var settings = await host.GetSettingsAsync(Ct);
-        Assert.IsGreaterThanOrEqualTo(VpnHost.Start, settings.LastSwitchTime!.Value);
-        Assert.AreEqual(settings.LastSwitchTime.Value.AddMinutes(15), settings.NextRotationTime);
     }
 
     [TestMethod]
@@ -400,104 +302,6 @@ public sealed class VpnTests
         Assert.IsGreaterThanOrEqualTo(VpnHost.Start.AddMinutes(1), host.Now);
     }
 
-    [TestMethod]
-    public async Task ACheckOfGluetunsRegionDoesntUndoAFailoverThatLandedWhileItAsked()
-    {
-        // The check read the VPN's region, Albania, then asks gluetun for its own, which answers once the failover is done
-        var gluetunAnswers = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var gluetun = new FakeGluetun([Albania]) { HoldNextSettingsRead = gluetunAnswers };
-        await using var host = await VpnHost.StartAsync(gluetun, [Albania, Belgium], s => s.CurrentRegion = Albania, Ct);
-
-        Assert.IsTrue(await FailOverFromANewRunAsync(host));
-        gluetunAnswers.SetResult();
-        await host.AdvanceAsync(TimeSpan.FromSeconds(5), Ct);
-
-        Assert.AreSequenceEqual(new[] { Belgium }, gluetun.SwitchedTo.ToArray());
-        Assert.AreEqual(Belgium, (await host.GetSettingsAsync(Ct)).CurrentRegion);
-    }
-
-    [TestMethod]
-    public async Task AReplacementTheCheckAskedForIsDroppedIfAFailoverLeftTheRegionFirst()
-    {
-        // Iceland is no longer allowed, but gluetun refuses the first replacement
-        var gluetun = new FakeGluetun(["Iceland"]) { RefuseSwitches = true };
-        await using var host = await VpnHost.StartAsync(
-            gluetun, [Albania, Belgium, "Iceland"], s => s.CurrentRegion = "Iceland", Ct,
-            serverRegions: $"{Albania},{Belgium}");
-        await host.WaitUntilAsync(async () => (await host.GetSettingsAsync(Ct)).LastError is not null, Ct);
-        gluetun.RefuseSwitches = false;
-
-        // A failover from Iceland is switching when the next check finds the VPN still there, and asks to replace it
-        var gluetunSwitches = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        gluetun.HoldSwitches = gluetunSwitches;
-        var run = await host.StartRunAsync(Ct);
-        using var failover = run.QueueFailover()!;
-        run.Dispose();
-        var failingOver = failover.FailOverAsync([], Ct);
-        await host.AdvanceAsync(TimeSpan.FromSeconds(61), Ct);
-        gluetunSwitches.SetResult();
-
-        await host.AdvanceUntilAsync(() => failingOver.IsCompleted, Ct);
-        Assert.IsTrue(await failingOver);
-        await host.AdvanceAsync(TimeSpan.FromSeconds(5), Ct);
-        Assert.HasCount(1, gluetun.SwitchedTo);
-        Assert.AreEqual(gluetun.SwitchedTo.Single(), (await host.GetSettingsAsync(Ct)).CurrentRegion);
-    }
-
-    [TestMethod]
-    public async Task AFirstSwitchTheCheckAskedForIsDroppedIfAFailoverSwitchedFirst()
-    {
-        // The Backend hasn't switched yet, and gluetun refuses its first switch
-        var gluetun = new FakeGluetun(null) { RefuseSwitches = true };
-        await using var host = await VpnHost.StartAsync(gluetun, [Albania, Belgium], _ => { }, Ct);
-        await host.WaitUntilAsync(async () => (await host.GetSettingsAsync(Ct)).LastError is not null, Ct);
-        gluetun.RefuseSwitches = false;
-
-        // A failover is switching when the next check finds no region yet, and asks for a first switch
-        var gluetunSwitches = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        gluetun.HoldSwitches = gluetunSwitches;
-        var run = await host.StartRunAsync(Ct);
-        using var failover = run.QueueFailover()!;
-        run.Dispose();
-        var failingOver = failover.FailOverAsync([], Ct);
-        await host.AdvanceAsync(TimeSpan.FromSeconds(61), Ct);
-        gluetunSwitches.SetResult();
-
-        await host.AdvanceUntilAsync(() => failingOver.IsCompleted, Ct);
-        Assert.IsTrue(await failingOver);
-        await host.AdvanceAsync(TimeSpan.FromSeconds(5), Ct);
-        Assert.HasCount(1, gluetun.SwitchedTo);
-        Assert.AreEqual(gluetun.SwitchedTo.Single(), (await host.GetSettingsAsync(Ct)).CurrentRegion);
-    }
-
-    [TestMethod]
-    public async Task ARotationThatCameDueWhileAFailoverWaitedIsDroppedOnceTheFailoverRestartsTheTimer()
-    {
-        await using var host = await StartAsync([Albania, Belgium, Chile], current: Albania, settings =>
-        {
-            settings.RotationEnabled = true;
-            settings.RotationIntervalMinutes = 15;
-            settings.RotationJitterMinutes = 0;
-            settings.NextRotationTime = VpnHost.Start.AddSeconds(30);
-        });
-        var failing = await host.StartRunAsync(Ct);
-        var stillRunning = await host.StartRunAsync(Ct);
-
-        // The failover waits for the run still in the region, and the rotation comes due and waits behind it
-        using var failover = failing.QueueFailover()!;
-        failing.Dispose();
-        var failingOver = failover.FailOverAsync([], Ct);
-        await host.AdvanceAsync(TimeSpan.FromSeconds(35), Ct);
-        stillRunning.Dispose();
-
-        await host.AdvanceUntilAsync(() => failingOver.IsCompleted, Ct);
-        Assert.IsTrue(await failingOver);
-        await host.AdvanceAsync(TimeSpan.FromSeconds(5), Ct);
-        Assert.HasCount(1, host.Gluetun.SwitchedTo, "The failover restarted the rotation timer.");
-        var settings = await host.GetSettingsAsync(Ct);
-        Assert.AreEqual(settings.LastSwitchTime!.Value.AddMinutes(15), settings.NextRotationTime);
-    }
-
     /// <summary>
     /// Starts the Backend with gluetun offering <paramref name="regions"/>, and the VPN in <paramref name="current"/>,
     /// where gluetun is too.
@@ -508,18 +312,6 @@ public sealed class VpnTests
             settings.CurrentRegion = current;
             configure?.Invoke(settings);
         }, Ct);
-
-    /// <summary>
-    /// Starts a VPN run whose known failure asks for a failover, and runs the failover.
-    /// </summary>
-    /// <returns>Whether the VPN left the run's region.</returns>
-    private async Task<bool> FailOverFromANewRunAsync(VpnHost host)
-    {
-        var run = await host.StartRunAsync(Ct);
-        using var failover = run.QueueFailover()!;
-        run.Dispose();
-        return await host.FailOverAsync(failover, [], Ct);
-    }
 
     /// <summary>
     /// Stores <paramref name="currentRegion"/> as a Backend without the VPN would have, with rotation on and an error
