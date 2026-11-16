@@ -10,6 +10,8 @@
   "ignores": [
     // Vendored agent skills (see skills-lock.json)
     ".agents/skills/**",
-    ".claude/skills/**"
+    ".claude/skills/**",
+    // Written by release-please, which puts two blank lines after each version's heading
+    "CHANGELOG.md"
   ]
 }
