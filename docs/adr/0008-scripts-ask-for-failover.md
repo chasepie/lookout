@@ -7,9 +7,13 @@ would be fixed by another region: a changed login form or a sold-out item would 
 it found, so a per-watch setting would either fail over for problems a switch can't fix, pausing every VPN watch for
 nothing, or make the Owner choose between failing over and recognising other problems at all.
 
+What a request does has since changed: it makes the region one the watch avoids, rather than failing the VPN over, as
+[ADR 0009](0009-watches-avoid-regions.md) records. The script still decides when.
+
 ## Consequences
 
-- `failover` is part of the published watch SDK's result, so removing or renaming it would break watch scripts.
-- A failover also moves every other watch that uses the VPN, since they share it; one script's request switches the
-  region for all of them.
+- The request is part of the published watch SDK's result (`avoidRegion`, named `failover` before ADR 0009), so
+  removing or renaming it breaks watch scripts.
+- The region switch a watch's avoided region leads to also moves every other watch that uses the VPN, since they share
+  it.
 - A watch without `UseVpn` can still ask; Lookout records the request and does nothing else.

@@ -14,10 +14,17 @@ namespace ChasePie.Lookout.Backend.VpnServices;
 /// gluetun looks the IP up with third-party services once per tunnel, and leaves it empty if they all fail.
 /// Settings changed this way last until gluetun restarts.
 /// Every failure to get an answer from gluetun, including its error responses, throws <see cref="GluetunException"/>.
+/// Reads time out sooner than switches, since the run worker's loop waits for the ones it makes, and a gluetun that's
+/// slow to answer would hold up the start of every run.
 /// </remarks>
 public class GluetunHttpClient(HttpClient httpClient)
 {
-    private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan SwitchTimeout = TimeSpan.FromSeconds(15);
+
+    /// <summary>
+    /// How long a request that only reads from gluetun may take.
+    /// </summary>
+    internal static readonly TimeSpan ReadTimeout = TimeSpan.FromSeconds(5);
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -29,7 +36,7 @@ public class GluetunHttpClient(HttpClient httpClient)
     /// </summary>
     public async Task<GluetunVpnSettings> GetVpnSettingsAsync(CancellationToken cancellationToken = default)
     {
-        using var response = await SendAsync(HttpMethod.Get, "v1/vpn/settings", null, cancellationToken);
+        using var response = await SendAsync(HttpMethod.Get, "v1/vpn/settings", null, ReadTimeout, cancellationToken);
         return await response.Content.ReadFromJsonAsync<GluetunVpnSettings>(JsonOptions, cancellationToken)
             ?? throw new GluetunException("gluetun returned empty VPN settings.");
     }
@@ -51,7 +58,7 @@ public class GluetunHttpClient(HttpClient httpClient)
                 }
             }
         };
-        using var response = await SendAsync(HttpMethod.Put, "v1/vpn/settings", body, cancellationToken);
+        using var response = await SendAsync(HttpMethod.Put, "v1/vpn/settings", body, SwitchTimeout, cancellationToken);
     }
 
     /// <summary>
@@ -60,7 +67,7 @@ public class GluetunHttpClient(HttpClient httpClient)
     /// </summary>
     public async Task<GluetunPublicIp?> GetPublicIpAsync(CancellationToken cancellationToken = default)
     {
-        using var response = await SendAsync(HttpMethod.Get, "v1/publicip/ip", null, cancellationToken);
+        using var response = await SendAsync(HttpMethod.Get, "v1/publicip/ip", null, ReadTimeout, cancellationToken);
         var publicIp = await response.Content.ReadFromJsonAsync<GluetunPublicIp>(JsonOptions, cancellationToken);
         return string.IsNullOrEmpty(publicIp?.PublicIp) ? null : publicIp;
     }
@@ -71,9 +78,12 @@ public class GluetunHttpClient(HttpClient httpClient)
     /// valid regions for a bad one.
     /// </summary>
     /// <param name="body">Sent as JSON; <see langword="null"/> for no body.</param>
+    /// <param name="timeout">How long gluetun has to answer, up to the client's own timeout.</param>
     private async Task<HttpResponseMessage> SendAsync(
-        HttpMethod method, string requestUri, object? body, CancellationToken cancellationToken)
+        HttpMethod method, string requestUri, object? body, TimeSpan timeout, CancellationToken cancellationToken)
     {
+        using var timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutSource.CancelAfter(timeout);
         using var request = new HttpRequestMessage(method, requestUri)
         {
             Content = body is null ? null : JsonContent.Create(body, options: JsonOptions),
@@ -82,7 +92,7 @@ public class GluetunHttpClient(HttpClient httpClient)
         HttpResponseMessage response;
         try
         {
-            response = await httpClient.SendAsync(request, cancellationToken);
+            response = await httpClient.SendAsync(request, timeoutSource.Token);
         }
         catch (HttpRequestException ex)
         {
@@ -90,8 +100,8 @@ public class GluetunHttpClient(HttpClient httpClient)
         }
         catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
-            // The client's timeout, as opposed to the caller cancelling
-            throw new GluetunException($"gluetun didn't answer within {RequestTimeout.TotalSeconds:0} seconds.", ex);
+            // The request's timeout, as opposed to the caller cancelling
+            throw new GluetunException($"gluetun didn't answer within {timeout.TotalSeconds:0} seconds.", ex);
         }
 
         if (response.IsSuccessStatusCode)
@@ -114,7 +124,7 @@ public class GluetunHttpClient(HttpClient httpClient)
     {
         var configuration = services.GetRequiredService<VpnConfiguration>();
         client.BaseAddress = configuration.GluetunUrl;
-        client.Timeout = RequestTimeout;
+        client.Timeout = SwitchTimeout;
         if (configuration.ApiKey is { } apiKey)
         {
             client.DefaultRequestHeaders.Add("X-API-Key", apiKey);

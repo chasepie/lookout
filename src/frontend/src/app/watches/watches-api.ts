@@ -110,6 +110,11 @@ export class WatchesApi {
     return firstValueFrom(this.http.delete<DeleteRunsResult>(`${baseUrl}/${watchId}/runs`));
   }
 
+  /** Clears a region the watch avoids, so its runs may run there again. */
+  clearAvoidedRegion(watchId: string, avoidedRegionId: number) {
+    return firstValueFrom(this.http.delete<void>(`${baseUrl}/${watchId}/avoided-regions/${avoidedRegionId}`));
+  }
+
   run(id: string) {
     return firstValueFrom(this.http.post<WatchRun>(`${baseUrl}/${id}/runs`, null));
   }

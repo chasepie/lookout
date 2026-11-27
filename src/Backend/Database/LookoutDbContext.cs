@@ -16,6 +16,7 @@ public class LookoutDbContext(DbContextOptions<LookoutDbContext> options) : DbCo
     public DbSet<OwnerSessionState> OwnerSessionStates { get; set; } = null!;
     public DbSet<NotificationChannel> NotificationChannels { get; set; } = null!;
     public DbSet<Subscription> Subscriptions { get; set; } = null!;
+    public DbSet<AvoidedRegion> AvoidedRegions { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -24,6 +25,18 @@ public class LookoutDbContext(DbContextOptions<LookoutDbContext> options) : DbCo
         modelBuilder.Entity<OwnerSessionState>().HasData(new OwnerSessionState { Id = OwnerSessionState.SingletonId });
         modelBuilder.Entity<NotificationChannel>().OwnsOne(c => c.Pushover);
         modelBuilder.Entity<Subscription>().OwnsOne(s => s.Pushover);
+        modelBuilder.Entity<AvoidedRegion>(avoided =>
+        {
+            avoided
+                .HasIndex(a => new { a.WatchId, a.Region })
+                .IsUnique();
+            // Deleting the run that asked doesn't clear the region: only the Owner does
+            avoided
+                .HasOne(a => a.Run)
+                .WithMany()
+                .HasForeignKey(a => a.RunId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
     }
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)

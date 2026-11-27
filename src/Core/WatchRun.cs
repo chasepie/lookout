@@ -35,18 +35,20 @@ public class WatchRun
     public string? FailureReason { get; set; }
 
     /// <summary>
-    /// Whether the run's known failure asked for a failover. Recorded even when Lookout couldn't make one.
+    /// Whether the run's known failure asked for its watch to avoid the region it ran in. Recorded even when it
+    /// made no region avoided, as for a watch without <c>UseVpn</c>.
     /// </summary>
-    public bool AskedForFailover { get; set; }
+    public bool AskedToAvoidRegion { get; set; }
 
     /// <summary>
     /// The VPN's region while the run ran: the region the Backend last switched it to. <see langword="null"/> for a run
-    /// of a watch that doesn't use the VPN, while the VPN isn't configured, or before its first switch.
+    /// of a watch that doesn't use the VPN, while the VPN isn't configured, for a run that couldn't start, or for a run
+    /// from before VPN runs waited for the Backend's first switch.
     /// </summary>
     public string? Region { get; set; }
 
     /// <summary>
-    /// The run this one retries, when Lookout queued it after a failover.
+    /// The run this one retries, when Lookout queued it after a known failure that asked to avoid its region.
     /// </summary>
     public int? RetryOfRunId { get; set; }
 

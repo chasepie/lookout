@@ -20,7 +20,7 @@ function run(id: number, content = `run ${id}`): WatchRunSummary {
     content,
     failureReason: null,
     error: null,
-    askedForFailover: false,
+    askedToAvoidRegion: false,
     region: null,
     retryOfRunId: null,
     hasScreenshot: false,

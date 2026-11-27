@@ -24,7 +24,7 @@ interface CliOutput {
   success?: unknown;
   content?: unknown;
   failureReason?: unknown;
-  failover?: unknown;
+  avoidRegion?: unknown;
   crash?: { error?: unknown };
   screenshot?: unknown;
 }
@@ -235,19 +235,19 @@ describe('an automatic screenshot that can\'t be taken', () => {
 });
 
 describe('a known failure', () => {
-  test('is written with its request for a failover', async () => {
+  test('is written with its request to avoid its region', async () => {
     const run = await runCli(`export default {
       async run() {
-        return { success: false, failureReason: 'Blocked in this region', failover: true };
+        return { success: false, failureReason: 'Blocked in this region', avoidRegion: true };
       },
     };`);
 
     assert.equal(run.exitCode, 0, run.stderr);
     assert.equal(run.output?.failureReason, 'Blocked in this region');
-    assert.equal(run.output?.failover, true);
+    assert.equal(run.output?.avoidRegion, true);
   });
 
-  test('is written without a failover when it asks for none', async () => {
+  test('is written without avoidRegion when it asks for none', async () => {
     const run = await runCli(`export default {
       async run() {
         return { success: false, failureReason: 'Sold out' };
@@ -255,21 +255,21 @@ describe('a known failure', () => {
     };`);
 
     assert.equal(run.exitCode, 0, run.stderr);
-    assert.equal(run.output?.failover, undefined);
+    assert.equal(run.output?.avoidRegion, undefined);
   });
 });
 
 describe('a success', () => {
-  test('is written without a failover, which only a known failure can ask for', async () => {
+  test('is written without avoidRegion, which only a known failure can ask for', async () => {
     const run = await runCli(`export default {
       async run() {
-        return { success: true, content: 'In stock', failover: null };
+        return { success: true, content: 'In stock', avoidRegion: null };
       },
     };`);
 
     assert.equal(run.exitCode, 0, run.stderr);
     assert.equal(run.output?.content, 'In stock');
-    assert.equal('failover' in (run.output ?? {}), false);
+    assert.equal('avoidRegion' in (run.output ?? {}), false);
   });
 });
 
@@ -323,15 +323,15 @@ describe('a crash', () => {
     assert.equal(screenshotTypeOf(run.output), 'jpeg');
   });
 
-  test('is what a script that asks for a failover with something other than a boolean has', async () => {
+  test('is what a script that asks to avoid its region with something other than a boolean has', async () => {
     const run = await runCli(`export default {
       async run() {
-        return { success: false, failureReason: 'Blocked', failover: 'yes' };
+        return { success: false, failureReason: 'Blocked', avoidRegion: 'yes' };
       },
     };`);
 
     assert.equal(run.exitCode, 1);
-    assert.match(String(run.output?.crash?.error), /failover must be true or false/);
+    assert.match(String(run.output?.crash?.error), /avoidRegion must be true or false/);
   });
 
   test('says what the script threw when it isn\'t an error', async () => {
