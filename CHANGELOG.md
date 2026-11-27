@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.0](https://github.com/chasepie/lookout/compare/v0.2.0...v0.3.0) (2026-11-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* let watches avoid regions instead of failing the VPN over ([#35](https://github.com/chasepie/lookout/issues/35))
+
+### Features
+
+* let watches avoid regions instead of failing the VPN over ([#35](https://github.com/chasepie/lookout/issues/35)) ([382ba86](https://github.com/chasepie/lookout/commit/382ba861f1fbcbd5a558a966a2e9ad7cfcee4d18))
+
 ## [0.2.0](https://github.com/chasepie/lookout/compare/v0.1.0...v0.2.0) (2026-11-16)
 
 
